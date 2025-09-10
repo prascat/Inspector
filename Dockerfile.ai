@@ -1,0 +1,31 @@
+# Dockerfile - Ubuntu 22.04 기반 AI 탐지 시스템
+FROM ubuntu:22.04
+
+# timezone 설정 (상호작용 방지)
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Seoul
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# 기본 패키지 설치
+RUN apt-get update && apt-get install -y \
+    python3 python3-pip python3-opencv git && \
+    apt-get clean
+
+# pip 최신화 및 필수 패키지 설치
+RUN pip3 install --upgrade pip
+RUN pip3 install torch torchvision tqdm opencv-python-headless flask python-dotenv
+RUN pip3 install anomalib tensorboard open_clip_torch onnxruntime onnx
+
+# 작업 디렉토리 설정
+WORKDIR /app
+
+# Flask API 서버 실행
+CMD ["python3", "ai_api.py"]
+
+# docker run -d --name ai-server -p 5000:5000 \
+#   -v $(pwd)/deploy:/app/host \
+#   -v $(pwd)/ai_api.py:/app/ai_api.py \
+#   -v $(pwd)/ai_trainer.py:/app/ai_trainer.py \
+#   -v $(pwd)/ai_inference.py:/app/ai_inference.py \
+#   -v $(pwd)/convert_to_onnx.py:/app/convert_to_onnx.py \
+#   ai-server

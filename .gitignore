@@ -1,0 +1,8 @@
+/.vscode
+/build
+/deploy
+/models
+.DS_Store
+.bmp
+.jpg
+.png
