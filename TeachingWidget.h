@@ -1,6 +1,7 @@
 #ifndef TEACHINGWIDGET_H
 #define TEACHINGWIDGET_H
 
+#include <QWidget>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPointer>
@@ -48,7 +49,6 @@
 #include "FilterDialog.h"
 #include "InsProcessor.h"
 #include "LogViewer.h"
-#include "SimulationDialog.h"
 #include "ConfigManager.h"
 
 #ifdef USE_SPINNAKER
@@ -59,6 +59,7 @@
 class LogViewer;
 class SerialCommunication;
 class SerialSettingsDialog;
+class AITrainer;
 
 class CameraGrabberThread : public QThread {
     Q_OBJECT
@@ -129,6 +130,11 @@ class TeachingWidget : public QWidget {
     Q_OBJECT
 
 public:
+    // RecipeManager에서 접근 가능하도록 public으로 선언
+    std::vector<cv::Mat> cameraFrames;
+    bool camOff = true;
+    int cameraIndex;
+    
     // 스레드 안전 cameraInfos 접근 함수들
     QVector<CameraInfo> getCameraInfos() const;
     CameraInfo getCameraInfo(int index) const;
@@ -168,7 +174,6 @@ public:
     void updateInsTemplateImage(PatternInfo* pattern, const QRectF& newRect);
     void updateAllPatternTemplateImages(); // 모든 패턴의 템플릿 이미지 갱신
     void updatePatternTemplateImage(const QUuid& patternId); // 개별 패턴의 템플릿 이미지 갱신
-    void selectCameraTeachingImage(const QString& cameraUuid); // 카메라별 티칭 이미지 선택
     cv::Mat extractRotatedRegion(const cv::Mat& image, const QRectF& rect, double angle);
     LogViewer* getLogViewer() const { return logViewer; }
     
@@ -179,19 +184,15 @@ public:
     // 필터 조정 모드 제어
     void setFilterAdjusting(bool adjusting) { isFilterAdjusting = adjusting; }
     bool getFilterAdjusting() const { return isFilterAdjusting; }
-
+    
     void saveRecipe();
     void deleRecipe();
     bool loadRecipe(const QString &fileName = QString());
-    void loadLastRecipe(); // 최근 사용한 레시피 자동 로드
     
-    // === 레시피 관리 함수들 (시뮬레이션에서도 사용) ===
+    // === 레시피 관리 함수들 (camOff에서도 사용) ===
     void newRecipe();
     void openRecipe(bool autoMode = false);
     void saveRecipeAs();
-    void saveCurrentFrameToRecipe(); // 현재 프레임을 레시피 폴더에 저장
-    void saveSimulationTeachingImage(); // 시뮬레이션 모드에서 티칭 이미지 저장
-    QString getCurrentSimulationCameraUuid(); // 현재 시뮬레이션 카메라 UUID 가져오기
     void manageRecipes();
     void onRecipeSelected(const QString& recipeName);
     
@@ -229,14 +230,11 @@ private slots:
     bool runInspection(const cv::Mat& frame, int specificCameraIndex = -1);
     void onBackButtonClicked();
     
-    // 시뮬레이션 모드 슬롯들
-    void onSimulationModeToggled();
-    void showSimulationDialog();
+    // 카메라 모드 슬롯들 (camOn/camOff)
+    void onCamModeToggled();
     
 private:
     void updateMainCameraUI(const InspectionResult& result, const cv::Mat& frameForInspection);
-    void disableAllUIElements();
-    void enableAllUIElements();
     void updatePreviewFrames();
     void initializeLanguageSystem();
     PatternInfo* findPatternById(const QUuid& patternId);
@@ -277,12 +275,10 @@ private:
     QMenuBar* menuBar = nullptr;
     QMenu* fileMenu = nullptr;
     QMenu* settingsMenu = nullptr;
-    QMenu* simulateMenu = nullptr;
     QMenu* toolsMenu = nullptr;
     QMenu* helpMenu = nullptr;
     
-    QAction* simulationModeAction = nullptr;
-    QAction* simulateAction = nullptr;
+    QAction* camModeAction = nullptr;
     QAction* exitAction = nullptr;
     QAction* cameraSettingsAction = nullptr;
     QAction* languageSettingsAction = nullptr;
@@ -484,14 +480,8 @@ private:
     void showBatchResults(const QStringList& results, int passedCount, int failedCount);
     InspectionResult runSingleInspection(const cv::Mat& image);
     
-    // 시뮬레이션 레시피 관리
-    void backupCurrentRecipe();
-    void clearCurrentRecipe();
-    void loadSimulationRecipe();
-    void createNewSimulationRecipe();
-    void saveSimulationRecipe();
-    void restoreBackupRecipe();
-    void updateUIForSimulationMode(bool isSimulation);
+    // camOff 레시피 관리
+    void updateUIForCamMode(bool isCamOff);
     QString getCurrentRecipeName() const;
     
     // ===== 레시피 파일 관리 함수 =====
@@ -518,17 +508,12 @@ private:
     FilterDialog* filterDialog;
     
     // 카메라 관련
-    int cameraIndex;
     QString cameraStatus;
-    std::vector<cv::Mat> cameraFrames;
     QVector<CameraInfo> cameraInfos;
     QVector<QLabel*> cameraPreviewLabels;
     QVector<bool> cameraConnected;
     
-    // 시뮬레이션 모드 관련
-    bool simulationMode = false;
-    SimulationDialog* simulationDialog = nullptr;
-    cv::Mat currentSimulationImage;
+    // 카메라 모드 관련 (camOn/camOff)
     QVariantMap backupRecipeData; // 레시피 백업 데이터
     
     // 패턴 스타일링 관련

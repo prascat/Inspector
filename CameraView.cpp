@@ -563,9 +563,9 @@ QList<QUuid> CameraView::findPatternsInSelection() const {
     if (currentRect.isNull()) return result;
 
     for (const PatternInfo& pattern : patterns) {
-        // 시뮬레이션 모드에서는 simulationCameraName과 비교, 일반 모드에서는 currentCameraUuid와 비교
+        // 시뮬레이션 모드에서는 currentCameraUuid과 비교, 일반 모드에서는 currentCameraUuid와 비교
         bool patternVisible = false;
-        if (!simulationCameraName.isEmpty()) {
+        if (!currentCameraUuid.isEmpty()) {
             // 시뮬레이션 모드: 모든 패턴을 표시
             patternVisible = true;
         } else {
@@ -1472,9 +1472,9 @@ void CameraView::drawInspectionResultsVector(QPainter& painter, const Inspection
         // **현재 카메라에 해당하는 패턴인지 확인**
         if (patternInfo) {
             bool patternVisible = false;
-            if (!simulationCameraName.isEmpty()) {
+            if (!currentCameraUuid.isEmpty()) {
                 // 시뮬레이션 모드: 현재 시뮬레이션 카메라와 관련된 패턴만
-                patternVisible = (patternInfo->cameraUuid == simulationCameraName || 
+                patternVisible = (patternInfo->cameraUuid == currentCameraUuid || 
                                 patternInfo->cameraUuid.isEmpty());
             } else {
                 // 일반 모드: 현재 카메라 UUID와 일치하는 패턴만
@@ -1607,9 +1607,9 @@ void CameraView::drawInspectionResultsVector(QPainter& painter, const Inspection
 
         // **현재 카메라에 해당하는 패턴인지 확인**
         bool patternVisible = false;
-        if (!simulationCameraName.isEmpty()) {
+        if (!currentCameraUuid.isEmpty()) {
             // 시뮬레이션 모드: 현재 시뮬레이션 카메라와 관련된 패턴만
-            patternVisible = (patternInfo->cameraUuid == simulationCameraName || 
+            patternVisible = (patternInfo->cameraUuid == currentCameraUuid || 
                             patternInfo->cameraUuid.isEmpty());
         } else {
             // 일반 모드: 현재 카메라 UUID와 일치하는 패턴만
@@ -1906,9 +1906,9 @@ void CameraView::drawInspectionResultsVector(QPainter& painter, const Inspection
         if (pattern.type == PatternType::ROI && pattern.enabled) {
             // **현재 카메라에 해당하는 ROI 패턴인지 확인**
             bool patternVisible = false;
-            if (!simulationCameraName.isEmpty()) {
+            if (!currentCameraUuid.isEmpty()) {
                 // 시뮬레이션 모드: 현재 시뮬레이션 카메라와 관련된 패턴만
-                patternVisible = (pattern.cameraUuid == simulationCameraName || 
+                patternVisible = (pattern.cameraUuid == currentCameraUuid || 
                                 pattern.cameraUuid.isEmpty());
             } else {
                 // 일반 모드: 현재 카메라 UUID와 일치하는 패턴만
@@ -2044,8 +2044,8 @@ void CameraView::paintEvent(QPaintEvent *event) {
         font.setBold(true);
         painter.setFont(font);
         
-        // 시뮬레이션 카메라 이름이 있으면 표시, 없으면 "연결 없음"
-        QString displayText = simulationCameraName.isEmpty() ? TR("NO_CONNECTION") : simulationCameraName;
+        // 카메라 이름이 있으면 표시, 없으면 "연결 없음"
+        QString displayText = currentCameraName.isEmpty() ? TR("NO_CONNECTION") : currentCameraName;
         painter.drawText(rect(), Qt::AlignCenter, displayText);
         return; // 나머지 패턴 그리기는 건너뛰기
     }
@@ -2058,9 +2058,9 @@ void CameraView::paintEvent(QPaintEvent *event) {
             
             // 시뮬레이션 모드에서는 시뮬레이션 카메라 이름과 비교, 일반 모드에서는 currentCameraUuid와 비교
             bool patternVisible = false;
-            if (!simulationCameraName.isEmpty()) {
+            if (!currentCameraUuid.isEmpty()) {
                 // 시뮬레이션 모드: 현재 시뮬레이션 카메라와 관련된 패턴만 표시
-                patternVisible = (pattern.cameraUuid == simulationCameraName || 
+                patternVisible = (pattern.cameraUuid == currentCameraUuid || 
                                 pattern.cameraUuid.isEmpty());
             } else {
                 // 일반 모드: 현재 카메라 UUID와 비교
@@ -2225,7 +2225,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
             
             // 시뮬레이션/일반 모드 가시성 체크
             bool patternVisible = false;
-            if (!simulationCameraName.isEmpty()) {
+            if (!currentCameraUuid.isEmpty()) {
                 // 시뮬레이션 모드: 모든 패턴을 표시
                 patternVisible = true;
             } else {
@@ -2245,8 +2245,8 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         if (childPattern.id == childId && childPattern.enabled) {
                             // 자식 패턴도 같은 가시성 체크
                             bool childVisible = false;
-                            if (!simulationCameraName.isEmpty()) {
-                                childVisible = (childPattern.cameraUuid == simulationCameraName);
+                            if (!currentCameraUuid.isEmpty()) {
+                                childVisible = (childPattern.cameraUuid == currentCameraUuid);
                             } else {
                                 childVisible = (currentCameraUuid.isEmpty() || childPattern.cameraUuid == currentCameraUuid);
                             }
@@ -2296,11 +2296,11 @@ void CameraView::paintEvent(QPaintEvent *event) {
         if (!isInspectionMode && !selectedPatternId.isNull()) {
             PatternInfo* pattern = getPatternById(selectedPatternId);
             if (pattern && pattern->enabled) {
-                // 시뮬레이션 모드에서는 simulationCameraName과 비교, 일반 모드에서는 currentCameraUuid와 비교
+                // 시뮬레이션 모드에서는 currentCameraUuid과 비교, 일반 모드에서는 currentCameraUuid와 비교
                 bool patternVisible = false;
-                if (!simulationCameraName.isEmpty()) {
-                    // 시뮬레이션 모드: simulationCameraName (CAM(...)) 형태와 비교
-                    patternVisible = (pattern->cameraUuid == simulationCameraName);
+                if (!currentCameraUuid.isEmpty()) {
+                    // 시뮬레이션 모드: currentCameraUuid (CAM(...)) 형태와 비교
+                    patternVisible = (pattern->cameraUuid == currentCameraUuid);
                 } else {
                     // 일반 모드: currentCameraUuid와 비교
                     patternVisible = (currentCameraUuid.isEmpty() || pattern->cameraUuid == currentCameraUuid);
@@ -2388,8 +2388,8 @@ void CameraView::paintEvent(QPaintEvent *event) {
         painter.setFont(idFont);
         
         QString cameraIdText;
-        if (!simulationCameraName.isEmpty()) {
-            QString recipeName = simulationCameraName;
+        if (!currentCameraUuid.isEmpty()) {
+            QString recipeName = currentCameraUuid;
             cameraIdText = recipeName;
         } else {
             cameraIdText = QString("CAM(%1)").arg(currentCameraUuid);
@@ -2968,11 +2968,11 @@ QUuid CameraView::hitTest(const QPoint& pos) {
     for (int i = 0; i < patterns.size(); ++i) {
         if (!patterns[i].enabled) continue;
         
-        // 시뮬레이션 모드에서는 simulationCameraName과 비교, 일반 모드에서는 currentCameraUuid와 비교
+        // 시뮬레이션 모드에서는 currentCameraUuid과 비교, 일반 모드에서는 currentCameraUuid와 비교
         bool patternVisible = false;
-        if (!simulationCameraName.isEmpty()) {
-            // 시뮬레이션 모드: simulationCameraName (CAM(...)) 형태와 비교
-            patternVisible = (patterns[i].cameraUuid == simulationCameraName);
+        if (!currentCameraUuid.isEmpty()) {
+            // 시뮬레이션 모드: currentCameraUuid (CAM(...)) 형태와 비교
+            patternVisible = (patterns[i].cameraUuid == currentCameraUuid);
         } else {
             // 일반 모드: currentCameraUuid와 비교
             patternVisible = (currentCameraUuid.isEmpty() || patterns[i].cameraUuid == currentCameraUuid);
@@ -3011,11 +3011,11 @@ QUuid CameraView::hitTest(const QPoint& pos) {
         for (int i = patterns.size() - 1; i >= 0; --i) {
             if (!patterns[i].enabled) continue;
             
-            // 시뮬레이션 모드에서는 simulationCameraName과 비교, 일반 모드에서는 currentCameraUuid와 비교
+            // 시뮬레이션 모드에서는 currentCameraUuid과 비교, 일반 모드에서는 currentCameraUuid와 비교
             bool patternVisible = false;
-            if (!simulationCameraName.isEmpty()) {
-                // 시뮬레이션 모드: simulationCameraName (CAM(...)) 형태와 비교
-                patternVisible = (patterns[i].cameraUuid == simulationCameraName);
+            if (!currentCameraUuid.isEmpty()) {
+                // 시뮬레이션 모드: currentCameraUuid (CAM(...)) 형태와 비교
+                patternVisible = (patterns[i].cameraUuid == currentCameraUuid);
             } else {
                 // 일반 모드: currentCameraUuid와 비교
                 patternVisible = (currentCameraUuid.isEmpty() || patterns[i].cameraUuid == currentCameraUuid);
@@ -3043,11 +3043,11 @@ QUuid CameraView::hitTest(const QPoint& pos) {
         for (int i = 0; i < patterns.size(); ++i) {
             if (!patterns[i].enabled) continue;
             
-            // 시뮬레이션 모드에서는 simulationCameraName과 비교, 일반 모드에서는 currentCameraUuid와 비교
+            // 시뮬레이션 모드에서는 currentCameraUuid과 비교, 일반 모드에서는 currentCameraUuid와 비교
             bool patternVisible = false;
-            if (!simulationCameraName.isEmpty()) {
-                // 시뮬레이션 모드: simulationCameraName (CAM(...)) 형태와 비교
-                patternVisible = (patterns[i].cameraUuid == simulationCameraName);
+            if (!currentCameraUuid.isEmpty()) {
+                // 시뮬레이션 모드: currentCameraUuid (CAM(...)) 형태와 비교
+                patternVisible = (patterns[i].cameraUuid == currentCameraUuid);
             } else {
                 // 일반 모드: currentCameraUuid와 비교
                 patternVisible = (currentCameraUuid.isEmpty() || patterns[i].cameraUuid == currentCameraUuid);
@@ -3428,7 +3428,7 @@ void CameraView::applyFiltersToImage(cv::Mat& image) {
         
         // 현재 카메라에 해당하는 패턴만 처리 (시뮬레이션/일반 모드 고려)
         bool patternVisible = false;
-        if (!simulationCameraName.isEmpty()) {
+        if (!currentCameraUuid.isEmpty()) {
             // 시뮬레이션 모드: 모든 패턴을 처리
             patternVisible = true;
         } else {

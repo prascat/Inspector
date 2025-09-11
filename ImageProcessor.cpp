@@ -731,6 +731,16 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         cv::Rect boundRect = cv::boundingRect(largestContour);
         std::cout << "검출된 컨투어 경계: (" << boundRect.x << "," << boundRect.y << ") " 
                   << boundRect.width << "x" << boundRect.height << std::endl;
+        
+        // boundRect 유효성 검사
+        if (boundRect.width <= 0 || boundRect.height <= 0 || 
+            boundRect.x < 0 || boundRect.y < 0 ||
+            boundRect.x >= roiImage.cols || boundRect.y >= roiImage.rows) {
+            std::cout << "유효하지 않은 boundRect 검출됨" << std::endl;
+            score = 0.0;
+            cleanOriginal.copyTo(resultImage);
+            return false;
+        }
                   
         // ===== 3단계: 두께 분석 (마스킹된 이미지 기반) =====
         cv::Mat blackRegions;
@@ -984,48 +994,69 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         }
         
         // 5.5. 검은색 부분의 가로 두께 측정 (목 부분 절단 품질)
+        // 20% X 지점에서 오른쪽으로 검은색 픽셀 개수 체크
         std::vector<int> neckWidths; // 각 Y 위치에서의 가로 두께
         std::vector<cv::Point> neckMeasurePoints; // 측정 시작 지점들
         std::vector<std::pair<cv::Point, cv::Point>> neckLines; // 측정 라인들 (시작점, 끝점)
         double avgNeckWidth = 0.0, minNeckWidth = 0.0, maxNeckWidth = 0.0, neckWidthStdDev = 0.0;
         int neckMeasureXPos = 0;
         
-        // 각 Y 좌표에서 검은색 부분의 가로 두께 측정
+        // 20% X 지점 계산
+        int measureX = boundRect.x + (boundRect.width * 20 / 100);
+        
+        // measureX 경계 체크 및 보정
+        if (measureX < 0) measureX = 0;
+        if (measureX >= blackRegions.cols) measureX = blackRegions.cols - 1;
+        
+        neckMeasureXPos = measureX;
+        
+        std::cout << "=== 목 부분 절단 품질 측정 (20% X지점: " << measureX << ") ===" << std::endl;
+        
+        // 20% X 지점에서 각 Y 좌표별로 오른쪽으로 검은색 픽셀 개수 세기
         for (int y = boundRect.y; y < boundRect.y + boundRect.height; y++) {
-            // 오른쪽에서 왼쪽으로 스캔하여 검은색 영역 찾기
-            int rightMost = -1;
-            int leftMost = -1;
+            if (y >= blackRegions.rows) break; // Y 좌표 경계 체크 추가
             
-            // 오른쪽 경계에서 시작해서 왼쪽으로 이동하며 검은색 영역 찾기
-            for (int x = boundRect.x + boundRect.width - 1; x >= boundRect.x; x--) {
-                if (blackRegions.at<uchar>(y, x) == 255) {
-                    if (rightMost == -1) rightMost = x; // 가장 오른쪽 검은색 픽셀
-                    leftMost = x; // 계속 업데이트하여 가장 왼쪽 검은색 픽셀 찾기
+            int blackPixelCount = 0;
+            
+            // measureX부터 오른쪽 끝까지 검은색 픽셀 개수 세기
+            for (int x = measureX; x < boundRect.x + boundRect.width; x++) {
+                if (x >= blackRegions.cols || y >= blackRegions.rows) break; // 경계 체크 강화
+                
+                if (blackRegions.at<uchar>(y, x) == 255) { // 검은색 픽셀
+                    blackPixelCount++;
                 }
             }
             
-            // 검은색 영역이 있는 경우 가로 두께 계산
-            if (rightMost != -1 && leftMost != -1) {
-                int width = rightMost - leftMost + 1;
-                neckWidths.push_back(width);
+            // 검은색 픽셀이 있는 경우만 저장
+            if (blackPixelCount > 0) {
+                neckWidths.push_back(blackPixelCount);
+                neckMeasurePoints.push_back(cv::Point(measureX, y));
                 
-                // 측정 지점 저장 (가장 오른쪽 검은색 픽셀 지점)
-                neckMeasurePoints.push_back(cv::Point(rightMost, y));
-                neckLines.push_back(std::make_pair(cv::Point(leftMost, y), cv::Point(rightMost, y)));
+                // 측정 라인 표시 (20% X지점부터 검은색 영역까지)
+                cv::Point startPt(measureX, y);
+                cv::Point endPt(measureX + blackPixelCount - 1, y);
+                neckLines.push_back(std::make_pair(startPt, endPt));
                 
                 // 측정된 가로선을 결과 이미지에 붉은색으로 표시
-                for (int x = leftMost; x <= rightMost; x++) {
-                    if (x >= 0 && x < resultImage.cols && y >= 0 && y < resultImage.rows) {
+                for (int x = measureX; x < measureX + blackPixelCount && x < resultImage.cols; x++) {
+                    if (x >= 0 && y >= 0 && y < resultImage.rows) {
                         resultImage.at<cv::Vec3b>(y, x) = cv::Vec3b(0, 0, 255); // 붉은색 (BGR)
                     }
                 }
                 
-                // 측정 시작점 (오른쪽 끝) 표시
-                if (rightMost >= 0 && rightMost < resultImage.cols && y >= 0 && y < resultImage.rows) {
-                    resultImage.at<cv::Vec3b>(y, rightMost) = cv::Vec3b(255, 255, 0); // 노란색 점
+                // 측정 시작점 (20% X지점) 표시
+                if (measureX >= 0 && measureX < resultImage.cols && y >= 0 && y < resultImage.rows) {
+                    resultImage.at<cv::Vec3b>(y, measureX) = cv::Vec3b(255, 255, 0); // 노란색 점
                 }
-                
-                if (neckMeasureXPos == 0) neckMeasureXPos = rightMost; // 첫 번째 측정 지점 저장
+            }
+        }
+        
+        // 20% X 지점을 세로선으로 표시
+        for (int y = boundRect.y; y < boundRect.y + boundRect.height; y++) {
+            if (measureX >= 0 && measureX < resultImage.cols && y >= 0 && y < resultImage.rows) {
+                cv::Vec3b& pixel = resultImage.at<cv::Vec3b>(y, measureX);
+                // 기존 색상에 녹색 성분 추가 (20% 지점 표시)
+                pixel[1] = std::min(255, (int)pixel[1] + 100); // Green 채널 증가
             }
         }
         
@@ -1047,13 +1078,12 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             }
             neckWidthStdDev = sqrt(variance / neckWidths.size());
             
-            std::cout << "=== 목 부분 절단 품질 측정 (검은색 경계 기준) ===" << std::endl;
-            std::cout << "측정 시작 X: " << neckMeasureXPos << ", 측정 포인트 수: " << neckWidths.size() << std::endl;
-            std::cout << "평균 폭: " << avgNeckWidth << "px" << std::endl;
-            std::cout << "최소 폭: " << minNeckWidth << "px" << std::endl;
-            std::cout << "최대 폭: " << maxNeckWidth << "px" << std::endl;
+            std::cout << "측정 포인트 수: " << neckWidths.size() << "개" << std::endl;
+            std::cout << "평균 검은색 픽셀 개수: " << avgNeckWidth << "px" << std::endl;
+            std::cout << "최소 검은색 픽셀 개수: " << minNeckWidth << "px" << std::endl;
+            std::cout << "최대 검은색 픽셀 개수: " << maxNeckWidth << "px" << std::endl;
             std::cout << "표준편차: " << neckWidthStdDev << "px" << std::endl;
-            std::cout << "폭 편차: " << (maxNeckWidth - minNeckWidth) << "px" << std::endl;
+            std::cout << "편차: " << (maxNeckWidth - minNeckWidth) << "px" << std::endl;
             
             // 목 폭 측정 결과를 매개변수에 저장
             if (neckAvgWidth) *neckAvgWidth = avgNeckWidth;
@@ -1063,17 +1093,17 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             if (neckMeasureX) *neckMeasureX = neckMeasureXPos;
             if (neckMeasureCount) *neckMeasureCount = static_cast<int>(neckWidths.size());
             
-            // 측정 경계선들을 결과 이미지에 표시
+            // 측정 지점들을 결과 이미지에 표시
             for (size_t i = 0; i < neckMeasurePoints.size(); i++) {
                 const cv::Point& pt = neckMeasurePoints[i];
-                int width = neckWidths[i];
+                int pixelCount = neckWidths[i];
                 
                 if (pt.x >= 0 && pt.x < resultImage.cols && pt.y >= 0 && pt.y < resultImage.rows) {
                     // 측정 시작점을 밝은 녹색 원으로 표시
                     cv::circle(resultImage, pt, 2, cv::Scalar(0, 255, 0), -1); // 녹색 원
                     
                     // 측정 끝점을 밝은 파란색 원으로 표시
-                    cv::Point endPt(pt.x + width - 1, pt.y);
+                    cv::Point endPt(pt.x + pixelCount, pt.y);
                     if (endPt.x >= 0 && endPt.x < resultImage.cols) {
                         cv::circle(resultImage, endPt, 2, cv::Scalar(255, 0, 0), -1); // 파란색 원
                     }

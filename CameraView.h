@@ -145,12 +145,19 @@ public:
         return currentCameraUuid;
     }
     
+    void setCurrentCameraName(const QString& name) {
+        currentCameraName = name;
+        update(); // UI 갱신
+    }
+    QString getCurrentCameraName() const {
+        return currentCameraName;
+    }
+    
     // 모든 패턴의 cameraUuid를 현재 카메라로 업데이트 (레시피 로드 후 호출)
     void updateAllPatternsCameraUuid() {
-        QString targetUuid = simulationCameraName.isEmpty() ? currentCameraUuid : simulationCameraName;
-        if (!targetUuid.isEmpty()) {
+        if (!currentCameraUuid.isEmpty()) {
             for (PatternInfo& pattern : patterns) {
-                pattern.cameraUuid = targetUuid;
+                pattern.cameraUuid = currentCameraUuid;
                 // 레시피 로드 후 모든 패턴을 활성화
                 pattern.enabled = true;
             }
@@ -158,13 +165,7 @@ public:
         }
     }
     
-    void setSimulationCameraName(const QString& name) {
-        simulationCameraName = name;
-        update(); // UI 갱신
-    }
-    QString getSimulationCameraName() const {
-        return simulationCameraName;
-    }
+
     bool updatePatternById(const QUuid& id, const PatternInfo& pattern);
    
     // UUID 기반 API로만 제공
@@ -306,7 +307,7 @@ private:
     QString statusInfo;
     EditMode m_editMode = EditMode::Move; // 기본값은 이동 모드
     QString currentCameraUuid;  // 현재 카메라 UUID
-    QString simulationCameraName; // 시뮬레이션 모드용 카메라 이름
+    QString currentCameraName;  // 현재 카메라 이름 (표시용)
     QColor currentDrawColor = Qt::green;
     // 줌/패닝 관련
     double zoomFactor = 1.0;

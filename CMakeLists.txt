@@ -65,7 +65,6 @@ endif()
 add_executable(MV 
     main.cpp 
     TeachingWidget.cpp 
-    SimulationDialog.cpp
     TrainResultsDialog.cpp
     ImageProcessor.cpp 
     InsProcessor.cpp 

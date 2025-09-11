@@ -1,5 +1,4 @@
 #include "TeachingWidget.h"
-#include "SimulationDialog.h"
 #include "ImageProcessor.h"
 #include "FilterDialog.h"
 #include "LogViewer.h"
@@ -26,9 +25,10 @@
 #include <QLabel>
 
 cv::Mat TeachingWidget::getCurrentFrame() const { 
-    // **시뮬레이션 모드 처리**
-    if (simulationMode && !currentSimulationImage.empty()) {
-        return currentSimulationImage; 
+    // **camOff 모드 처리 - cameraFrames[cameraIndex] 사용**
+    if (camOff && cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
+        !cameraFrames[cameraIndex].empty()) {
+        return cameraFrames[cameraIndex]; 
     }
     
     // **메인 카메라의 프레임 반환**
@@ -42,12 +42,9 @@ cv::Mat TeachingWidget::getCurrentFrame() const {
 cv::Mat TeachingWidget::getCurrentFilteredFrame() const {
     cv::Mat sourceFrame;
     
-    // **시뮬레이션 모드 처리**
-    if (simulationMode && !currentSimulationImage.empty()) {
-        sourceFrame = currentSimulationImage.clone();
-    } else if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
-               !cameraFrames[cameraIndex].empty()) {
-        // **메인 카메라의 프레임 가져오기**
+    // **시뮬레이션 모드와 일반 모드 모두 cameraFrames 사용**
+    if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
+       !cameraFrames[cameraIndex].empty()) {
         sourceFrame = cameraFrames[cameraIndex].clone();
     }
     
@@ -252,9 +249,6 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
      
     // UI 텍스트 초기 갱신
     QTimer::singleShot(100, this, &TeachingWidget::updateUITexts);
-    
-    // 최근 사용한 레시피 자동 로드는 카메라가 시작될 때만 수행
-    // QTimer::singleShot(500, this, &TeachingWidget::loadLastRecipe); // 제거됨
 }
 
 void TeachingWidget::initializeLanguageSystem() {
@@ -503,9 +497,85 @@ void TeachingWidget::openRecipe(bool autoMode) {
     // 빈 캘리브레이션 맵 (로드 시 채워짐)
     QMap<QString, CalibrationInfo> calibrationMap;
     
-    // 기존 loadRecipe 함수 사용
-    if (recipeManager->loadRecipe(recipeFileName, cameraInfos, calibrationMap, cameraView, patternTree)) {
+    // 티칭 이미지 로드 콜백 함수
+    auto teachingImageCallback = [this, selectedRecipe](const QStringList& imagePaths) {
+        qDebug() << QString("티칭 이미지 콜백 호출됨 - 이미지 수: %1").arg(imagePaths.size());
+        qDebug() << QString("현재 camOff 상태: %1, cameraIndex: %2").arg(camOff).arg(cameraIndex);
+        
+        if (!imagePaths.isEmpty()) {
+            // camOff 모드에서만 처리
+            if (camOff) {
+                // cameraFrames 벡터 크기를 imagePaths 수만큼 확장
+                if (imagePaths.size() > static_cast<int>(cameraFrames.size())) {
+                    cameraFrames.resize(imagePaths.size());
+                }
+                
+                // 모든 이미지를 각각의 카메라 인덱스에 로드
+                for (int i = 0; i < imagePaths.size(); i++) {
+                    QString imagePath = imagePaths[i];
+                    qDebug() << QString("카메라[%1] 티칭 이미지 로드 시도: %2").arg(i).arg(imagePath);
+                    
+                    if (QFile::exists(imagePath)) {
+                        cv::Mat teachingImage = cv::imread(imagePath.toStdString());
+                        if (!teachingImage.empty()) {
+                            cameraFrames[i] = teachingImage.clone();
+                            
+                            qDebug() << QString("카메라[%1] 티칭이미지 설정 완료: %2x%3")
+                                        .arg(i).arg(teachingImage.cols).arg(teachingImage.rows);
+                        } else {
+                            qDebug() << QString("카메라[%1] 티칭 이미지 로드 실패: %2").arg(i).arg(imagePath);
+                        }
+                    } else {
+                        qDebug() << QString("카메라[%1] 티칭 이미지 파일이 존재하지 않음: %2").arg(i).arg(imagePath);
+                    }
+                }
+                
+                // 현재 카메라의 이미지가 있으면 화면 업데이트
+                if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
+                    !cameraFrames[cameraIndex].empty()) {
+                    qDebug() << QString("현재 카메라[%1]의 이미지로 화면 업데이트 실행").arg(cameraIndex);
+                    updateCameraFrame();
+                } else {
+                    qDebug() << QString("현재 카메라[%1]의 이미지가 없어서 화면 업데이트 실행 안함 (cameraFrames 크기: %2)")
+                                .arg(cameraIndex).arg(cameraFrames.size());
+                }
+                
+                // 프리뷰 화면들도 업데이트
+                updatePreviewFrames();
+            } else {
+                qDebug() << QString("camOff 모드가 아니므로 티칭 이미지 처리 건너뜀");
+            }
+        }
+    };
+    
+    // 기존 loadRecipe 함수 사용 (티칭 이미지 콜백 추가)
+    if (recipeManager->loadRecipe(recipeFileName, cameraInfos, calibrationMap, cameraView, patternTree, teachingImageCallback, this)) {
         qDebug() << QString("loadRecipe 성공");
+        
+        // 레시피에서 로드된 카메라 정보가 cameraInfos에 추가되었는지 확인
+        qDebug() << QString("레시피 로드 후 카메라 정보 수: %1").arg(cameraInfos.size());
+        for (int i = 0; i < cameraInfos.size(); ++i) {
+            qDebug() << QString("카메라 %1: UUID='%2', 이름='%3'")
+                        .arg(i).arg(cameraInfos[i].uniqueId).arg(cameraInfos[i].name);
+        }
+        
+        // 레시피 로드 완료 후 즉시 화면 업데이트
+        if (camOff) {
+            qDebug() << QString("레시피 로드 후 강제 화면 업데이트 시작 - cameraFrames 크기: %1, cameraIndex: %2")
+                        .arg(cameraFrames.size()).arg(cameraIndex);
+            
+            updateCameraFrame();  // 메인 카메라 프레임 업데이트
+            updatePreviewFrames(); // 프리뷰 프레임들 업데이트
+            
+            // 추가 강제 업데이트
+            if (cameraView) {
+                cameraView->update();
+                cameraView->repaint();
+                QApplication::processEvents();
+            }
+            
+            qDebug() << QString("레시피 로드 후 화면 업데이트 완료");
+        }
         
         // 현재 레시피 이름 설정 (Save 버튼으로 저장할 때 사용)
         currentRecipeName = selectedRecipe;
@@ -536,6 +606,10 @@ void TeachingWidget::initBasicSettings() {
     
     // AI 트레이너 초기화
     aiTrainer = new AITrainer(this);
+    
+    // camOff 모드 초기 설정
+    camOff = true;
+    cameraIndex = 0;
     
     // 8개 카메라 미리보기를 고려하여 크기 확장
     setMinimumSize(1280, 800);
@@ -584,15 +658,6 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
 
     languageSettingsAction = settingsMenu->addAction(TR("LANGUAGE_SETTINGS"));
     languageSettingsAction->setEnabled(true);
-
-    // 시뮬레이션 메뉴 (바로 실행되는 단일 액션)
-    simulateMenu = menuBar->addMenu(TR("SIMULATE_MENU"));
-    simulateMenu->setEnabled(true);
-    
-    // 시뮬레이션 열기 액션 추가
-    simulateAction = simulateMenu->addAction(TR("OPEN_SIMULATION"));
-    simulateAction->setEnabled(true);
-    connect(simulateAction, &QAction::triggered, this, &TeachingWidget::showSimulationDialog);
 
     // 도구 메뉴
     toolsMenu = menuBar->addMenu(TR("TOOLS_MENU"));
@@ -855,9 +920,10 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                 }
                 
                 // 2. 카메라 및 프레임 확인 (시뮬레이션 모드 고려)
-                if (simulationMode) {
-                    // 시뮬레이션 모드: 현재 시뮬레이션 이미지가 있는지 확인
-                    if (!cameraView || currentSimulationImage.empty()) {
+                if (camOff) {
+                    // 시뮬레이션 모드: 현재 카메라 프레임이 있는지 확인
+                    if (!cameraView || cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
+                        cameraFrames[cameraIndex].empty()) {
                         btn->blockSignals(true);
                         btn->setChecked(false);
                         btn->blockSignals(false);
@@ -876,23 +942,18 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                     }
                 }
                 
-                // 3. 패턴 확인 (시뮬레이션 모드 고려)
+                // 3. 패턴 확인 (camOn/camOff 동일 처리)
                 QList<PatternInfo> patterns = cameraView->getPatterns();
                 bool hasEnabledPatterns = false;
-                QString currentCameraUuid;
                 
-                if (simulationMode) {
-                    // 시뮬레이션 모드: 현재 시뮬레이션 카메라 UUID 사용
-                    currentCameraUuid = cameraView->getCurrentCameraUuid();
-                } else {
-                    // 실제 카메라 모드: 카메라 인덱스로 UUID 가져오기
-                    if (isValidCameraIndex(cameraIndex)) {
-                        currentCameraUuid = getCameraInfo(cameraIndex).uniqueId;
-                    }
+                // 현재 카메라 UUID 구하기
+                QString targetUuid;
+                if (isValidCameraIndex(cameraIndex)) {
+                    targetUuid = getCameraInfo(cameraIndex).uniqueId;
                 }
                 
                 for (const PatternInfo& pattern : patterns) {
-                    if (pattern.enabled && pattern.cameraUuid == currentCameraUuid) {
+                    if (pattern.enabled && pattern.cameraUuid == targetUuid) {
                         hasEnabledPatterns = true;
                         break;
                     }
@@ -930,17 +991,18 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                     cv::Mat inspectionFrame;
                     int inspectionCameraIndex;
                     
-                    if (simulationMode) {
-                        // 시뮬레이션 모드: 현재 시뮬레이션 이미지 사용
-                        if (currentSimulationImage.empty()) {
+                    if (camOff) {
+                        // 시뮬레이션 모드: 현재 카메라 프레임 사용
+                        if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
+                            cameraFrames[cameraIndex].empty()) {
                             btn->blockSignals(true);
                             btn->setChecked(false);
                             btn->blockSignals(false);
                             UIColors::showWarning(this, "검사 실패", "시뮬레이션 이미지가 없습니다.");
                             return;
                         }
-                        inspectionFrame = currentSimulationImage.clone();
-                        inspectionCameraIndex = -1; // 시뮬레이션 모드 표시
+                        inspectionFrame = cameraFrames[cameraIndex].clone();
+                        inspectionCameraIndex = cameraIndex;
                     } else {
                         // 실제 카메라 모드: 현재 프레임 사용
                         inspectionFrame = cameraFrames[cameraIndex].clone();
@@ -1153,21 +1215,23 @@ void TeachingWidget::updateFilterParam(const QUuid& patternId, int filterIndex, 
 }
 
 void TeachingWidget::setupCameraPreviews(QVBoxLayout *cameraLayout) {
-    // MAX_CAMERAS 상수에 따라 동적으로 카메라 미리보기 생성
-    // 4개 이하면 한 줄, 5개 이상이면 두 줄로 배치
-    int camerasPerRow = (MAX_CAMERAS <= 4) ? MAX_CAMERAS : ((MAX_CAMERAS + 1) / 2);
-    int totalRows = (MAX_CAMERAS + camerasPerRow - 1) / camerasPerRow; // 올림 계산
+    // 프리뷰는 메인 카메라를 제외한 나머지 카메라들 (MAX_CAMERAS - 1)
+    int previewCameraCount = MAX_CAMERAS - 1; // 메인 카메라 1개를 제외한 프리뷰 카메라 수
+    
+    // 3개 이하면 한 줄, 4개 이상이면 두 줄로 배치
+    int camerasPerRow = (previewCameraCount <= 3) ? previewCameraCount : ((previewCameraCount + 1) / 2);
+    int totalRows = (previewCameraCount + camerasPerRow - 1) / camerasPerRow; // 올림 계산
     
     int cameraIndex = 0;
     
-    for (int row = 0; row < totalRows && cameraIndex < MAX_CAMERAS; row++) {
+    for (int row = 0; row < totalRows && cameraIndex < previewCameraCount; row++) {
         QHBoxLayout *previewLayout = new QHBoxLayout();
         previewLayout->setSpacing(10);
         previewLayout->setContentsMargins(0, 5, 0, 5);
         previewLayout->setAlignment(Qt::AlignCenter);
         
         // 각 행에 카메라 미리보기 추가
-        int camerasInThisRow = qMin(camerasPerRow, MAX_CAMERAS - cameraIndex);
+        int camerasInThisRow = qMin(camerasPerRow, previewCameraCount - cameraIndex);
         for (int col = 0; col < camerasInThisRow; col++) {
             QFrame *cameraFrame = createCameraPreviewFrame(cameraIndex);
             previewLayout->addWidget(cameraFrame, 1); // 크기 비율을 1로 설정하여 동일하게 유지
@@ -1198,7 +1262,8 @@ QFrame* TeachingWidget::createCameraPreviewFrame(int index) {
     previewLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     previewLabel->setAlignment(Qt::AlignCenter);
     previewLabel->setStyleSheet("background-color: black; color: white;");
-    previewLabel->setText(QString(TR("CAMERA_NO_CONNECTION")).arg(index + 1));
+    // 프리뷰는 메인 카메라(1번)를 제외한 카메라들이므로 index + 2로 표시
+    previewLabel->setText(QString(TR("CAMERA_NO_CONNECTION")).arg(index + 2));
     
     frameLayout->addWidget(previewLabel);
     cameraPreviewLabels.append(previewLabel);
@@ -1613,7 +1678,7 @@ void TeachingWidget::onPatternTableDropEvent(const QModelIndex &parent, int star
             if (sourcePattern && targetPattern) {
                 // INS 패턴을 FID 패턴 하위로 이동하는 경우만 허용
                 if (sourcePattern->type == PatternType::INS && targetPattern->type == PatternType::FID) {
-                    qDebug() << "패턴 그룹화 시도 (시뮬레이션 모드:" << simulationMode << "):" << sourcePattern->name << "-> 부모:" << targetPattern->name;
+                    qDebug() << "패턴 그룹화 시도 (시뮬레이션 모드:" << camOff << "):" << sourcePattern->name << "-> 부모:" << targetPattern->name;
                     qDebug() << "변경 전 parentId:" << sourcePattern->parentId.toString();
                     
                     // 기존 부모에서 제거
@@ -1678,7 +1743,7 @@ void TeachingWidget::onPatternTableDropEvent(const QModelIndex &parent, int star
                     }
                     
                     // 시뮬레이션 모드에서는 즉시 저장하여 데이터 지속성 보장
-                    if (simulationMode) {
+                    if (camOff) {
                         qDebug() << "시뮬레이션 모드: 패턴 그룹화 후 즉시 저장";
                         saveRecipe();
                     }
@@ -1706,7 +1771,7 @@ void TeachingWidget::onPatternTableDropEvent(const QModelIndex &parent, int star
                 }
                 // 그룹화 해제 (INS를 최상위로 이동)
                 else if (sourcePattern->type == PatternType::INS && !targetItem->parent()) {
-                    qDebug() << "패턴 그룹화 해제 시도 (시뮬레이션 모드:" << simulationMode << "):" << sourcePattern->name;
+                    qDebug() << "패턴 그룹화 해제 시도 (시뮬레이션 모드:" << camOff << "):" << sourcePattern->name;
                     qDebug() << "변경 전 parentId:" << sourcePattern->parentId.toString();
                     
                     // 기존 부모에서 제거
@@ -1733,7 +1798,7 @@ void TeachingWidget::onPatternTableDropEvent(const QModelIndex &parent, int star
                     }
                     
                     // 시뮬레이션 모드에서는 즉시 저장하여 데이터 지속성 보장
-                    if (simulationMode) {
+                    if (camOff) {
                         qDebug() << "시뮬레이션 모드: 패턴 그룹화 해제 후 즉시 저장";
                         saveRecipe();
                     }
@@ -1821,59 +1886,66 @@ void TeachingWidget::updatePatternTree() {
     // 컬럼 헤더 설정
     patternTree->setHeaderLabels(QStringList() << TR("PATTERN_NAME") << TR("PATTERN_TYPE") << TR("PATTERN_STATUS"));
     
-    // 현재 카메라의 UUID (시뮬레이션 모드 고려)
-    QString currentCameraUuid;
-    
-    // 시뮬레이션 모드 확인
-    if (simulationMode) {
-        // 시뮬레이션 모드: simulationCameraName을 우선적으로 사용, 없으면 currentCameraUuid 사용
-        currentCameraUuid = cameraView->getSimulationCameraName();
-        if (currentCameraUuid.isEmpty()) {
-            currentCameraUuid = cameraView->getCurrentCameraUuid();
-        }
-        qDebug() << QString("updatePatternTree - 시뮬레이션 모드, 카메라 UUID: '%1'").arg(currentCameraUuid);
-    } else if (isValidCameraIndex(cameraIndex)) {
-        // 일반 모드: 실제 카메라 UUID 사용
-        currentCameraUuid = getCameraInfo(cameraIndex).uniqueId;
-        qDebug() << QString("updatePatternTree - 라이브 모드, 카메라 인덱스: %1, 카메라 UUID: '%2'").arg(cameraIndex).arg(currentCameraUuid);
-    } else {
-        // 마지막으로 cameraView에서 직접 가져오기
-        currentCameraUuid = cameraView->getCurrentCameraUuid();
-    }
-
     // 모든 패턴 가져오기
     const QList<PatternInfo>& allPatterns = cameraView->getPatterns();
     
     // 현재 카메라의 패턴만 필터링
     QList<PatternInfo> currentCameraPatterns;
     
-    // currentCameraUuid가 비어있으면 첫 번째 카메라 사용
-    if (currentCameraUuid.isEmpty() && !allPatterns.isEmpty()) {
-        // 첫 번째 패턴의 카메라 UUID를 기본값으로 설정
-        for (const PatternInfo& pattern : allPatterns) {
-            if (!pattern.cameraUuid.isEmpty()) {
-                currentCameraUuid = pattern.cameraUuid;
-                break;
-            }
-        }
-    }
-    
     // 패턴 필터링: 현재 카메라의 패턴만 추가
     for (const PatternInfo& pattern : allPatterns) {
         QString patternCameraUuid = pattern.cameraUuid.isEmpty() ? "default" : pattern.cameraUuid;
         
-        // 현재 카메라 UUID가 설정되어 있으면 해당 카메라만 필터링
-        if (!currentCameraUuid.isEmpty() && patternCameraUuid != currentCameraUuid) {
+        // 현재 카메라 UUID와 비교 (camOn/camOff 구분 없이 동일 처리)
+        QString targetUuid;
+        if (isValidCameraIndex(cameraIndex)) {
+            targetUuid = getCameraInfo(cameraIndex).uniqueId;
+        } else if (camOff && !cameraInfos.isEmpty()) {
+            // camOff 모드에서 cameraIndex가 유효하지 않으면 첫 번째 카메라 사용
+            targetUuid = getCameraInfo(0).uniqueId;
+            cameraIndex = 0; // cameraIndex 업데이트
+            qDebug() << QString("camOff 모드에서 cameraIndex를 0으로 설정, UUID: %1").arg(targetUuid);
+        }
+        
+        qDebug() << QString("패턴 필터링 체크: 패턴=%1, 패턴카메라UUID=%2, 현재카메라UUID=%3")
+                    .arg(pattern.name).arg(patternCameraUuid).arg(targetUuid);
+        
+        if (!targetUuid.isEmpty() && patternCameraUuid != targetUuid) {
+            qDebug() << QString("패턴 제외: %1 (카메라 불일치)").arg(pattern.name);
             continue;
         }
         
+        qDebug() << QString("패턴 포함: %1").arg(pattern.name);
         currentCameraPatterns.append(pattern);
     }
     
-    // 디버그: 패턴 정보 출력
-    qDebug() << QString("updatePatternTree - 현재 카메라 UUID: '%1'").arg(currentCameraUuid);
+    // 디버그: 카메라별 패턴 정보 출력
+    QString debugUuid = isValidCameraIndex(cameraIndex) ? getCameraInfo(cameraIndex).uniqueId : "없음";
+    qDebug() << QString("updatePatternTree - 현재 카메라 UUID: '%1'").arg(debugUuid);
     qDebug() << QString("updatePatternTree - 현재 카메라 패턴 수: %1").arg(currentCameraPatterns.size());
     qDebug() << QString("updatePatternTree - 전체 패턴 수: %1").arg(allPatterns.size());
+    
+    // 모든 카메라별 패턴 수 출력
+    QMap<QString, int> cameraPatternCount;
+    for (const PatternInfo& pattern : allPatterns) {
+        QString patternCameraUuid = pattern.cameraUuid.isEmpty() ? "default" : pattern.cameraUuid;
+        cameraPatternCount[patternCameraUuid]++;
+    }
+    
+    qDebug() << "=== 카메라별 패턴 수 ===";
+    for (auto it = cameraPatternCount.begin(); it != cameraPatternCount.end(); ++it) {
+        // 카메라 이름 찾기
+        QString cameraName = it.key();
+        for (int i = 0; i < getCameraInfosCount(); i++) {
+            CameraInfo info = getCameraInfo(i);
+            if (info.uniqueId == it.key()) {
+                cameraName = QString("%1 (%2)").arg(info.name).arg(it.key());
+                break;
+            }
+        }
+        qDebug() << QString("카메라 %1: %2개 패턴").arg(cameraName).arg(it.value());
+    }
+    qDebug() << "=======================";
     
     // 패턴 ID에 대한 트리 아이템 맵핑 저장 (부모-자식 관계 구성 시 사용)
     QMap<QUuid, QTreeWidgetItem*> itemMap;
@@ -2546,7 +2618,7 @@ void TeachingWidget::createPropertyPanels() {
     fidTemplateImg = new QLabel(fidPropWidget);
     fidTemplateImg->setFixedSize(120, 90);
     fidTemplateImg->setAlignment(Qt::AlignCenter);
-    fidTemplateImg->setStyleSheet("background-color: #eee; border: 1px solid #ccc;");
+    fidTemplateImg->setStyleSheet("background-color: #eee;");
     fidTemplateImg->setText(TR("NO_IMAGE"));
     fidTemplateImg->setCursor(Qt::PointingHandCursor);
     fidTemplateImg->installEventFilter(this);
@@ -2681,7 +2753,6 @@ void TeachingWidget::createPropertyPanels() {
     insTemplateImg->setAlignment(Qt::AlignCenter);
     insTemplateImg->setStyleSheet(
         "background-color: #f5f5f5; "
-        "border: 2px dashed #ccc; "
         "border-radius: 4px;"
     );
     insTemplateImg->setText("클릭하여\n이미지 선택");
@@ -3087,18 +3158,12 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
     
     cv::Mat sourceFrame;
     
-    // 시뮬레이션 모드인지 확인
-    if (simulationMode && !currentSimulationImage.empty()) {
-        // 시뮬레이션 모드: 현재 시뮬레이션 이미지 사용
-        sourceFrame = currentSimulationImage.clone();
-    } else {
-        // 일반 카메라 모드: 카메라 프레임 사용
-        if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
-            cameraFrames[cameraIndex].empty()) {
-            return;
-        }
-        sourceFrame = cameraFrames[cameraIndex].clone();
+    // 시뮬레이션 모드와 일반 모드 모두 cameraFrames 사용
+    if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
+        cameraFrames[cameraIndex].empty()) {
+        return;
     }
+    sourceFrame = cameraFrames[cameraIndex].clone();
     
     // 1. 전체 프레임 복사 (원본 이미지 사용 - 필터 적용 안함)
     cv::Mat originalFrame = sourceFrame.clone();
@@ -3284,9 +3349,10 @@ void TeachingWidget::updateFidTemplateImage(PatternInfo* pattern, const QRectF& 
     cv::Mat sourceFrame;
     
     // 시뮬레이션 모드인지 확인
-    if (simulationMode && !currentSimulationImage.empty()) {
-        // 시뮬레이션 모드: 현재 시뮬레이션 이미지 사용
-        sourceFrame = currentSimulationImage.clone();
+    if (camOff && cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
+        !cameraFrames[cameraIndex].empty()) {
+        // 시뮬레이션 모드: 현재 카메라 프레임 사용
+        sourceFrame = cameraFrames[cameraIndex].clone();
     } else {
         // 일반 카메라 모드: 카메라 프레임 사용
         if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
@@ -4701,15 +4767,12 @@ void TeachingWidget::detectCameras() {
             info.name = QString("카메라 %1").arg(i + 1);
             
             // 카메라 연결 시 시뮬레이션 모드 해제
-            if (simulationMode) {
-                simulationMode = false;
-                currentSimulationImage = cv::Mat(); // 시뮬레이션 이미지 초기화
-                updateUIForSimulationMode(false);  // UI 업데이트
+            if (camOff) {
+                camOff = false;
+                // 시뮬레이션 이미지 초기화 - cameraFrames 클리어
+                updateUIForCamMode(false);  // UI 업데이트
                 
                 // 카메라뷰의 시뮬레이션 상태도 초기화
-                if (cameraView) {
-                    cameraView->setSimulationCameraName("");
-                }
             }
             
             // 상세 정보 업데이트
@@ -4891,13 +4954,11 @@ void TeachingWidget::startCamera() {
     // 3. 카메라가 하나도 연결되어 있지 않은 경우
     if (cameraInfos.isEmpty()) {
         UIColors::showWarning(this, "카메라 오류", "연결된 카메라가 없습니다.");
-        disableAllUIElements();
         updateCameraButtonState(false);  // 버튼 상태 업데이트
         return;
     }
 
     // 4. 메인 카메라 설정
-    enableAllUIElements();
     cameraIndex = 0;
   
     // 현재 카메라 UUID 설정
@@ -5000,18 +5061,12 @@ void TeachingWidget::updateCameraButtonState(bool isStarted) {
     
     startCameraButton->blockSignals(false);
     
-    // UI 요소들 활성화/비활성화
-    if (isStarted) {
-        enableAllUIElements();
-    } else {
-        disableAllUIElements();
-    }
+    // UI 요소들 활성화/비활성화는 제거됨
 }
 
 void TeachingWidget::stopCamera() {
     
-    // UI 요소들 비활성화
-    disableAllUIElements();
+    // UI 요소들 비활성화 제거됨
 
     // 1. 멀티 카메라 스레드 중지
     for (CameraGrabberThread* thread : cameraThreads) {
@@ -5131,20 +5186,12 @@ void TeachingWidget::updateUITexts() {
         toolsMenu->setTitle(TR("TOOLS_MENU"));
         toolsMenu->setEnabled(true);  // 활성화 상태 유지
     }
-    if (simulateMenu) {
-        simulateMenu->setTitle(TR("SIMULATE_MENU"));
-        simulateMenu->setEnabled(true);  // 활성화 상태 유지
-    }
     if (helpMenu) {
         helpMenu->setTitle(TR("HELP_MENU"));
         helpMenu->setEnabled(true);  // 활성화 상태 유지
     }
     
     // 액션 텍스트 업데이트 및 활성화 상태 유지
-    if (simulateAction) {
-        simulateAction->setText(TR("OPEN_SIMULATION"));
-        simulateAction->setEnabled(true);  // 활성화 상태 유지
-    }
     if (exitAction) exitAction->setText(TR("EXIT"));
     if (cameraSettingsAction) {
         cameraSettingsAction->setText(TR("CAMERA_RECIPE_SETTINGS"));
@@ -5161,14 +5208,6 @@ void TeachingWidget::updateUITexts() {
     if (aboutAction) {
         aboutAction->setText(TR("ABOUT"));
         aboutAction->setEnabled(true);  // 활성화 상태 유지
-    }
-    
-    // 시뮬레이션 액션도 활성화 상태 유지
-    if (simulateMenu) {
-        QList<QAction*> simulateActions = simulateMenu->actions();
-        for (QAction* action : simulateActions) {
-            action->setEnabled(true);
-        }
     }
     
     // **패턴 트리 헤더 업데이트**
@@ -5215,16 +5254,6 @@ void TeachingWidget::updateUITexts() {
                 aboutAction->setMenuRole(QAction::NoRole);
                 connect(aboutAction, &QAction::triggered, this, &TeachingWidget::showAboutDialog);
             }
-        }
-        
-        // 시뮬레이션 메뉴가 없으면 다시 생성
-        if (!simulateMenu) {
-            simulateMenu = menuBar->addMenu(TR("SIMULATE_MENU"));
-            simulateMenu->setEnabled(true);
-            
-            simulateAction = simulateMenu->addAction(TR("OPEN_SIMULATION"));
-            simulateAction->setEnabled(true);
-            connect(simulateAction, &QAction::triggered, this, &TeachingWidget::showSimulationDialog);
         }
         
         QList<QAction*> actions = menuBar->actions();
@@ -5394,14 +5423,30 @@ void TeachingWidget::updatePreviewUI() {
 }
 
 void TeachingWidget::updateCameraFrame() {
+    qDebug() << QString("[updateCameraFrame] 시작 - camOff: %1, cameraIndex: %2, cameraFrames 크기: %3")
+                .arg(camOff).arg(cameraIndex).arg(cameraFrames.size());
+    
     // **시뮬레이션 모드 처리**
-    if (simulationMode && !currentSimulationImage.empty()) {
-        printf("[TeachingWidget] 시뮬레이션 모드에서 필터 적용\n");
-        fflush(stdout);
+    if (camOff && cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
+        !cameraFrames[cameraIndex].empty()) {
+        
+        cv::Mat currentFrame = cameraFrames[cameraIndex];
+        qDebug() << QString("[updateCameraFrame] 시뮬레이션 모드에서 필터 적용 - 이미지 크기: %1x%2")
+                    .arg(currentFrame.cols).arg(currentFrame.rows);
+        
+        // 디버그용: 현재 사용 중인 이미지 저장
+        QString debugCurrentPath = QString("/Users/prascat/mv/debug_current_frame_%1.jpg").arg(cameraIndex);
+        cv::imwrite(debugCurrentPath.toStdString(), currentFrame);
+        qDebug() << QString("[updateCameraFrame] 현재 프레임을 디버그용으로 저장: %1").arg(debugCurrentPath);
         
         // 시뮬레이션 이미지에 필터 적용
-        cv::Mat filteredFrame = currentSimulationImage.clone();
+        cv::Mat filteredFrame = cameraFrames[cameraIndex].clone();
         cameraView->applyFiltersToImage(filteredFrame);
+        
+        // 디버그용: 필터 적용된 이미지도 저장
+        QString debugFilteredPath = QString("/Users/prascat/mv/debug_filtered_frame_%1.jpg").arg(cameraIndex);
+        cv::imwrite(debugFilteredPath.toStdString(), filteredFrame);
+        qDebug() << QString("[updateCameraFrame] 필터 적용된 프레임을 디버그용으로 저장: %1").arg(debugFilteredPath);
         
         // RGB 변환 및 UI 업데이트
         cv::Mat displayFrame;
@@ -5422,16 +5467,23 @@ void TeachingWidget::updateCameraFrame() {
         
         QPixmap pixmap = QPixmap::fromImage(image);
         
-        QSize origSize(currentSimulationImage.cols, currentSimulationImage.rows);
+        QSize origSize(cameraFrames[cameraIndex].cols, cameraFrames[cameraIndex].rows);
         cameraView->setScalingInfo(origSize, cameraView->size());
         cameraView->setStatusInfo("SIM");
         
         cameraView->setBackgroundPixmap(pixmap);
         cameraView->update();
+        cameraView->repaint();  // 강제 repaint 추가
+        QApplication::processEvents(); // 이벤트 강제 처리
         
-        printf("[TeachingWidget] 시뮬레이션 모드 필터 적용 완료\n");
-        fflush(stdout);
+        qDebug() << QString("[updateCameraFrame] 시뮬레이션 모드 필터 적용 완료 - 픽스맵 크기: %1x%2")
+                    .arg(pixmap.width()).arg(pixmap.height());
         return;
+    } else if (camOff) {
+        qDebug() << QString("[updateCameraFrame] camOff 모드이지만 조건 불만족 - cameraIndex: %1, cameraFrames 크기: %2, 프레임 비어있음: %3")
+                    .arg(cameraIndex).arg(cameraFrames.size())
+                    .arg(cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) ? 
+                         (cameraFrames[cameraIndex].empty() ? "true" : "false") : "인덱스 범위 밖");
     }
     
     // **메인 카메라 프레임 업데이트만 처리**
@@ -5656,6 +5708,32 @@ void TeachingWidget::switchToCamera(const QString& cameraUuid) {
     
     // **화면 강제 갱신**
     if (cameraView) {
+        // camOff 모드에서 현재 카메라의 티칭 이미지 표시
+        if (camOff && cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
+            !cameraFrames[cameraIndex].empty()) {
+            
+            cv::Mat currentFrame = cameraFrames[cameraIndex];
+            qDebug() << QString("switchToCamera - camOff 모드에서 티칭 이미지 설정: cameraIndex=%1, 크기=%2x%3")
+                        .arg(cameraIndex).arg(currentFrame.cols).arg(currentFrame.rows);
+            
+            // OpenCV Mat을 QImage로 변환
+            QImage qImage;
+            if (currentFrame.channels() == 3) {
+                cv::Mat rgbImage;
+                cv::cvtColor(currentFrame, rgbImage, cv::COLOR_BGR2RGB);
+                qImage = QImage(rgbImage.data, rgbImage.cols, rgbImage.rows, rgbImage.step, QImage::Format_RGB888);
+            } else {
+                qImage = QImage(currentFrame.data, currentFrame.cols, currentFrame.rows, currentFrame.step, QImage::Format_Grayscale8);
+            }
+            
+            if (!qImage.isNull()) {
+                QPixmap pixmap = QPixmap::fromImage(qImage);
+                cameraView->setBackgroundPixmap(pixmap);
+                qDebug() << QString("switchToCamera - 배경 이미지 설정 완료");
+            } else {
+                qDebug() << QString("switchToCamera - QImage 변환 실패");
+            }
+        }
         cameraView->update();
     }
     
@@ -6512,22 +6590,19 @@ bool TeachingWidget::runInspection(const cv::Mat& frame, int specificCameraIndex
     
     QList<PatternInfo> allPatterns = cameraView->getPatterns();
     QList<PatternInfo> cameraPatterns;
-    QString currentCameraUuid;
     
-    if (specificCameraIndex == -1) {
-        // 시뮬레이션 모드: CameraView에서 현재 UUID 가져오기
-        currentCameraUuid = cameraView->getCurrentCameraUuid();
+    // 현재 카메라 UUID 구하기 (camOn/camOff 동일 처리)
+    QString targetUuid;
+    int targetIndex = (specificCameraIndex == -1) ? cameraIndex : specificCameraIndex;
+    
+    if (targetIndex >= 0 && targetIndex < cameraInfos.size()) {
+        targetUuid = cameraInfos[targetIndex].uniqueId;
     } else {
-        // 실제 카메라 모드: 카메라 인덱스로 UUID 가져오기
-        if (specificCameraIndex >= 0 && specificCameraIndex < cameraInfos.size()) {
-            currentCameraUuid = cameraInfos[specificCameraIndex].uniqueId;
-        } else {
-            return false;
-        }
+        return false;
     }
     
     for (const PatternInfo& pattern : allPatterns) {
-        if (pattern.enabled && pattern.cameraUuid == currentCameraUuid) {
+        if (pattern.enabled && pattern.cameraUuid == targetUuid) {
             cameraPatterns.append(pattern);
         }
     }
@@ -6685,139 +6760,12 @@ bool TeachingWidget::runInspection(const cv::Mat& frame, int specificCameraIndex
                 }
             }
 
-            // Prefer using the original simulation input image (if available) so server can use data/<recipe>/teach/<filename>
-            QString sendPath; // this will be passed to multi_predict (could be a plain filename)
-            if (simulationDialog) {
-                QString simImg = simulationDialog->getCurrentImagePath();
-                if (!simImg.isEmpty() && QFile::exists(simImg)) {
-                    // Use only the filename so AITrainer will map it to app/host/data/<recipe>/teach/<filename>
-                    sendPath = QFileInfo(simImg).fileName();
-                }
-            }
-
-            if (sendPath.isEmpty()) {
-                // No original simulation image available — cannot perform inspection
-                qWarning() << "runInspection: no simulation image available; cannot perform AI inspection for recipe" << recipeName;
+            // 시뮬레이션 모드에서는 AI 검사를 위한 이미지 경로가 필요하지만
+            // 현재 구조에서는 이미지 경로를 추적하지 않으므로 AI 검사는 실행하지 않음
+            if (true) {
+                // AI 검사는 시뮬레이션 모드에서 사용할 수 없음
+                qWarning() << "runInspection: AI inspection not available in simulation mode for recipe" << recipeName;
                 return false;
-            }
-
-            AITrainer trainer;
-            QJsonObject resp;
-
-            resp = trainer.multi_predict(sendPath, recipeName, rectsArray);
-
-            // multi_results 병합
-            if (resp.contains("multi_results") && resp["multi_results"].isObject()) {
-                QJsonObject mr = resp["multi_results"].toObject();
-                if (mr.contains("results") && mr["results"].isArray()) {
-                    QJsonArray resultsArr = mr["results"].toArray();
-                    qDebug() << "runInspection: processing" << resultsArr.size() << "AI results";
-
-                    // Preload full heatmap image (if present) once to avoid repeated filesystem checks
-                    QString fullHeatmapPath = QDir::cleanPath(QDir::currentPath() + "/results/" + recipeName + "/" + QFileInfo(sendPath).baseName() + ".png");
-                    cv::Mat preloadedFullHeatmap;
-                    bool hasPreloadedFullHeatmap = false;
-                    if (QFile::exists(fullHeatmapPath)) {
-                        qDebug() << "runInspection: preloading full heatmap from:" << fullHeatmapPath;
-                        preloadedFullHeatmap = cv::imread(fullHeatmapPath.toStdString(), cv::IMREAD_COLOR);
-                        if (!preloadedFullHeatmap.empty()) {
-                            hasPreloadedFullHeatmap = true;
-                            qDebug() << "runInspection: preloaded full heatmap loaded, size:" << preloadedFullHeatmap.cols << "x" << preloadedFullHeatmap.rows;
-                        } else {
-                            qWarning() << "runInspection: failed to preload full heatmap image" << fullHeatmapPath;
-                        }
-                    }
-
-                    for (const QJsonValue& val : resultsArr) {
-                        if (!val.isObject()) continue;
-                        QJsonObject item = val.toObject();
-                        QString id = item.value("id").toString();
-                        double score = item.value("score").toDouble(0.0);
-                        QString heatmap = item.value("heatmap_file").toString();
-
-                        QUuid pid(id);
-                        result.insScores[pid] = score * 100.0;  // 0.0-1.0 → 0-100% 변환
-
-                        // 해당 패턴의 임계값을 찾아서 불량 판별 (백분율 기준)
-                        double threshold = 80.0; // 80% (0-100 범위)
-                        QList<PatternInfo> patterns = cameraView->getPatterns();
-                        for (const PatternInfo& p : patterns) {
-                            if (p.id == pid) {
-                                threshold = p.passThreshold * 100.0; // 0-1 범위를 0-100 범위로 변환
-                                break;
-                            }
-                        }
-
-                        bool passed = (score * 100.0) >= threshold;  // 높은 score = 정상, 낮은 score = 불량
-                        result.insResults[pid] = passed;
-                        result.insMethodTypes[pid] = InspectionMethod::AI_MATCH1;
-
-                        qDebug() << "runInspection: stored AI result for pattern" << pid.toString()
-                                << "score:" << result.insScores[pid] << "%"
-                                << "threshold:" << threshold << "%"
-                                << "passed:" << result.insResults[pid];
-
-                        // 히트맵 이미지에서 해당 영역을 잘라서 insProcessedImages에 저장
-                        QString heatmapImagePath;
-                        cv::Mat heatmapImage;
-
-                        if (!heatmap.isEmpty()) {
-                            heatmapImagePath = QDir::cleanPath(QDir::currentPath() + "/results/" + recipeName + "/" + heatmap);
-                            qDebug() << "runInspection: trying heatmap path:" << heatmapImagePath;
-                            if (QFile::exists(heatmapImagePath)) {
-                                heatmapImage = cv::imread(heatmapImagePath.toStdString(), cv::IMREAD_COLOR);
-                                if (heatmapImage.empty()) {
-                                    qWarning() << "runInspection: failed to load heatmap image" << heatmapImagePath;
-                                }
-                            } else {
-                                // heatmap specified but file missing; log once
-                                qWarning() << "runInspection: heatmap file specified but not found:" << heatmapImagePath;
-                            }
-                        }
-
-                        // If heatmapImage not loaded from per-rect file, use preloaded full heatmap if available
-                        if (heatmapImage.empty() && hasPreloadedFullHeatmap) {
-                            heatmapImage = preloadedFullHeatmap;
-                            qDebug() << "runInspection: using preloaded full heatmap for pattern" << pid.toString();
-                        }
-
-                        if (!heatmapImage.empty()) {
-                            qDebug() << "runInspection: heatmap image ready, size:" << heatmapImage.cols << "x" << heatmapImage.rows;
-                            // 이미지 경계 체크
-                            int imgWidth = heatmapImage.cols;
-                            int imgHeight = heatmapImage.rows;
-                            QRectF rf = aiRectsMap[pid];  // 저장된 rect 정보 사용
-                            int x = static_cast<int>(std::lround(rf.x()));
-                            int y = static_cast<int>(std::lround(rf.y()));
-                            int w = static_cast<int>(std::lround(rf.width()));
-                            int h = static_cast<int>(std::lround(rf.height()));
-
-                            x = std::max(0, std::min(x, imgWidth - 1));
-                            y = std::max(0, std::min(y, imgHeight - 1));
-                            w = std::max(1, std::min(w, imgWidth - x));
-                            h = std::max(1, std::min(h, imgHeight - y));
-
-                            cv::Rect roi(x, y, w, h);
-                            cv::Mat cropped = heatmapImage(roi);
-                            if (!cropped.empty()) {
-                                result.insProcessedImages[pid] = cropped.clone();
-                                qDebug() << "runInspection: cropped heatmap image for pattern" << pid.toString()
-                                        << "rect:" << x << y << w << h << "cropped size:" << cropped.cols << "x" << cropped.rows;
-                                // 잘라낸 히트맵을 파일로 저장
-                                QString savePath = QDir::cleanPath(QDir::currentPath() + "/results/" + recipeName + "/cropped_heatmap_" + pid.toString() + ".png");
-                                if (cv::imwrite(savePath.toStdString(), cropped)) {
-                                    qDebug() << "runInspection: saved cropped heatmap to" << savePath;
-                                } else {
-                                    qWarning() << "runInspection: failed to save cropped heatmap to" << savePath;
-                                }
-                            }
-                        } else {
-                            qWarning() << "runInspection: no heatmap available for pattern" << pid.toString();
-                        }
-                    }
-                }
-            } else {
-                qWarning() << "runInspection: no multi_results in response";
             }
         } else if (hasAiMatch1) {
             // AI_MATCH1이 있지만 rects가 없는 경우에도 결과 업데이트
@@ -6871,9 +6819,12 @@ void TeachingWidget::resumeToLiveMode() {
         }
         
         // **2. 시뮬레이션 모드 해제**
-        if (simulationMode) {
-            simulationMode = false;
-            currentSimulationImage = cv::Mat(); // 시뮬레이션 이미지 클리어
+        if (camOff) {
+            camOff = false;
+            // 시뮬레이션 이미지 클리어 - 해당 카메라 프레임 클리어
+            if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
+                cameraFrames[cameraIndex] = cv::Mat();
+            }
             qDebug() << "[라이브 모드 복귀] 시뮬레이션 모드 해제";
             
         }
@@ -7108,11 +7059,12 @@ void TeachingWidget::updateAllPatternTemplateImages() {
     
     // 현재 이미지 가져오기 (패턴이 그려지기 전의 원본 이미지)
     cv::Mat currentImage;
-    if (simulationMode) {
-        if (currentSimulationImage.empty()) {
+    if (camOff) {
+        if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
+            cameraFrames[cameraIndex].empty()) {
             return;
         }
-        currentImage = currentSimulationImage.clone();
+        currentImage = cameraFrames[cameraIndex].clone();
     } else {
         // CameraView의 backgroundPixmap에서 원본 이미지 가져오기
         if (cameraView) {
@@ -7318,15 +7270,29 @@ void TeachingWidget::updateAllPatternTemplateImages() {
 }
 
 void TeachingWidget::saveRecipe() {
-    qDebug() << QString("saveRecipe() 호출됨 - 현재 레시피 이름: '%1', 시뮬레이션 모드: %2").arg(currentRecipeName).arg(simulationMode);
+    qDebug() << QString("saveRecipe() 호출됨 - 현재 레시피 이름: '%1', 시뮬레이션 모드: %2").arg(currentRecipeName).arg(camOff);
     
-    // 현재 레시피 이름이 있으면 개별 파일로 저장, 없으면 자동 이름 생성해서 저장
+    // 현재 레시피 이름이 있으면 개별 파일로 저장, 없으면 사용자에게 물어봄
     if (currentRecipeName.isEmpty()) {
-        qDebug() << "currentRecipeName이 비어있어 새로운 타임스탬프 이름을 생성합니다.";
-        // 자동으로 타임스탬프 이름 생성 (사용자에게 묻지 않음)
-        QDateTime now = QDateTime::currentDateTime();
-        currentRecipeName = now.toString("yyyyMMdd_HHmmss_zzz");
-        qDebug() << QString("새로 생성된 레시피 이름: %1").arg(currentRecipeName);
+        qDebug() << "currentRecipeName이 비어있어 사용자에게 새 레시피 생성을 물어봅니다.";
+        
+        // 사용자에게 새 레시피 생성 여부 묻기
+        QMessageBox msgBox;
+        msgBox.setWindowTitle("새 레시피 생성");
+        msgBox.setText("현재 열린 레시피가 없습니다.");
+        msgBox.setInformativeText("새로운 레시피를 생성하시겠습니까?");
+        msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+        msgBox.setDefaultButton(QMessageBox::Yes);
+        
+        if (msgBox.exec() == QMessageBox::Yes) {
+            // 자동으로 타임스탬프 이름 생성
+            QDateTime now = QDateTime::currentDateTime();
+            currentRecipeName = now.toString("yyyyMMdd_HHmmss_zzz");
+            qDebug() << QString("새로 생성된 레시피 이름: %1").arg(currentRecipeName);
+        } else {
+            qDebug() << "사용자가 새 레시피 생성을 취소했습니다.";
+            return; // 저장 취소
+        }
     } else {
         qDebug() << QString("기존 레시피 '%1'에 덮어쓰기 저장합니다.").arg(currentRecipeName);
     }
@@ -7336,51 +7302,12 @@ void TeachingWidget::saveRecipe() {
     bool currentModeToggleState = modeToggleButton->isChecked();
     
     // 모드별 이미지 저장 처리
-    if (!simulationMode) {
-        // 라이브 모드: 모든 연결된 카메라의 현재 프레임을 저장
-        qDebug() << "라이브 모드: 현재 프레임을 레시피에 저장합니다.";
-        if (!cameraInfos.isEmpty()) {
-            // 모든 연결된 카메라의 프레임을 저장
-            for (int i = 0; i < cameraInfos.size(); i++) {
-                if (cameraInfos[i].isConnected && i < cameraFrames.size() && !cameraFrames[i].empty()) {
-                    // 각 카메라의 현재 프레임을 해당 카메라 UUID로 저장
-                    QString cameraUuid = cameraInfos[i].uniqueId;
-                    
-                    // 레시피 teach 폴더 생성
-                    QString recipeDir = QString("recipes/%1").arg(currentRecipeName);
-                    QString teachDir = QString("%1/teach").arg(recipeDir);
-                    QDir().mkpath(teachDir);
-                    
-                    // 해당 카메라의 기존 이미지들 삭제 (1장만 유지하기 위해)
-                    QDir dir(teachDir);
-                    QStringList filters;
-                    filters << QString("%1.jpg").arg(cameraUuid) << QString("%1.png").arg(cameraUuid) 
-                            << QString("%1.bmp").arg(cameraUuid) << QString("%1.jpeg").arg(cameraUuid);
-                    QStringList existingFiles = dir.entryList(filters, QDir::Files);
-                    for (const QString& file : existingFiles) {
-                        QString filePath = QString("%1/%2").arg(teachDir).arg(file);
-                        if (QFile::remove(filePath)) {
-                            qDebug() << QString("기존 카메라 %1 이미지 삭제: %2").arg(cameraUuid).arg(filePath);
-                        }
-                    }
-                    
-                    // 카메라 UUID로만 파일명 생성 (타임스탬프 제거)
-                    QString fileName = QString("%1.jpg").arg(cameraUuid);
-                    QString fullPath = QString("%1/%2").arg(teachDir).arg(fileName);
-                    
-                    // 이미지 저장
-                    if (cv::imwrite(fullPath.toStdString(), cameraFrames[i])) {
-                        qDebug() << QString("카메라 %1 프레임을 저장했습니다: %2").arg(cameraUuid).arg(fullPath);
-                    } else {
-                        qDebug() << QString("카메라 %1 프레임 저장 실패: %2").arg(cameraUuid).arg(fullPath);
-                    }
-                }
-            }
-        }
+    if (!camOff) {
+        // 라이브 모드: 티칭 이미지는 XML에 base64로 저장됨
+        qDebug() << "라이브 모드: 티칭 이미지는 XML에 base64로 저장됩니다.";
     } else {
-        // 시뮬레이션 모드: 임시 파일들을 현재 카메라명으로 변경하고 정리
-        qDebug() << "시뮬레이션 모드: 임시 파일들을 현재 카메라명으로 변경하고 정리합니다.";
-        saveSimulationTeachingImage();
+        // camOff 모드: 티칭 이미지는 XML에 base64로 저장됨
+        qDebug() << "camOff 모드: 티칭 이미지는 XML에 base64로 저장됩니다.";
     }
     
     // 개별 레시피 파일로 저장
@@ -7393,8 +7320,8 @@ void TeachingWidget::saveRecipe() {
     QStringList simulationImagePaths;
     QMap<QString, CalibrationInfo> calibrationMap;
     
-    // 기존 saveRecipe 함수 사용
-    if (manager.saveRecipe(recipeFileName, cameraInfos, cameraIndex, calibrationMap, cameraView, simulationImagePaths)) {
+    // 기존 saveRecipe 함수 사용 (TeachingWidget 포인터 전달)
+    if (manager.saveRecipe(recipeFileName, cameraInfos, cameraIndex, calibrationMap, cameraView, simulationImagePaths, -1, QStringList(), this)) {
         hasUnsavedChanges = false;
         
         // 최근 사용한 레시피를 ConfigManager에 저장
@@ -7439,36 +7366,6 @@ bool TeachingWidget::loadRecipe(const QString &fileName) {
     // 더 이상 직접 파일 로드를 지원하지 않음 - 개별 레시피 시스템만 사용
     qWarning() << "직접 파일 로드는 지원되지 않습니다. 레시피 관리 시스템을 사용하세요.";
     return false;
-}
-
-void TeachingWidget::loadLastRecipe() {
-    // ConfigManager에서 최근 사용한 레시피 경로 가져오기
-    QString lastRecipePath = ConfigManager::instance()->getLastRecipePath();
-    
-    if (lastRecipePath.isEmpty()) {
-        qDebug() << "최근 사용한 레시피가 없습니다.";
-        return;
-    }
-    
-    // 레시피가 실제로 존재하는지 확인
-    RecipeManager recipeManager;
-    QStringList availableRecipes = recipeManager.getAvailableRecipes();
-    
-    if (!availableRecipes.contains(lastRecipePath)) {
-        qDebug() << QString("최근 레시피 '%1'을 찾을 수 없습니다. 사용 가능한 레시피: %2")
-                    .arg(lastRecipePath).arg(availableRecipes.join(", "));
-        
-        // 최근 레시피가 없으면 첫 번째 사용 가능한 레시피 로드
-        if (!availableRecipes.isEmpty()) {
-            qDebug() << QString("대신 첫 번째 레시피 '%1'을 로드합니다.").arg(availableRecipes.first());
-            onRecipeSelected(availableRecipes.first());
-        }
-        return;
-    }
-    
-    // 최근 레시피 로드
-    qDebug() << QString("최근 사용한 레시피 '%1'을 자동 로드합니다.").arg(lastRecipePath);
-    onRecipeSelected(lastRecipePath);
 }
 
 QVector<CameraInfo> TeachingWidget::getCameraInfos() const {
@@ -7817,15 +7714,12 @@ bool TeachingWidget::connectSpinnakerCamera(int index, CameraInfo& info)
         info.isConnected = true;
         
         // 카메라 연결 시 시뮬레이션 모드 해제
-        if (simulationMode) {
-            simulationMode = false;
+        if (camOff) {
+            camOff = false;
             currentSimulationImage = cv::Mat(); // 시뮬레이션 이미지 초기화
-            updateUIForSimulationMode(false);  // UI 업데이트
+            updateUIForCamMode(false);  // UI 업데이트
             
             // 카메라뷰의 시뮬레이션 상태도 초기화
-            if (cameraView) {
-                cameraView->setSimulationCameraName("");
-            }
         }
         
         return true;
@@ -7951,13 +7845,6 @@ TeachingWidget::~TeachingWidget() {
         delete filterDialog;
         filterDialog = nullptr;
     }
-    
-    // SimulationDialog 정리 시 부모가 닫히고 있음을 알림
-    if (simulationDialog) {
-        simulationDialog->setParentClosing(true);
-        delete simulationDialog;
-        simulationDialog = nullptr;
-    }
 }
 
 QColor TeachingWidget::getNextColor() {
@@ -8013,8 +7900,9 @@ void TeachingWidget::addFilter() {
 }
 
 void TeachingWidget::addPattern() {
-    // 시뮬레이션 모드 상태 디버깅
-    if (!currentSimulationImage.empty()) {
+    // 시뮬레이션 모드 상태 디버깅 - cameraFrames 체크
+    if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
+        !cameraFrames[cameraIndex].empty()) {
     }
     
     // 현재 그려진 사각형이 있는지 먼저 확인 (엔터키로 호출된 경우)
@@ -8071,14 +7959,8 @@ void TeachingWidget::addPattern() {
         pattern.name = patternName;
         pattern.type = currentPatternType;
         
-        // 시뮬레이션 모드인지 확인하여 카메라 UUID 설정
-        if (cameraView && !cameraView->getSimulationCameraName().isEmpty()) {
-            // 시뮬레이션 모드: 시뮬레이션 카메라 이름을 UUID로 사용
-            pattern.cameraUuid = cameraView->getSimulationCameraName();
-        } else {
-            // 일반 모드: 실제 카메라 UUID 사용
-            pattern.cameraUuid = getCameraInfo(cameraIndex).uniqueId;
-        }
+        // 카메라 UUID 설정 (camOn/camOff 동일 처리)
+        pattern.cameraUuid = getCameraInfo(cameraIndex).uniqueId;
         
         // 타입별 색상 설정 (UIColors 클래스 사용)
         switch (currentPatternType) {
@@ -8105,18 +7987,11 @@ void TeachingWidget::addPattern() {
             cv::Mat sourceImage;
             bool hasSourceImage = false;
             
-            // 시뮬레이션 모드인지 확인
-            if (simulationMode && !currentSimulationImage.empty()) {
-                // 시뮬레이션 모드: 현재 시뮬레이션 이미지 사용
-                sourceImage = currentSimulationImage.clone();
+            // 시뮬레이션 모드든 일반 모드든 cameraFrames 사용
+            if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
+                !cameraFrames[cameraIndex].empty()) {
+                sourceImage = cameraFrames[cameraIndex].clone();
                 hasSourceImage = true;
-            } else {
-                // 일반 모드: cameraFrames 사용
-                if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
-                    !cameraFrames[cameraIndex].empty()) {
-                    sourceImage = cameraFrames[cameraIndex];
-                    hasSourceImage = true;
-                }
             }
             
             if (hasSourceImage) {
@@ -8437,169 +8312,6 @@ void TeachingWidget::startCalibration() {
     cameraView->setCalibrationMode(true);
 }
 
-void TeachingWidget::disableAllUIElements() {
-    // **메인 기능 버튼들 비활성화**
-    if (runStopButton) runStopButton->setEnabled(false);
-    
-    // **패턴 관련 버튼들 비활성화** 
-    if (addPatternButton) addPatternButton->setEnabled(false);
-    if (removeButton) removeButton->setEnabled(false);
-    if (addFilterButton) addFilterButton->setEnabled(false);
-    
-    // **ROI/FID/INS 패턴 타입 버튼들 비활성화**
-    if (roiButton) roiButton->setEnabled(false);
-    if (fidButton) fidButton->setEnabled(false);
-    if (insButton) insButton->setEnabled(false);
-    
-    // **토글 버튼들 비활성화 (CAM 버튼 제외)**
-    if (modeToggleButton) modeToggleButton->setEnabled(false);
-    
-    // **레시피 관련 버튼들 비활성화**
-    if (saveRecipeButton) saveRecipeButton->setEnabled(false);
-    
-    // **findChild로 버튼 찾아서 비활성화 (이름 기반)**
-    QPushButton* modeToggleBtn = findChild<QPushButton*>("modeToggleButton");
-    if (modeToggleBtn) modeToggleBtn->setEnabled(false);
-    
-    QPushButton* saveBtn = findChild<QPushButton*>("saveRecipeButton");
-    if (saveBtn) saveBtn->setEnabled(false);
-    
-    QPushButton* addBtn = findChild<QPushButton*>("addPatternButton");
-    if (addBtn) addBtn->setEnabled(false);
-    
-    QPushButton* removeBtn = findChild<QPushButton*>("removeButton");
-    if (removeBtn) removeBtn->setEnabled(false);
-    
-    QPushButton* filterBtn = findChild<QPushButton*>("addFilterButton");
-    if (filterBtn) filterBtn->setEnabled(false);
-    
-    // **메뉴 항목들은 모두 기본 활성화 유지**
-    if (menuBar) {
-        QList<QAction*> actions = menuBar->actions();
-        for (QAction* action : actions) {
-            // 모든 메뉴를 기본 활성화 상태로 유지
-            action->setEnabled(true);
-            if (action->menu()) {
-                action->menu()->setEnabled(true);
-                // 모든 하위 액션들도 활성화
-                QList<QAction*> subActions = action->menu()->actions();
-                for (QAction* subAction : subActions) {
-                    subAction->setEnabled(true);
-                }
-            }
-        }
-    }
-    
-    // **패턴 트리 비활성화**
-    if (patternTree) {
-        patternTree->setEnabled(false);
-        patternTree->clear();
-    }
-    
-    // **프로퍼티 패널 비활성화**
-    if (propertyStackWidget) {
-        propertyStackWidget->setEnabled(false);
-    }
-    
-    // **카메라 뷰를 "연결 없음" 상태로 설정**
-    if (cameraView) {
-        cameraView->setEnabled(false);
-        // 빈 픽스맵(null)으로 설정하여 "연결 없음" 텍스트가 표시되도록 함
-        QPixmap emptyPixmap;  // null 픽스맵
-        cameraView->setBackgroundPixmap(emptyPixmap);
-        cameraView->update();
-    }
-    
-    // **미리보기 레이블들 비활성화**
-    for (int i = 0; i < cameraPreviewLabels.size(); i++) {
-        if (cameraPreviewLabels[i]) {
-            cameraPreviewLabels[i]->setEnabled(false);
-            cameraPreviewLabels[i]->clear();
-            cameraPreviewLabels[i]->setText(TR("NO_CONNECTION"));
-            cameraPreviewLabels[i]->setStyleSheet("background-color: #333333; color: #666666;");
-        }
-    }
-    
-}
-
-void TeachingWidget::enableAllUIElements() {
-    
-    // **메인 기능 버튼들 활성화**
-    if (runStopButton) runStopButton->setEnabled(true);
-    
-    // **패턴 관련 버튼들 활성화**
-    if (addPatternButton) addPatternButton->setEnabled(true);
-    if (removeButton) removeButton->setEnabled(true);
-    if (addFilterButton) addFilterButton->setEnabled(true);
-    
-    // **ROI/FID/INS 패턴 타입 버튼들 활성화**
-    if (roiButton) roiButton->setEnabled(true);
-    if (fidButton) fidButton->setEnabled(true);
-    if (insButton) insButton->setEnabled(true);
-    
-    // **토글 버튼들 활성화**
-    if (modeToggleButton) modeToggleButton->setEnabled(true);
-    
-    // **레시피 관련 버튼들 활성화**
-    if (saveRecipeButton) saveRecipeButton->setEnabled(true);
-    
-    // **findChild로 버튼 찾아서 활성화 (이름 기반)**
-    QPushButton* modeToggleBtn = findChild<QPushButton*>("modeToggleButton");
-    if (modeToggleBtn) modeToggleBtn->setEnabled(true);
-    
-    QPushButton* saveBtn = findChild<QPushButton*>("saveRecipeButton");
-    if (saveBtn) saveBtn->setEnabled(true);
-    
-    QPushButton* addBtn = findChild<QPushButton*>("addPatternButton");
-    if (addBtn) addBtn->setEnabled(true);
-    
-    QPushButton* removeBtn = findChild<QPushButton*>("removeButton");
-    if (removeBtn) removeBtn->setEnabled(true);
-    
-    QPushButton* filterBtn = findChild<QPushButton*>("addFilterButton");
-    if (filterBtn) filterBtn->setEnabled(true);
-    
-    // **메뉴 항목들 활성화**
-    if (menuBar) {
-        QList<QAction*> actions = menuBar->actions();
-        for (QAction* action : actions) {
-            action->setEnabled(true);
-            if (action->menu()) {
-                action->menu()->setEnabled(true);
-                // 하위 메뉴 항목들도 활성화
-                QList<QAction*> subActions = action->menu()->actions();
-                for (QAction* subAction : subActions) {
-                    subAction->setEnabled(true);
-                }
-            }
-        }
-    }
-    
-    // **패턴 트리 활성화**
-    if (patternTree) {
-        patternTree->setEnabled(true);
-    }
-    
-    // **프로퍼티 패널 활성화**
-    if (propertyStackWidget) {
-        propertyStackWidget->setEnabled(true);
-    }
-    
-    // **카메라 뷰 활성화**
-    if (cameraView) {
-        cameraView->setEnabled(true);
-    }
-    
-    // **미리보기 레이블들 활성화**
-    for (int i = 0; i < cameraPreviewLabels.size(); i++) {
-        if (cameraPreviewLabels[i]) {
-            cameraPreviewLabels[i]->setEnabled(true);
-            cameraPreviewLabels[i]->setStyleSheet("background-color: black; color: white;");
-        }
-    }
-    
-}
-
 InspectionResult TeachingWidget::runSingleInspection(int specificCameraIndex) {
     InspectionResult result;
     
@@ -8632,17 +8344,11 @@ InspectionResult TeachingWidget::runSingleInspection(int specificCameraIndex) {
         // **5. 검사 실행**
         cv::Mat inspectionFrame;
         
-        // 시뮬레이션 모드 확인
-        if (simulationMode && !currentSimulationImage.empty()) {
-            // 시뮬레이션 모드: 현재 시뮬레이션 이미지 사용
-            inspectionFrame = currentSimulationImage.clone();
-            printf("[TeachingWidget] runSingleInspection - 시뮬레이션 모드로 검사\n");
-            fflush(stdout);
-        } else if (cameraView && specificCameraIndex < static_cast<int>(cameraFrames.size()) && 
-                   !cameraFrames[specificCameraIndex].empty()) {
-            // 실제 카메라 모드: 해당 카메라 프레임 사용
+        // 시뮬레이션 모드든 일반 모드든 cameraFrames 사용
+        if (cameraView && specificCameraIndex >= 0 && specificCameraIndex < static_cast<int>(cameraFrames.size()) && 
+            !cameraFrames[specificCameraIndex].empty()) {
             inspectionFrame = cameraFrames[specificCameraIndex].clone();
-            printf("[TeachingWidget] runSingleInspection - 카메라 모드로 검사\n");
+            printf("[TeachingWidget] runSingleInspection - 카메라[%d] 프레임으로 검사\n", specificCameraIndex);
             fflush(stdout);
         }
         
@@ -8651,7 +8357,7 @@ InspectionResult TeachingWidget::runSingleInspection(int specificCameraIndex) {
             QList<PatternInfo> cameraPatterns;
             QString currentCameraUuid;
             
-            if (simulationMode) {
+            if (camOff) {
                 // 시뮬레이션 모드에서는 현재 카메라의 UUID 사용
                 if (cameraIndex >= 0 && cameraIndex < cameraInfos.size()) {
                     currentCameraUuid = cameraInfos[cameraIndex].uniqueId;
@@ -8675,7 +8381,7 @@ InspectionResult TeachingWidget::runSingleInspection(int specificCameraIndex) {
                 result = processor.performInspection(inspectionFrame, cameraPatterns);
                 
                 // **UI 업데이트 (메인 카메라인 경우 또는 시뮬레이션 모드)**
-                if (specificCameraIndex == cameraIndex || simulationMode) {
+                if (specificCameraIndex == cameraIndex || camOff) {
                     updateMainCameraUI(result, inspectionFrame);
                 }
             }
@@ -8769,99 +8475,80 @@ void TeachingWidget::updateMainCameraUI(const InspectionResult& result, const cv
     }
 }
 
-void TeachingWidget::onSimulationModeToggled() {
-    simulationMode = !simulationMode;
+void TeachingWidget::onCamModeToggled() {
+    camOff = !camOff;
     
-    if (simulationMode) {
-        // 1. 기존 레시피 백업 및 언로드
-        backupCurrentRecipe();
-        clearCurrentRecipe();
+    if (camOff) {
+        // camOn -> camOff (라이브 모드 -> 레시피 모드) 전환
+        qDebug() << "모드 전환: 라이브 모드 -> 레시피 모드";
         
-        // 2. 시뮬레이션 레시피 로드 또는 생성
-        loadSimulationRecipe();
-        
-        // 3. 카메라 중지
+        // 카메라 중지
         stopCamera();
         
-        // 4. 시뮬레이션 다이얼로그 생성 및 표시
-        if (!simulationDialog) {
-            simulationDialog = new SimulationDialog(this);
-            
-            // 시그널 연결
-            connect(simulationDialog, &SimulationDialog::imageSelected, 
-                    this, &TeachingWidget::onSimulationImageSelected);
-            connect(simulationDialog, &SimulationDialog::recipeNameChanged,
-                    this, &TeachingWidget::onSimulationProjectNameChanged);
-            connect(simulationDialog, &SimulationDialog::recipeSelected,
-                    this, &TeachingWidget::onSimulationProjectSelected);
+        // 라이브 모드 데이터 초기화
+        // cameraInfos는 유지 (레시피에서 재사용될 수 있음)
+        
+        // 패턴 리스트 초기화
+        if (cameraView) {
+            cameraView->clearPatterns();
+            cameraView->clearCurrentRect();
+            cameraView->setBackgroundPixmap(QPixmap()); // 배경 이미지 초기화
         }
         
-        simulationDialog->show();
-        simulationDialog->raise();
-        simulationDialog->activateWindow();
+        // 패턴 트리 초기화
+        if (patternTree) {
+            patternTree->clear();
+        }
+        
+        // cameraFrames 초기화
+        cameraFrames.clear();
+        
+        // cameraIndex 초기화 - 레시피 모드에서도 0번부터 시작
+        cameraIndex = 0;
         
         // UI 상태 업데이트
-        updateUIForSimulationMode(true);
+        updateUIForCamMode(false);
+        
+        qDebug() << "레시피 모드로 전환 완료";
         
     } else {
-        // 1. 시뮬레이션 다이얼로그 숨기기
-        if (simulationDialog) {
-            simulationDialog->hide();
+        // camOff -> camOn (레시피 모드 -> 라이브 모드) 전환
+        qDebug() << "모드 전환: 레시피 모드 -> 라이브 모드";
+        
+        // 레시피 모드 데이터 초기화
+        // cameraInfos 초기화
+        clearCameraInfos();
+        
+        // 패턴 리스트 초기화
+        if (cameraView) {
+            cameraView->clearPatterns();
+            cameraView->clearCurrentRect();
+            cameraView->setBackgroundPixmap(QPixmap()); // 배경 이미지 초기화
         }
         
-        // 2. 시뮬레이션 카메라 이름 초기화
+        // 패턴 트리 초기화
+        if (patternTree) {
+            patternTree->clear();
+        }
+        
+        // cameraFrames 초기화
+        cameraFrames.clear();
+        
+        // cameraIndex 초기화
+        cameraIndex = 0;
+        
+        // 카메라 이름 초기화
         if (cameraView) {
-            cameraView->setSimulationCameraName(""); // 빈 문자열로 초기화
             cameraView->update();
         }
         
         // UI 상태 업데이트
-        updateUIForSimulationMode(false);
-    }
-}
-
-void TeachingWidget::showSimulationDialog() {
-    // 라이브 모드가 켜져 있으면 자동으로 끄기
-    if (startCameraButton && startCameraButton->isChecked()) {
-        startCameraButton->setChecked(false);
-        stopCamera();
-        qDebug() << "시뮬레이션 모드 진입을 위해 라이브 모드를 종료했습니다.";
-    }
-    
-    // 시뮬레이션 다이얼로그 생성 및 표시
-    if (!simulationDialog) {
-        simulationDialog = new SimulationDialog(this);
+        updateUIForCamMode(true);
         
-        // 시그널 연결
-        connect(simulationDialog, &SimulationDialog::imageSelected, 
-                this, &TeachingWidget::onSimulationImageSelected);
-        connect(simulationDialog, &SimulationDialog::recipeNameChanged,
-                this, &TeachingWidget::onSimulationProjectNameChanged);
-        connect(simulationDialog, &SimulationDialog::recipeSelected,
-                this, &TeachingWidget::onSimulationProjectSelected);
+        // 카메라 재연결 시도
+        detectCameras();
         
-        // 다이얼로그가 닫힐 때 시뮬레이션 모드 비활성화
-        connect(simulationDialog, &QDialog::rejected, this, [this]() {
-            simulationMode = false;
-            qDebug() << "시뮬레이션 모드가 비활성화되었습니다.";
-        });
-        connect(simulationDialog, &QDialog::accepted, this, [this]() {
-            simulationMode = false;
-            qDebug() << "시뮬레이션 모드가 비활성화되었습니다.";
-        });
-    }
-    
-    // 시뮬레이션 모드 활성화
-    simulationMode = true;
-    qDebug() << "시뮬레이션 모드가 활성화되었습니다.";
-    
-    simulationDialog->show();
-    simulationDialog->raise();
-    simulationDialog->activateWindow();
-    
-    // 현재 레시피가 있으면 시뮬레이션 다이얼로그에 로드
-    if (!currentRecipeName.isEmpty()) {
-        simulationDialog->loadRecipeImages(currentRecipeName);
+        qDebug() << "라이브 모드로 전환 완료";
     }
 }
 
@@ -8869,16 +8556,24 @@ void TeachingWidget::showSimulationDialog() {
 void TeachingWidget::onSimulationImageSelected(const cv::Mat& image, const QString& imagePath, const QString& projectName) {
     if (!image.empty()) {
         // 현재 시뮬레이션 모드 상태 저장
-        bool wasInSimulationMode = simulationMode;
+        bool wasInSimulationMode = camOff;
         
         // 시뮬레이션 모드 활성화
-        simulationMode = true;
+        camOff = true;
         
-        // 현재 시뮬레이션 이미지 저장
-        currentSimulationImage = image.clone();
+        // 현재 시뮬레이션 이미지를 cameraFrames에 저장
+        if (cameraIndex >= 0) {
+            // cameraFrames 크기가 충분한지 확인
+            if (cameraIndex >= static_cast<int>(cameraFrames.size())) {
+                cameraFrames.resize(cameraIndex + 1);
+            }
+            cameraFrames[cameraIndex] = image.clone();
+        }
         
         // 시뮬레이션 모드임을 명확히 표시
         if (cameraView) {
+            qDebug() << QString("시뮬레이션 이미지 처리 시작: %1x%2, channels=%3").arg(image.cols).arg(image.rows).arg(image.channels());
+            
             // 패턴은 이미 레시피 로드 시에 로딩되었으므로 재로딩하지 않음
             // 단지 시뮬레이션 이미지만 표시
             
@@ -8888,12 +8583,25 @@ void TeachingWidget::onSimulationImageSelected(const cv::Mat& image, const QStri
                 cv::Mat rgbImage;
                 cv::cvtColor(image, rgbImage, cv::COLOR_BGR2RGB);
                 qImage = QImage(rgbImage.data, rgbImage.cols, rgbImage.rows, rgbImage.step, QImage::Format_RGB888);
+                qDebug() << "3채널 이미지를 RGB로 변환 완료";
             } else {
                 qImage = QImage(image.data, image.cols, image.rows, image.step, QImage::Format_Grayscale8);
+                qDebug() << "1채널 그레이스케일 이미지 변환 완료";
+            }
+            
+            if (qImage.isNull()) {
+                qDebug() << "QImage 변환 실패!";
+                return;
             }
             
             // QPixmap으로 변환하여 CameraView에 설정
             QPixmap pixmap = QPixmap::fromImage(qImage);
+            if (pixmap.isNull()) {
+                qDebug() << "QPixmap 변환 실패!";
+                return;
+            }
+            
+            qDebug() << QString("시뮬레이션 이미지 CameraView에 설정: %1x%2").arg(pixmap.width()).arg(pixmap.height());
             cameraView->setBackgroundPixmap(pixmap);
             
             // 마우스 이벤트와 줌/팬 기능 강제 활성화
@@ -8912,17 +8620,20 @@ void TeachingWidget::onSimulationImageSelected(const cv::Mat& image, const QStri
             cameraView->setAttribute(Qt::WA_AcceptTouchEvents, true);
             
             // 강제 업데이트
+            qDebug() << "CameraView 강제 업데이트 시작";
             cameraView->update();
             cameraView->repaint();
             cameraView->show(); // 위젯 표시 강제
+            qDebug() << "CameraView 업데이트 완료";
+        } else {
+            qDebug() << "CameraView가 null입니다!";
         }
         
         // 시뮬레이션 카메라 정보로 UI 업데이트
         updateCameraInfoForSimulation(imagePath);
         
-        // 시뮬레이션 모드에서는 이미 selectCameraTeachingImage에서 설정된 카메라 UUID를 유지
-        // projectName(레시피 이름)으로 카메라 UUID를 덮어쓰지 않음
-        qDebug() << QString("시뮬레이션 이미지 선택됨, 현재 카메라 UUID 유지: %1").arg(cameraView ? cameraView->getCurrentCameraUuid() : "없음");
+        // camOff 모드 이미지 설정 완료
+        qDebug() << QString("camOff 모드 이미지 선택됨, 카메라: %1").arg(!cameraInfos.isEmpty() ? cameraInfos[0].name : "없음");
         
         // 패턴 편집 기능들 활성화
         enablePatternEditingFeatures();
@@ -8940,11 +8651,10 @@ void TeachingWidget::onSimulationImageSelected(const cv::Mat& image, const QStri
 }
 
 void TeachingWidget::onSimulationProjectNameChanged(const QString& projectName) {
-    if (simulationMode && cameraView) {
+    if (camOff && cameraView) {
         
         if (projectName.isEmpty()) {
             // 빈 프로젝트 이름이면 초기화
-            cameraView->setSimulationCameraName("");
             cameraView->setCurrentCameraUuid("");
             
             // 카메라 뷰 이미지 초기화 (연결 없음 상태로)
@@ -8963,9 +8673,6 @@ void TeachingWidget::onSimulationProjectNameChanged(const QString& projectName) 
             // projectName을 그대로 사용 (이미 SIM_ 접두어가 포함되어 있음)
             QString cameraDisplayName = projectName;
             
-            // CameraView에 카메라 이름 표시 업데이트
-            cameraView->setSimulationCameraName(cameraDisplayName);
-            
             // 현재 카메라 UUID도 동일한 이름으로 설정 (패턴 추가 시 일치하도록)
             cameraView->setCurrentCameraUuid(cameraDisplayName);
             
@@ -8977,7 +8684,7 @@ void TeachingWidget::onSimulationProjectNameChanged(const QString& projectName) 
 }
 
 void TeachingWidget::onSimulationProjectSelected(const QString& projectName) {
-    if (!simulationMode || !cameraView) {
+    if (!camOff || !cameraView) {
         return;
     }
     
@@ -8988,8 +8695,8 @@ void TeachingWidget::onSimulationProjectSelected(const QString& projectName) {
     hasUnsavedChanges = false;
     qDebug() << QString("시뮬레이션 모드에서 현재 레시피 이름 설정: %1").arg(currentRecipeName);
     
-    // 레시피에서 해당 프로젝트의 패턴들 로드
-    loadSimulationRecipePatterns(projectName);
+    // 레시피에서 해당 프로젝트의 패턴들 로드 (일반 레시피 로드 방식 사용)
+    onRecipeSelected(projectName);
     
     // 패턴 트리 업데이트 (카메라 UUID는 selectCameraTeachingImage에서 설정됨)
     updatePatternTree();
@@ -9028,132 +8735,7 @@ void TeachingWidget::onSimulationProjectSelected(const QString& projectName) {
     }
 }
 
-void TeachingWidget::loadSimulationRecipePatterns(const QString& projectName) {
-    qDebug() << QString("시뮬레이션 레시피 패턴 로드: %1").arg(projectName);
-    
-    // 선택된 프로젝트 이름으로 레시피 로드
-    if (!projectName.isEmpty()) {
-        // onRecipeSelected 함수를 사용하여 해당 레시피 로드
-        onRecipeSelected(projectName);
-        
-        qDebug() << QString("시뮬레이션 레시피 '%1' 로드 완료").arg(projectName);
-    }
-}
-
-void TeachingWidget::backupCurrentRecipe() {
-    // 현재 레시피를 백업 변수에 저장
-    backupRecipeData.clear();
-    
-    // 현재 레시피 이름 백업
-    QString currentRecipeName = getCurrentRecipeName();
-    if (!currentRecipeName.isEmpty()) {
-        backupRecipeData["recipeName"] = currentRecipeName;
-    }
-}
-
-void TeachingWidget::clearCurrentRecipe() {
-    // 현재 레시피 데이터 초기화
-    // 기존 함수들 사용 (있다면)
-    if (patternTree) {
-        patternTree->clear();
-    }
-    
-    // 카메라 정보 초기화
-    cameraInfos.clear();
-}
-
-void TeachingWidget::loadSimulationRecipe() {
-    // 먼저 현재 상태를 백업
-    backupCurrentRecipe();
-    
-    // 기존 레시피 데이터 초기화
-    clearCurrentRecipe();
-    
-    // 시뮬레이션 전용 카메라 정보 생성
-    CameraInfo simCameraInfo;
-    simCameraInfo.name = "SIM_CAM (준비중...)";
-    simCameraInfo.index = -1; // 시뮬레이션용
-    simCameraInfo.uniqueId = "SIM_CAM";
-    cameraInfos.clear();
-    cameraInfos.append(simCameraInfo);
-    
-    // 사용 가능한 개별 레시피 파일이 있는지 확인
-    RecipeManager recipeManager;
-    QStringList availableRecipes = recipeManager.getAvailableRecipes();
-    
-    if (!availableRecipes.isEmpty()) {
-        // 첫 번째 사용 가능한 레시피 로드
-        onRecipeSelected(availableRecipes.first());
-    } else {
-        // 사용 가능한 레시피가 없으면 새로 생성
-        createNewSimulationRecipe();
-    }
-}
-
-void TeachingWidget::createNewSimulationRecipe() {
-    // 새로운 시뮬레이션 레시피 생성 (빈 상태로 시작)
-    clearCurrentRecipe();
-    
-    // 시뮬레이션용 카메라 정보 설정
-    CameraInfo simCameraInfo;
-    simCameraInfo.name = "SIM_CAM";
-    simCameraInfo.index = -1; // 시뮬레이션용
-    simCameraInfo.videoDeviceIndex = -1; // 시뮬레이션용
-    cameraInfos.append(simCameraInfo);
-}
-
-void TeachingWidget::saveSimulationRecipe() {
-    // 시뮬레이션 레시피를 개별 파일로 저장
-    if (currentRecipeName.isEmpty()) {
-        // 새 레시피 생성 (자동 타임스탬프 이름)
-        newRecipe();
-    } else {
-        // 기존 레시피 업데이트 - 연결된 카메라 정보와 함께 저장
-        // 기존 레시피 업데이트 - 기존 saveRecipe 함수 사용
-        QString recipeFileName = QString("recipes/%1/%1.xml").arg(currentRecipeName);
-        QMap<QString, CalibrationInfo> calibrationMap;
-        QStringList simulationImagePaths;
-        recipeManager->saveRecipe(recipeFileName, cameraInfos, cameraIndex, calibrationMap, cameraView, simulationImagePaths);
-    }
-    
-    // 현재 카메라 이름을 임시로 SIM_CAM으로 변경
-    QString originalCameraName;
-    if (!cameraInfos.isEmpty()) {
-        originalCameraName = cameraInfos[0].name;
-        cameraInfos[0].name = "SIM_CAM";
-    }
-    
-    // 원래 카메라 이름 복원
-    if (!cameraInfos.isEmpty() && !originalCameraName.isEmpty()) {
-        cameraInfos[0].name = originalCameraName;
-    }
-}
-
-void TeachingWidget::restoreBackupRecipe() {
-    // 백업된 레시피가 있으면 복원
-    if (backupRecipeData.contains("recipeName")) {
-        QString recipeName = backupRecipeData["recipeName"].toString();
-        if (!recipeName.isEmpty()) {
-            // 백업된 레시피 로드
-            QString recipeFile = recipeName + "_recipe.xml";
-            QFile file(recipeFile);
-            if (file.exists()) {
-                bool success = loadRecipe(recipeFile);
-                if (success) {
-                } else {
-                }
-            }
-        }
-    } else {
-        // 백업된 레시피가 없으면 빈 레시피로 시작
-        clearCurrentRecipe();
-    }
-    
-    // 백업 데이터 정리
-    backupRecipeData.clear();
-}
-
-void TeachingWidget::updateUIForSimulationMode(bool isSimulation) {
+void TeachingWidget::updateUIForCamMode(bool isSimulation) {
     // 윈도우 타이틀 업데이트
     QString title = isSimulation ? "MV - 시뮬레이션 모드" : "MV - 라이브 모드";
     setWindowTitle(title);
@@ -9174,14 +8756,6 @@ QString TeachingWidget::getCurrentRecipeName() const {
         if (!rn.isEmpty()) {
             qDebug() << "getCurrentRecipeName: using backupRecipeData.recipeName=" << rn;
             return rn;
-        }
-    }
-
-    // simulationDialog가 존재하면 그쪽의 현재 레시피명을 우선 조회
-    if (simulationDialog) {
-        QString simName = simulationDialog->getCurrentRecipeName();
-        if (!simName.isEmpty()) {
-            return simName;
         }
     }
 
@@ -9451,24 +9025,16 @@ void TeachingWidget::newRecipe() {
     QString recipeFileName = QString("recipes/%1/%1.xml").arg(recipeName);
     QMap<QString, CalibrationInfo> calibrationMap;
     QStringList simulationImagePaths;
-    if (recipeManager->saveRecipe(recipeFileName, cameraInfos, cameraIndex, calibrationMap, cameraView, simulationImagePaths)) {
-        // 저장 성공
-        
-        // 라이브 모드에서 현재 프레임을 레시피 폴더에 저장 (첫 번째 이미지)
-        if (!simulationMode) {
-            saveCurrentFrameToRecipe();
-        }
+    if (recipeManager->saveRecipe(recipeFileName, cameraInfos, cameraIndex, calibrationMap, cameraView, simulationImagePaths, 0, QStringList(), this)) {
+        // 저장 성공 - 티칭 이미지는 XML에 base64로 저장됨
+        qDebug() << "레시피 저장 성공: 티칭 이미지는 XML에 base64로 저장됨";
     } else {
         QMessageBox::warning(this, "저장 실패", 
             QString("새 레시피 파일 생성에 실패했습니다:\n%1").arg(recipeManager->getLastError()));
     }
     
-    // 시뮬레이션 다이얼로그가 열려있으면 초기화
-    if (simulationDialog) {
-        simulationDialog->clearForNewRecipe(); // 새 레시피용 초기화
-        // 새 레시피 생성 시 패턴 트리도 클리어
-        updatePatternTree();
-    }
+    // 새 레시피 생성 시 패턴 트리 업데이트
+    updatePatternTree();
     
     UIColors::showInformation(this, "새 레시피", 
         QString("새 레시피 '%1'가 생성되었습니다.").arg(recipeName));
@@ -9507,10 +9073,8 @@ void TeachingWidget::saveRecipeAs() {
             currentRecipeName = recipeName;
             hasUnsavedChanges = false;
             
-            // 라이브 모드에서 현재 프레임을 레시피 폴더에 저장
-            if (!simulationMode) {
-                saveCurrentFrameToRecipe();
-            }
+            // 티칭 이미지는 XML에 base64로 저장됨
+            qDebug() << "레시피 저장: 티칭 이미지는 XML에 base64로 저장됨";
             
             QMessageBox::information(this, "레시피 저장", 
                 QString("'%1' 레시피가 성공적으로 저장되었습니다.").arg(recipeName));
@@ -9521,189 +9085,7 @@ void TeachingWidget::saveRecipeAs() {
     }
 }
 
-QString TeachingWidget::getCurrentSimulationCameraUuid() {
-    if (!simulationDialog) {
-        qDebug() << "시뮬레이션 다이얼로그가 없습니다.";
-        return QString();
-    }
-    
-    // SimulationDialog에서 현재 선택된 카메라 UUID 가져오기
-    QString cameraUuid = simulationDialog->getSelectedCameraUuid();
-    if (cameraUuid.isEmpty()) {
-        qDebug() << "시뮬레이션에서 선택된 카메라가 없습니다.";
-    }
-    
-    return cameraUuid;
-}
-
-void TeachingWidget::saveSimulationTeachingImage() {
-    if (currentRecipeName.isEmpty()) {
-        return;
-    }
-    
-    // 현재 시뮬레이션 카메라 UUID 가져오기
-    QString currentCameraUuid = getCurrentSimulationCameraUuid();
-    if (currentCameraUuid.isEmpty()) {
-        qDebug() << "시뮬레이션 카메라 UUID를 가져올 수 없습니다.";
-        return;
-    }
-    
-    // 레시피 이미지 폴더 경로
-    QString recipeImagesDir = QString("recipes/%1/teach").arg(currentRecipeName);
-    QDir dir(recipeImagesDir);
-    if (!dir.exists()) {
-        qDebug() << "레시피 이미지 폴더가 존재하지 않습니다:" << recipeImagesDir;
-        return;
-    }
-    
-    // 현재 표시된 이미지 파일 찾기 (temp_로 시작하는 최신 파일)
-    QStringList filters;
-    filters << "temp_*.jpg" << "temp_*.png" << "temp_*.bmp" << "temp_*.jpeg";
-    QFileInfoList tempFiles = dir.entryInfoList(filters, QDir::Files, QDir::Time);
-    
-    QString sourceImagePath;
-    if (!tempFiles.isEmpty()) {
-        // 가장 최신 임시 파일 사용
-        sourceImagePath = tempFiles.first().absoluteFilePath();
-        qDebug() << "찾은 최신 임시 파일:" << sourceImagePath;
-    } else {
-        // 임시 파일이 없으면 현재 CameraView에서 이미지 가져오기
-        QPixmap currentPixmap = cameraView->getBackgroundPixmap();
-        if (currentPixmap.isNull()) {
-            qDebug() << "표시할 이미지가 없습니다.";
-            return;
-        }
-        
-        // QPixmap을 cv::Mat으로 변환
-        QImage qImg = currentPixmap.toImage();
-        cv::Mat currentImage = cv::Mat(qImg.height(), qImg.width(), CV_8UC4, (void*)qImg.constBits(), qImg.bytesPerLine());
-        cv::cvtColor(currentImage, currentImage, cv::COLOR_BGRA2BGR);
-        
-        // 임시로 저장
-        sourceImagePath = QString("%1/temp_current.jpg").arg(recipeImagesDir);
-        if (!cv::imwrite(sourceImagePath.toStdString(), currentImage)) {
-            qDebug() << "현재 이미지 임시 저장 실패:" << sourceImagePath;
-            return;
-        }
-    }
-    
-    // 해당 카메라의 기존 이미지들 삭제 (1장만 유지하기 위해)
-    QStringList existingFilters;
-    existingFilters << QString("%1.jpg").arg(currentCameraUuid) 
-                   << QString("%1.png").arg(currentCameraUuid)
-                   << QString("%1.bmp").arg(currentCameraUuid) 
-                   << QString("%1.jpeg").arg(currentCameraUuid);
-    QStringList existingFiles = dir.entryList(existingFilters, QDir::Files);
-    for (const QString& file : existingFiles) {
-        QString filePath = dir.absoluteFilePath(file);
-        if (QFile::remove(filePath)) {
-            qDebug() << QString("기존 카메라 %1 이미지 삭제: %2").arg(currentCameraUuid).arg(filePath);
-        }
-    }
-    
-    // 카메라 UUID로 파일명 생성하여 복사
-    QString targetFileName = QString("%1.jpg").arg(currentCameraUuid);
-    QString targetPath = dir.absoluteFilePath(targetFileName);
-    
-    // 기존 대상 파일이 있으면 삭제 (QFile::copy는 덮어쓰기를 하지 않음)
-    if (QFile::exists(targetPath)) {
-        if (QFile::remove(targetPath)) {
-            qDebug() << QString("기존 대상 파일 삭제: %1").arg(targetPath);
-        } else {
-            qDebug() << QString("기존 대상 파일 삭제 실패: %1").arg(targetPath);
-        }
-    }
-    
-    if (QFile::copy(sourceImagePath, targetPath)) {
-        qDebug() << QString("시뮬레이션 이미지를 카메라명으로 저장 성공: %1 -> %2").arg(sourceImagePath).arg(targetPath);
-        
-        // 파일이 제대로 생성되었는지 확인
-        if (QFile::exists(targetPath)) {
-            qDebug() << QString("카메라 %1의 티칭 이미지 파일 생성 확인: %2").arg(currentCameraUuid).arg(targetPath);
-        } else {
-            qDebug() << QString("경고: 카메라 %1의 티칭 이미지 파일이 생성되지 않았습니다: %2").arg(currentCameraUuid).arg(targetPath);
-        }
-    } else {
-        qDebug() << QString("시뮬레이션 이미지 저장 실패: %1 -> %2").arg(sourceImagePath).arg(targetPath);
-        
-        // 실패 원인 분석
-        if (!QFile::exists(sourceImagePath)) {
-            qDebug() << QString("소스 파일이 존재하지 않습니다: %1").arg(sourceImagePath);
-        }
-        if (QFile::exists(targetPath)) {
-            qDebug() << QString("대상 파일이 이미 존재합니다: %1").arg(targetPath);
-        }
-    }
-    
-    // 모든 임시 파일들 삭제 (temp_로 시작하는 파일들)
-    QStringList allTempFiles = dir.entryList(filters, QDir::Files);
-    for (const QString& tempFile : allTempFiles) {
-        QString tempPath = dir.absoluteFilePath(tempFile);
-        if (QFile::remove(tempPath)) {
-            qDebug() << QString("임시 파일 삭제: %1").arg(tempPath);
-        }
-    }
-    
-    // 시뮬레이션 다이얼로그의 이미지 목록 갱신
-    if (simulationDialog) {
-        simulationDialog->loadRecipeImages(currentRecipeName);
-        qDebug() << QString("시뮬레이션 다이얼로그 이미지 목록 갱신 완료: %1").arg(currentRecipeName);
-    }
-}
-
-void TeachingWidget::saveCurrentFrameToRecipe() {
-    if (currentRecipeName.isEmpty()) {
-        return;
-    }
-    
-    // 현재 프레임 가져오기
-    cv::Mat currentFrame = getCurrentFrame();
-    if (currentFrame.empty()) {
-        qDebug() << "현재 프레임이 비어있어서 저장할 수 없습니다.";
-        return;
-    }
-    
-    // 현재 카메라 UUID 가져오기
-    QString cameraUuid;
-    if (isValidCameraIndex(cameraIndex)) {
-        cameraUuid = getCameraInfo(cameraIndex).uniqueId;
-    }
-    if (cameraUuid.isEmpty()) {
-        cameraUuid = "unknown";
-    }
-    
-    // 레시피 이미지 폴더 경로 생성
-    QString recipeImagesDir = QString("recipes/%1/teach").arg(currentRecipeName);
-    QDir dir;
-    if (!dir.mkpath(recipeImagesDir)) {
-        qDebug() << QString("레시피 이미지 폴더 생성 실패: %1").arg(recipeImagesDir);
-        return;
-    }
-    
-    // 해당 카메라의 기존 이미지들 삭제 (1장만 유지하기 위해)
-    QStringList filters;
-    filters << QString("%1.jpg").arg(cameraUuid) << QString("%1.png").arg(cameraUuid) 
-            << QString("%1.bmp").arg(cameraUuid) << QString("%1.jpeg").arg(cameraUuid);
-    QStringList existingFiles = dir.entryList(filters, QDir::Files);
-    for (const QString& file : existingFiles) {
-        QString filePath = QString("%1/%2").arg(recipeImagesDir).arg(file);
-        if (QFile::remove(filePath)) {
-            qDebug() << QString("기존 카메라 %1 이미지 삭제: %2").arg(cameraUuid).arg(filePath);
-        }
-    }
-    
-    // 카메라 UUID로만 파일명 생성 (타임스탬프 제거)
-    QString fileName = QString("%1.jpg").arg(cameraUuid);
-    QString fullPath = QString("%1/%2").arg(recipeImagesDir, fileName);
-    
-    // OpenCV Mat을 이미지 파일로 저장
-    if (cv::imwrite(fullPath.toStdString(), currentFrame)) {
-        qDebug() << QString("현재 프레임을 레시피에 저장했습니다: %1").arg(fullPath);
-    } else {
-        qDebug() << QString("현재 프레임 저장 실패: %1").arg(fullPath);
-    }
-}
-
+// 레시피 관리 함수
 void TeachingWidget::manageRecipes() {
     RecipeManager manager;
     QStringList availableRecipes = manager.getAvailableRecipes();
@@ -9784,11 +9166,6 @@ void TeachingWidget::manageRecipes() {
                         currentRecipeName.clear();
                     }
                     
-                    // 시뮬레이션 다이얼로그가 열려있다면 업데이트
-                    if (simulationDialog) {
-                        simulationDialog->refreshRecipeList();
-                    }
-                    
                     QMessageBox::information(&dialog, "레시피 삭제", 
                         QString("'%1' 레시피가 삭제되었습니다.").arg(recipeName));
                 } else {
@@ -9818,11 +9195,6 @@ void TeachingWidget::manageRecipes() {
                     // 현재 로드된 레시피가 변경된 레시피라면 이름 업데이트
                     if (currentRecipeName == oldName) {
                         currentRecipeName = newName;
-                    }
-                    
-                    // 시뮬레이션 다이얼로그가 열려있다면 업데이트
-                    if (simulationDialog) {
-                        simulationDialog->refreshRecipeList();
                     }
                     
                     QMessageBox::information(&dialog, "레시피 이름 변경", 
@@ -9857,147 +9229,119 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
     
     RecipeManager manager;
     
-    // 시뮬레이션 모드에서는 loadRecipeByName 사용
-    if (simulationMode) {
+    // 시뮬레이션 모드에서도 완전한 loadRecipe 사용
+    QString recipeFileName = QDir(manager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(recipeName));
+    QMap<QString, CalibrationInfo> calibrationMap;
+    
+    // 시뮬레이션 모드일 때만 cameraInfos 비우기
+    if (camOff) {
         // 레시피에서 카메라 정보 먼저 읽기
         QStringList recipeCameraUuids = manager.getRecipeCameraUuids(recipeName);
         qDebug() << QString("시뮬레이션 모드 - 레시피 '%1'의 카메라 목록: %2").arg(recipeName).arg(recipeCameraUuids.join(", "));
         
-        QVector<PatternInfo> patterns;
-        if (manager.loadRecipeByName(recipeName, patterns)) {
-            // 기존 패턴들 클리어
-            if (cameraView) {
-                cameraView->clearPatterns();
-            }
-            if (patternTree) {
-                patternTree->clear();
-            }
+        // 시뮬레이션 모드에서는 cameraInfos를 비워서 레시피에서 새로 생성하도록 함
+        cameraInfos.clear();
+    }
+    
+    // 티칭 이미지 콜백 함수 정의
+    auto teachingImageCallback = [this](const QStringList& imagePaths) {
+        int imageIndex = 0;
+        for (const QString& imagePath : imagePaths) {
+            qDebug() << QString("티칭 이미지 로드됨 [%1]: %2").arg(imageIndex).arg(imagePath);
             
-            // 새 패턴들 추가
-            for (const PatternInfo& pattern : patterns) {
-                if (cameraView) {
-                    cameraView->addPattern(pattern);
+            // 시뮬레이션 모드에서 모든 카메라의 이미지를 cameraFrames에 설정
+            if (camOff && QFile::exists(imagePath)) {
+                cv::Mat teachingImage = cv::imread(imagePath.toStdString());
+                if (!teachingImage.empty()) {
+                    // cameraFrames 배열 크기 확장
+                    if (imageIndex >= static_cast<int>(cameraFrames.size())) {
+                        cameraFrames.resize(imageIndex + 1);
+                    }
+                    cameraFrames[imageIndex] = teachingImage.clone();
+                    
+                    qDebug() << QString("시뮬레이션 모드 - cameraFrames[%1]에 티칭이미지 설정: %2x%3")
+                                .arg(imageIndex).arg(teachingImage.cols).arg(teachingImage.rows);
+                    
+                    imageIndex++;
                 }
             }
+        }
+        
+        // 모든 이미지 로드 완료 후 UI 업데이트
+        if (camOff) {
+            // 현재 카메라의 이미지가 있으면 화면 업데이트
+            if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
+                !cameraFrames[cameraIndex].empty()) {
+                updateCameraFrame();
+            }
             
-            currentRecipeName = recipeName;
-            hasUnsavedChanges = false;
-            
-            // 최근 사용한 레시피를 ConfigManager에 저장
-            ConfigManager::instance()->setLastRecipePath(recipeName);
-            ConfigManager::instance()->saveConfig();
-            qDebug() << QString("시뮬레이션 모드 - 최근 레시피 로드: %1").arg(recipeName);
-            
-            // 패턴 동기화 및 트리 업데이트
-            syncPatternsFromCameraView();
-            updatePatternTree();
-            
-            // 시뮬레이션 다이얼로그가 열려있으면 레시피 이미지들과 카메라 목록 업데이트
-            if (simulationDialog) {
-                simulationDialog->updateCameraList(recipeName);
-                simulationDialog->loadRecipeImages(recipeName);
+            // 프리뷰 화면들도 업데이트
+            updatePreviewFrames();
+        }
+    };
+    
+    if (manager.loadRecipe(recipeFileName, cameraInfos, calibrationMap, cameraView, patternTree, teachingImageCallback, this)) {
+        currentRecipeName = recipeName;
+        hasUnsavedChanges = false;
+        
+        // 최근 사용한 레시피를 ConfigManager에 저장
+        ConfigManager::instance()->setLastRecipePath(recipeName);
+        ConfigManager::instance()->saveConfig();
+        qDebug() << QString("레시피 로드 완료: %1").arg(recipeName);
+        
+        // 패턴 동기화 및 트리 업데이트
+        syncPatternsFromCameraView();
+        updatePatternTree();
+        
+        // camOff 모드에서 카메라 전환 및 프리뷰 업데이트
+        if (camOff) {
+            QStringList recipeCameraUuids = manager.getRecipeCameraUuids(recipeName);
+            if (!recipeCameraUuids.isEmpty()) {
+                QString firstCameraUuid = recipeCameraUuids.first();
+                qDebug() << QString("시뮬레이션 모드 - 첫 번째 카메라 자동 선택: %1").arg(firstCameraUuid);
+                
+                // cameraFrames 상태 디버그 출력
+                qDebug() << QString("cameraFrames 크기: %1").arg(cameraFrames.size());
+                for (int i = 0; i < static_cast<int>(cameraFrames.size()); i++) {
+                    if (!cameraFrames[i].empty()) {
+                        qDebug() << QString("cameraFrames[%1]: %2x%3").arg(i).arg(cameraFrames[i].cols).arg(cameraFrames[i].rows);
+                    } else {
+                        qDebug() << QString("cameraFrames[%1]: 비어있음").arg(i);
+                    }
+                }
+                
+                // 첫 번째 카메라로 전환 (프리뷰도 자동 할당됨)
+                switchToCamera(firstCameraUuid);
+                
+                // camOff 모드에서 메인 카메라뷰 업데이트
+                updateCameraFrame();
             }
             
             QMessageBox::information(this, "레시피 불러오기", 
                 QString("'%1' 레시피가 성공적으로 불러와졌습니다.\n카메라: %2개").arg(recipeName).arg(recipeCameraUuids.size()));
         } else {
-            QMessageBox::critical(this, "레시피 불러오기 실패", 
-                QString("레시피 불러오기에 실패했습니다:\n%1").arg(manager.getLastError()));
-        }
-    } else {
-        // 일반 모드에서는 기존 loadRecipe 사용
-        QString recipeFileName = QDir(manager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(recipeName));
-        QMap<QString, CalibrationInfo> calibrationMap;
-        if (manager.loadRecipe(recipeFileName, cameraInfos, calibrationMap, cameraView, patternTree)) {
-            currentRecipeName = recipeName;
-            hasUnsavedChanges = false;
-            
-            // 최근 사용한 레시피를 ConfigManager에 저장
-            ConfigManager::instance()->setLastRecipePath(recipeName);
-            ConfigManager::instance()->saveConfig();
-            qDebug() << QString("최근 레시피 로드: %1").arg(recipeName);
-            
-            // 패턴 동기화 및 트리 업데이트
-            syncPatternsFromCameraView();
-            updatePatternTree();
-            
-            // 시뮬레이션 다이얼로그가 열려있으면 레시피 이미지들과 카메라 목록 업데이트
-            if (simulationDialog) {
-                simulationDialog->updateCameraList(recipeName);
-                simulationDialog->loadRecipeImages(recipeName);
+            // camOn 모드에서도 첫 번째 카메라 이름 설정
+            QStringList recipeCameraUuids = manager.getRecipeCameraUuids(recipeName);
+            if (!recipeCameraUuids.isEmpty() && !cameraInfos.isEmpty()) {
+                QString firstCameraUuid = recipeCameraUuids.first();
+                QString cameraName = firstCameraUuid;
+                for (const CameraInfo& info : cameraInfos) {
+                    if (info.uniqueId == firstCameraUuid) {
+                        cameraName = info.name;
+                        break;
+                    }
+                }
+                if (cameraView) {
+                    cameraView->setCurrentCameraUuid(firstCameraUuid);
+                    cameraView->update();
+                }
             }
             
             QMessageBox::information(this, "레시피 불러오기", 
                 QString("'%1' 레시피가 성공적으로 불러와졌습니다.").arg(recipeName));
-        } else {
-            QMessageBox::critical(this, "레시피 불러오기 실패", 
-                QString("레시피 불러오기에 실패했습니다:\n%1").arg(manager.getLastError()));
         }
-    }
-}
-
-void TeachingWidget::selectCameraTeachingImage(const QString& cameraUuid)
-{
-    if (cameraUuid.isEmpty()) return;
-    
-    // 시뮬레이션 모드 체크
-    if (simulationMode) {
-        qDebug() << QString("시뮬레이션 모드 - 카메라 UUID '%1' 선택").arg(cameraUuid);
-        
-        // 시뮬레이션 모드에서는 카메라 뷰에 직접 설정
-        if (cameraView) {
-            cameraView->setCurrentCameraUuid(cameraUuid);
-            cameraView->setSimulationCameraName(cameraUuid);  // simulationCameraName도 함께 설정
-            
-            // 현재 카메라 UUID가 설정되었는지 확인
-            QString currentUuid = cameraView->getCurrentCameraUuid();
-            QString simCameraName = cameraView->getSimulationCameraName();
-            qDebug() << QString("시뮬레이션 모드 - 설정된 카메라 UUID: '%1', simulationCameraName: '%2'").arg(currentUuid).arg(simCameraName);
-            
-            // 패턴들을 해당 카메라 뷰로 다시 그리기
-            cameraView->update();
-        }
-        
-        // 패턴 트리 업데이트
-        updatePatternTree();
-        
-        // 선택된 카메라에 실제로 몇 개의 패턴이 있는지 확인
-        const QList<PatternInfo>& allPatterns = cameraView->getPatterns();
-        int patternCount = 0;
-        for (const PatternInfo& pattern : allPatterns) {
-            if (pattern.cameraUuid == cameraUuid) {
-                patternCount++;
-            }
-        }
-        qDebug() << QString("시뮬레이션 모드 - 카메라 '%1' 선택완료, 해당 카메라 패턴 수: %2개").arg(cameraUuid).arg(patternCount);
-        
-        qDebug() << QString("시뮬레이션 모드 - 카메라 선택 완료, 패턴 트리 업데이트됨");
-        return;
-    }
-    
-    // 일반 모드: 해당 카메라 UUID와 일치하는 카메라 인덱스 찾기
-    int targetCameraIndex = -1;
-    for (int i = 0; i < cameraInfos.size(); ++i) {
-        if (cameraInfos[i].uniqueId == cameraUuid) {
-            targetCameraIndex = i;
-            break;
-        }
-    }
-    
-    if (targetCameraIndex >= 0 && targetCameraIndex != cameraIndex) {
-        // 카메라 인덱스 변경
-        cameraIndex = targetCameraIndex;
-        
-        // UI 업데이트
-        updateCameraFrame();
-        updatePatternTree();
-        
-        // 카메라 뷰에 현재 카메라 UUID 설정
-        if (cameraView) {
-            cameraView->setCurrentCameraUuid(cameraUuid);
-        }
-        
-        qDebug() << QString("카메라 티칭 이미지 선택됨: %1 (인덱스: %2)")
-                    .arg(cameraUuid).arg(targetCameraIndex);
+    } else {
+        QMessageBox::critical(this, "레시피 불러오기 실패", 
+            QString("레시피 불러오기에 실패했습니다:\n%1").arg(manager.getLastError()));
     }
 }

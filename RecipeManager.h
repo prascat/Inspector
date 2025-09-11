@@ -26,14 +26,16 @@ public:
                    CameraView* cameraView,
                    const QStringList& simulationImagePaths = QStringList(),
                    int simulationCurrentIndex = 0,
-                   const QStringList& trainingImagePaths = QStringList());
+                   const QStringList& trainingImagePaths = QStringList(),
+                   class TeachingWidget* teachingWidget = nullptr);
                    
     bool loadRecipe(const QString& fileName,
                    QVector<CameraInfo>& cameraInfos,
                    QMap<QString, CalibrationInfo>& calibrationMap,
                    CameraView* cameraView,
                    QTreeWidget* patternTree,
-                   std::function<void(const QStringList&)> trainingImageCallback = nullptr);
+                   std::function<void(const QStringList&)> trainingImageCallback = nullptr,
+                   class TeachingWidget* teachingWidget = nullptr);
     
     // 시뮬레이션 모드 저장/로드 함수
     bool saveSimulationRecipe(const QString& fileName,
@@ -108,7 +110,8 @@ private:
                           QMap<QString, QTreeWidgetItem*>& itemMap,
                           int& totalLoadedPatterns,
                           QString& loadedCameraNames,
-                          std::function<void(const QStringList&)> trainingImageCallback = nullptr);
+                          std::function<void(const QStringList&)> trainingImageCallback = nullptr,
+                          TeachingWidget* teachingWidget = nullptr);
     
     CalibrationInfo readCalibrationInfo(QXmlStreamReader& xml);
     PatternInfo readPattern(QXmlStreamReader& xml, const QString& cameraUuid);
