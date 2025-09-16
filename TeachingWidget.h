@@ -481,7 +481,6 @@ private:
     InspectionResult runSingleInspection(const cv::Mat& image);
     
     // camOff 레시피 관리
-    void updateUIForCamMode(bool isCamOff);
     QString getCurrentRecipeName() const;
     
     // ===== 레시피 파일 관리 함수 =====

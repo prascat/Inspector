@@ -271,6 +271,23 @@ bool RecipeManager::saveRecipe(const QString& fileName,
         xml.writeAttribute("uuid", actualCameraInfos[camIdx].uniqueId);
         xml.writeAttribute("name", actualCameraInfos[camIdx].name);
         
+        // 먼저 width, height 속성 추가 (이미지 크기 정보)
+        cv::Mat sizeCheckImage;
+        if (teachingWidget && camIdx >= 0 && camIdx < static_cast<int>(teachingWidget->cameraFrames.size()) && 
+            !teachingWidget->cameraFrames[camIdx].empty()) {
+            sizeCheckImage = teachingWidget->cameraFrames[camIdx];
+        } else if (teachingWidget) {
+            sizeCheckImage = teachingWidget->getCurrentFrame();
+        }
+        
+        if (!sizeCheckImage.empty()) {
+            xml.writeAttribute("width", QString::number(sizeCheckImage.cols));
+            xml.writeAttribute("height", QString::number(sizeCheckImage.rows));
+        } else {
+            xml.writeAttribute("width", "");
+            xml.writeAttribute("height", "");
+        }
+        
         // 카메라별 티칭 이미지 정보 추가 (cameraFrames에서 해당 카메라 이미지 가져오기)
         if (teachingWidget) {
             cv::Mat currentImage;
@@ -292,10 +309,6 @@ bool RecipeManager::saveRecipe(const QString& fileName,
                     QByteArray imageData(reinterpret_cast<const char*>(buffer.data()), buffer.size());
                     QString teachingImageBase64 = imageData.toBase64();
                     xml.writeAttribute("teachingImage", teachingImageBase64);
-                    
-                    // 이미지 크기 정보도 저장
-                    xml.writeAttribute("imageWidth", QString::number(currentImage.cols));
-                    xml.writeAttribute("imageHeight", QString::number(currentImage.rows));
                     
                     qDebug() << QString("카메라 '%1'의 프레임을 Base64로 저장 (크기: %2 chars, 해상도: %3x%4)")
                                 .arg(actualCameraInfos[camIdx].uniqueId).arg(teachingImageBase64.size())
@@ -377,12 +390,18 @@ bool RecipeManager::loadRecipe(const QString& fileName,
                               QTreeWidget* patternTree,
                               std::function<void(const QStringList&)> trainingImageCallback,
                               TeachingWidget* teachingWidget) {
+    qDebug() << QString("loadRecipe 시작: %1").arg(fileName);
+    qDebug() << QString("파일 존재 여부: %1").arg(QFile::exists(fileName) ? "true" : "false");
+    
     QFile file(fileName);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        setError(QString("레시피 파일을 열 수 없습니다: %1").arg(fileName));
+        QString errorMsg = QString("레시피 파일을 열 수 없습니다: %1 (에러: %2)").arg(fileName).arg(file.errorString());
+        qDebug() << errorMsg;
+        setError(errorMsg);
         return false;
     }
     
+    qDebug() << QString("파일 열기 성공, XML 파싱 시작: %1").arg(fileName);
     QXmlStreamReader xml(&file);
     
     // 기존 패턴 삭제 (UI 구성요소가 있는 경우에만)
@@ -402,9 +421,17 @@ bool RecipeManager::loadRecipe(const QString& fileName,
     
     try {
         // XML 루트 요소 확인 - 새 구조는 Recipe
-        if (!xml.readNextStartElement() || xml.name() != "Recipe") {
-            throw QString("유효하지 않은 레시피 파일 형식입니다.");
+        qDebug() << QString("XML 루트 요소 읽기 시도...");
+        if (!xml.readNextStartElement()) {
+            throw QString("XML 문서가 비어있거나 유효하지 않습니다.");
         }
+        
+        qDebug() << QString("루트 요소 이름: %1").arg(xml.name().toString());
+        if (xml.name() != "Recipe") {
+            throw QString(QString("유효하지 않은 레시피 파일 형식입니다. 루트 요소: %1").arg(xml.name().toString()));
+        }
+        
+        qDebug() << QString("Recipe 루트 요소 확인 완료");
         
         // 시뮬레이션 모드일 때 기존 카메라 정보 초기화
         bool isSimulationMode = false;
@@ -446,13 +473,41 @@ bool RecipeManager::loadRecipe(const QString& fileName,
             patternTree->expandAll();
         }
         
+        // XML 파싱 에러 확인
+        if (xml.hasError()) {
+            QString xmlError = QString("XML 파싱 에러: %1 (라인 %2, 컬럼 %3)")
+                                .arg(xml.errorString()).arg(xml.lineNumber()).arg(xml.columnNumber());
+            qDebug() << xmlError;
+            setError(xmlError);
+            file.close();
+            return false;
+        }
+        
     } catch (const QString& error) {
+        qDebug() << QString("레시피 로드 중 예외 발생: %1").arg(error);
         setError(error);
         file.close();
         return false;
     }
     
     file.close();
+    
+    // base64 티칭 이미지가 로드된 경우 trainingImageCallback 호출
+    if (trainingImageCallback && teachingWidget && !teachingWidget->cameraFrames.empty()) {
+        QStringList imagePaths;
+        // 더미 경로를 생성해서 콜백 호출 (실제 파일은 없지만 cameraFrames에 이미지가 있음)
+        for (int i = 0; i < static_cast<int>(teachingWidget->cameraFrames.size()); i++) {
+            if (!teachingWidget->cameraFrames[i].empty()) {
+                imagePaths.append(QString("base64_image_%1").arg(i));
+            }
+        }
+        
+        if (!imagePaths.isEmpty()) {
+            qDebug() << QString("base64 티칭 이미지 로드 완료 - trainingImageCallback 호출: %1개 이미지").arg(imagePaths.size());
+            trainingImageCallback(imagePaths);
+        }
+    }
+    
     return totalLoadedPatterns > 0;
 }
 
@@ -493,10 +548,7 @@ void RecipeManager::writeCameraSettings(QXmlStreamWriter& xml, const CameraInfo&
     } else {
         // 일반 카메라
         if (cameraInfo.capture && cameraInfo.capture->isOpened()) {
-            int width = cameraInfo.capture->get(cv::CAP_PROP_FRAME_WIDTH);
-            int height = cameraInfo.capture->get(cv::CAP_PROP_FRAME_HEIGHT);
-            xml.writeAttribute("width", QString::number(width));
-            xml.writeAttribute("height", QString::number(height));
+            // width, height는 이미 위에서 추가했으므로 여기서는 제외
             
             double fps = cameraInfo.capture->get(cv::CAP_PROP_FPS);
             xml.writeAttribute("fps", QString::number(fps));
@@ -813,6 +865,10 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
         newCameraInfo.uniqueId = cameraUuid;
         newCameraInfo.name = cameraName;
         
+        // 인덱스 설정 - cameraInfos의 현재 크기를 사용
+        newCameraInfo.index = cameraInfos.size();
+        newCameraInfo.videoDeviceIndex = cameraInfos.size();
+        
         // 시뮬레이션 모드 체크 - cameraInfos가 비어있다면 시뮬레이션 모드
         if (cameraInfos.isEmpty()) {
             newCameraInfo.isConnected = true;   // camOff 모드에서는 연결된 것으로 표시
@@ -852,8 +908,8 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
             
             if (!teachingImage.empty() && teachingWidget) {
                 // 저장된 이미지 크기 정보 읽기
-                QString widthAttr = xml.attributes().value("imageWidth").toString();
-                QString heightAttr = xml.attributes().value("imageHeight").toString();
+                QString widthAttr = xml.attributes().value("width").toString();
+                QString heightAttr = xml.attributes().value("height").toString();
                 int originalWidth = widthAttr.isEmpty() ? teachingImage.cols : widthAttr.toInt();
                 int originalHeight = heightAttr.isEmpty() ? teachingImage.rows : heightAttr.toInt();
                 
@@ -883,45 +939,6 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                     
                     qDebug() << QString("카메라 '%1' (인덱스 %2) base64 티칭 이미지를 cameraFrames에 직접 설정: %3x%4")
                                 .arg(cameraUuid).arg(cameraIdx).arg(teachingImage.cols).arg(teachingImage.rows);
-                    
-                    // 화면 업데이트 (camOff 모드이거나 카메라가 연결되지 않은 경우)
-                    qDebug() << QString("화면 업데이트 체크: teachingWidget->camOff=%1, cameraIdx=%2, teachingWidget->cameraIndex=%3")
-                                .arg(teachingWidget->camOff).arg(cameraIdx).arg(teachingWidget->cameraIndex);
-                    
-                    // 현재 카메라이거나 카메라가 하나뿐인 경우 화면에 표시
-                    bool shouldDisplay = (cameraIdx == teachingWidget->cameraIndex) || (cameraInfos.size() == 1);
-                    
-                    if (shouldDisplay && cameraView) {
-                        // 카메라 이름 설정
-                        QString cameraName = cameraInfos[cameraIdx].name;
-                        cameraView->setCurrentCameraName(cameraName);
-                        cameraView->setCurrentCameraUuid(cameraInfos[cameraIdx].uniqueId);
-                        
-                        qDebug() << QString("화면 업데이트 - 카메라 이름 설정: '%1', UUID: '%2'")
-                                    .arg(cameraName).arg(cameraInfos[cameraIdx].uniqueId);
-                        
-                        // OpenCV Mat을 QImage로 변환
-                        QImage qImage;
-                        if (teachingImage.channels() == 3) {
-                            cv::Mat rgbImage;
-                            cv::cvtColor(teachingImage, rgbImage, cv::COLOR_BGR2RGB);
-                            qImage = QImage(rgbImage.data, rgbImage.cols, rgbImage.rows, rgbImage.step, QImage::Format_RGB888);
-                        } else {
-                            qImage = QImage(teachingImage.data, teachingImage.cols, teachingImage.rows, teachingImage.step, QImage::Format_Grayscale8);
-                        }
-                        
-                        if (!qImage.isNull()) {
-                            QPixmap pixmap = QPixmap::fromImage(qImage);
-                            cameraView->setBackgroundPixmap(pixmap);
-                            cameraView->update();
-                            qDebug() << QString("화면 업데이트 - 카메라 이름(%1) 설정 및 배경 이미지 설정: %2x%3")
-                                        .arg(cameraName).arg(teachingImage.cols).arg(teachingImage.rows);
-                        }
-                    } else {
-                        qDebug() << QString("화면 업데이트 조건 불일치 - shouldDisplay=%1, cameraView=%2")
-                                    .arg(shouldDisplay)
-                                    .arg(cameraView != nullptr);
-                    }
                 }
             }
         }

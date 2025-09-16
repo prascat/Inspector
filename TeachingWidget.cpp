@@ -478,126 +478,16 @@ void TeachingWidget::openRecipe(bool autoMode) {
             qDebug() << QString("최근 레시피가 없어 첫 번째 레시피 '%1'을 로드합니다.").arg(selectedRecipe);
         }
     } else {
-        // 수동 모드: 사용자 선택
-        bool ok;
-        selectedRecipe = QInputDialog::getItem(this, "레시피 열기", 
-            "열려는 레시피를 선택하세요:", availableRecipes, 0, false, &ok);
-        
-        if (!ok || selectedRecipe.isEmpty()) {
-            return;
-        }
+        // 수동 모드: 레시피 관리 다이얼로그 열기 (다이얼로그에서 onRecipeSelected 호출됨)
+        qDebug() << QString("수동 모드 - 레시피 관리 다이얼로그 열기");
+        manageRecipes(); // 다이얼로그에서 레시피 선택 및 로드 처리
+        return;
     }
     
-    // 공통 로드 로직
-    qDebug() << QString("레시피 로드 시작: %1 (자동모드: %2)").arg(selectedRecipe).arg(autoMode);
-    
-    // 레시피 파일 경로 생성
-    QString recipeFileName = QDir(recipeManager->getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(selectedRecipe));
-    
-    // 빈 캘리브레이션 맵 (로드 시 채워짐)
-    QMap<QString, CalibrationInfo> calibrationMap;
-    
-    // 티칭 이미지 로드 콜백 함수
-    auto teachingImageCallback = [this, selectedRecipe](const QStringList& imagePaths) {
-        qDebug() << QString("티칭 이미지 콜백 호출됨 - 이미지 수: %1").arg(imagePaths.size());
-        qDebug() << QString("현재 camOff 상태: %1, cameraIndex: %2").arg(camOff).arg(cameraIndex);
-        
-        if (!imagePaths.isEmpty()) {
-            // camOff 모드에서만 처리
-            if (camOff) {
-                // cameraFrames 벡터 크기를 imagePaths 수만큼 확장
-                if (imagePaths.size() > static_cast<int>(cameraFrames.size())) {
-                    cameraFrames.resize(imagePaths.size());
-                }
-                
-                // 모든 이미지를 각각의 카메라 인덱스에 로드
-                for (int i = 0; i < imagePaths.size(); i++) {
-                    QString imagePath = imagePaths[i];
-                    qDebug() << QString("카메라[%1] 티칭 이미지 로드 시도: %2").arg(i).arg(imagePath);
-                    
-                    if (QFile::exists(imagePath)) {
-                        cv::Mat teachingImage = cv::imread(imagePath.toStdString());
-                        if (!teachingImage.empty()) {
-                            cameraFrames[i] = teachingImage.clone();
-                            
-                            qDebug() << QString("카메라[%1] 티칭이미지 설정 완료: %2x%3")
-                                        .arg(i).arg(teachingImage.cols).arg(teachingImage.rows);
-                        } else {
-                            qDebug() << QString("카메라[%1] 티칭 이미지 로드 실패: %2").arg(i).arg(imagePath);
-                        }
-                    } else {
-                        qDebug() << QString("카메라[%1] 티칭 이미지 파일이 존재하지 않음: %2").arg(i).arg(imagePath);
-                    }
-                }
-                
-                // 현재 카메라의 이미지가 있으면 화면 업데이트
-                if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
-                    !cameraFrames[cameraIndex].empty()) {
-                    qDebug() << QString("현재 카메라[%1]의 이미지로 화면 업데이트 실행").arg(cameraIndex);
-                    updateCameraFrame();
-                } else {
-                    qDebug() << QString("현재 카메라[%1]의 이미지가 없어서 화면 업데이트 실행 안함 (cameraFrames 크기: %2)")
-                                .arg(cameraIndex).arg(cameraFrames.size());
-                }
-                
-                // 프리뷰 화면들도 업데이트
-                updatePreviewFrames();
-            } else {
-                qDebug() << QString("camOff 모드가 아니므로 티칭 이미지 처리 건너뜀");
-            }
-        }
-    };
-    
-    // 기존 loadRecipe 함수 사용 (티칭 이미지 콜백 추가)
-    if (recipeManager->loadRecipe(recipeFileName, cameraInfos, calibrationMap, cameraView, patternTree, teachingImageCallback, this)) {
-        qDebug() << QString("loadRecipe 성공");
-        
-        // 레시피에서 로드된 카메라 정보가 cameraInfos에 추가되었는지 확인
-        qDebug() << QString("레시피 로드 후 카메라 정보 수: %1").arg(cameraInfos.size());
-        for (int i = 0; i < cameraInfos.size(); ++i) {
-            qDebug() << QString("카메라 %1: UUID='%2', 이름='%3'")
-                        .arg(i).arg(cameraInfos[i].uniqueId).arg(cameraInfos[i].name);
-        }
-        
-        // 레시피 로드 완료 후 즉시 화면 업데이트
-        if (camOff) {
-            qDebug() << QString("레시피 로드 후 강제 화면 업데이트 시작 - cameraFrames 크기: %1, cameraIndex: %2")
-                        .arg(cameraFrames.size()).arg(cameraIndex);
-            
-            updateCameraFrame();  // 메인 카메라 프레임 업데이트
-            updatePreviewFrames(); // 프리뷰 프레임들 업데이트
-            
-            // 추가 강제 업데이트
-            if (cameraView) {
-                cameraView->update();
-                cameraView->repaint();
-                QApplication::processEvents();
-            }
-            
-            qDebug() << QString("레시피 로드 후 화면 업데이트 완료");
-        }
-        
-        // 현재 레시피 이름 설정 (Save 버튼으로 저장할 때 사용)
-        currentRecipeName = selectedRecipe;
-        hasUnsavedChanges = false;
-        qDebug() << QString("현재 레시피 이름 설정: %1").arg(currentRecipeName);
-            
-        if (autoMode) {
-            qDebug() << QString("레시피 '%1' 자동 로드 성공").arg(selectedRecipe);
-            // 최근 사용한 레시피로 저장
-            ConfigManager::instance()->setLastRecipePath(selectedRecipe);
-            ConfigManager::instance()->saveConfig();
-        } else {
-            UIColors::showInformation(this, "레시피 로드 성공", 
-                QString("레시피 '%1'이 성공적으로 로드되었습니다.").arg(selectedRecipe));
-        }
-    } else {
-        qDebug() << QString("loadRecipe 실패");
-        if (autoMode) {
-            qDebug() << "레시피 로드에 실패했습니다.";
-        } else {
-            QMessageBox::critical(this, "로드 실패", "레시피 로드에 실패했습니다.");
-        }
+    // 자동 모드에서만 직접 onRecipeSelected 호출
+    if (autoMode) {
+        qDebug() << QString("자동 모드 - onRecipeSelected 호출: %1").arg(selectedRecipe);
+        onRecipeSelected(selectedRecipe);
     }
 }
 
@@ -922,11 +812,22 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                 // 2. 카메라 및 프레임 확인 (시뮬레이션 모드 고려)
                 if (camOff) {
                     // 시뮬레이션 모드: 현재 카메라 프레임이 있는지 확인
+                    qDebug() << QString("🔍 camOff 모드 검사 시작 - cameraIndex: %1, cameraFrames.size(): %2")
+                                .arg(cameraIndex).arg(cameraFrames.size());
+                    if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
+                        qDebug() << QString("cameraFrames[%1] 상태: empty=%2, size=%3x%4")
+                                    .arg(cameraIndex)
+                                    .arg(cameraFrames[cameraIndex].empty())
+                                    .arg(cameraFrames[cameraIndex].cols)
+                                    .arg(cameraFrames[cameraIndex].rows);
+                    }
+                    
                     if (!cameraView || cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
                         cameraFrames[cameraIndex].empty()) {
                         btn->blockSignals(true);
                         btn->setChecked(false);
                         btn->blockSignals(false);
+                        qDebug() << "⚠️ 시뮬레이션 이미지 없음 - 경고창 표시";
                         UIColors::showWarning(this, "검사 실패", "시뮬레이션 이미지가 없습니다. 시뮬레이션 다이얼로그에서 이미지를 선택해주세요.");
                         return;
                     }
@@ -4770,7 +4671,6 @@ void TeachingWidget::detectCameras() {
             if (camOff) {
                 camOff = false;
                 // 시뮬레이션 이미지 초기화 - cameraFrames 클리어
-                updateUIForCamMode(false);  // UI 업데이트
                 
                 // 카메라뷰의 시뮬레이션 상태도 초기화
             }
@@ -5012,7 +4912,7 @@ void TeachingWidget::startCamera() {
     if (uiUpdateThread)
         uiUpdateThread->start(QThread::NormalPriority);
 
-    // 9. 카메라가 실제로 연결되고 라이브 모드가 시작된 경우에만 레시피 로드
+    // 9. 카메라 연결 상태 확인
     bool cameraStarted = false;
     for (const auto& cameraInfo : cameraInfos) {
         if (cameraInfo.isConnected && cameraInfo.capture) {
@@ -5021,8 +4921,9 @@ void TeachingWidget::startCamera() {
         }
     }
     
+    // 카메라가 연결된 경우에만 레시피 로드 (camOff 모드에서는 수동 로드만)
     if (cameraStarted) {
-        qDebug() << "startCamera: 카메라가 연결되어 레시피 로드 시작";
+        qDebug() << QString("startCamera: 카메라가 연결되어 레시피 로드 시작");
         
         // 자동 레시피 로드
         openRecipe(true);  // true = 자동 모드
@@ -5132,7 +5033,14 @@ void TeachingWidget::stopCamera() {
     // 6. 메인 카메라 뷰 초기화
     if (cameraView) {
         cameraView->setInspectionMode(false);
-        cameraFrames.clear();
+        
+        // **camOff 모드에서는 티칭 이미지(cameraFrames) 유지**
+        if (!camOff) {
+            cameraFrames.clear();
+            qDebug() << "[stopCamera] camOn 모드 - cameraFrames 초기화";
+        } else {
+            qDebug() << "[stopCamera] camOff 모드 - cameraFrames 유지 (티칭 이미지 보존)";
+        }
         
         // 모든 패턴들 지우기
         cameraView->clearPatterns();
@@ -5434,19 +5342,9 @@ void TeachingWidget::updateCameraFrame() {
         qDebug() << QString("[updateCameraFrame] 시뮬레이션 모드에서 필터 적용 - 이미지 크기: %1x%2")
                     .arg(currentFrame.cols).arg(currentFrame.rows);
         
-        // 디버그용: 현재 사용 중인 이미지 저장
-        QString debugCurrentPath = QString("/Users/prascat/mv/debug_current_frame_%1.jpg").arg(cameraIndex);
-        cv::imwrite(debugCurrentPath.toStdString(), currentFrame);
-        qDebug() << QString("[updateCameraFrame] 현재 프레임을 디버그용으로 저장: %1").arg(debugCurrentPath);
-        
         // 시뮬레이션 이미지에 필터 적용
         cv::Mat filteredFrame = cameraFrames[cameraIndex].clone();
         cameraView->applyFiltersToImage(filteredFrame);
-        
-        // 디버그용: 필터 적용된 이미지도 저장
-        QString debugFilteredPath = QString("/Users/prascat/mv/debug_filtered_frame_%1.jpg").arg(cameraIndex);
-        cv::imwrite(debugFilteredPath.toStdString(), filteredFrame);
-        qDebug() << QString("[updateCameraFrame] 필터 적용된 프레임을 디버그용으로 저장: %1").arg(debugFilteredPath);
         
         // RGB 변환 및 UI 업데이트
         cv::Mat displayFrame;
@@ -6818,21 +6716,16 @@ void TeachingWidget::resumeToLiveMode() {
             runStopButton->blockSignals(false);
         }
         
-        // **2. 시뮬레이션 모드 해제**
-        if (camOff) {
-            camOff = false;
-            // 시뮬레이션 이미지 클리어 - 해당 카메라 프레임 클리어
-            if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
-                cameraFrames[cameraIndex] = cv::Mat();
-            }
-            qDebug() << "[라이브 모드 복귀] 시뮬레이션 모드 해제";
-            
-        }
+        // **2. 카메라 모드 복원 (원래 camOff 상태 유지)**
+        // camOff 상태는 검사 모드와 독립적으로 유지되어야 함
+        // 검사 종료 시 원래 카메라 모드(camOn/camOff)로 복원
         
-        // **2.5. 카메라가 꺼져있으면 다시 시작**
-        if (startCameraButton && !startCameraButton->isChecked()) {
-            qDebug() << "[라이브 모드 복귀] 카메라가 꺼져있어서 다시 시작합니다";
+        // **2.5. camOn 상태에서만 카메라 시작**
+        if (!camOff && startCameraButton && !startCameraButton->isChecked()) {
+            qDebug() << "[라이브 모드 복귀] camOn 모드에서 카메라 다시 시작";
             startCamera();
+        } else if (camOff) {
+            qDebug() << "[라이브 모드 복귀] camOff 모드 유지 - 카메라 시작하지 않음";
         }
         
         // **3. 검사 모드 해제**
@@ -6872,8 +6765,12 @@ void TeachingWidget::resumeToLiveMode() {
             }
         }
         
-        if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
+        // **camOff 모드에서는 티칭 이미지를 유지**
+        if (!camOff && cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
             cameraFrames[cameraIndex] = cv::Mat();
+            qDebug() << QString("[resumeToLiveMode] camOn 모드 - cameraFrames[%1] 초기화").arg(cameraIndex);
+        } else if (camOff) {
+            qDebug() << QString("[resumeToLiveMode] camOff 모드 - cameraFrames[%1] 유지 (티칭 이미지)").arg(cameraIndex);
         }
         
         // **6. UI 이벤트 처리**
@@ -7717,7 +7614,6 @@ bool TeachingWidget::connectSpinnakerCamera(int index, CameraInfo& info)
         if (camOff) {
             camOff = false;
             currentSimulationImage = cv::Mat(); // 시뮬레이션 이미지 초기화
-            updateUIForCamMode(false);  // UI 업데이트
             
             // 카메라뷰의 시뮬레이션 상태도 초기화
         }
@@ -8492,7 +8388,8 @@ void TeachingWidget::onCamModeToggled() {
         if (cameraView) {
             cameraView->clearPatterns();
             cameraView->clearCurrentRect();
-            cameraView->setBackgroundPixmap(QPixmap()); // 배경 이미지 초기화
+            // camOff 모드에서는 티칭 이미지가 있을 수 있으므로 배경 이미지를 초기화하지 않음
+            // cameraView->setBackgroundPixmap(QPixmap()); // 배경 이미지 초기화
         }
         
         // 패턴 트리 초기화
@@ -8500,14 +8397,12 @@ void TeachingWidget::onCamModeToggled() {
             patternTree->clear();
         }
         
-        // cameraFrames 초기화
+        // cameraFrames 초기화 (새로운 레시피 모드 진입 시)
         cameraFrames.clear();
+        qDebug() << "[onCamModeToggled] camOff 모드 진입 - cameraFrames 초기화 (레시피 로드 준비)";
         
         // cameraIndex 초기화 - 레시피 모드에서도 0번부터 시작
         cameraIndex = 0;
-        
-        // UI 상태 업데이트
-        updateUIForCamMode(false);
         
         qDebug() << "레시피 모드로 전환 완료";
         
@@ -8523,6 +8418,7 @@ void TeachingWidget::onCamModeToggled() {
         if (cameraView) {
             cameraView->clearPatterns();
             cameraView->clearCurrentRect();
+            // camOn 모드로 전환 시에만 배경 이미지 초기화
             cameraView->setBackgroundPixmap(QPixmap()); // 배경 이미지 초기화
         }
         
@@ -8531,8 +8427,9 @@ void TeachingWidget::onCamModeToggled() {
             patternTree->clear();
         }
         
-        // cameraFrames 초기화
+        // cameraFrames 초기화 (라이브 모드 진입 시)
         cameraFrames.clear();
+        qDebug() << "[onCamModeToggled] camOn 모드 진입 - cameraFrames 초기화 (라이브 모드 준비)";
         
         // cameraIndex 초기화
         cameraIndex = 0;
@@ -8541,9 +8438,6 @@ void TeachingWidget::onCamModeToggled() {
         if (cameraView) {
             cameraView->update();
         }
-        
-        // UI 상태 업데이트
-        updateUIForCamMode(true);
         
         // 카메라 재연결 시도
         detectCameras();
@@ -8735,22 +8629,10 @@ void TeachingWidget::onSimulationProjectSelected(const QString& projectName) {
     }
 }
 
-void TeachingWidget::updateUIForCamMode(bool isSimulation) {
-    // 윈도우 타이틀 업데이트
-    QString title = isSimulation ? "MV - 시뮬레이션 모드" : "MV - 라이브 모드";
-    setWindowTitle(title);
-    
-    if (isSimulation) {
-        // 시뮬레이션 모드에서는 패턴 편집 기능들을 활성화
-        enablePatternEditingFeatures();
-    }
-}
-
 QString TeachingWidget::getCurrentRecipeName() const {
     // 더 신뢰성 있는 레시피 이름 소스 순서:
     // 1) 백업된 레시피 데이터 (backupRecipeData)
-    // 2) 시뮬레이션 다이얼로그에 설정된 레시피명 (simulationDialog)
-    // 3) cameraInfos[0].name
+    // 2) cameraInfos[0].name
     if (backupRecipeData.contains("recipeName")) {
         QString rn = backupRecipeData.value("recipeName").toString();
         if (!rn.isEmpty()) {
@@ -9229,28 +9111,47 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
     
     RecipeManager manager;
     
-    // 시뮬레이션 모드에서도 완전한 loadRecipe 사용
+    // 레시피 파일 경로 설정
     QString recipeFileName = QDir(manager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(recipeName));
     QMap<QString, CalibrationInfo> calibrationMap;
     
-    // 시뮬레이션 모드일 때만 cameraInfos 비우기
+    // 레시피에서 카메라 정보 먼저 읽기 (camOn/camOff 공통)
+    QStringList recipeCameraUuids = manager.getRecipeCameraUuids(recipeName);
+    qDebug() << QString("레시피 '%1'의 카메라 목록: %2").arg(recipeName).arg(recipeCameraUuids.join(", "));
+    
+    // camOff 모드에서는 cameraInfos를 비워서 레시피에서 새로 생성하도록 함
     if (camOff) {
-        // 레시피에서 카메라 정보 먼저 읽기
-        QStringList recipeCameraUuids = manager.getRecipeCameraUuids(recipeName);
-        qDebug() << QString("시뮬레이션 모드 - 레시피 '%1'의 카메라 목록: %2").arg(recipeName).arg(recipeCameraUuids.join(", "));
-        
-        // 시뮬레이션 모드에서는 cameraInfos를 비워서 레시피에서 새로 생성하도록 함
         cameraInfos.clear();
     }
     
-    // 티칭 이미지 콜백 함수 정의
+    // 티칭 이미지 콜백 함수 정의 (camOn/camOff 공통)
     auto teachingImageCallback = [this](const QStringList& imagePaths) {
+        qDebug() << QString("=== teachingImageCallback 호출 시작 ===");
+        qDebug() << QString("전달받은 이미지 경로 개수: %1").arg(imagePaths.size());
+        for (int i = 0; i < imagePaths.size(); i++) {
+            qDebug() << QString("이미지 경로[%1]: %2").arg(i).arg(imagePaths[i]);
+        }
+        
         int imageIndex = 0;
         for (const QString& imagePath : imagePaths) {
-            qDebug() << QString("티칭 이미지 로드됨 [%1]: %2").arg(imageIndex).arg(imagePath);
+            qDebug() << QString("티칭 이미지 로드 시도 [%1]: %2").arg(imageIndex).arg(imagePath);
             
-            // 시뮬레이션 모드에서 모든 카메라의 이미지를 cameraFrames에 설정
-            if (camOff && QFile::exists(imagePath)) {
+            // base64 더미 경로인 경우 특별 처리 (이미 cameraFrames에 로드됨)
+            if (imagePath.startsWith("base64_image_")) {
+                qDebug() << QString("base64 더미 경로 감지 - cameraFrames[%1] 사용").arg(imageIndex);
+                // cameraFrames에 이미 이미지가 있는지 확인
+                if (imageIndex < static_cast<int>(cameraFrames.size()) && !cameraFrames[imageIndex].empty()) {
+                    qDebug() << QString("cameraFrames[%1]에서 base64 티칭이미지 확인: %2x%3")
+                                .arg(imageIndex).arg(cameraFrames[imageIndex].cols).arg(cameraFrames[imageIndex].rows);
+                } else {
+                    qDebug() << QString("⚠️ cameraFrames[%1]이 비어있음 - base64 로드 실패").arg(imageIndex);
+                }
+                imageIndex++;
+                continue;
+            }
+            
+            // 실제 파일 경로인 경우 기존 로직 사용
+            if (QFile::exists(imagePath)) {
                 cv::Mat teachingImage = cv::imread(imagePath.toStdString());
                 if (!teachingImage.empty()) {
                     // cameraFrames 배열 크기 확장
@@ -9259,25 +9160,39 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
                     }
                     cameraFrames[imageIndex] = teachingImage.clone();
                     
-                    qDebug() << QString("시뮬레이션 모드 - cameraFrames[%1]에 티칭이미지 설정: %2x%3")
+                    qDebug() << QString("cameraFrames[%1]에 티칭이미지 설정: %2x%3")
                                 .arg(imageIndex).arg(teachingImage.cols).arg(teachingImage.rows);
                     
-                    imageIndex++;
+                } else {
+                    qDebug() << QString("⚠️ 티칭 이미지 로드 실패 [%1]: %2 (파일 없음 또는 imread 실패)").arg(imageIndex).arg(imagePath);
                 }
+            } else {
+                qDebug() << QString("⚠️ 티칭 이미지 파일 존재하지 않음 [%1]: %2").arg(imageIndex).arg(imagePath);
             }
+            imageIndex++;  // 실패해도 인덱스는 증가
         }
         
-        // 모든 이미지 로드 완료 후 UI 업데이트
-        if (camOff) {
-            // 현재 카메라의 이미지가 있으면 화면 업데이트
-            if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
-                !cameraFrames[cameraIndex].empty()) {
-                updateCameraFrame();
-            }
-            
-            // 프리뷰 화면들도 업데이트
-            updatePreviewFrames();
+        qDebug() << QString("=== teachingImageCallback 완료: 총 %1개 이미지 처리 ===").arg(imageIndex);
+        
+        // 모든 이미지 로드 완료 후 UI 업데이트 (camOn/camOff 공통)
+        qDebug() << QString("[teachingImageCallback] updateCameraFrame 호출 조건 확인:");
+        qDebug() << QString("  - cameraIndex: %1").arg(cameraIndex);
+        qDebug() << QString("  - cameraFrames.size(): %1").arg(cameraFrames.size());
+        qDebug() << QString("  - cameraIndex < cameraFrames.size(): %1").arg(cameraIndex < static_cast<int>(cameraFrames.size()));
+        if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
+            qDebug() << QString("  - cameraFrames[%1].empty(): %2").arg(cameraIndex).arg(cameraFrames[cameraIndex].empty());
         }
+        
+        if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
+            !cameraFrames[cameraIndex].empty()) {
+            qDebug() << QString("[teachingImageCallback] ✅ updateCameraFrame() 호출");
+            updateCameraFrame();
+        } else {
+            qDebug() << QString("[teachingImageCallback] ❌ updateCameraFrame() 호출 조건 불만족");
+        }
+        
+        // 프리뷰 화면들도 업데이트
+        updatePreviewFrames();
     };
     
     if (manager.loadRecipe(recipeFileName, cameraInfos, calibrationMap, cameraView, patternTree, teachingImageCallback, this)) {
@@ -9293,53 +9208,120 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
         syncPatternsFromCameraView();
         updatePatternTree();
         
-        // camOff 모드에서 카메라 전환 및 프리뷰 업데이트
-        if (camOff) {
+        // 첫 번째 카메라로 전환 (camOn/camOff 공통)
+        if (!cameraInfos.isEmpty()) {
+            // 레시피에서 카메라 UUID 목록 가져오기
             QStringList recipeCameraUuids = manager.getRecipeCameraUuids(recipeName);
+            QString firstCameraUuid;
+            
+            if (!recipeCameraUuids.isEmpty()) {
+                // 레시피의 첫 번째 카메라 UUID 사용
+                firstCameraUuid = recipeCameraUuids.first();
+                qDebug() << QString("레시피에서 첫 번째 카메라 UUID 사용: %1").arg(firstCameraUuid);
+            } else {
+                // 레시피에 카메라 정보가 없으면 cameraInfos에서 가져오기
+                firstCameraUuid = cameraInfos[0].uniqueId;
+                qDebug() << QString("cameraInfos에서 첫 번째 카메라 UUID 사용: %1").arg(firstCameraUuid);
+            }
+            
+            switchToCamera(firstCameraUuid);
+            cameraIndex = 0;
+            
+            if (cameraView) {
+                cameraView->setCurrentCameraUuid(firstCameraUuid);
+                cameraView->update();
+                
+                // 디버그: 현재 CameraView 상태 확인
+                qDebug() << QString("CameraView 상태 확인:");
+                qDebug() << QString("  - currentCameraUuid: %1").arg(firstCameraUuid);
+                qDebug() << QString("  - 패턴 개수: %1").arg(cameraView->getPatterns().size());
+                qDebug() << QString("  - backgroundPixmap null 여부: %1").arg(cameraView->getBackgroundPixmap().isNull() ? "true" : "false");
+                
+                // 강제 repaint
+                cameraView->repaint();
+                QApplication::processEvents();
+            }
+     
+            // 이미 위에서 정의된 recipeCameraUuids 사용
             if (!recipeCameraUuids.isEmpty()) {
                 QString firstCameraUuid = recipeCameraUuids.first();
                 qDebug() << QString("시뮬레이션 모드 - 첫 번째 카메라 자동 선택: %1").arg(firstCameraUuid);
                 
                 // cameraFrames 상태 디버그 출력
+                qDebug() << QString("=== cameraFrames 상태 확인 ===");
                 qDebug() << QString("cameraFrames 크기: %1").arg(cameraFrames.size());
                 for (int i = 0; i < static_cast<int>(cameraFrames.size()); i++) {
                     if (!cameraFrames[i].empty()) {
-                        qDebug() << QString("cameraFrames[%1]: %2x%3").arg(i).arg(cameraFrames[i].cols).arg(cameraFrames[i].rows);
+                        qDebug() << QString("cameraFrames[%1]: %2x%3 (데이터 있음)").arg(i).arg(cameraFrames[i].cols).arg(cameraFrames[i].rows);
                     } else {
                         qDebug() << QString("cameraFrames[%1]: 비어있음").arg(i);
                     }
                 }
                 
+                if (cameraFrames.empty()) {
+                    qDebug() << QString("⚠️ cameraFrames가 완전히 비어있음 - teachingImageCallback이 호출되지 않았을 가능성");
+                } else if (cameraFrames.size() > 0 && cameraFrames[0].empty()) {
+                    qDebug() << QString("⚠️ cameraFrames[0]이 비어있음 - 첫 번째 카메라 이미지 로드 실패");
+                }
+                qDebug() << QString("=== cameraFrames 상태 확인 끝 ===");
+                
                 // 첫 번째 카메라로 전환 (프리뷰도 자동 할당됨)
                 switchToCamera(firstCameraUuid);
+                cameraIndex = 0;
                 
-                // camOff 모드에서 메인 카메라뷰 업데이트
-                updateCameraFrame();
-            }
-            
-            QMessageBox::information(this, "레시피 불러오기", 
-                QString("'%1' 레시피가 성공적으로 불러와졌습니다.\n카메라: %2개").arg(recipeName).arg(recipeCameraUuids.size()));
-        } else {
-            // camOn 모드에서도 첫 번째 카메라 이름 설정
-            QStringList recipeCameraUuids = manager.getRecipeCameraUuids(recipeName);
-            if (!recipeCameraUuids.isEmpty() && !cameraInfos.isEmpty()) {
-                QString firstCameraUuid = recipeCameraUuids.first();
-                QString cameraName = firstCameraUuid;
-                for (const CameraInfo& info : cameraInfos) {
-                    if (info.uniqueId == firstCameraUuid) {
-                        cameraName = info.name;
-                        break;
+                // camOff 모드에서 첫 번째 카메라의 티칭 이미지를 메인 카메라뷰에 표시
+                if (!cameraFrames.empty() && !cameraFrames[0].empty() && cameraView) {
+                    cv::Mat firstCameraImage = cameraFrames[0];
+                    
+                    qDebug() << QString("camOff 모드 - 티칭 이미지 표시: %1x%2")
+                                .arg(firstCameraImage.cols).arg(firstCameraImage.rows);
+                    
+                    // OpenCV Mat을 QImage로 변환
+                    QImage qImage;
+                    if (firstCameraImage.channels() == 3) {
+                        cv::Mat rgbImage;
+                        cv::cvtColor(firstCameraImage, rgbImage, cv::COLOR_BGR2RGB);
+                        qImage = QImage(rgbImage.data, rgbImage.cols, rgbImage.rows, rgbImage.step, QImage::Format_RGB888);
+                    } else {
+                        qImage = QImage(firstCameraImage.data, firstCameraImage.cols, firstCameraImage.rows, firstCameraImage.step, QImage::Format_Grayscale8);
+                    }
+                    
+                    if (!qImage.isNull()) {
+                        QPixmap pixmap = QPixmap::fromImage(qImage);
+                        cameraView->setBackgroundPixmap(pixmap);
+                        cameraView->update();
+                        cameraView->repaint();  // 강제 repaint
+                        qDebug() << QString("티칭 이미지 backgroundPixmap 설정 완료: %1x%2")
+                                    .arg(pixmap.width()).arg(pixmap.height());
                     }
                 }
-                if (cameraView) {
-                    cameraView->setCurrentCameraUuid(firstCameraUuid);
-                    cameraView->update();
-                }
+                updateCameraFrame();
             }
-            
-            QMessageBox::information(this, "레시피 불러오기", 
-                QString("'%1' 레시피가 성공적으로 불러와졌습니다.").arg(recipeName));
         }
+            
+        // cameraInfos 상세 정보 출력
+            qDebug() << QString("=== 레시피 로드 후 cameraInfos 상세 정보 ===");
+            qDebug() << QString("cameraInfos 총 개수: %1").arg(cameraInfos.size());
+            for (int i = 0; i < cameraInfos.size(); ++i) {
+                const auto& info = cameraInfos[i];
+                qDebug() << QString("카메라 %1:").arg(i);
+                qDebug() << QString("  - index: %1").arg(info.index);
+                qDebug() << QString("  - videoDeviceIndex: %1").arg(info.videoDeviceIndex);
+                qDebug() << QString("  - uniqueId: '%1'").arg(info.uniqueId);
+                qDebug() << QString("  - name: '%1'").arg(info.name);
+                qDebug() << QString("  - locationId: '%1'").arg(info.locationId);
+                qDebug() << QString("  - serialNumber: '%1'").arg(info.serialNumber);
+                qDebug() << QString("  - vendorId: '%1'").arg(info.vendorId);
+                qDebug() << QString("  - productId: '%1'").arg(info.productId);
+                qDebug() << QString("  - isConnected: %1").arg(info.isConnected ? "true" : "false");
+                qDebug() << QString("  - capture: %1").arg(info.capture ? "valid" : "null");
+            }
+            qDebug() << QString("현재 cameraIndex: %1").arg(cameraIndex);
+            qDebug() << QString("camOff 상태: %1").arg(camOff ? "true" : "false");
+            qDebug() << QString("=== cameraInfos 정보 끝 ===");
+
+            QMessageBox::information(this, "레시피 불러오기", 
+                QString("'%1' 레시피가 성공적으로 불러와졌습니다.\n카메라: %2개").arg(recipeName).arg(cameraInfos.size()));
     } else {
         QMessageBox::critical(this, "레시피 불러오기 실패", 
             QString("레시피 불러오기에 실패했습니다:\n%1").arg(manager.getLastError()));
