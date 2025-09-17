@@ -4656,14 +4656,19 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat& frame, int camIdx) {
         cameraFrames.resize(MAX_CAMERAS);
     }
     
-    // 기존 프레임이 있으면 해제하고 새로 할당
-    cameraFrames[camIdx] = frame.clone();
+    // TEACH OFF 상태에서는 cameraFrames 갱신 계속 (영상 갱신)
+    // TEACH ON 상태에서는 cameraFrames 갱신을 중지 (영상 정지)
+    if (!teachingEnabled) {
+        // 기존 프레임이 있으면 해제하고 새로 할당
+        cameraFrames[camIdx] = frame.clone();
+    }
     
     // **메인 카메라 처리**
     if (camIdx == cameraIndex) {
         try {
-            // **항상 화면 업데이트 (검사 모드와 관계없이)**
-            if (cameraView) {
+            // TEACH OFF 상태에서는 화면 업데이트 계속 (영상 갱신)
+            // TEACH ON 상태에서는 화면 업데이트도 중지 (영상 정지)
+            if (cameraView && !teachingEnabled) {
                 // 필터 적용
                 cv::Mat filteredFrame = frame.clone();
                 cameraView->applyFiltersToImage(filteredFrame);
