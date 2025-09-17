@@ -28,35 +28,103 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 set(CMAKE_AUTOMOC ON)
 
 # Spinnaker SDK 지원 옵션
-option(USE_SPINNAKER "Enable Spinnaker camera support" OFF)
+option(USE_SPINNAKER "Enable Spinnaker camera support" ON)
 
 # 추가 라이브러리 목록 초기화
 set(EXTRA_LIBS "")
 
 if(USE_SPINNAKER)
-    # Spinnaker SDK 경로 설정
-    set(SPINNAKER_DIR "" CACHE PATH "Path to Spinnaker SDK")
+    # Spinnaker SDK 자동 검색
+    find_path(SPINNAKER_INCLUDE_DIR
+        NAMES Spinnaker.h
+        PATHS
+            /usr/include/spinnaker
+            /usr/local/include/spinnaker
+            /opt/spinnaker/include
+            /Applications/Spinnaker/include
+            "C:/Program Files/Point Grey Research/Spinnaker/include"
+        DOC "Path to Spinnaker include directory"
+    )
     
+    find_library(SPINNAKER_LIBRARY
+        NAMES Spinnaker Spinnaker_v140
+        PATHS
+            /usr/lib
+            /usr/local/lib
+            /opt/spinnaker/lib
+            /Applications/Spinnaker/lib
+            "C:/Program Files/Point Grey Research/Spinnaker/lib64/vs2015"
+        DOC "Path to Spinnaker library"
+    )
+    
+    # 수동으로 설정된 경로도 허용
+    set(SPINNAKER_DIR "" CACHE PATH "Path to Spinnaker SDK (optional)")
+    
+    # 수동 경로가 설정되어 있으면 우선 사용
     if(SPINNAKER_DIR)
-        # Spinnaker 헤더 및 라이브러리 디렉토리 추가
-        include_directories(${SPINNAKER_DIR}/include)
-        
+        set(SPINNAKER_INCLUDE_DIR "${SPINNAKER_DIR}/include")
         if(WIN32)
-            link_directories(${SPINNAKER_DIR}/lib64/vs2015)
-            # Windows에서는 Spinnaker_v140.lib 추가
-            list(APPEND EXTRA_LIBS Spinnaker_v140)
-        elseif(APPLE)
-            link_directories(${SPINNAKER_DIR}/lib)
-            list(APPEND EXTRA_LIBS Spinnaker)
-        else() # Linux
-            link_directories(${SPINNAKER_DIR}/lib)
-            list(APPEND EXTRA_LIBS Spinnaker)
+            find_library(SPINNAKER_LIBRARY
+                NAMES Spinnaker_v140
+                PATHS "${SPINNAKER_DIR}/lib64/vs2015"
+                NO_DEFAULT_PATH
+            )
+        else()
+            find_library(SPINNAKER_LIBRARY
+                NAMES Spinnaker
+                PATHS "${SPINNAKER_DIR}/lib"
+                NO_DEFAULT_PATH
+            )
         endif()
+    endif()
+    
+    # Spinnaker가 발견되었는지 확인
+    if(SPINNAKER_INCLUDE_DIR AND SPINNAKER_LIBRARY)
+        message(STATUS "Found Spinnaker SDK")
+        message(STATUS "  Include: ${SPINNAKER_INCLUDE_DIR}")
+        message(STATUS "  Library: ${SPINNAKER_LIBRARY}")
+        
+        # 헤더 및 라이브러리 경로 추가
+        include_directories(${SPINNAKER_INCLUDE_DIR})
+        list(APPEND EXTRA_LIBS ${SPINNAKER_LIBRARY})
         
         # 컴파일 정의 추가
         add_definitions(-DUSE_SPINNAKER)
+        
+        # macOS에서 필요한 추가 링크 플래그 및 런타임 경로 설정
+        if(APPLE)
+            get_filename_component(SPINNAKER_LIB_DIR ${SPINNAKER_LIBRARY} DIRECTORY)
+            set(CMAKE_INSTALL_RPATH "${SPINNAKER_LIB_DIR}")
+            set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+            set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+            
+            # 추가적인 GenApi 라이브러리들 링크
+            find_library(GENAPI_LIBRARY
+                NAMES GenApi_clang140_v3_0 libGenApi_clang140_v3_0
+                PATHS "${SPINNAKER_LIB_DIR}"
+                NO_DEFAULT_PATH
+            )
+            if(GENAPI_LIBRARY)
+                list(APPEND EXTRA_LIBS ${GENAPI_LIBRARY})
+                message(STATUS "  GenApi Library: ${GENAPI_LIBRARY}")
+            endif()
+            
+            # 다른 필요한 Spinnaker 종속성 라이브러리들 찾기
+            find_library(SPINNAKER_C_LIBRARY
+                NAMES Spinnaker_C libSpinnaker_C
+                PATHS "${SPINNAKER_LIB_DIR}"
+                NO_DEFAULT_PATH
+            )
+            if(SPINNAKER_C_LIBRARY)
+                list(APPEND EXTRA_LIBS ${SPINNAKER_C_LIBRARY})
+                message(STATUS "  Spinnaker_C Library: ${SPINNAKER_C_LIBRARY}")
+            endif()
+        endif()
+        
     else()
-        message(WARNING "USE_SPINNAKER enabled but SPINNAKER_DIR not set. Spinnaker support will be disabled.")
+        message(WARNING "Spinnaker SDK not found. Spinnaker support will be disabled.")
+        message(WARNING "  Include searched: ${SPINNAKER_INCLUDE_DIR}")
+        message(WARNING "  Library searched: ${SPINNAKER_LIBRARY}")
         set(USE_SPINNAKER OFF)
     endif()
 endif()
@@ -65,7 +133,6 @@ endif()
 add_executable(MV 
     main.cpp 
     TeachingWidget.cpp 
-    TrainResultsDialog.cpp
     ImageProcessor.cpp 
     InsProcessor.cpp 
     CameraView.cpp 

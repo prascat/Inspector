@@ -2629,33 +2629,23 @@ void CameraView::updateZoomedView() {
 }
 
 void CameraView::setBackgroundPixmap(const QPixmap &pixmap) {
-    qDebug() << QString("[setBackgroundPixmap] 호출됨 - pixmap null 여부: %1, 크기: %2x%3")
-                .arg(pixmap.isNull() ? "true" : "false")
-                .arg(pixmap.isNull() ? 0 : pixmap.width())
-                .arg(pixmap.isNull() ? 0 : pixmap.height());
-    
     // 빈 픽스맵(카메라 OFF)인 경우 텍스트 표시
     if (pixmap.isNull()) {
         backgroundPixmap = QPixmap();
         originalImageSize = QSize();
         setText(TR("NO_CONNECTION"));
-        qDebug() << QString("[setBackgroundPixmap] null pixmap - 연결 없음 텍스트 설정");
         update();
         return;
     }
     
     // 이미지가 있는 경우 텍스트 지우기
     setText("");
-    qDebug() << QString("[setBackgroundPixmap] 텍스트 지움, backgroundPixmap 설정 중");
     
     // 처음 이미지가 설정될 때만 초기화 적용
     bool isFirstLoad = backgroundPixmap.isNull();
-    qDebug() << QString("[setBackgroundPixmap] isFirstLoad: %1").arg(isFirstLoad ? "true" : "false");
     
     backgroundPixmap = pixmap;
     originalImageSize = pixmap.size();
-    qDebug() << QString("[setBackgroundPixmap] backgroundPixmap 설정 완료 - 크기: %1x%2")
-                .arg(backgroundPixmap.width()).arg(backgroundPixmap.height());
     
     if (isFirstLoad) {
         // 처음 로드될 때만 중앙 정렬 및 자동 리사이징 적용

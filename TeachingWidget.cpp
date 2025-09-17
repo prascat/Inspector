@@ -310,80 +310,14 @@ void TeachingWidget::showCameraSettings() {
     }
     
     // 카메라 설정 다이얼로그 생성
-    CameraSettingsDialog dialog(cameraInfos, this);
+    CameraSettingsDialog dialog(this);
     
-    // 현재 레시피에 사용되는 카메라 UUID 설정
-    QString currentRecipeCameraUuid = cameraInfos[cameraIndex].uniqueId;
-    dialog.setRecipeCamera(currentRecipeCameraUuid);
-    
-    // 레시피 재할당 시그널 연결
-    connect(&dialog, &CameraSettingsDialog::recipeReassigned, this, 
-            [this](int sourceIndex, int targetIndex, int methodCode, 
-                  const QString& sourceUuid, const QString& targetUuid) {
-        
-        // 인덱스 유효성 검사
-        if (!isValidCameraIndex(sourceIndex) || !isValidCameraIndex(targetIndex) || sourceIndex == targetIndex) {
-            return;
-        }
-        
-        // 레시피 관리 로직
-        QList<PatternInfo> patterns = cameraView->getPatterns();
-        
-        if (methodCode == 0) {  // 복사
-            for (const PatternInfo& pattern : patterns) {
-                if (pattern.cameraUuid == sourceUuid) {
-                    PatternInfo newPattern = pattern;
-                    newPattern.id = QUuid::createUuid();
-                    newPattern.cameraUuid = targetUuid;
-                    cameraView->addPattern(newPattern);
-                }
-            }
-        } else if (methodCode == 1) {  // 교환
-            for (PatternInfo& pattern : patterns) {
-                if (pattern.cameraUuid == sourceUuid) {
-                    // ★★★ CameraView에서 최신 패턴 정보 가져와서 동기화 ★★★
-                    PatternInfo* latestPattern = cameraView->getPatternById(pattern.id);
-                    if (latestPattern) {
-                        latestPattern->cameraUuid = targetUuid;
-                        cameraView->updatePatternById(pattern.id, *latestPattern);
-                        // TeachingWidget 배열도 동기화
-                        pattern = *latestPattern;
-                    }
-                } else if (pattern.cameraUuid == targetUuid) {
-                    // ★★★ CameraView에서 최신 패턴 정보 가져와서 동기화 ★★★
-                    PatternInfo* latestPattern = cameraView->getPatternById(pattern.id);
-                    if (latestPattern) {
-                        latestPattern->cameraUuid = sourceUuid;
-                        cameraView->updatePatternById(pattern.id, *latestPattern);
-                        // TeachingWidget 배열도 동기화
-                        pattern = *latestPattern;
-                    }
-                }
-            }
-        } else if (methodCode == 2) {  // 이동
-            for (PatternInfo& pattern : patterns) {
-                if (pattern.cameraUuid == sourceUuid) {
-                    // ★★★ CameraView에서 최신 패턴 정보 가져와서 동기화 ★★★
-                    PatternInfo* latestPattern = cameraView->getPatternById(pattern.id);
-                    if (latestPattern) {
-                        latestPattern->cameraUuid = targetUuid;
-                        cameraView->updatePatternById(pattern.id, *latestPattern);
-                        // TeachingWidget 배열도 동기화
-                        pattern = *latestPattern;
-                    }
-                }
-            }
-        }
-        
-        // UI 업데이트
-        updatePatternTree();
-        cameraView->update();
-        
-        QString methodText = (methodCode == 0) ? "복사" : (methodCode == 1) ? "교환" : "이동";
-        UIColors::showInformation(this, "완료", 
-            QString("카메라 %1의 레시피가 카메라 %2로 %3되었습니다.")
-            .arg(sourceIndex + 1).arg(targetIndex + 1).arg(methodText));
-    });
+    // Spinnaker 카메라들을 다이얼로그에 설정
+#ifdef USE_SPINNAKER
+    if (!m_spinCameras.empty()) {
+        dialog.setSpinnakerCameras(m_spinCameras);
+    }
+#endif
     
     // 다이얼로그 실행
     dialog.exec();
@@ -543,7 +477,7 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     settingsMenu = menuBar->addMenu(TR("SETTINGS_MENU"));
     settingsMenu->setEnabled(true);
 
-    cameraSettingsAction = settingsMenu->addAction(TR("CAMERA_RECIPE_SETTINGS"));
+    cameraSettingsAction = settingsMenu->addAction(TR("CAMERA_SETTINGS"));
     cameraSettingsAction->setEnabled(true);
 
     languageSettingsAction = settingsMenu->addAction(TR("LANGUAGE_SETTINGS"));
@@ -1819,34 +1753,6 @@ void TeachingWidget::updatePatternTree() {
         qDebug() << QString("패턴 포함: %1").arg(pattern.name);
         currentCameraPatterns.append(pattern);
     }
-    
-    // 디버그: 카메라별 패턴 정보 출력
-    QString debugUuid = isValidCameraIndex(cameraIndex) ? getCameraInfo(cameraIndex).uniqueId : "없음";
-    qDebug() << QString("updatePatternTree - 현재 카메라 UUID: '%1'").arg(debugUuid);
-    qDebug() << QString("updatePatternTree - 현재 카메라 패턴 수: %1").arg(currentCameraPatterns.size());
-    qDebug() << QString("updatePatternTree - 전체 패턴 수: %1").arg(allPatterns.size());
-    
-    // 모든 카메라별 패턴 수 출력
-    QMap<QString, int> cameraPatternCount;
-    for (const PatternInfo& pattern : allPatterns) {
-        QString patternCameraUuid = pattern.cameraUuid.isEmpty() ? "default" : pattern.cameraUuid;
-        cameraPatternCount[patternCameraUuid]++;
-    }
-    
-    qDebug() << "=== 카메라별 패턴 수 ===";
-    for (auto it = cameraPatternCount.begin(); it != cameraPatternCount.end(); ++it) {
-        // 카메라 이름 찾기
-        QString cameraName = it.key();
-        for (int i = 0; i < getCameraInfosCount(); i++) {
-            CameraInfo info = getCameraInfo(i);
-            if (info.uniqueId == it.key()) {
-                cameraName = QString("%1 (%2)").arg(info.name).arg(it.key());
-                break;
-            }
-        }
-        qDebug() << QString("카메라 %1: %2개 패턴").arg(cameraName).arg(it.value());
-    }
-    qDebug() << "=======================";
     
     // 패턴 ID에 대한 트리 아이템 맵핑 저장 (부모-자식 관계 구성 시 사용)
     QMap<QUuid, QTreeWidgetItem*> itemMap;
@@ -4934,9 +4840,7 @@ void TeachingWidget::startCamera() {
     }
     
     // 10. 패턴 트리 업데이트 (라이브 모드 시작 시 현재 카메라 패턴 표시)
-    qDebug() << "startCamera: 패턴 트리 업데이트 호출, 현재 카메라 UUID:" << cameraInfos[cameraIndex].uniqueId;
     updatePatternTree();
-    qDebug() << "startCamera: updatePatternTree() 호출 완료";
     
     // 11. CAM 버튼 상태 업데이트
     updateCameraButtonState(true);
@@ -5037,9 +4941,6 @@ void TeachingWidget::stopCamera() {
         // **camOff 모드에서는 티칭 이미지(cameraFrames) 유지**
         if (!camOff) {
             cameraFrames.clear();
-            qDebug() << "[stopCamera] camOn 모드 - cameraFrames 초기화";
-        } else {
-            qDebug() << "[stopCamera] camOff 모드 - cameraFrames 유지 (티칭 이미지 보존)";
         }
         
         // 모든 패턴들 지우기
@@ -5102,7 +5003,7 @@ void TeachingWidget::updateUITexts() {
     // 액션 텍스트 업데이트 및 활성화 상태 유지
     if (exitAction) exitAction->setText(TR("EXIT"));
     if (cameraSettingsAction) {
-        cameraSettingsAction->setText(TR("CAMERA_RECIPE_SETTINGS"));
+        cameraSettingsAction->setText(TR("CAMERA_SETTINGS"));
         cameraSettingsAction->setEnabled(true);  // 활성화 상태 유지
     }
     if (languageSettingsAction) {
@@ -7350,7 +7251,7 @@ bool TeachingWidget::initSpinnakerSDK()
         
         // 라이브러리 버전 출력 - 네임스페이스 추가
         const Spinnaker::LibraryVersion spinnakerLibraryVersion = m_spinSystem->GetLibraryVersion();
-                 << spinnakerLibraryVersion.major << "."
+        qDebug() << "Spinnaker Library Version:" << spinnakerLibraryVersion.major << "."
                  << spinnakerLibraryVersion.minor << "."
                  << spinnakerLibraryVersion.type << "."
                  << spinnakerLibraryVersion.build;
@@ -7527,14 +7428,14 @@ bool TeachingWidget::connectSpinnakerCamera(int index, CameraInfo& info)
                 }
             }
             
-            // 트리거 모드 끄기
-            Spinnaker::GenApi::CEnumerationPtr ptrTriggerMode = nodeMap.GetNode("TriggerMode");
-            if (Spinnaker::GenApi::IsWritable(ptrTriggerMode)) {
-                Spinnaker::GenApi::CEnumEntryPtr ptrTriggerModeOff = ptrTriggerMode->GetEntryByName("Off");
-                if (Spinnaker::GenApi::IsReadable(ptrTriggerModeOff)) {
-                    ptrTriggerMode->SetIntValue(ptrTriggerModeOff->GetValue());
-                }
-            }
+            // 트리거 모드 끄기 - 주석처리: 사용자 설정 유지를 위해
+            // Spinnaker::GenApi::CEnumerationPtr ptrTriggerMode = nodeMap.GetNode("TriggerMode");
+            // if (Spinnaker::GenApi::IsWritable(ptrTriggerMode)) {
+            //     Spinnaker::GenApi::CEnumEntryPtr ptrTriggerModeOff = ptrTriggerMode->GetEntryByName("Off");
+            //     if (Spinnaker::GenApi::IsReadable(ptrTriggerModeOff)) {
+            //         ptrTriggerMode->SetIntValue(ptrTriggerModeOff->GetValue());
+            //     }
+            // }
             
             // 연속 획득 모드 설정
             Spinnaker::GenApi::CEnumerationPtr ptrAcquisitionMode = nodeMap.GetNode("AcquisitionMode");
@@ -7547,18 +7448,18 @@ bool TeachingWidget::connectSpinnakerCamera(int index, CameraInfo& info)
                 }
             }
             
-            // 노출 설정 (자동)
-            Spinnaker::GenApi::CEnumerationPtr ptrExposureAuto = nodeMap.GetNode("ExposureAuto");
-            if (Spinnaker::GenApi::IsWritable(ptrExposureAuto)) {
-                try {
-                    Spinnaker::GenApi::CEnumEntryPtr ptrExposureAutoContinuous = ptrExposureAuto->GetEntryByName("Continuous");
-                    if (Spinnaker::GenApi::IsReadable(ptrExposureAutoContinuous)) {
-                        ptrExposureAuto->SetIntValue(ptrExposureAutoContinuous->GetValue());
-                    }
-                }
-                catch (Spinnaker::Exception& e) {
-                }
-            }
+            // 노출 설정 (자동) - 주석처리: 사용자 설정 유지를 위해  
+            // Spinnaker::GenApi::CEnumerationPtr ptrExposureAuto = nodeMap.GetNode("ExposureAuto");
+            // if (Spinnaker::GenApi::IsWritable(ptrExposureAuto)) {
+            //     try {
+            //         Spinnaker::GenApi::CEnumEntryPtr ptrExposureAutoContinuous = ptrExposureAuto->GetEntryByName("Continuous");
+            //         if (Spinnaker::GenApi::IsReadable(ptrExposureAutoContinuous)) {
+            //             ptrExposureAuto->SetIntValue(ptrExposureAutoContinuous->GetValue());
+            //         }
+            //     }
+            //     catch (Spinnaker::Exception& e) {
+            //     }
+            // }
             
             // 프레임 레이트 설정 (가능한 경우)
             try {
@@ -7610,12 +7511,12 @@ bool TeachingWidget::connectSpinnakerCamera(int index, CameraInfo& info)
         // 연결 상태 설정
         info.isConnected = true;
         
+        // **중요**: startCamera()에서 capture 체크를 하므로 더미 capture 생성
+        info.capture = new cv::VideoCapture();
+        
         // 카메라 연결 시 시뮬레이션 모드 해제
         if (camOff) {
             camOff = false;
-            currentSimulationImage = cv::Mat(); // 시뮬레이션 이미지 초기화
-            
-            // 카메라뷰의 시뮬레이션 상태도 초기화
         }
         
         return true;

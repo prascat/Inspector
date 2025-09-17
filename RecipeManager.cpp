@@ -258,8 +258,10 @@ bool RecipeManager::saveRecipe(const QString& fileName,
             }
         }
         
-        // 시뮬레이션 카메라(videoDeviceIndex == -1)는 패턴이 없어도 저장
-        bool isSimulationCamera = (actualCameraInfos[camIdx].videoDeviceIndex == -1);
+        // 시뮬레이션 카메라는 패턴이 없어도 저장 (locationId로 판단)
+        bool isSimulationCamera = (actualCameraInfos[camIdx].locationId == "SIMULATION" || 
+                                  actualCameraInfos[camIdx].uniqueId.startsWith("SIM_") ||
+                                  actualCameraInfos[camIdx].uniqueId.isEmpty());
         
         
         if (patternCount == 0 && !isSimulationCamera) {
@@ -436,7 +438,9 @@ bool RecipeManager::loadRecipe(const QString& fileName,
         // 시뮬레이션 모드일 때 기존 카메라 정보 초기화
         bool isSimulationMode = false;
         for (const auto& cameraInfo : cameraInfos) {
-            if (cameraInfo.serialNumber == "SIM_SERIAL") {
+            if (cameraInfo.locationId == "SIMULATION" || 
+                cameraInfo.uniqueId.startsWith("SIM_") ||
+                cameraInfo.serialNumber == "SIM_SERIAL") {
                 isSimulationMode = true;
                 break;
             }
@@ -525,7 +529,12 @@ void RecipeManager::writeCalibrationInfo(QXmlStreamWriter& xml, const Calibratio
 }
 
 void RecipeManager::writeCameraSettings(QXmlStreamWriter& xml, const CameraInfo& cameraInfo) {
-    if (cameraInfo.videoDeviceIndex == -1) {
+    // 시뮬레이션 카메라 판단: locationId가 "SIMULATION"이거나 uniqueId가 "SIM_"로 시작하는 경우
+    bool isSimulationCamera = (cameraInfo.locationId == "SIMULATION" || 
+                              cameraInfo.uniqueId.startsWith("SIM_") ||
+                              cameraInfo.uniqueId.isEmpty());
+    
+    if (isSimulationCamera) {
         // 시뮬레이션 카메라
         xml.writeStartElement("videoDeviceIndex");
         xml.writeCharacters("-1");
@@ -546,10 +555,21 @@ void RecipeManager::writeCameraSettings(QXmlStreamWriter& xml, const CameraInfo&
             xml.writeEndElement();
         }
     } else {
-        // 일반 카메라
+        // 실제 카메라 (Spinnaker 또는 OpenCV)
+        xml.writeStartElement("videoDeviceIndex");
+        xml.writeCharacters(QString::number(cameraInfo.videoDeviceIndex));
+        xml.writeEndElement();
+        
+        xml.writeStartElement("deviceId");
+        xml.writeCharacters(cameraInfo.uniqueId);  // Spinnaker UUID 또는 OpenCV device ID
+        xml.writeEndElement();
+        
+        xml.writeStartElement("uniqueId");
+        xml.writeCharacters(cameraInfo.uniqueId);
+        xml.writeEndElement();
+        
+        // 실제 카메라의 경우 추가 정보 저장
         if (cameraInfo.capture && cameraInfo.capture->isOpened()) {
-            // width, height는 이미 위에서 추가했으므로 여기서는 제외
-            
             double fps = cameraInfo.capture->get(cv::CAP_PROP_FPS);
             xml.writeAttribute("fps", QString::number(fps));
             
