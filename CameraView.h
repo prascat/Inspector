@@ -55,7 +55,7 @@ public:
         return selectedInspectionPatternId;
     }
 
-    enum EditMode {Move, Draw, Edit};
+    enum EditMode {View, Move, Draw, Edit};
 
     void setPatternContours(const QUuid& patternId, const QList<QVector<QPoint>>& contours);
     

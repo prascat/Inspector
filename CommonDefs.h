@@ -251,6 +251,10 @@ namespace UIColors {
     const QColor BTN_CAM_OFF_COLOR = QColor("#E57373");  // 연한 빨간색(OFF)
     const QColor BTN_CAM_ON_COLOR  = QColor("#81C784");  // 연한 초록색(ON)
     
+    // TEACH 버튼용 색상 - CAM 버튼과 동일한 색상
+    const QColor BTN_TEACH_OFF_COLOR = QColor("#E57373"); // 연한 빨간색(OFF) - CAM과 동일
+    const QColor BTN_TEACH_ON_COLOR  = QColor("#81C784"); // 연한 초록색(ON) - CAM과 동일
+    
     // RUN 버튼도 CAM 버튼과 동일한 색상 체계 사용
     const QColor BTN_RUN_OFF_COLOR = QColor("#E57373");  // 연한 빨간색(OFF) - CAM과 동일
     const QColor BTN_RUN_ON_COLOR  = QColor("#81C784");  // 연한 초록색(ON) - CAM과 동일

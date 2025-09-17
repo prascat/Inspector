@@ -141,6 +141,21 @@ QPoint CameraView::originalToDisplay(const QPoint& originalPos) {
 }
 
 void CameraView::mousePressEvent(QMouseEvent* event) {
+    // View 모드에서는 모든 편집 기능 차단 (패닝과 줌만 허용)
+    if (m_editMode == EditMode::View) {
+        // Ctrl 키가 눌렸고 확대 상태면 패닝만 허용
+        if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier) && zoomFactor > 0.2) {
+            isPanning = true;
+            panStartPos = event->pos();
+            panStartOffset = panOffset;
+            setCursor(Qt::ClosedHandCursor);
+            return;
+        }
+        // View 모드에서는 다른 모든 마우스 이벤트 무시
+        QLabel::mousePressEvent(event);
+        return;
+    }
+    
     if (event->button() == Qt::LeftButton) {
         // 모든 마우스 클릭 시 검사 결과 필터 해제
         if (!selectedInspectionPatternId.isNull()) {
@@ -284,6 +299,13 @@ void CameraView::mouseMoveEvent(QMouseEvent* event) {
         QPoint delta = event->pos() - panStartPos;
         panOffset = panStartOffset + delta;
         update();
+        return;
+    }
+
+    // View 모드에서는 패닝만 허용하고 다른 모든 편집 기능 차단
+    if (m_editMode == EditMode::View) {
+        setCursor(Qt::ArrowCursor);
+        QLabel::mouseMoveEvent(event);
         return;
     }
 
@@ -477,6 +499,12 @@ void CameraView::mouseReleaseEvent(QMouseEvent* event) {
     if (isPanning && event->button() == Qt::LeftButton) {
         isPanning = false;
         setCursor(Qt::ArrowCursor);
+        return;
+    }
+
+    // View 모드에서는 패닝 해제만 허용하고 다른 모든 편집 기능 차단
+    if (m_editMode == EditMode::View) {
+        QLabel::mouseReleaseEvent(event);
         return;
     }
 

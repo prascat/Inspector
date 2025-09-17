@@ -178,6 +178,10 @@ public:
     void updateAllPatternTemplateImages(); // 모든 패턴의 템플릿 이미지 갱신
     void updatePatternTemplateImage(const QUuid& patternId); // 개별 패턴의 템플릿 이미지 갱신
     cv::Mat extractRotatedRegion(const cv::Mat& image, const QRectF& rect, double angle);
+    
+    // TEACH 모드 관련
+    void onTeachModeToggled(bool checked);
+    void setTeachingButtonsEnabled(bool enabled);
     LogViewer* getLogViewer() const { return logViewer; }
     
     // 레시피 매니저 접근
@@ -296,6 +300,7 @@ private:
     
     // 버튼 멤버 변수들
     QPushButton* modeToggleButton = nullptr;
+    QPushButton* teachModeButton = nullptr;  // TEACH ON/OFF 버튼 추가
     QPushButton* startCameraButton = nullptr;
     QPushButton* runStopButton = nullptr;
     QPushButton* saveRecipeButton = nullptr;
@@ -520,6 +525,9 @@ private:
     
     // 카메라 모드 관련 (camOn/camOff)
     QVariantMap backupRecipeData; // 레시피 백업 데이터
+    
+    // 티칭 모드 관련
+    bool teachingEnabled = false;  // 티칭 모드 활성화 상태
     
     // 패턴 스타일링 관련
     QVector<QColor> patternColors;

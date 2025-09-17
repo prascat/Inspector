@@ -111,31 +111,8 @@ void CameraGrabberThread::run()
                             frame = parent->grabFrameFromSpinnakerCamera(spinCamera);
                             grabbed = !frame.empty();
                             
-                            // 하드웨어 트리거 모드에서 이미지를 성공적으로 획득한 경우 자동 검사 실행
-                            if (grabbed) {
-                                try {
-                                    // 트리거 모드가 활성화되어 있는지 확인
-                                    Spinnaker::GenApi::INodeMap& nodeMap = spinCamera->GetNodeMap();
-                                    Spinnaker::GenApi::CEnumerationPtr ptrTriggerMode = nodeMap.GetNode("TriggerMode");
-                                    if (Spinnaker::GenApi::IsReadable(ptrTriggerMode)) {
-                                        Spinnaker::GenApi::CEnumEntryPtr currentTriggerMode = ptrTriggerMode->GetCurrentEntry();
-                                        if (currentTriggerMode && 
-                                            std::string(currentTriggerMode->GetSymbolic().c_str()) == "On") {
-                                            
-                                            // 메인 스레드에서 안전하게 검사 실행
-                                            QMetaObject::invokeMethod(parent, [parent, frame, this]() {
-                                                if (parent->hasLoadedRecipe()) {
-                                                    std::cout << "하드웨어 트리거 신호 수신 - 자동 검사 시작" << std::endl;
-                                                    bool inspectionPassed = parent->runInspection(frame, m_cameraIndex);
-                                                    std::cout << "검사 결과: " << (inspectionPassed ? "PASS" : "FAIL") << std::endl;
-                                                }
-                                            }, Qt::QueuedConnection);
-                                        }
-                                    }
-                                } catch (Spinnaker::Exception& e) {
-                                    // 트리거 상태 확인 실패는 무시하고 계속
-                                }
-                            }
+                            // CAM ON 모드에서는 연속 촬영만 수행 (자동 검사 없음)
+                            // 트리거 기반 자동 검사는 별도 기능으로 분리
                         }
                     }
 #endif
@@ -621,6 +598,14 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     setupHeaderButton(modeToggleButton);
     modeToggleButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_MOVE_COLOR, UIColors::BTN_DRAW_COLOR, true));
 
+    // TEACH ON/OFF 모드 토글 버튼
+    teachModeButton = new QPushButton("TEACH OFF", this);
+    teachModeButton->setObjectName("teachModeButton");
+    teachModeButton->setCheckable(true);
+    teachModeButton->setChecked(false); // 기본값 TEACH OFF
+    setupHeaderButton(teachModeButton);
+    teachModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, false));
+
     // CAM START/STOP 버튼
     startCameraButton = new QPushButton("CAM OFF", this);
     startCameraButton->setCheckable(true);
@@ -636,6 +621,7 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     
     // 토글 버튼 레이아웃에 추가
     toggleButtonLayout->addWidget(modeToggleButton);
+    toggleButtonLayout->addWidget(teachModeButton);
     toggleButtonLayout->addWidget(startCameraButton);
     toggleButtonLayout->addWidget(runStopButton);
     
@@ -687,6 +673,7 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     
     // 이벤트 연결
     connectButtonEvents(modeToggleButton, saveRecipeButton, startCameraButton, runStopButton);
+    connect(teachModeButton, &QPushButton::toggled, this, &TeachingWidget::onTeachModeToggled);
     connect(addPatternButton, &QPushButton::clicked, this, &TeachingWidget::addPattern);
     connect(removeButton, &QPushButton::clicked, this, &TeachingWidget::removePattern);
     connect(addFilterButton, &QPushButton::clicked, this, &TeachingWidget::addFilter);
@@ -744,6 +731,9 @@ void TeachingWidget::setupPatternTypeButtons(QVBoxLayout *cameraLayout) {
         cameraView->setEditMode(CameraView::EditMode::Draw);  // 기본 모드: DRAW
         cameraView->setCurrentDrawColor(UIColors::ROI_COLOR); // 초기값: ROI (노란색)
     }
+    
+    // 초기 상태: TEACH OFF이므로 티칭 버튼들 비활성화
+    setTeachingButtonsEnabled(false);
 }
 
 void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushButton* saveRecipeButton,
@@ -7481,33 +7471,16 @@ bool TeachingWidget::connectSpinnakerCamera(int index, CameraInfo& info)
                 }
             }
             
-            // 트리거 모드 설정 - 하드웨어 트리거로 설정
+            // 트리거 모드 설정 - CAM ON 시에는 연속 촬영 모드 사용
             Spinnaker::GenApi::CEnumerationPtr ptrTriggerMode = nodeMap.GetNode("TriggerMode");
             if (Spinnaker::GenApi::IsWritable(ptrTriggerMode)) {
-                Spinnaker::GenApi::CEnumEntryPtr ptrTriggerModeOn = ptrTriggerMode->GetEntryByName("On");
-                if (Spinnaker::GenApi::IsReadable(ptrTriggerModeOn)) {
-                    ptrTriggerMode->SetIntValue(ptrTriggerModeOn->GetValue());
-                    
-                    // 트리거 소스 설정 (하드웨어 입력)
-                    Spinnaker::GenApi::CEnumerationPtr ptrTriggerSource = nodeMap.GetNode("TriggerSource");
-                    if (Spinnaker::GenApi::IsWritable(ptrTriggerSource)) {
-                        // Line0 (GPIO 0번 핀)을 트리거 소스로 설정
-                        Spinnaker::GenApi::CEnumEntryPtr ptrTriggerSourceLine0 = ptrTriggerSource->GetEntryByName("Line0");
-                        if (Spinnaker::GenApi::IsReadable(ptrTriggerSourceLine0)) {
-                            ptrTriggerSource->SetIntValue(ptrTriggerSourceLine0->GetValue());
-                        }
-                    }
-                    
-                    // 트리거 활성화 방향 설정 (Rising Edge)
-                    Spinnaker::GenApi::CEnumerationPtr ptrTriggerActivation = nodeMap.GetNode("TriggerActivation");
-                    if (Spinnaker::GenApi::IsWritable(ptrTriggerActivation)) {
-                        Spinnaker::GenApi::CEnumEntryPtr ptrTriggerActivationRising = ptrTriggerActivation->GetEntryByName("RisingEdge");
-                        if (Spinnaker::GenApi::IsReadable(ptrTriggerActivationRising)) {
-                            ptrTriggerActivation->SetIntValue(ptrTriggerActivationRising->GetValue());
-                        }
-                    }
-                    
-                    std::cout << "하드웨어 트리거 모드 활성화됨 (Line0, Rising Edge)" << std::endl;
+                // 연속 촬영을 위해 트리거 모드 OFF
+                Spinnaker::GenApi::CEnumEntryPtr ptrTriggerModeOff = ptrTriggerMode->GetEntryByName("Off");
+                if (Spinnaker::GenApi::IsReadable(ptrTriggerModeOff)) {
+                    ptrTriggerMode->SetIntValue(ptrTriggerModeOff->GetValue());
+                    std::cout << "연속 촬영 모드 활성화됨 (Trigger OFF)" << std::endl;
+                } else {
+                    std::cout << "트리거 모드 OFF 설정 실패" << std::endl;
                 }
             }
             
@@ -7790,6 +7763,11 @@ void TeachingWidget::addFilter() {
 }
 
 void TeachingWidget::addPattern() {
+    // 티칭 모드가 비활성화되어 있으면 패턴 추가 금지
+    if (!teachingEnabled) {
+        return;
+    }
+    
     // 시뮬레이션 모드 상태 디버깅 - cameraFrames 체크
     if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
         !cameraFrames[cameraIndex].empty()) {
@@ -9319,5 +9297,50 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
     } else {
         QMessageBox::critical(this, "레시피 불러오기 실패", 
             QString("레시피 불러오기에 실패했습니다:\n%1").arg(manager.getLastError()));
+    }
+}
+
+// TEACH 모드 토글 핸들러
+void TeachingWidget::onTeachModeToggled(bool checked) {
+    teachingEnabled = checked;
+    
+    if (checked) {
+        teachModeButton->setText("TEACH ON");
+        teachModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, true));
+    } else {
+        teachModeButton->setText("TEACH OFF");
+        teachModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, false));
+    }
+    
+    // 티칭 관련 버튼들 활성화/비활성화
+    setTeachingButtonsEnabled(checked);
+}
+
+// 티칭 관련 버튼들 활성화/비활성화
+void TeachingWidget::setTeachingButtonsEnabled(bool enabled) {
+    // 패턴 타입 버튼들
+    if (roiButton) roiButton->setEnabled(enabled);
+    if (fidButton) fidButton->setEnabled(enabled);
+    if (insButton) insButton->setEnabled(enabled);
+    
+    // 편집 모드 버튼
+    if (modeToggleButton) modeToggleButton->setEnabled(enabled);
+    
+    // 패턴 추가/삭제 버튼들
+    if (addPatternButton) addPatternButton->setEnabled(enabled);
+    if (removeButton) removeButton->setEnabled(enabled);
+    if (addFilterButton) addFilterButton->setEnabled(enabled);
+    
+    // CameraView의 편집 모드 설정
+    if (cameraView) {
+        if (enabled) {
+            // TEACH ON: 현재 모드에 따라 편집 모드 설정
+            CameraView::EditMode currentMode = modeToggleButton && modeToggleButton->isChecked() ? 
+                CameraView::EditMode::Draw : CameraView::EditMode::Move;
+            cameraView->setEditMode(currentMode);
+        } else {
+            // TEACH OFF: View 모드로 설정 (모든 편집 기능 차단)
+            cameraView->setEditMode(CameraView::EditMode::View);
+        }
     }
 }
