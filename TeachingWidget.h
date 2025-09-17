@@ -192,6 +192,9 @@ public:
     void deleRecipe();
     bool loadRecipe(const QString &fileName = QString());
     
+    // 레시피 로드 상태 확인
+    bool hasLoadedRecipe() const;
+    
     // === 레시피 관리 함수들 (camOff에서도 사용) ===
     void newRecipe();
     void openRecipe(bool autoMode = false);

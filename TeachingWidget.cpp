@@ -110,6 +110,32 @@ void CameraGrabberThread::run()
                         if (spinCamera) {
                             frame = parent->grabFrameFromSpinnakerCamera(spinCamera);
                             grabbed = !frame.empty();
+                            
+                            // 하드웨어 트리거 모드에서 이미지를 성공적으로 획득한 경우 자동 검사 실행
+                            if (grabbed) {
+                                try {
+                                    // 트리거 모드가 활성화되어 있는지 확인
+                                    Spinnaker::GenApi::INodeMap& nodeMap = spinCamera->GetNodeMap();
+                                    Spinnaker::GenApi::CEnumerationPtr ptrTriggerMode = nodeMap.GetNode("TriggerMode");
+                                    if (Spinnaker::GenApi::IsReadable(ptrTriggerMode)) {
+                                        Spinnaker::GenApi::CEnumEntryPtr currentTriggerMode = ptrTriggerMode->GetCurrentEntry();
+                                        if (currentTriggerMode && 
+                                            std::string(currentTriggerMode->GetSymbolic().c_str()) == "On") {
+                                            
+                                            // 메인 스레드에서 안전하게 검사 실행
+                                            QMetaObject::invokeMethod(parent, [parent, frame, this]() {
+                                                if (parent->hasLoadedRecipe()) {
+                                                    std::cout << "하드웨어 트리거 신호 수신 - 자동 검사 시작" << std::endl;
+                                                    bool inspectionPassed = parent->runInspection(frame, m_cameraIndex);
+                                                    std::cout << "검사 결과: " << (inspectionPassed ? "PASS" : "FAIL") << std::endl;
+                                                }
+                                            }, Qt::QueuedConnection);
+                                        }
+                                    }
+                                } catch (Spinnaker::Exception& e) {
+                                    // 트리거 상태 확인 실패는 무시하고 계속
+                                }
+                            }
                         }
                     }
 #endif
@@ -7188,6 +7214,11 @@ bool TeachingWidget::loadRecipe(const QString &fileName) {
     return false;
 }
 
+bool TeachingWidget::hasLoadedRecipe() const {
+    // 레시피가 로드된 경우 패턴이 하나 이상 있어야 함
+    return !cameraView->getPatterns().isEmpty();
+}
+
 QVector<CameraInfo> TeachingWidget::getCameraInfos() const {
     QMutexLocker locker(&cameraInfosMutex);
     return cameraInfos;
@@ -7450,14 +7481,35 @@ bool TeachingWidget::connectSpinnakerCamera(int index, CameraInfo& info)
                 }
             }
             
-            // 트리거 모드 끄기 - 주석처리: 사용자 설정 유지를 위해
-            // Spinnaker::GenApi::CEnumerationPtr ptrTriggerMode = nodeMap.GetNode("TriggerMode");
-            // if (Spinnaker::GenApi::IsWritable(ptrTriggerMode)) {
-            //     Spinnaker::GenApi::CEnumEntryPtr ptrTriggerModeOff = ptrTriggerMode->GetEntryByName("Off");
-            //     if (Spinnaker::GenApi::IsReadable(ptrTriggerModeOff)) {
-            //         ptrTriggerMode->SetIntValue(ptrTriggerModeOff->GetValue());
-            //     }
-            // }
+            // 트리거 모드 설정 - 하드웨어 트리거로 설정
+            Spinnaker::GenApi::CEnumerationPtr ptrTriggerMode = nodeMap.GetNode("TriggerMode");
+            if (Spinnaker::GenApi::IsWritable(ptrTriggerMode)) {
+                Spinnaker::GenApi::CEnumEntryPtr ptrTriggerModeOn = ptrTriggerMode->GetEntryByName("On");
+                if (Spinnaker::GenApi::IsReadable(ptrTriggerModeOn)) {
+                    ptrTriggerMode->SetIntValue(ptrTriggerModeOn->GetValue());
+                    
+                    // 트리거 소스 설정 (하드웨어 입력)
+                    Spinnaker::GenApi::CEnumerationPtr ptrTriggerSource = nodeMap.GetNode("TriggerSource");
+                    if (Spinnaker::GenApi::IsWritable(ptrTriggerSource)) {
+                        // Line0 (GPIO 0번 핀)을 트리거 소스로 설정
+                        Spinnaker::GenApi::CEnumEntryPtr ptrTriggerSourceLine0 = ptrTriggerSource->GetEntryByName("Line0");
+                        if (Spinnaker::GenApi::IsReadable(ptrTriggerSourceLine0)) {
+                            ptrTriggerSource->SetIntValue(ptrTriggerSourceLine0->GetValue());
+                        }
+                    }
+                    
+                    // 트리거 활성화 방향 설정 (Rising Edge)
+                    Spinnaker::GenApi::CEnumerationPtr ptrTriggerActivation = nodeMap.GetNode("TriggerActivation");
+                    if (Spinnaker::GenApi::IsWritable(ptrTriggerActivation)) {
+                        Spinnaker::GenApi::CEnumEntryPtr ptrTriggerActivationRising = ptrTriggerActivation->GetEntryByName("RisingEdge");
+                        if (Spinnaker::GenApi::IsReadable(ptrTriggerActivationRising)) {
+                            ptrTriggerActivation->SetIntValue(ptrTriggerActivationRising->GetValue());
+                        }
+                    }
+                    
+                    std::cout << "하드웨어 트리거 모드 활성화됨 (Line0, Rising Edge)" << std::endl;
+                }
+            }
             
             // 연속 획득 모드 설정
             Spinnaker::GenApi::CEnumerationPtr ptrAcquisitionMode = nodeMap.GetNode("AcquisitionMode");
