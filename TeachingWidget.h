@@ -129,6 +129,9 @@ signals:
 class TeachingWidget : public QWidget {
     Q_OBJECT
 
+    // Friend classes for accessing private members
+    friend class CameraGrabberThread;
+
 public:
     // RecipeManager에서 접근 가능하도록 public으로 선언
     std::vector<cv::Mat> cameraFrames;

@@ -101,7 +101,21 @@ void CameraGrabberThread::run()
         if (parent && m_cameraIndex >= 0) {
             if (parent->isValidCameraIndex(m_cameraIndex)) {
                 CameraInfo info = parent->getCameraInfo(m_cameraIndex);
-                if (info.capture && info.capture->isOpened()) {
+                
+                // Spinnaker 카메라 처리
+                if (info.uniqueId.startsWith("SPINNAKER_")) {
+#ifdef USE_SPINNAKER
+                    if (parent->m_useSpinnaker && m_cameraIndex < static_cast<int>(parent->m_spinCameras.size())) {
+                        auto spinCamera = parent->m_spinCameras[m_cameraIndex];
+                        if (spinCamera) {
+                            frame = parent->grabFrameFromSpinnakerCamera(spinCamera);
+                            grabbed = !frame.empty();
+                        }
+                    }
+#endif
+                }
+                // OpenCV 카메라 처리
+                else if (info.capture && info.capture->isOpened()) {
                     grabbed = info.capture->read(frame);
                 }
             }
@@ -4632,8 +4646,8 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat& frame, int camIdx) {
     // **메인 카메라 처리**
     if (camIdx == cameraIndex) {
         try {
-            // **검사 모드가 아닐 때만 화면 업데이트**
-            if (!cameraView || !cameraView->getInspectionMode()) {
+            // **항상 화면 업데이트 (검사 모드와 관계없이)**
+            if (cameraView) {
                 // 필터 적용
                 cv::Mat filteredFrame = frame.clone();
                 cameraView->applyFiltersToImage(filteredFrame);
@@ -4647,11 +4661,11 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat& frame, int camIdx) {
                            displayFrame.step, QImage::Format_RGB888);
                 QPixmap pixmap = QPixmap::fromImage(image.copy());
                 
-                // UI 업데이트
-                if (cameraView) {
+                // UI 업데이트 - 메인 스레드에서 안전하게 실행
+                QMetaObject::invokeMethod(cameraView, [this, pixmap]() {
                     cameraView->setBackgroundPixmap(pixmap);
                     cameraView->update();
-                }
+                }, Qt::QueuedConnection);
             }
         }
         catch (const std::exception& e) {
@@ -4814,9 +4828,17 @@ void TeachingWidget::startCamera() {
         }
     }
 
-    // 8. UI 업데이트 스레드 시작
-    if (uiUpdateThread)
+    // 8. UI 업데이트 스레드 시작 (강제로 시작)
+    if (uiUpdateThread) {
+        if (!uiUpdateThread->isRunning()) {
+            uiUpdateThread->start(QThread::NormalPriority);
+            QThread::msleep(100); // 스레드 시작 대기
+        }
+    } else {
+        // UI 업데이트 스레드가 없으면 생성
+        uiUpdateThread = new UIUpdateThread(this);
         uiUpdateThread->start(QThread::NormalPriority);
+    }
 
     // 9. 카메라 연결 상태 확인
     bool cameraStarted = false;
@@ -7555,8 +7577,27 @@ cv::Mat TeachingWidget::grabFrameFromSpinnakerCamera(Spinnaker::CameraPtr& camer
             }
         }
         
-        // 새 이미지 획득 시도 - 타임아웃을 보다 길게 설정 (100ms)
-        Spinnaker::ImagePtr spinImage = camera->GetNextImage(100);
+        // 새 이미지 획득 시도 - 카메라 프레임 레이트에 맞춰 타임아웃 계산
+        int timeout = 1000; // 기본 1초
+        
+        try {
+            // 카메라의 실제 프레임 레이트 가져오기
+            Spinnaker::GenApi::INodeMap& nodeMap = camera->GetNodeMap();
+            Spinnaker::GenApi::CFloatPtr ptrFrameRate = nodeMap.GetNode("AcquisitionFrameRate");
+            if (Spinnaker::GenApi::IsReadable(ptrFrameRate)) {
+                double frameRate = ptrFrameRate->GetValue();
+                if (frameRate > 0) {
+                    // 프레임 레이트의 3배 시간을 타임아웃으로 설정 (여유분 포함)
+                    timeout = static_cast<int>((3000.0 / frameRate) + 50); // 최소 50ms 추가
+                    timeout = std::min(timeout, 2000); // 최대 2초로 제한
+                    timeout = std::max(timeout, 100);  // 최소 100ms 보장
+                }
+            }
+        } catch (Spinnaker::Exception& e) {
+            // 프레임 레이트를 가져올 수 없으면 기본값 사용
+        }
+        
+        Spinnaker::ImagePtr spinImage = camera->GetNextImage(timeout);
         
         // 완전한 이미지인지 확인
         if (!spinImage || spinImage->IsIncomplete()) {
