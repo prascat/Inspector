@@ -2063,19 +2063,19 @@ void CameraView::paintEvent(QPaintEvent *event) {
             painter.drawPixmap(x, y, scaledPixmap);
         }
     } else {
-        // 배경 이미지가 없을 때 상태 텍스트 표시
+        // 배경 이미지가 없을 때 상태에 따른 표시
         painter.fillRect(rect(), Qt::black);
-        painter.setPen(Qt::white);
         
-        QFont font = painter.font();
-        font.setPointSize(16);
-        font.setBold(true);
-        painter.setFont(font);
-        
-        // 카메라 이름이 있으면 표시, 없으면 "연결 없음"
-        QString displayText = currentCameraName.isEmpty() ? TR("NO_CONNECTION") : currentCameraName;
-        painter.drawText(rect(), Qt::AlignCenter, displayText);
-        // 패턴이 있을 수 있으므로 return 하지 않고 계속 진행
+        // 카메라 이름이 설정되지 않은 경우에만 "연결 없음" 표시
+        if (currentCameraName.isEmpty()) {
+            painter.setPen(Qt::white);
+            QFont font = painter.font();
+            font.setPointSize(16);
+            font.setBold(true);
+            painter.setFont(font);
+            painter.drawText(rect(), Qt::AlignCenter, TR("NO_CONNECTION"));
+        }
+        // 카메라 이름이 있으면 (카메라 연결됨) 텍스트 표시 안 함 - 깔끔한 검은 화면
     }
     
     // 패턴 그리기 (티칭 모드에서만)
