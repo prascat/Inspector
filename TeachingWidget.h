@@ -181,6 +181,7 @@ public:
     
     // TEACH 모드 관련
     void onTeachModeToggled(bool checked);
+    void onCameraModeToggled(bool checked);
     void setTeachingButtonsEnabled(bool enabled);
     LogViewer* getLogViewer() const { return logViewer; }
     
@@ -302,6 +303,7 @@ private:
     QPushButton* modeToggleButton = nullptr;
     QPushButton* teachModeButton = nullptr;  // TEACH ON/OFF 버튼 추가
     QPushButton* startCameraButton = nullptr;
+    QPushButton* cameraModeButton = nullptr;  // LIVE/INSPECT 모드 토글 버튼 추가
     QPushButton* runStopButton = nullptr;
     QPushButton* saveRecipeButton = nullptr;
     QPushButton* addPatternButton = nullptr;

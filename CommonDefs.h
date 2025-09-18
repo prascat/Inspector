@@ -258,6 +258,10 @@ namespace UIColors {
     // RUN 버튼도 CAM 버튼과 동일한 색상 체계 사용
     const QColor BTN_RUN_OFF_COLOR = QColor("#E57373");  // 연한 빨간색(OFF) - CAM과 동일
     const QColor BTN_RUN_ON_COLOR  = QColor("#81C784");  // 연한 초록색(ON) - CAM과 동일
+    
+    // LIVE/INSPECT 모드 토글 버튼용 색상
+    const QColor BTN_LIVE_COLOR = QColor("#64B5F6");     // 연한 파란색 (LIVE 모드)
+    const QColor BTN_INSPECT_COLOR = QColor("#FFB74D");  // 연한 주황색 (INSPECT 모드)
 
     // DRAW, MOVE 토글 버튼용 색상 - 더 부드러운 색상으로 변경
     const QColor BTN_DRAW_COLOR = QColor("#FF8A65");     // 연한 주황색(DRAW)

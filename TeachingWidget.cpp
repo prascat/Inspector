@@ -612,6 +612,14 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     setupHeaderButton(startCameraButton);
     startCameraButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_CAM_OFF_COLOR, UIColors::BTN_CAM_ON_COLOR, false));
 
+    // LIVE/INSPECT 모드 토글 버튼
+    cameraModeButton = new QPushButton("LIVE", this);
+    cameraModeButton->setObjectName("cameraModeButton");
+    cameraModeButton->setCheckable(true);
+    cameraModeButton->setChecked(false); // 기본값 LIVE 모드 (false)
+    setupHeaderButton(cameraModeButton);
+    cameraModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_LIVE_COLOR, UIColors::BTN_INSPECT_COLOR, false));
+
     // RUN 버튼 - 일반 푸시 버튼으로 변경
     runStopButton = new QPushButton("RUN", this);
     runStopButton->setObjectName("runStopButton");
@@ -623,6 +631,7 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     toggleButtonLayout->addWidget(modeToggleButton);
     toggleButtonLayout->addWidget(teachModeButton);
     toggleButtonLayout->addWidget(startCameraButton);
+    toggleButtonLayout->addWidget(cameraModeButton);
     toggleButtonLayout->addWidget(runStopButton);
     
     // 3. 액션 버튼 그룹 (SAVE, 패턴추가, 패턴삭제, 필터추가) - 세 번째 그룹
@@ -674,6 +683,7 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     // 이벤트 연결
     connectButtonEvents(modeToggleButton, saveRecipeButton, startCameraButton, runStopButton);
     connect(teachModeButton, &QPushButton::toggled, this, &TeachingWidget::onTeachModeToggled);
+    connect(cameraModeButton, &QPushButton::toggled, this, &TeachingWidget::onCameraModeToggled);
     connect(addPatternButton, &QPushButton::clicked, this, &TeachingWidget::addPattern);
     connect(removeButton, &QPushButton::clicked, this, &TeachingWidget::removePattern);
     connect(addFilterButton, &QPushButton::clicked, this, &TeachingWidget::addFilter);
@@ -4774,7 +4784,10 @@ void TeachingWidget::updatePreviewFrames() {
 void TeachingWidget::startCamera() {
     qDebug() << "startCamera() 함수 시작";
     
-    // 1. 카메라 정보 갱신
+    // 1. CAM 버튼 상태 먼저 업데이트 (즉시 UI 반응)
+    updateCameraButtonState(true);
+    
+    // 2. 카메라 정보 갱신
     detectCameras();
 
     // 2. 기존 스레드 중지 및 정리
@@ -4884,9 +4897,6 @@ void TeachingWidget::startCamera() {
     
     // 10. 패턴 트리 업데이트 (라이브 모드 시작 시 현재 카메라 패턴 표시)
     updatePatternTree();
-    
-    // 11. CAM 버튼 상태 업데이트
-    updateCameraButtonState(true);
     
 }
 
@@ -9364,6 +9374,29 @@ void TeachingWidget::onTeachModeToggled(bool checked) {
     
     // 티칭 관련 버튼들 활성화/비활성화
     setTeachingButtonsEnabled(checked);
+}
+
+void TeachingWidget::onCameraModeToggled(bool checked) {
+    // 카메라가 켜져 있으면 먼저 끄기
+    bool cameraWasOn = startCameraButton->isChecked();
+    if (cameraWasOn) {
+        qDebug() << "Camera is ON, turning OFF before mode change";
+        startCameraButton->setChecked(false);  // CAM OFF 버튼 호출
+    }
+    
+    if (checked) {
+        // INSPECT 모드
+        cameraModeButton->setText("INSPECT");
+        cameraModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_LIVE_COLOR, UIColors::BTN_INSPECT_COLOR, true));
+        
+        qDebug() << "Camera mode changed to INSPECT (나중에 트리거 모드 ON 구현 예정)";
+    } else {
+        // LIVE 모드
+        cameraModeButton->setText("LIVE");  
+        cameraModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_LIVE_COLOR, UIColors::BTN_INSPECT_COLOR, false));
+        
+        qDebug() << "Camera mode changed to LIVE (나중에 트리거 모드 OFF 구현 예정)";
+    }
 }
 
 // 티칭 관련 버튼들 활성화/비활성화
