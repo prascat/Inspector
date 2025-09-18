@@ -14,6 +14,10 @@
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QTabWidget>
+#include <QShowEvent>
+#include <QSettings>
+#include <chrono>
+#include <thread>
 #include "CommonDefs.h"
 
 #ifdef USE_SPINNAKER
@@ -36,11 +40,13 @@ public:
 
 public slots:
     void applySettings();
+    void applyTriggerModeOnly();
     void startHardwareTriggerDetection();
     void stopHardwareTriggerDetection();
     
 private slots:
     void checkHardwareTrigger();
+    void onTriggerModeChanged();
     
 private:
     void setupUI();
@@ -49,6 +55,11 @@ private:
     void setupGainSettings();
     void setupTriggerMonitoring();
     void loadCurrentCameraSettings();
+    void saveSettings();
+    void loadSettings();
+    
+protected:
+    void showEvent(QShowEvent* event) override;
     
 #ifdef USE_SPINNAKER
     void readCameraSettings(Spinnaker::CameraPtr camera);

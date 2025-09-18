@@ -7476,17 +7476,55 @@ bool TeachingWidget::connectSpinnakerCamera(int index, CameraInfo& info)
                 }
             }
             
-            // 트리거 모드 설정 - CAM ON 시에는 연속 촬영 모드 사용
-            Spinnaker::GenApi::CEnumerationPtr ptrTriggerMode = nodeMap.GetNode("TriggerMode");
-            if (Spinnaker::GenApi::IsWritable(ptrTriggerMode)) {
-                // 연속 촬영을 위해 트리거 모드 OFF
-                Spinnaker::GenApi::CEnumEntryPtr ptrTriggerModeOff = ptrTriggerMode->GetEntryByName("Off");
-                if (Spinnaker::GenApi::IsReadable(ptrTriggerModeOff)) {
-                    ptrTriggerMode->SetIntValue(ptrTriggerModeOff->GetValue());
-                    std::cout << "연속 촬영 모드 활성화됨 (Trigger OFF)" << std::endl;
-                } else {
-                    std::cout << "트리거 모드 OFF 설정 실패" << std::endl;
+            // 트리거 모드 설정 - 사용자 설정을 존중 (자동으로 Off로 변경하지 않음)
+            // 참고: 카메라 설정 다이얼로그에서 트리거 모드를 설정할 수 있음
+            
+            // 저장된 UserSet1 강제 로드 - 사용자 설정 복원
+            try {
+                // UserSet 로드 전 현재 트리거 설정 확인
+                Spinnaker::GenApi::CEnumerationPtr ptrTriggerSourceBefore = nodeMap.GetNode("TriggerSource");
+                if (Spinnaker::GenApi::IsAvailable(ptrTriggerSourceBefore) && Spinnaker::GenApi::IsReadable(ptrTriggerSourceBefore)) {
+                    QString triggerSourceBefore = QString::fromStdString(ptrTriggerSourceBefore->GetCurrentEntry()->GetSymbolic().c_str());
+                    std::cout << "UserSet 로드 전 트리거 소스: " << triggerSourceBefore.toStdString() << std::endl;
                 }
+                
+                Spinnaker::GenApi::CEnumerationPtr ptrUserSetSelector = nodeMap.GetNode("UserSetSelector");
+                Spinnaker::GenApi::CCommandPtr ptrUserSetLoad = nodeMap.GetNode("UserSetLoad");
+                
+                if (Spinnaker::GenApi::IsAvailable(ptrUserSetSelector) && 
+                    Spinnaker::GenApi::IsWritable(ptrUserSetSelector) &&
+                    Spinnaker::GenApi::IsAvailable(ptrUserSetLoad) && 
+                    Spinnaker::GenApi::IsWritable(ptrUserSetLoad)) {
+                    
+                    // UserSet1 선택
+                    Spinnaker::GenApi::CEnumEntryPtr ptrUserSet1 = ptrUserSetSelector->GetEntryByName("UserSet1");
+                    if (Spinnaker::GenApi::IsAvailable(ptrUserSet1) && Spinnaker::GenApi::IsReadable(ptrUserSet1)) {
+                        ptrUserSetSelector->SetIntValue(ptrUserSet1->GetValue());
+                        
+                        // UserSet1 로드 실행
+                        ptrUserSetLoad->Execute();
+                        std::cout << "UserSet1 로드 완료 - 사용자 저장 설정 복원" << std::endl;
+                        
+                        // UserSet 로드 후 트리거 설정 확인
+                        if (Spinnaker::GenApi::IsAvailable(ptrTriggerSourceBefore) && Spinnaker::GenApi::IsReadable(ptrTriggerSourceBefore)) {
+                            QString triggerSourceAfter = QString::fromStdString(ptrTriggerSourceBefore->GetCurrentEntry()->GetSymbolic().c_str());
+                            std::cout << "UserSet 로드 후 트리거 소스: " << triggerSourceAfter.toStdString() << std::endl;
+                        }
+                    }
+                } else {
+                    std::cout << "UserSet 로드 실패 - 노드 접근 불가" << std::endl;
+                }
+            } catch (Spinnaker::Exception& e) {
+                std::cout << "UserSet 로드 오류: " << e.what() << std::endl;
+            }
+            
+            std::cout << "카메라 연결 완료 - 트리거 모드는 현재 설정 유지" << std::endl;
+            
+            // AcquisitionMode 설정 전 트리거 소스 확인
+            Spinnaker::GenApi::CEnumerationPtr ptrTriggerSourceCheck = nodeMap.GetNode("TriggerSource");
+            if (Spinnaker::GenApi::IsAvailable(ptrTriggerSourceCheck) && Spinnaker::GenApi::IsReadable(ptrTriggerSourceCheck)) {
+                QString triggerSourceBeforeAcq = QString::fromStdString(ptrTriggerSourceCheck->GetCurrentEntry()->GetSymbolic().c_str());
+                std::cout << "AcquisitionMode 설정 전 트리거 소스: " << triggerSourceBeforeAcq.toStdString() << std::endl;
             }
             
             // 연속 획득 모드 설정
@@ -7497,7 +7535,14 @@ bool TeachingWidget::connectSpinnakerCamera(int index, CameraInfo& info)
                 Spinnaker::GenApi::CEnumEntryPtr ptrAcquisitionModeContinuous = ptrAcquisitionMode->GetEntryByName("Continuous");
                 if (Spinnaker::GenApi::IsReadable(ptrAcquisitionModeContinuous)) {
                     ptrAcquisitionMode->SetIntValue(ptrAcquisitionModeContinuous->GetValue());
+                    std::cout << "AcquisitionMode를 Continuous로 설정 완료" << std::endl;
                 }
+            }
+            
+            // AcquisitionMode 설정 후 트리거 소스 확인
+            if (Spinnaker::GenApi::IsAvailable(ptrTriggerSourceCheck) && Spinnaker::GenApi::IsReadable(ptrTriggerSourceCheck)) {
+                QString triggerSourceAfterAcq = QString::fromStdString(ptrTriggerSourceCheck->GetCurrentEntry()->GetSymbolic().c_str());
+                std::cout << "AcquisitionMode 설정 후 트리거 소스: " << triggerSourceAfterAcq.toStdString() << std::endl;
             }
             
             // 노출 설정 (자동) - 주석처리: 사용자 설정 유지를 위해  
