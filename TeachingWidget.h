@@ -83,6 +83,8 @@ private:
     QWaitCondition m_condition;
     std::atomic<bool> m_stopped;
     std::atomic<bool> m_paused;
+    bool previousInspectMode = false;
+    bool modeInitialized = false;
 };
 
 // UI 업데이트 스레드
@@ -182,6 +184,7 @@ public:
     // TEACH 모드 관련
     void onTeachModeToggled(bool checked);
     void onCameraModeToggled(bool checked);
+    bool switchUserSet(bool isInspectMode);
     void setTeachingButtonsEnabled(bool enabled);
     LogViewer* getLogViewer() const { return logViewer; }
     

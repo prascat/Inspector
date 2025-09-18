@@ -34,6 +34,13 @@ public:
     int getSerialBaudRate() const;
     void setSerialBaudRate(int baudRate);
     
+    // UserSet 파일 경로 설정
+    QString getUserSetLivePath() const;
+    void setUserSetLivePath(const QString& path);
+    
+    QString getUserSetInspectPath() const;
+    void setUserSetInspectPath(const QString& path);
+    
 signals:
     void configChanged();
     void languageChanged(const QString& newLanguage);
@@ -50,6 +57,8 @@ private:
     QString m_lastRecipePath;
     QString m_serialPort;
     int m_serialBaudRate;
+    QString m_userSetLivePath;
+    QString m_userSetInspectPath;
     
     // 설정 파일 경로
     QString getConfigFilePath() const;

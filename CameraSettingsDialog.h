@@ -16,9 +16,13 @@
 #include <QTabWidget>
 #include <QShowEvent>
 #include <QSettings>
+#include <QLineEdit>
+#include <QFileDialog>
+#include <QCheckBox>
 #include <chrono>
 #include <thread>
 #include "CommonDefs.h"
+#include "ConfigManager.h"
 
 #ifdef USE_SPINNAKER
 #include <Spinnaker.h>
@@ -31,7 +35,6 @@ public:
     CameraSettingsDialog(QWidget* parent = nullptr);
     ~CameraSettingsDialog();
     
-    void loadCameraSettings();
     int getSelectedCameraIndex() const;
     
 #ifdef USE_SPINNAKER
@@ -39,24 +42,20 @@ public:
 #endif
 
 public slots:
-    void applySettings();
-    void applyTriggerModeOnly();
-    void startHardwareTriggerDetection();
-    void stopHardwareTriggerDetection();
-    
+
 private slots:
-    void checkHardwareTrigger();
-    void onTriggerModeChanged();
+    void onBrowseLiveUserSet();
+    void onBrowseInspectUserSet();
+    void onUploadUserSets();  // LIVE와 INSPECT 둘 다 업로드
     
 private:
     void setupUI();
-    void setupTriggerSettings();
-    void setupExposureSettings();
-    void setupGainSettings();
-    void setupTriggerMonitoring();
-    void loadCurrentCameraSettings();
-    void saveSettings();
-    void loadSettings();
+    void setupUserSetSettings();
+    
+#ifdef USE_SPINNAKER
+    bool uploadUserSetFile(Spinnaker::CameraPtr camera, const QString& filePath, const QString& userSetName);
+    void printCameraParameters(Spinnaker::GenApi::INodeMap& nodeMap, const QString& stage);
+#endif
     
 protected:
     void showEvent(QShowEvent* event) override;
@@ -72,27 +71,21 @@ protected:
     
     // UI 컨트롤들
     QComboBox* cameraCombo;             // 카메라 선택 콤보박스
-    QComboBox* triggerModeCombo;        // 트리거 모드 (Off/Software/Hardware)
-    QComboBox* triggerSourceCombo;      // 트리거 소스 (Line0/Line1/Line2/Line3)
-    QComboBox* triggerSelectorCombo;    // 트리거 선택자 (Frame Start, etc.)
-    QComboBox* triggerActivationCombo;  // 트리거 활성화 (Rising Edge/Falling Edge)
-    QSpinBox* triggerDelaySpinBox;      // 트리거 딜레이
+    QLabel* statusLabel;                // 상태 표시 레이블
     
-    QComboBox* exposureAutoCombo;       // 노출 자동 모드 (Off/Once/Continuous)
-    QComboBox* gainAutoCombo;           // 게인 자동 모드 (Off/Once/Continuous)
-    QSpinBox* exposureSpinBox;          // 노출 시간
-    QSpinBox* gainSpinBox;              // 게인 값
+    // UserSet 컨트롤
+    QGroupBox* userSetGroup;            // UserSet 설정 그룹박스
+    QLineEdit* liveUserSetPathEdit;     // LIVE UserSet 파일 경로
+    QLineEdit* inspectUserSetPathEdit;  // INSPECT UserSet 파일 경로
+    QPushButton* browseLiveUserSetBtn;  // LIVE UserSet 파일 선택
+    QPushButton* browseInspectUserSetBtn; // INSPECT UserSet 파일 선택
+    QPushButton* uploadUserSetsBtn;     // LIVE & INSPECT UserSet 업로드
     
-    // 공통 컨트롤
-    QPushButton* startListeningBtn;
-    QPushButton* stopListeningBtn;
-    QLabel* statusLabel;
-    QLabel* triggerStatusLabel;  // Trigger ON/OFF 표시
-    
-    // 트리거 모니터링
-    QTimer* triggerCheckTimer;
-    bool isListening;
+    // 카메라 인덱스
     int currentCameraIndex;
+    
+    // ConfigManager 인스턴스
+    ConfigManager* m_configManager;
 };
 
 #endif // CAMERASETTINGSDIALOG_H

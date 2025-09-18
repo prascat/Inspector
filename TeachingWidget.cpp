@@ -93,11 +93,110 @@ void CameraGrabberThread::run()
             continue;
         }
 
+        // **LIVE/INSPECT 모드 변경 감지 및 UserSet 동적 변경**
+        TeachingWidget* parent = qobject_cast<TeachingWidget*>(this->parent());
+        
+#ifdef USE_SPINNAKER
+        if (parent && parent->m_useSpinnaker && m_cameraIndex >= 0 && 
+            m_cameraIndex < static_cast<int>(parent->m_spinCameras.size())) {
+            
+            auto spinCamera = parent->m_spinCameras[m_cameraIndex];
+            if (spinCamera && spinCamera->IsInitialized()) {
+                
+                bool currentInspectMode = parent->cameraModeButton && parent->cameraModeButton->isChecked();
+                
+                // 모드가 변경되었거나 초기화가 필요한 경우 UserSet 변경
+                if (!modeInitialized || currentInspectMode != previousInspectMode) {
+                    try {
+                        // 스트리밍 중이면 일시 정지
+                        bool wasStreaming = spinCamera->IsStreaming();
+                        if (wasStreaming) {
+                            spinCamera->EndAcquisition();
+                        }
+                        
+                        Spinnaker::GenApi::INodeMap& nodeMap = spinCamera->GetNodeMap();
+                        
+                        // UserSetSelector와 UserSetLoad 노드 가져오기
+                        Spinnaker::GenApi::CEnumerationPtr ptrUserSetSelector = nodeMap.GetNode("UserSetSelector");
+                        Spinnaker::GenApi::CCommandPtr ptrUserSetLoad = nodeMap.GetNode("UserSetLoad");
+                        
+                        if (Spinnaker::GenApi::IsAvailable(ptrUserSetSelector) && Spinnaker::GenApi::IsWritable(ptrUserSetSelector) &&
+                            Spinnaker::GenApi::IsAvailable(ptrUserSetLoad) && Spinnaker::GenApi::IsWritable(ptrUserSetLoad)) {
+                            
+                            // 현재 UserSet 상태 확인
+                            int64_t currentUserSetValue = ptrUserSetSelector->GetIntValue();
+                            qDebug() << "[UserSet Debug] 현재 UserSet 값:" << currentUserSetValue;
+                            qDebug() << "[UserSet Debug] 모드 변경:" << (currentInspectMode ? "INSPECT" : "LIVE");
+                            
+                            if (currentInspectMode) {
+                                // INSPECT 모드 - UserSet1 선택 및 로드
+                                Spinnaker::GenApi::CEnumEntryPtr ptrUserSet1 = ptrUserSetSelector->GetEntryByName("UserSet1");
+                                if (Spinnaker::GenApi::IsAvailable(ptrUserSet1) && Spinnaker::GenApi::IsReadable(ptrUserSet1)) {
+                                    int64_t userSet1Value = ptrUserSet1->GetValue();
+                                    qDebug() << "[UserSet Debug] UserSet1 값:" << userSet1Value;
+                                    
+                                    ptrUserSetSelector->SetIntValue(userSet1Value);
+                                    
+                                    // 설정 후 값 확인
+                                    int64_t afterSetValue = ptrUserSetSelector->GetIntValue();
+                                    qDebug() << "[UserSet Debug] 설정 후 UserSet 값:" << afterSetValue;
+                                    
+                                    ptrUserSetLoad->Execute();
+                                    qDebug() << "[CameraGrabberThread] ✓ UserSet1 (INSPECT 모드) 동적 로드 완료";
+                                    
+                                    // 몇 가지 카메라 설정값 확인 (예: 노출시간)
+                                    Spinnaker::GenApi::CFloatPtr ptrExposureTime = nodeMap.GetNode("ExposureTime");
+                                    if (Spinnaker::GenApi::IsAvailable(ptrExposureTime) && Spinnaker::GenApi::IsReadable(ptrExposureTime)) {
+                                        double exposureTime = ptrExposureTime->GetValue();
+                                        qDebug() << "[UserSet Debug] INSPECT 모드 노출시간:" << exposureTime << "μs";
+                                    }
+                                }
+                            } else {
+                                // LIVE 모드 - UserSet0 선택 및 로드
+                                Spinnaker::GenApi::CEnumEntryPtr ptrUserSet0 = ptrUserSetSelector->GetEntryByName("UserSet0");
+                                if (Spinnaker::GenApi::IsAvailable(ptrUserSet0) && Spinnaker::GenApi::IsReadable(ptrUserSet0)) {
+                                    int64_t userSet0Value = ptrUserSet0->GetValue();
+                                    qDebug() << "[UserSet Debug] UserSet0 값:" << userSet0Value;
+                                    
+                                    ptrUserSetSelector->SetIntValue(userSet0Value);
+                                    
+                                    // 설정 후 값 확인
+                                    int64_t afterSetValue = ptrUserSetSelector->GetIntValue();
+                                    qDebug() << "[UserSet Debug] 설정 후 UserSet 값:" << afterSetValue;
+                                    
+                                    ptrUserSetLoad->Execute();
+                                    qDebug() << "[CameraGrabberThread] ✓ UserSet0 (LIVE 모드) 동적 로드 완료";
+                                    
+                                    // 몇 가지 카메라 설정값 확인 (예: 노출시간)
+                                    Spinnaker::GenApi::CFloatPtr ptrExposureTime = nodeMap.GetNode("ExposureTime");
+                                    if (Spinnaker::GenApi::IsAvailable(ptrExposureTime) && Spinnaker::GenApi::IsReadable(ptrExposureTime)) {
+                                        double exposureTime = ptrExposureTime->GetValue();
+                                        qDebug() << "[UserSet Debug] LIVE 모드 노출시간:" << exposureTime << "μs";
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // 스트리밍 재시작
+                        if (wasStreaming) {
+                            spinCamera->BeginAcquisition();
+                        }
+                        
+                        previousInspectMode = currentInspectMode;
+                        modeInitialized = true;
+                        
+                    } catch (Spinnaker::Exception& e) {
+                        qDebug() << "[CameraGrabberThread] UserSet 동적 변경 오류:" << e.what();
+                    }
+                }
+            }
+        }
+#endif
+
         cv::Mat frame;
         bool grabbed = false;
 
         // **부모 위젯에서 카메라 객체에 직접 접근**
-        TeachingWidget* parent = qobject_cast<TeachingWidget*>(this->parent());
         if (parent && m_cameraIndex >= 0) {
             if (parent->isValidCameraIndex(m_cameraIndex)) {
                 CameraInfo info = parent->getCameraInfo(m_cameraIndex);
@@ -129,8 +228,8 @@ void CameraGrabberThread::run()
             emit frameGrabbed(frame, m_cameraIndex);
         }
 
-        // 카메라 프레임 레이트에 맞춰 딜레이
-        QThread::msleep(CAMERA_INTERVAL);
+        // LIVE 모드에서는 딜레이 없이 최대한 빠르게
+        // 카메라 자체 프레임 레이트가 속도를 제한함
     }
 }
 
@@ -640,7 +739,7 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     actionButtonLayout->setContentsMargins(0, 0, 0, 0);
     
     // SAVE 버튼
-    QPushButton* saveRecipeButton = new QPushButton("SAVE", this);
+    saveRecipeButton = new QPushButton("SAVE", this);
     saveRecipeButton->setObjectName("saveRecipeButton");
     setupHeaderButton(saveRecipeButton);
     saveRecipeButton->setStyleSheet(UIColors::buttonStyle(UIColors::BTN_SAVE_COLOR));
@@ -652,13 +751,13 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     addPatternButton->setStyleSheet(UIColors::buttonStyle(UIColors::BTN_ADD_COLOR));
     
     // 필터 추가 버튼
-    QPushButton* addFilterButton = new QPushButton("FILTER", this);
+    addFilterButton = new QPushButton("FILTER", this);
     addFilterButton->setObjectName("addFilterButton");
     setupHeaderButton(addFilterButton);
     addFilterButton->setStyleSheet(UIColors::buttonStyle(UIColors::BTN_FILTER_COLOR));
 
     // 패턴 삭제 버튼
-    QPushButton* removeButton = new QPushButton("DELETE", this);
+    removeButton = new QPushButton("DELETE", this);
     removeButton->setObjectName("removeButton");
     removeButton->setEnabled(false);
     setupHeaderButton(removeButton);
@@ -687,6 +786,11 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     connect(addPatternButton, &QPushButton::clicked, this, &TeachingWidget::addPattern);
     connect(removeButton, &QPushButton::clicked, this, &TeachingWidget::removePattern);
     connect(addFilterButton, &QPushButton::clicked, this, &TeachingWidget::addFilter);
+    
+    // 초기 상태 설정 - CAM OFF 상태이므로 편집 버튼들 비활성화
+    if (saveRecipeButton) saveRecipeButton->setEnabled(false);
+    if (addFilterButton) addFilterButton->setEnabled(false);
+    if (removeButton) removeButton->setEnabled(false);
     
     // 헤더 레이아웃을 메인 레이아웃에 추가
     layout->addLayout(headerLayout);
@@ -941,11 +1045,21 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
     // 카메라 시작/정지 토글 이벤트
     connect(startCameraButton, &QPushButton::toggled, this, [this](bool checked) {
         if (checked) {
-            // 카메라 시작
-            startCamera(); 
+            // 카메라 시작 (CAM ON)
+            startCamera();
+            
+            // TEACH 모드에서만 편집 버튼들 활성화
+            if (this->saveRecipeButton) this->saveRecipeButton->setEnabled(true);
+            if (this->addFilterButton) this->addFilterButton->setEnabled(true); 
+            if (this->removeButton) this->removeButton->setEnabled(true);
         } else {
-            // 카메라 중지
+            // 카메라 중지 (CAM OFF) 
             stopCamera();
+            
+            // 편집 버튼들 비활성화
+            if (this->saveRecipeButton) this->saveRecipeButton->setEnabled(false);
+            if (this->addFilterButton) this->addFilterButton->setEnabled(false);
+            if (this->removeButton) this->removeButton->setEnabled(false);
         }
     });
         
@@ -7586,6 +7700,37 @@ bool TeachingWidget::connectSpinnakerCamera(int index, CameraInfo& info)
             }
             catch (Spinnaker::Exception& e) {
             }
+            
+            // 화이트 밸런스 설정 추가 - 색상 온도 문제 해결
+            try {
+                // 자동 화이트 밸런스 설정
+                Spinnaker::GenApi::CEnumerationPtr ptrBalanceWhiteAuto = nodeMap.GetNode("BalanceWhiteAuto");
+                if (Spinnaker::GenApi::IsAvailable(ptrBalanceWhiteAuto) && Spinnaker::GenApi::IsWritable(ptrBalanceWhiteAuto)) {
+                    // Continuous로 설정하여 실시간 화이트밸런스 조정
+                    Spinnaker::GenApi::CEnumEntryPtr ptrBalanceWhiteAutoContinuous = ptrBalanceWhiteAuto->GetEntryByName("Continuous");
+                    if (Spinnaker::GenApi::IsAvailable(ptrBalanceWhiteAutoContinuous)) {
+                        ptrBalanceWhiteAuto->SetIntValue(ptrBalanceWhiteAutoContinuous->GetValue());
+                        std::cout << "자동 화이트밸런스 설정 완료 (Continuous)" << std::endl;
+                    }
+                }
+                
+                // 색상 변환 활성화 (가능한 경우)
+                Spinnaker::GenApi::CBooleanPtr ptrColorTransformationEnable = nodeMap.GetNode("ColorTransformationEnable");
+                if (Spinnaker::GenApi::IsAvailable(ptrColorTransformationEnable) && Spinnaker::GenApi::IsWritable(ptrColorTransformationEnable)) {
+                    ptrColorTransformationEnable->SetValue(true);
+                    std::cout << "색상 변환 활성화 완료" << std::endl;
+                }
+                
+                // 색온도 설정 (일반적인 실내 조명: 3000K-4000K)
+                Spinnaker::GenApi::CFloatPtr ptrColorTransformationValueSelector = nodeMap.GetNode("ColorTransformationValue");
+                if (Spinnaker::GenApi::IsAvailable(ptrColorTransformationValueSelector) && Spinnaker::GenApi::IsWritable(ptrColorTransformationValueSelector)) {
+                    // 기본적인 색온도 보정값 설정 (값은 카메라 모델에 따라 다를 수 있음)
+                    std::cout << "색온도 보정 설정 시도" << std::endl;
+                }
+                
+            } catch (Spinnaker::Exception& e) {
+                std::cout << "화이트밸런스 설정 오류 (무시하고 계속): " << e.what() << std::endl;
+            }
         }
         catch (Spinnaker::Exception& e) {
             // 설정 오류가 있더라도 계속 진행
@@ -7651,35 +7796,34 @@ cv::Mat TeachingWidget::grabFrameFromSpinnakerCamera(Spinnaker::CameraPtr& camer
             }
         }
         
-        // 버퍼 완전 비우기: 더 이상 이미지가 없을 때까지 반복
-        while (true) {
-            try {
-                Spinnaker::ImagePtr oldImage = camera->GetNextImage(1); // 1ms 타임아웃
-                if (!oldImage || oldImage->IsIncomplete()) break;
-                oldImage->Release();
-            } catch (...) {
-                break;
-            }
-        }
-        
-        // 새 이미지 획득 시도 - 카메라 프레임 레이트에 맞춰 타임아웃 계산
-        int timeout = 1000; // 기본 1초
-        
+        // 버퍼 클리어 - 최신 이미지만 유지 (성능 최적화)
+        int framesToDiscard = 0;
         try {
-            // 카메라의 실제 프레임 레이트 가져오기
-            Spinnaker::GenApi::INodeMap& nodeMap = camera->GetNodeMap();
-            Spinnaker::GenApi::CFloatPtr ptrFrameRate = nodeMap.GetNode("AcquisitionFrameRate");
-            if (Spinnaker::GenApi::IsReadable(ptrFrameRate)) {
-                double frameRate = ptrFrameRate->GetValue();
-                if (frameRate > 0) {
-                    // 프레임 레이트의 3배 시간을 타임아웃으로 설정 (여유분 포함)
-                    timeout = static_cast<int>((3000.0 / frameRate) + 50); // 최소 50ms 추가
-                    timeout = std::min(timeout, 2000); // 최대 2초로 제한
-                    timeout = std::max(timeout, 100);  // 최소 100ms 보장
+            // 버퍼에 쌓인 오래된 이미지 개수 확인
+            uint64_t bufferedImages = camera->GetNumImagesInUse();
+            if (bufferedImages > 1) {
+                framesToDiscard = static_cast<int>(bufferedImages - 1); // 마지막 하나만 남기고 제거
+                for (int i = 0; i < framesToDiscard; i++) {
+                    Spinnaker::ImagePtr oldImage = camera->GetNextImage(1); // 1ms 타임아웃
+                    if (oldImage) {
+                        oldImage->Release();
+                    }
                 }
             }
-        } catch (Spinnaker::Exception& e) {
-            // 프레임 레이트를 가져올 수 없으면 기본값 사용
+        } catch (...) {
+            // 버퍼 클리어 실패시 무시하고 계속
+        }
+        
+        // 빠른 이미지 획득 - 모드별 타임아웃 설정 (트리거 설정은 CameraGrabberThread에서 이미 완료)
+        int timeout = 100; // 기본 빠른 타임아웃
+        
+        // 현재 모드에 따른 타임아웃 조정 (설정 변경 없이 타임아웃만 조정)
+        if (cameraModeButton && cameraModeButton->isChecked()) {
+            // INSPECT 모드 - 트리거 대기 시간 (빠른 응답을 위해 짧게)
+            timeout = 100; // 100ms
+        } else {
+            // LIVE 모드 - 빠른 연속 촬영을 위한 짧은 타임아웃
+            timeout = 10; // 최대한 빠르게 - 10ms
         }
         
         Spinnaker::ImagePtr spinImage = camera->GetNextImage(timeout);
@@ -7709,7 +7853,8 @@ cv::Mat TeachingWidget::grabFrameFromSpinnakerCamera(Spinnaker::CameraPtr& camer
             try {
                 // 이미지 처리기를 사용하여 RGB8로 변환
                 Spinnaker::ImageProcessor processor;
-                processor.SetColorProcessing(Spinnaker::SPINNAKER_COLOR_PROCESSING_ALGORITHM_HQ_LINEAR);
+                // 색상 처리 알고리즘을 DIRECTIONAL_FILTER로 변경하여 더 자연스러운 색감 구현
+                processor.SetColorProcessing(Spinnaker::SPINNAKER_COLOR_PROCESSING_ALGORITHM_DIRECTIONAL_FILTER);
                 Spinnaker::ImagePtr convertedImage = processor.Convert(spinImage, Spinnaker::PixelFormat_RGB8);
                 
                 if (convertedImage && !convertedImage->IsIncomplete()) {
@@ -8244,7 +8389,14 @@ InspectionResult TeachingWidget::runSingleInspection(int specificCameraIndex) {
     InspectionResult result;
     
     try {
-        // **1. 카메라 인덱스 유효성 검사**
+        // **1. INSPECT 모드 체크**
+        if (!cameraModeButton || !cameraModeButton->isChecked()) {
+            qDebug() << "[runSingleInspection] LIVE 모드에서는 시리얼 검사 요청 무시";
+            result.isPassed = true; // LIVE 모드에서는 항상 PASS
+            return result;
+        }
+        
+        // **2. 카메라 인덱스 유효성 검사**
         if (specificCameraIndex < 0 || specificCameraIndex >= getCameraInfosCount()) {
             return result;
         }
@@ -9384,19 +9536,98 @@ void TeachingWidget::onCameraModeToggled(bool checked) {
         startCameraButton->setChecked(false);  // CAM OFF 버튼 호출
     }
     
+    // UserSet 전환 수행
+    bool userSetChanged = switchUserSet(checked);
+    
     if (checked) {
         // INSPECT 모드
         cameraModeButton->setText("INSPECT");
         cameraModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_LIVE_COLOR, UIColors::BTN_INSPECT_COLOR, true));
         
-        qDebug() << "Camera mode changed to INSPECT (나중에 트리거 모드 ON 구현 예정)";
+        if (userSetChanged) {
+            qDebug() << "Camera mode changed to INSPECT - UserSet1 loaded";
+        } else {
+            qDebug() << "Camera mode changed to INSPECT - UserSet loading failed";
+        }
     } else {
         // LIVE 모드
         cameraModeButton->setText("LIVE");  
         cameraModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_LIVE_COLOR, UIColors::BTN_INSPECT_COLOR, false));
         
-        qDebug() << "Camera mode changed to LIVE (나중에 트리거 모드 OFF 구현 예정)";
+        if (userSetChanged) {
+            qDebug() << "Camera mode changed to LIVE - UserSet0 loaded";
+        } else {
+            qDebug() << "Camera mode changed to LIVE - UserSet loading failed";
+        }
     }
+}
+
+bool TeachingWidget::switchUserSet(bool isInspectMode) {
+#ifdef USE_SPINNAKER
+    // 현재 선택된 카메라 확인
+    if (cameraIndex < 0 || !m_useSpinnaker || cameraIndex >= static_cast<int>(m_spinCameras.size())) {
+        qDebug() << "[switchUserSet] 유효하지 않은 카메라 인덱스 또는 Spinnaker 비활성화";
+        return false;
+    }
+    
+    auto spinCamera = m_spinCameras[cameraIndex];
+    if (!spinCamera || !spinCamera->IsInitialized()) {
+        qDebug() << "[switchUserSet] 카메라가 초기화되지 않음";
+        return false;
+    }
+    
+    try {
+        Spinnaker::GenApi::INodeMap& nodeMap = spinCamera->GetNodeMap();
+        
+        // UserSetSelector 노드 찾기
+        Spinnaker::GenApi::CEnumerationPtr ptrUserSetSelector = nodeMap.GetNode("UserSetSelector");
+        if (!Spinnaker::GenApi::IsAvailable(ptrUserSetSelector) || !Spinnaker::GenApi::IsWritable(ptrUserSetSelector)) {
+            qDebug() << "[switchUserSet] UserSetSelector 노드를 사용할 수 없음";
+            return false;
+        }
+        
+        // UserSetLoad 노드 찾기
+        Spinnaker::GenApi::CCommandPtr ptrUserSetLoad = nodeMap.GetNode("UserSetLoad");
+        if (!Spinnaker::GenApi::IsAvailable(ptrUserSetLoad) || !Spinnaker::GenApi::IsWritable(ptrUserSetLoad)) {
+            qDebug() << "[switchUserSet] UserSetLoad 노드를 사용할 수 없음";
+            return false;
+        }
+        
+        if (isInspectMode) {
+            // INSPECT 모드 - UserSet1 선택 및 로드
+            Spinnaker::GenApi::CEnumEntryPtr ptrUserSet1 = ptrUserSetSelector->GetEntryByName("UserSet1");
+            if (!Spinnaker::GenApi::IsAvailable(ptrUserSet1) || !Spinnaker::GenApi::IsReadable(ptrUserSet1)) {
+                qDebug() << "[switchUserSet] UserSet1을 사용할 수 없음";
+                return false;
+            }
+            
+            ptrUserSetSelector->SetIntValue(ptrUserSet1->GetValue());
+            ptrUserSetLoad->Execute();
+            qDebug() << "[switchUserSet] UserSet1 (INSPECT 모드) 로드 성공";
+            
+        } else {
+            // LIVE 모드 - UserSet0 선택 및 로드
+            Spinnaker::GenApi::CEnumEntryPtr ptrUserSet0 = ptrUserSetSelector->GetEntryByName("UserSet0");
+            if (!Spinnaker::GenApi::IsAvailable(ptrUserSet0) || !Spinnaker::GenApi::IsReadable(ptrUserSet0)) {
+                qDebug() << "[switchUserSet] UserSet0을 사용할 수 없음";
+                return false;
+            }
+            
+            ptrUserSetSelector->SetIntValue(ptrUserSet0->GetValue());
+            ptrUserSetLoad->Execute();
+            qDebug() << "[switchUserSet] UserSet0 (LIVE 모드) 로드 성공";
+        }
+        
+        return true;
+        
+    } catch (Spinnaker::Exception& e) {
+        qDebug() << "[switchUserSet] UserSet 전환 오류:" << e.what();
+        return false;
+    }
+#else
+    qDebug() << "[switchUserSet] Spinnaker SDK가 비활성화되어 있음";
+    return false;
+#endif
 }
 
 // 티칭 관련 버튼들 활성화/비활성화
