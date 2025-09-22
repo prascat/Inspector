@@ -1012,11 +1012,29 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                     
                     if (camOff) {
                         // 시뮬레이션 모드: 현재 카메라 프레임 사용
+                        qDebug() << QString("🔍 [검사 실행 단계] cameraIndex: %1, cameraFrames.size(): %2")
+                                    .arg(cameraIndex).arg(cameraFrames.size());
+                        
+                        if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
+                            qDebug() << QString("🔍 [검사 실행 단계] cameraFrames[%1] - empty: %2, rows: %3, cols: %4")
+                                        .arg(cameraIndex)
+                                        .arg(cameraFrames[cameraIndex].empty())
+                                        .arg(cameraFrames[cameraIndex].rows)
+                                        .arg(cameraFrames[cameraIndex].cols);
+                        }
+                        
                         if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
                             cameraFrames[cameraIndex].empty()) {
                             btn->blockSignals(true);
                             btn->setChecked(false);
                             btn->blockSignals(false);
+                            qDebug() << "❌ [검사 중단] 시뮬레이션 이미지 없음 - 상세 상태:";
+                            qDebug() << QString("   cameraIndex: %1 (유효 범위: 0-%2)")
+                                        .arg(cameraIndex).arg(cameraFrames.size()-1);
+                            if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
+                                qDebug() << QString("   cameraFrames[%1].empty(): %2")
+                                            .arg(cameraIndex).arg(cameraFrames[cameraIndex].empty());
+                            }
                             UIColors::showWarning(this, "검사 실패", "시뮬레이션 이미지가 없습니다.");
                             return;
                         }
@@ -1028,7 +1046,12 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                         inspectionCameraIndex = cameraIndex;
                     }
                     
+                    qDebug() << QString("✅ [검사 실행] inspectionFrame 준비 완료 - 크기: %1x%2, 타입: %3")
+                                .arg(inspectionFrame.cols).arg(inspectionFrame.rows).arg(inspectionFrame.type());
+                    
                     bool passed = runInspection(inspectionFrame, inspectionCameraIndex);
+                    
+                    qDebug() << QString("📋 [검사 완료] 결과: %1").arg(passed ? "PASS" : "FAIL");
                     
                     // **8. 버튼 상태 업데이트**
                     btn->setText(TR("STOP"));
@@ -6619,11 +6642,17 @@ QString TeachingWidget::getCameraName(int index) {
 }
 
 bool TeachingWidget::runInspection(const cv::Mat& frame, int specificCameraIndex) {
+    qDebug() << QString("🔍 [runInspection 시작] frame크기: %1x%2, empty: %3, specificCameraIndex: %4")
+                .arg(frame.cols).arg(frame.rows).arg(frame.empty()).arg(specificCameraIndex);
+    
     if (frame.empty()) {
+        qDebug() << "❌ [runInspection] frame이 empty임";
         return false;
     }
     
     if (!cameraView || !insProcessor) {
+        qDebug() << QString("❌ [runInspection] 시스템 미초기화 - cameraView: %1, insProcessor: %2")
+                    .arg(cameraView ? "OK" : "NULL").arg(insProcessor ? "OK" : "NULL");
         return false;
     }
     
@@ -8593,11 +8622,14 @@ InspectionResult TeachingWidget::runSingleInspection(int specificCameraIndex) {
         // **5. 검사 실행**
         cv::Mat inspectionFrame;
         
-        // 시뮬레이션 모드든 일반 모드든 cameraFrames 사용
-        if (cameraView && specificCameraIndex >= 0 && specificCameraIndex < static_cast<int>(cameraFrames.size()) && 
-            !cameraFrames[specificCameraIndex].empty()) {
-            inspectionFrame = cameraFrames[specificCameraIndex].clone();
-            printf("[TeachingWidget] runSingleInspection - 카메라[%d] 프레임으로 검사\n", specificCameraIndex);
+        // camOff 모드에서는 항상 cameraFrames[0] 사용, camOn 모드에서는 specificCameraIndex 사용
+        int frameIndex = camOff ? 0 : specificCameraIndex;
+        
+        if (cameraView && frameIndex >= 0 && frameIndex < static_cast<int>(cameraFrames.size()) && 
+            !cameraFrames[frameIndex].empty()) {
+            inspectionFrame = cameraFrames[frameIndex].clone();
+            printf("[TeachingWidget] runSingleInspection - 카메라[%d] 프레임으로 검사 (camOff: %s)\n", 
+                   frameIndex, camOff ? "true" : "false");
             fflush(stdout);
         }
         
@@ -8607,9 +8639,9 @@ InspectionResult TeachingWidget::runSingleInspection(int specificCameraIndex) {
             QString currentCameraUuid;
             
             if (camOff) {
-                // 시뮬레이션 모드에서는 현재 카메라의 UUID 사용
-                if (cameraIndex >= 0 && cameraIndex < cameraInfos.size()) {
-                    currentCameraUuid = cameraInfos[cameraIndex].uniqueId;
+                // 시뮬레이션 모드에서는 항상 첫 번째 카메라(인덱스 0)의 UUID 사용
+                if (!cameraInfos.isEmpty()) {
+                    currentCameraUuid = cameraInfos[0].uniqueId;
                 }
             } else {
                 // 실제 카메라 모드
@@ -9244,6 +9276,88 @@ void TeachingWidget::newRecipe() {
         }
     }
     
+    // 카메라 연결 상태 확인 후 티칭 이미지 선택
+    bool hasCamera = false;
+    if (cameraView) {
+        // 현재 카메라 연결 상태 확인 (카메라뷰에 이미지가 있는지 체크)
+        hasCamera = !cameraView->getBackgroundImage().isNull();
+    }
+    
+    if (!hasCamera) {
+        // 카메라가 연결되지 않은 경우 티칭용 이미지 선택
+        QMessageBox::StandardButton reply = QMessageBox::question(this,
+            "티칭 이미지 선택",
+            "카메라가 연결되지 않았습니다.\n티칭용 이미지를 선택하시겠습니까?",
+            QMessageBox::Yes | QMessageBox::No);
+        
+        if (reply == QMessageBox::Yes) {
+            QString imageFile = QFileDialog::getOpenFileName(this,
+                "티칭용 이미지 선택",
+                "",
+                "이미지 파일 (*.jpg *.jpeg *.png *.bmp *.tiff *.tif)");
+            
+            if (!imageFile.isEmpty()) {
+                // 선택한 이미지를 카메라뷰에 로드
+                QPixmap pixmap(imageFile);
+                if (!pixmap.isNull() && cameraView) {
+                    cameraView->setBackgroundImage(pixmap);
+                    
+                    // cameraFrames에도 이미지 설정 (티칭 시 템플릿 추출을 위해 필요)
+                    cv::Mat loadedImage;
+                    QImage qImage = pixmap.toImage();
+                    if (qImage.format() != QImage::Format_RGB888) {
+                        qImage = qImage.convertToFormat(QImage::Format_RGB888);
+                    }
+                    loadedImage = cv::Mat(qImage.height(), qImage.width(), CV_8UC3, 
+                                        (void*)qImage.constBits(), qImage.bytesPerLine()).clone();
+                    cv::cvtColor(loadedImage, loadedImage, cv::COLOR_RGB2BGR);
+                    
+                    // cameraFrames[cameraIndex]에 저장
+                    if (cameraFrames.size() <= static_cast<size_t>(cameraIndex)) {
+                        cameraFrames.resize(cameraIndex + 1);
+                    }
+                    cameraFrames[cameraIndex] = loadedImage.clone();
+                    
+                    // 이미지 파일명(확장자 제외)을 카메라 이름으로 설정
+                    QFileInfo fileInfo(imageFile);
+                    QString imageName = fileInfo.baseName(); // 확장자 제외한 파일명
+                    cameraView->setCurrentCameraName(imageName);
+                    cameraView->setCurrentCameraUuid(imageName); // UUID도 같은 이름으로 설정
+                    
+                    // 가상 카메라 정보 생성 (레시피 저장을 위해 필요)
+                    if (cameraInfos.empty() || cameraIndex >= cameraInfos.size()) {
+                        CameraInfo virtualCamera;
+                        virtualCamera.name = imageName;
+                        virtualCamera.uniqueId = imageName; // 이미지 이름을 유니크 ID로 사용
+                        virtualCamera.index = 0;
+                        virtualCamera.isConnected = false;
+                        
+                        if (cameraInfos.empty()) {
+                            cameraInfos.append(virtualCamera);
+                        } else {
+                            cameraInfos[cameraIndex] = virtualCamera;
+                        }
+                        
+                        qDebug() << "가상 카메라 정보 생성 완료 - 이름:" << imageName << ", UUID:" << imageName;
+                    }
+                    
+                    qDebug() << "티칭용 이미지 로드 성공:" << imageFile;
+                    qDebug() << "카메라 이름 설정:" << imageName;
+                    qDebug() << "cameraFrames[" << cameraIndex << "]에 이미지 설정 완료 - 크기:" << loadedImage.cols << "x" << loadedImage.rows;
+                } else {
+                    QMessageBox::warning(this, "이미지 로드 실패",
+                        "선택한 이미지를 로드할 수 없습니다.");
+                    return;
+                }
+            } else {
+                // 이미지 선택을 취소한 경우
+                QMessageBox::information(this, "알림",
+                    "티칭용 이미지가 없으면 패턴을 생성할 수 없습니다.\n"
+                    "나중에 카메라를 연결하거나 이미지를 로드해주세요.");
+            }
+        }
+    }
+
     // 기존 패턴들 클리어
     if (cameraView) {
         cameraView->clearPatterns();
@@ -9263,16 +9377,17 @@ void TeachingWidget::newRecipe() {
     if (recipeManager->saveRecipe(recipeFileName, cameraInfos, cameraIndex, calibrationMap, cameraView, simulationImagePaths, 0, QStringList(), this)) {
         // 저장 성공 - 티칭 이미지는 XML에 base64로 저장됨
         qDebug() << "레시피 저장 성공: 티칭 이미지는 XML에 base64로 저장됨";
+        
+        // 새 레시피 생성 시 패턴 트리 업데이트
+        updatePatternTree();
+        
+        UIColors::showInformation(this, "새 레시피", 
+            QString("새 레시피 '%1'가 생성되었습니다.").arg(recipeName));
     } else {
         QMessageBox::warning(this, "저장 실패", 
             QString("새 레시피 파일 생성에 실패했습니다:\n%1").arg(recipeManager->getLastError()));
+        return; // 저장 실패 시 성공 메시지 표시하지 않고 종료
     }
-    
-    // 새 레시피 생성 시 패턴 트리 업데이트
-    updatePatternTree();
-    
-    UIColors::showInformation(this, "새 레시피", 
-        QString("새 레시피 '%1'가 생성되었습니다.").arg(recipeName));
 }
 
 void TeachingWidget::saveRecipeAs() {
@@ -9688,9 +9803,15 @@ void TeachingWidget::onTeachModeToggled(bool checked) {
     if (checked) {
         teachModeButton->setText("TEACH ON");
         teachModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, true));
+        
+        // TEACH ON 상태일 때 Save 버튼 활성화
+        if (saveRecipeButton) saveRecipeButton->setEnabled(true);
     } else {
         teachModeButton->setText("TEACH OFF");
         teachModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, false));
+        
+        // TEACH OFF 상태일 때 Save 버튼 비활성화
+        if (saveRecipeButton) saveRecipeButton->setEnabled(false);
     }
     
     // 티칭 관련 버튼들 활성화/비활성화

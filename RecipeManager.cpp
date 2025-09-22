@@ -1888,8 +1888,8 @@ bool RecipeManager::renameRecipe(const QString& oldName, const QString& newName)
         return true; // 같은 이름이면 변경할 필요 없음
     }
     
-    QString oldFileName = QDir(getRecipesDirectory()).absoluteFilePath(oldName + ".xml");
-    QString newFileName = QDir(getRecipesDirectory()).absoluteFilePath(newName + ".xml");
+    QString oldFileName = QDir(getRecipesDirectory()).absoluteFilePath(oldName + "/" + oldName + ".xml");
+    QString newFileName = QDir(getRecipesDirectory()).absoluteFilePath(newName + "/" + newName + ".xml");
     
     QFile oldFile(oldFileName);
     if (!oldFile.exists()) {
@@ -1936,7 +1936,7 @@ QStringList RecipeManager::getRecipeCameraUuids(const QString& recipeName)
         return cameraUuids;
     }
     
-    QString fileName = QDir(getRecipesDirectory()).absoluteFilePath(recipeName + ".xml");
+    QString fileName = QDir(getRecipesDirectory()).absoluteFilePath(recipeName + "/" + recipeName + ".xml");
     QFile file(fileName);
     
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {

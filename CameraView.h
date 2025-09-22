@@ -195,6 +195,8 @@ public:
     
     // 배경 이미지 및 줌/패닝 관련
     void setBackgroundPixmap(const QPixmap &pixmap);
+    void setBackgroundImage(const QPixmap &pixmap) { setBackgroundPixmap(pixmap); } // 별칭
+    QPixmap getBackgroundImage() const { return backgroundPixmap; }
     QPoint getPanOffset() const { return panOffset; }
     double getZoomFactor() const { return zoomFactor; }
     void setPanOffset(const QPoint& offset) { panOffset = offset; update(); }

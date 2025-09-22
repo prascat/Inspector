@@ -28,7 +28,7 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 set(CMAKE_AUTOMOC ON)
 
 # Spinnaker SDK 지원 옵션
-option(USE_SPINNAKER "Enable Spinnaker camera support" ON)
+option(USE_SPINNAKER "Enable Spinnaker camera support" OFF)
 
 # 추가 라이브러리 목록 초기화
 set(EXTRA_LIBS "")
