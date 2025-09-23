@@ -1533,6 +1533,59 @@ void TeachingWidget::connectEvents() {
                 angleEdit->setText(QString::number(angle, 'f', 2));
                 angleEdit->blockSignals(false);
             }
+            
+            // INS 패턴의 경우 회전에 따른 STRIP 매개변수 UI 업데이트
+            if (pattern->type == PatternType::INS) {
+                int patternWidth = pattern->rect.width();
+                int patternHeight = pattern->rect.height();
+                
+                // REAR 두께 측정 위젯들 회전 후 크기 제한 업데이트
+                if (insStripRearThicknessWidthSlider) {
+                    insStripRearThicknessWidthSlider->blockSignals(true);
+                    insStripRearThicknessWidthSlider->setMaximum(patternWidth / 2);
+                    // 현재 값이 새로운 최대값을 초과하면 조정
+                    if (insStripRearThicknessWidthSlider->value() > patternWidth / 2) {
+                        insStripRearThicknessWidthSlider->setValue(patternWidth / 2);
+                        pattern->stripRearThicknessBoxWidth = patternWidth / 2;
+                    }
+                    insStripRearThicknessWidthSlider->blockSignals(false);
+                }
+                
+                if (insStripRearThicknessHeightSlider) {
+                    insStripRearThicknessHeightSlider->blockSignals(true);
+                    insStripRearThicknessHeightSlider->setMaximum(patternHeight);
+                    // 현재 값이 새로운 최대값을 초과하면 조정
+                    if (insStripRearThicknessHeightSlider->value() > patternHeight) {
+                        insStripRearThicknessHeightSlider->setValue(patternHeight);
+                        pattern->stripRearThicknessBoxHeight = patternHeight;
+                    }
+                    insStripRearThicknessHeightSlider->blockSignals(false);
+                }
+                
+                // FRONT 두께 측정 위젯들도 같은 방식으로 업데이트
+                if (insStripThicknessWidthSlider) {
+                    insStripThicknessWidthSlider->blockSignals(true);
+                    insStripThicknessWidthSlider->setMaximum(patternWidth / 2);
+                    if (insStripThicknessWidthSlider->value() > patternWidth / 2) {
+                        insStripThicknessWidthSlider->setValue(patternWidth / 2);
+                        pattern->stripThicknessBoxWidth = patternWidth / 2;
+                    }
+                    insStripThicknessWidthSlider->blockSignals(false);
+                }
+                
+                if (insStripThicknessHeightSlider) {
+                    insStripThicknessHeightSlider->blockSignals(true);
+                    insStripThicknessHeightSlider->setMaximum(patternHeight);
+                    if (insStripThicknessHeightSlider->value() > patternHeight) {
+                        insStripThicknessHeightSlider->setValue(patternHeight);
+                        pattern->stripThicknessBoxHeight = patternHeight;
+                    }
+                    insStripThicknessHeightSlider->blockSignals(false);
+                }
+                
+                // 패턴 업데이트 후 CameraView에 반영
+                cameraView->updatePatternById(id, *pattern);
+            }
         }
         
         // 패턴 각도 변경 시 템플릿 이미지 업데이트 (시뮬레이션 모드 지원)
@@ -2926,6 +2979,52 @@ void TeachingWidget::createPropertyPanels() {
     insStripThicknessMaxSpin->setValue(100);
     insStripThicknessMaxSpin->setSuffix(" px");
     
+    // REAR 두께 측정 박스 크기 설정
+    insStripRearThicknessWidthLabel = new QLabel("REAR 박스 가로:", insStripPanel);
+    insStripRearThicknessWidthSlider = new QSlider(Qt::Horizontal, insStripPanel);
+    insStripRearThicknessWidthSlider->setRange(10, 200);
+    insStripRearThicknessWidthSlider->setValue(50);
+    insStripRearThicknessWidthValueLabel = new QLabel("50", insStripPanel);
+    insStripRearThicknessWidthValueLabel->setMinimumWidth(40);
+    
+    QWidget* rearThicknessWidthWidget = new QWidget(insStripPanel);
+    QHBoxLayout* rearThicknessWidthLayout = new QHBoxLayout(rearThicknessWidthWidget);
+    rearThicknessWidthLayout->setContentsMargins(0, 0, 0, 0);
+    rearThicknessWidthLayout->setSpacing(5);
+    
+    rearThicknessWidthLayout->addWidget(insStripRearThicknessWidthLabel);
+    rearThicknessWidthLayout->addWidget(insStripRearThicknessWidthSlider);
+    rearThicknessWidthLayout->addWidget(insStripRearThicknessWidthValueLabel);
+    
+    insStripRearThicknessHeightLabel = new QLabel("REAR 박스 세로:", insStripPanel);
+    insStripRearThicknessHeightSlider = new QSlider(Qt::Horizontal, insStripPanel);
+    insStripRearThicknessHeightSlider->setRange(10, 100);
+    insStripRearThicknessHeightSlider->setValue(30);
+    insStripRearThicknessHeightValueLabel = new QLabel("30", insStripPanel);
+    insStripRearThicknessHeightValueLabel->setMinimumWidth(40);
+    
+    QWidget* rearThicknessHeightWidget = new QWidget(insStripPanel);
+    QHBoxLayout* rearThicknessHeightLayout = new QHBoxLayout(rearThicknessHeightWidget);
+    rearThicknessHeightLayout->setContentsMargins(0, 0, 0, 0);
+    rearThicknessHeightLayout->setSpacing(5);
+    
+    rearThicknessHeightLayout->addWidget(insStripRearThicknessHeightLabel);
+    rearThicknessHeightLayout->addWidget(insStripRearThicknessHeightSlider);
+    rearThicknessHeightLayout->addWidget(insStripRearThicknessHeightValueLabel);
+    
+    // REAR 최소/최대 두께 SpinBox
+    insStripRearThicknessMinLabel = new QLabel("REAR 최소 두께:", insStripPanel);
+    insStripRearThicknessMinSpin = new QSpinBox(insStripPanel);
+    insStripRearThicknessMinSpin->setRange(5, 500);
+    insStripRearThicknessMinSpin->setValue(10);
+    insStripRearThicknessMinSpin->setSuffix(" px");
+    
+    insStripRearThicknessMaxLabel = new QLabel("REAR 최대 두께:", insStripPanel);
+    insStripRearThicknessMaxSpin = new QSpinBox(insStripPanel);
+    insStripRearThicknessMaxSpin->setRange(10, 500);
+    insStripRearThicknessMaxSpin->setValue(100);
+    insStripRearThicknessMaxSpin->setSuffix(" px");
+    
     // 두께 범위 위젯을 레이아웃에 추가
     QWidget* thicknessRangeWidget = new QWidget(insStripPanel);
     QVBoxLayout* thicknessRangeLayout = new QVBoxLayout(thicknessRangeWidget);
@@ -2935,9 +3034,21 @@ void TeachingWidget::createPropertyPanels() {
     thicknessRangeLayout->addWidget(thicknessWidthWidget);
     thicknessRangeLayout->addWidget(thicknessHeightWidget);
     
-    insStripLayout->addRow("두께 범위:", thicknessRangeWidget);
+    // REAR 두께 범위 위젯
+    QWidget* rearThicknessRangeWidget = new QWidget(insStripPanel);
+    QVBoxLayout* rearThicknessRangeLayout = new QVBoxLayout(rearThicknessRangeWidget);
+    rearThicknessRangeLayout->setContentsMargins(0, 0, 0, 0);
+    rearThicknessRangeLayout->setSpacing(3);
+    
+    rearThicknessRangeLayout->addWidget(rearThicknessWidthWidget);
+    rearThicknessRangeLayout->addWidget(rearThicknessHeightWidget);
+    
+    insStripLayout->addRow("FRONT 두께 범위:", thicknessRangeWidget);
     insStripLayout->addRow(insStripThicknessMinLabel, insStripThicknessMinSpin);
     insStripLayout->addRow(insStripThicknessMaxLabel, insStripThicknessMaxSpin);
+    insStripLayout->addRow("REAR 두께 범위:", rearThicknessRangeWidget);
+    insStripLayout->addRow(insStripRearThicknessMinLabel, insStripRearThicknessMinSpin);
+    insStripLayout->addRow(insStripRearThicknessMaxLabel, insStripRearThicknessMaxSpin);
 
     insMainLayout->addWidget(insStripPanel);
 
@@ -4384,6 +4495,92 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
     }
     
+    // REAR 두께 측정 박스 너비
+    if (insStripRearThicknessWidthSlider) {
+        connect(insStripRearThicknessWidthSlider, &QSlider::valueChanged, 
+                [this](int value) {
+            // 값 표시 레이블 업데이트
+            if (insStripRearThicknessWidthValueLabel) {
+                insStripRearThicknessWidthValueLabel->setText(QString("%1px").arg(value));
+            }
+            
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->stripRearThicknessBoxWidth = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // REAR 두께 측정 박스 높이
+    if (insStripRearThicknessHeightSlider) {
+        connect(insStripRearThicknessHeightSlider, &QSlider::valueChanged, 
+                [this](int value) {
+            // 값 표시 레이블 업데이트
+            if (insStripRearThicknessHeightValueLabel) {
+                insStripRearThicknessHeightValueLabel->setText(QString("%1px").arg(value));
+            }
+            
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->stripRearThicknessBoxHeight = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // REAR 최소 두께
+    if (insStripRearThicknessMinSpin) {
+        connect(insStripRearThicknessMinSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
+                [this](int value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->stripRearThicknessMin = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // REAR 최대 두께
+    if (insStripRearThicknessMaxSpin) {
+        connect(insStripRearThicknessMaxSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
+                [this](int value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->stripRearThicknessMax = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
     // 패턴 각도 텍스트박스
     if (angleEdit) {
         connect(angleEdit, &QLineEdit::textChanged, [this](const QString &text) {
@@ -4748,6 +4945,49 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripThicknessMaxSpin->blockSignals(true);
                         insStripThicknessMaxSpin->setValue(pattern->stripThicknessMax);
                         insStripThicknessMaxSpin->blockSignals(false);
+                    }
+                    
+                    // REAR 두께 측정 위젯들 업데이트
+                    if (insStripRearThicknessWidthSlider) {
+                        // 패턴의 실제 너비 계산
+                        float patternWidth = abs(pattern->rect.width());
+                        
+                        insStripRearThicknessWidthSlider->blockSignals(true);
+                        // REAR 너비 슬라이더 최대값을 패턴 너비의 절반으로 설정
+                        insStripRearThicknessWidthSlider->setMaximum(patternWidth / 2);
+                        insStripRearThicknessWidthSlider->setValue(pattern->stripRearThicknessBoxWidth);
+                        insStripRearThicknessWidthSlider->blockSignals(false);
+                        
+                        if (insStripRearThicknessWidthValueLabel) {
+                            insStripRearThicknessWidthValueLabel->setText(QString("%1px").arg(pattern->stripRearThicknessBoxWidth));
+                        }
+                    }
+                    
+                    if (insStripRearThicknessHeightSlider) {
+                        // 패턴의 실제 높이 계산
+                        float patternHeight = abs(pattern->rect.height());
+                        
+                        insStripRearThicknessHeightSlider->blockSignals(true);
+                        // REAR 높이 슬라이더 최대값을 패턴 높이 전체로 설정
+                        insStripRearThicknessHeightSlider->setMaximum(patternHeight);
+                        insStripRearThicknessHeightSlider->setValue(pattern->stripRearThicknessBoxHeight);
+                        insStripRearThicknessHeightSlider->blockSignals(false);
+                        
+                        if (insStripRearThicknessHeightValueLabel) {
+                            insStripRearThicknessHeightValueLabel->setText(QString("%1px").arg(pattern->stripRearThicknessBoxHeight));
+                        }
+                    }
+                    
+                    if (insStripRearThicknessMinSpin) {
+                        insStripRearThicknessMinSpin->blockSignals(true);
+                        insStripRearThicknessMinSpin->setValue(pattern->stripRearThicknessMin);
+                        insStripRearThicknessMinSpin->blockSignals(false);
+                    }
+                    
+                    if (insStripRearThicknessMaxSpin) {
+                        insStripRearThicknessMaxSpin->blockSignals(true);
+                        insStripRearThicknessMaxSpin->setValue(pattern->stripRearThicknessMax);
+                        insStripRearThicknessMaxSpin->blockSignals(false);
                     }
                     
                     if (insBinaryThreshSpin) {

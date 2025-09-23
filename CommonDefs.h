@@ -61,6 +61,16 @@ struct InspectionResult {
     QMap<QUuid, int> stripMeasuredThicknessMax; // 측정된 최대 두께 (패턴 ID -> 최대 두께)
     QMap<QUuid, int> stripMeasuredThicknessAvg; // 측정된 평균 두께 (패턴 ID -> 평균 두께)
     QMap<QUuid, bool> stripThicknessMeasured;   // 두께 측정 완료 여부 (패턴 ID -> 측정 여부)
+    
+    // STRIP REAR 두께 측정 결과
+    QMap<QUuid, int> stripRearMeasuredThicknessMin; // REAR 측정된 최소 두께 (패턴 ID -> 최소 두께)
+    QMap<QUuid, int> stripRearMeasuredThicknessMax; // REAR 측정된 최대 두께 (패턴 ID -> 최대 두께)
+    QMap<QUuid, int> stripRearMeasuredThicknessAvg; // REAR 측정된 평균 두께 (패턴 ID -> 평균 두께)
+    QMap<QUuid, bool> stripRearThicknessMeasured;   // REAR 두께 측정 완료 여부 (패턴 ID -> 측정 여부)
+    
+    // STRIP 박스 위치 정보 (Qt 텍스트 그리기용)
+    QMap<QUuid, cv::Point> stripFrontBoxTopLeft;    // FRONT 박스 좌상단 좌표
+    QMap<QUuid, cv::Point> stripRearBoxTopLeft;     // REAR 박스 좌상단 좌표
 };
 
 // 패턴 유형 열거형
@@ -128,6 +138,12 @@ struct PatternInfo {
     int stripThicknessBoxHeight = 30;    // 두께 측정 박스 높이 (픽셀)
     int stripThicknessMin = 10;          // 최소 두께 (픽셀)
     int stripThicknessMax = 100;         // 최대 두께 (픽셀)
+
+    // STRIP REAR 두께 측정 관련 파라미터
+    int stripRearThicknessBoxWidth = 50;     // REAR 두께 측정 박스 너비 (픽셀)
+    int stripRearThicknessBoxHeight = 30;    // REAR 두께 측정 박스 높이 (픽셀)
+    int stripRearThicknessMin = 10;          // REAR 최소 두께 (픽셀)
+    int stripRearThicknessMax = 100;         // REAR 최대 두께 (픽셀)
 
     // 이진화 검사를 위한 추가 속성
     int binaryThreshold = 128;        // 이진화 임계값 (0-255)

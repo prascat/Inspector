@@ -660,6 +660,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                                            int thicknessMax, int thicknessBoxHeight,
                                            int* measuredMinThickness, int* measuredMaxThickness,
                                            int* measuredAvgThickness,
+                                           int rearThicknessBoxWidth, int rearThicknessMin,
+                                           int rearThicknessMax, int rearThicknessBoxHeight,
+                                           int* rearMeasuredMinThickness, int* rearMeasuredMaxThickness,
+                                           int* rearMeasuredAvgThickness,
+                                           cv::Point* frontBoxTopLeft, cv::Point* rearBoxTopLeft,
                                            const cv::Rect& originalPatternRect) {  // 원본 패턴 박스 좌표
     // 결과 이미지용으로 원본의 깨끗한 복사본 생성 (마스킹 제거)
     cv::Mat cleanOriginal;
@@ -1663,81 +1668,10 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             return p.x >= 0 && p.y >= 0 && p.x < resultImage.cols && p.y < resultImage.rows;
         };
         
-        // Gradient Start/End 지점 표시 (검출된 컨투어 boundRect 기준 고정 위치)
-        std::cout << "\n=== Gradient Start/End 지점 시각화 (boundRect 기준) ===\n";
+        // Gradient Start/End 지점 표시 제거 (시각화 간소화)
+        // 기존의 START/END 다이아몬드 표시와 텍스트를 제거하여 깔끔한 결과 화면 제공
         
-        // 검출된 컨투어 boundRect 정보 디버그 출력
-        std::cout << "검출된 boundRect: x=" << boundRect.x 
-                  << ", y=" << boundRect.y 
-                  << ", width=" << boundRect.width 
-                  << ", height=" << boundRect.height << std::endl;
-        
-        // 검출된 boundRect 기준으로 직접 좌표 계산 (실제 STRIP 검사 기준)
-        int patternStartX = boundRect.x;
-        int patternCenterY = boundRect.y + boundRect.height / 2;
-        int patternWidth = boundRect.width;
-        
-        // 고정된 퍼센트 위치 계산 (boundRect 기준)
-        int gradientStartX = patternStartX + (patternWidth * gradientStartPercent / 100);
-        int gradientEndX = patternStartX + (patternWidth * gradientEndPercent / 100);
-        
-        cv::Point gradientStartPoint(gradientStartX, patternCenterY);
-        cv::Point gradientEndPoint(gradientEndX, patternCenterY);
-        
-        std::cout << "boundRect 기준 계산: gradientStartPercent=" << gradientStartPercent << "%, gradientEndPercent=" << gradientEndPercent << "%" << std::endl;
-        std::cout << "계산된 X좌표: startX=" << gradientStartX << ", endX=" << gradientEndX << std::endl;
-        std::cout << "최종 START 지점: (" << gradientStartPoint.x << ", " << gradientStartPoint.y << ")" << std::endl;
-        std::cout << "최종 END 지점: (" << gradientEndPoint.x << ", " << gradientEndPoint.y << ")" << std::endl;
-        
-        // Gradient Start 지점 표시 (큰 노란색 다이아몬드)
-        if (isInROI(gradientStartPoint)) {
-            cv::Point diamond[4] = {
-                cv::Point(gradientStartPoint.x, gradientStartPoint.y - 8),
-                cv::Point(gradientStartPoint.x + 8, gradientStartPoint.y),
-                cv::Point(gradientStartPoint.x, gradientStartPoint.y + 8),
-                cv::Point(gradientStartPoint.x - 8, gradientStartPoint.y)
-            };
-            const cv::Point* pts[1] = { diamond };
-            int npts[] = { 4 };
-            cv::fillPoly(resultImage, pts, npts, 1, cv::Scalar(0, 255, 255)); // 노란색 다이아몬드
-            cv::polylines(resultImage, pts, npts, 1, true, cv::Scalar(0, 0, 0), 2); // 검은색 테두리
-            
-            // "START" 텍스트 표시
-            cv::putText(resultImage, "START", cv::Point(gradientStartPoint.x + 12, gradientStartPoint.y - 12), 
-                       cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 255), 2);
-        }
-        
-        // Gradient End 지점 표시 (큰 마젠타색 다이아몬드)
-        if (isInROI(gradientEndPoint)) {
-            cv::Point diamond[4] = {
-                cv::Point(gradientEndPoint.x, gradientEndPoint.y - 8),
-                cv::Point(gradientEndPoint.x + 8, gradientEndPoint.y),
-                cv::Point(gradientEndPoint.x, gradientEndPoint.y + 8),
-                cv::Point(gradientEndPoint.x - 8, gradientEndPoint.y)
-            };
-            const cv::Point* pts[1] = { diamond };
-            int npts[] = { 4 };
-            cv::fillPoly(resultImage, pts, npts, 1, cv::Scalar(255, 0, 255)); // 마젠타색 다이아몬드
-            cv::polylines(resultImage, pts, npts, 1, true, cv::Scalar(0, 0, 0), 2); // 검은색 테두리
-            
-            // "END" 텍스트 표시
-            cv::putText(resultImage, "END", cv::Point(gradientEndPoint.x + 12, gradientEndPoint.y + 20), 
-                       cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 0, 255), 2);
-        }
-        
-        // Gradient 분석 구간을 점선으로 연결
-        if (isInROI(gradientStartPoint) && isInROI(gradientEndPoint)) {
-            // 점선 효과로 start와 end 연결
-            cv::LineIterator it(resultImage, gradientStartPoint, gradientEndPoint, 8);
-            for (int i = 0; i < it.count; i++, ++it) {
-                if (i % 8 < 4) { // 4픽셀 그리고 4픽셀 건너뛰기
-                    cv::Vec3b& pixel = resultImage.at<cv::Vec3b>(it.pos());
-                    pixel[0] = 255; // B
-                    pixel[1] = 255; // G  
-                    pixel[2] = 0;   // R - 시안색 점선
-                }
-            }
-        }
+        // Gradient 분석 구간 점선 연결 제거 (시각화 간소화)
         
         // 1. 상단 첫번째 컨투어 (빨간색) - 왼쪽 끝부터 point1까지
         if (hasPoint1 && !topPositions.empty()) {
@@ -1981,6 +1915,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 isPassed = isPassed && thicknessPassed;
                 
                 std::cout << "=== STRIP 두께 측정 검사 (검은색 픽셀 기반) ===" << std::endl;
+                std::cout << "가로 검사 범위: " << thicknessBoxWidth << "px (스캔라인 개수: " << (thicknessBoxWidth/3 + 1) << "개)" << std::endl;
                 std::cout << "측정된 두께 - 최소: " << minThickness << "px, 최대: " << maxThickness << "px, 평균: " << avgThickness << "px" << std::endl;
                 std::cout << "허용 범위: " << thicknessMin << " ~ " << thicknessMax << " px" << std::endl;
                 std::cout << "두께 판정: " << (thicknessPassed ? "PASS" : "FAIL") << std::endl;
@@ -2048,6 +1983,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 drawDottedLine(bottomLeft, bottomRight, boxColor); // 하단
                 drawDottedLine(topLeft, bottomLeft, boxColor);     // 좌측
                 drawDottedLine(topRight, bottomRight, boxColor);   // 우측
+                
+                // FRONT 박스 위치 저장 (Qt 텍스트 그리기용)
+                if (frontBoxTopLeft) {
+                    *frontBoxTopLeft = topLeft;
+                }
                            
             } else {
                 std::cout << "=== STRIP 두께 측정 검사 ===" << std::endl;
@@ -2096,6 +2036,277 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 drawDottedLine(bottomLeft, bottomRight, boxColor);
                 drawDottedLine(topLeft, bottomLeft, boxColor);
                 drawDottedLine(topRight, bottomRight, boxColor);
+            }
+        }
+        
+        // ===== REAR 두께 측정 (END 지점 - 80%) =====
+        std::cout << "\n=== REAR 두께 측정 시작 (END 지점 80%) ===\n";
+        
+        // REAR 구간에서 사용할 변수들 재정의 (FRONT 구간과 같은 값들)
+        cv::Point boundRectCenter_rear(boundRect.x + boundRect.width / 2, 
+                                      boundRect.y + boundRect.height / 2);
+        int boundRectWidth_rear = boundRect.width;
+        double cosA_rear = cos(angleRad);
+        double sinA_rear = sin(angleRad);
+        
+        // END 지점(80%) 기준으로 두께 측정 위치 계산
+        float endPercent = gradientEndPercent / 100.0f;
+        
+        // gradient 끝점까지의 거리 (boundRect 왼쪽 끝에서 endPercent만큼)
+        float gradientEndX_rear = boundRect.x + (endPercent * boundRectWidth_rear);
+        
+        // 각도 적용한 실제 gradient 끝점 중앙 계산 (boundRect 중심 기준으로 회전)
+        float localX_rear = gradientEndX_rear - boundRectCenter_rear.x;  // boundRect 중심 기준 상대 좌표
+        float localY_rear = 0;  // Y는 boundRect 중심선 기준
+        
+        int boxCenterX_rear = boundRectCenter_rear.x + static_cast<int>(localX_rear * cos(angleRad) - localY_rear * sin(angleRad));
+        int boxCenterY_rear = boundRectCenter_rear.y + static_cast<int>(localX_rear * sin(angleRad) + localY_rear * cos(angleRad));
+        
+        std::cout << "REAR 두께 측정 위치: (" << boxCenterX_rear << ", " << boxCenterY_rear << ")" << std::endl;
+        std::cout << "패턴 각도: " << angle << "도, endPercent: " << gradientEndPercent << "%" << std::endl;
+        
+        std::vector<int> thicknesses_rear;
+        std::vector<cv::Point> measurementLines_rear; // 측정 라인 저장
+        std::vector<cv::Point> blackPixelPoints_rear; // 검은색 픽셀 위치 저장 (시각화용)
+        
+        // 박스 영역에서 세로 방향으로 스캔하여 검은색 픽셀 두께 측정 (REAR)
+        for (int dx = -rearThicknessBoxWidth/2; dx <= rearThicknessBoxWidth/2; dx += 3) { // 3픽셀 간격으로 스캔
+            // 각도를 적용한 세로 스캔 라인 계산
+            cv::Point scanTop_rear, scanBottom_rear;
+            
+            if (std::abs(angle) < 0.1) {
+                // 각도가 거의 없는 경우 - 직선 스캔
+                scanTop_rear = cv::Point(boxCenterX_rear + dx, boxCenterY_rear - rearThicknessBoxHeight/2);
+                scanBottom_rear = cv::Point(boxCenterX_rear + dx, boxCenterY_rear + rearThicknessBoxHeight/2);
+            } else {
+                // 각도가 있는 경우 - 회전된 스캔 라인
+                int localX = dx;
+                int localTopY = -rearThicknessBoxHeight/2;
+                int localBottomY = rearThicknessBoxHeight/2;
+                
+                // 각도 적용하여 회전
+                scanTop_rear.x = boxCenterX_rear + static_cast<int>(localX * cosA_rear - localTopY * sinA_rear);
+                scanTop_rear.y = boxCenterY_rear + static_cast<int>(localX * sinA_rear + localTopY * cosA_rear);
+                
+                scanBottom_rear.x = boxCenterX_rear + static_cast<int>(localX * cosA_rear - localBottomY * sinA_rear);
+                scanBottom_rear.y = boxCenterY_rear + static_cast<int>(localX * sinA_rear + localBottomY * cosA_rear);
+            }
+            
+            // 스캔 라인이 이미지 범위를 벗어나면 건너뛰기
+            if (scanTop_rear.x < 0 || scanTop_rear.y < 0 || scanBottom_rear.x < 0 || scanBottom_rear.y < 0 ||
+                scanTop_rear.x >= cleanOriginal.cols || scanTop_rear.y >= cleanOriginal.rows ||
+                scanBottom_rear.x >= cleanOriginal.cols || scanBottom_rear.y >= cleanOriginal.rows) {
+                continue;
+            }
+            
+            // 세로 라인을 따라 검은색 픽셀 구간 찾기
+            cv::LineIterator it(cleanOriginal, scanTop_rear, scanBottom_rear, 8);
+            std::vector<std::pair<int, int>> blackRegions_rear; // 검은색 구간의 시작과 끝
+            int regionStart = -1;
+            bool inBlackRegion = false;
+            
+            // 라인 상의 모든 점들 저장 (시각화용)
+            std::vector<cv::Point> linePoints_rear;
+            for (int i = 0; i < it.count; i++, ++it) {
+                linePoints_rear.push_back(it.pos());
+            }
+            
+            // 다시 처음부터 스캔하여 검은색 픽셀 찾기
+            it = cv::LineIterator(cleanOriginal, scanTop_rear, scanBottom_rear, 8);
+            for (int i = 0; i < it.count; i++, ++it) {
+                cv::Vec3b pixel = cleanOriginal.at<cv::Vec3b>(it.pos());
+                // 검은색 픽셀 판단 (RGB 값이 모두 낮은 경우)
+                bool isBlack = (pixel[0] < 50 && pixel[1] < 50 && pixel[2] < 50);
+                
+                if (isBlack && !inBlackRegion) {
+                    // 검은색 구간 시작
+                    regionStart = i;
+                    inBlackRegion = true;
+                } else if (!isBlack && inBlackRegion) {
+                    // 검은색 구간 끝
+                    int thickness = i - regionStart;
+                    if (thickness >= 3) { // 최소 3픽셀 이상만 유효한 두께로 인정
+                        thicknesses_rear.push_back(thickness);
+                        blackRegions_rear.push_back({regionStart, i});
+                        
+                        // 검은색 구간의 픽셀들을 시각화용으로 저장
+                        for (int j = regionStart; j < i; j++) {
+                            if (j < linePoints_rear.size()) {
+                                blackPixelPoints_rear.push_back(linePoints_rear[j]);
+                            }
+                        }
+                    }
+                    inBlackRegion = false;
+                }
+            }
+            
+            // 라인 끝에서 검은색 구간이 계속되는 경우
+            if (inBlackRegion && regionStart >= 0) {
+                int thickness = it.count - regionStart;
+                if (thickness >= 3) {
+                    thicknesses_rear.push_back(thickness);
+                    blackRegions_rear.push_back({regionStart, it.count});
+                    
+                    // 검은색 구간의 픽셀들을 시각화용으로 저장
+                    for (int j = regionStart; j < it.count; j++) {
+                        if (j < linePoints_rear.size()) {
+                            blackPixelPoints_rear.push_back(linePoints_rear[j]);
+                        }
+                    }
+                }
+            }
+            
+            // 검은색 구간이 발견된 경우 측정 라인 저장
+            if (!blackRegions_rear.empty()) {
+                measurementLines_rear.push_back(scanTop_rear);
+                measurementLines_rear.push_back(scanBottom_rear);
+            }
+        }
+        
+        // REAR 두께 측정 결과 처리
+        if (!thicknesses_rear.empty()) {
+            // 최소, 최대, 평균 두께 계산
+            int minThickness_rear = *std::min_element(thicknesses_rear.begin(), thicknesses_rear.end());
+            int maxThickness_rear = *std::max_element(thicknesses_rear.begin(), thicknesses_rear.end());
+            int avgThickness_rear = std::accumulate(thicknesses_rear.begin(), thicknesses_rear.end(), 0) / thicknesses_rear.size();
+            
+            // 측정 결과를 매개변수에 저장 (REAR)
+            if (rearMeasuredMinThickness) *rearMeasuredMinThickness = minThickness_rear;
+            if (rearMeasuredMaxThickness) *rearMeasuredMaxThickness = maxThickness_rear;
+            if (rearMeasuredAvgThickness) *rearMeasuredAvgThickness = avgThickness_rear;
+            
+            // 두께 판정 (REAR)
+            bool thicknessPassed_rear = (avgThickness_rear >= rearThicknessMin && avgThickness_rear <= rearThicknessMax);
+            
+            // 최종 판정에 REAR 두께 조건도 추가
+            isPassed = isPassed && thicknessPassed_rear;
+            
+            std::cout << "=== REAR 두께 측정 검사 (검은색 픽셀 기반) ===" << std::endl;
+            std::cout << "가로 검사 범위: " << rearThicknessBoxWidth << "px (스캔라인 개수: " << (rearThicknessBoxWidth/3 + 1) << "개)" << std::endl;
+            std::cout << "측정된 두께 - 최소: " << minThickness_rear << "px, 최대: " << maxThickness_rear << "px, 평균: " << avgThickness_rear << "px" << std::endl;
+            std::cout << "허용 범위: " << rearThicknessMin << " ~ " << rearThicknessMax << " px" << std::endl;
+            std::cout << "REAR 두께 판정: " << (thicknessPassed_rear ? "PASS" : "FAIL") << std::endl;
+            
+            // 측정 위치에 빨간색 선 그리기 (FRONT와 동일한 색상)
+            for (size_t i = 0; i < measurementLines_rear.size(); i += 2) {
+                cv::line(resultImage, measurementLines_rear[i], measurementLines_rear[i+1], cv::Scalar(0, 0, 255), 1); // 빨간색 선
+            }
+            
+            // 검출된 검은색 픽셀들을 초록색으로 표시 (FRONT와 동일한 색상)
+            for (const cv::Point& blackPixel : blackPixelPoints_rear) {
+                if (blackPixel.x >= 0 && blackPixel.y >= 0 && 
+                    blackPixel.x < resultImage.cols && blackPixel.y < resultImage.rows) {
+                    cv::Vec3b& pixel = resultImage.at<cv::Vec3b>(blackPixel);
+                    pixel[0] = 0;   // B
+                    pixel[1] = 255; // G
+                    pixel[2] = 0;   // R - 순수 초록색으로 표시 (FRONT와 동일)
+                }
+            }
+            
+            // REAR 두께 측정 박스를 점선으로 그리기
+            cv::Scalar boxColor_rear = thicknessPassed_rear ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 0, 255); // 통과시 초록, 실패시 빨강
+            
+            // 점선 그리기 함수
+            auto drawDottedLine_rear = [&](cv::Point pt1, cv::Point pt2, cv::Scalar color, int thickness = 2) {
+                cv::LineIterator it(resultImage, pt1, pt2, 8);
+                for (int i = 0; i < it.count; i++, ++it) {
+                    if (i % 6 < 3) { // 3픽셀 그리고 3픽셀 건너뛰기
+                        if (it.pos().x >= 0 && it.pos().y >= 0 && 
+                            it.pos().x < resultImage.cols && it.pos().y < resultImage.rows) {
+                            cv::Vec3b& pixel = resultImage.at<cv::Vec3b>(it.pos());
+                            pixel[0] = color[0];
+                            pixel[1] = color[1]; 
+                            pixel[2] = color[2];
+                        }
+                    }
+                }
+            };
+            
+            // 박스 꼭짓점 계산 (각도 적용)
+            cv::Point topLeft_rear, topRight_rear, bottomLeft_rear, bottomRight_rear;
+            
+            if (std::abs(angle) < 0.1) {
+                // 각도가 거의 없는 경우
+                topLeft_rear = cv::Point(boxCenterX_rear - rearThicknessBoxWidth/2, boxCenterY_rear - rearThicknessBoxHeight/2);
+                topRight_rear = cv::Point(boxCenterX_rear + rearThicknessBoxWidth/2, boxCenterY_rear - rearThicknessBoxHeight/2);
+                bottomLeft_rear = cv::Point(boxCenterX_rear - rearThicknessBoxWidth/2, boxCenterY_rear + rearThicknessBoxHeight/2);
+                bottomRight_rear = cv::Point(boxCenterX_rear + rearThicknessBoxWidth/2, boxCenterY_rear + rearThicknessBoxHeight/2);
+            } else {
+                // 각도 적용한 박스 꼭짓점
+                auto rotatePoint_rear = [&](int localX, int localY) -> cv::Point {
+                    int rotatedX = boxCenterX_rear + static_cast<int>(localX * cosA_rear - localY * sinA_rear);
+                    int rotatedY = boxCenterY_rear + static_cast<int>(localX * sinA_rear + localY * cosA_rear);
+                    return cv::Point(rotatedX, rotatedY);
+                };
+                
+                topLeft_rear = rotatePoint_rear(-rearThicknessBoxWidth/2, -rearThicknessBoxHeight/2);
+                topRight_rear = rotatePoint_rear(rearThicknessBoxWidth/2, -rearThicknessBoxHeight/2);
+                bottomLeft_rear = rotatePoint_rear(-rearThicknessBoxWidth/2, rearThicknessBoxHeight/2);
+                bottomRight_rear = rotatePoint_rear(rearThicknessBoxWidth/2, rearThicknessBoxHeight/2);
+            }
+            
+            // REAR 두께 측정 박스 그리기 (점선)
+            drawDottedLine_rear(topLeft_rear, topRight_rear, boxColor_rear);       // 상단
+            drawDottedLine_rear(bottomLeft_rear, bottomRight_rear, boxColor_rear); // 하단
+            drawDottedLine_rear(topLeft_rear, bottomLeft_rear, boxColor_rear);     // 좌측
+            drawDottedLine_rear(topRight_rear, bottomRight_rear, boxColor_rear);   // 우측
+            
+            // REAR 박스 위치 저장 (Qt 텍스트 그리기용)
+            if (rearBoxTopLeft) {
+                *rearBoxTopLeft = topLeft_rear;
+            }
+                       
+        } else {
+            std::cout << "=== REAR 두께 측정 검사 ===" << std::endl;
+            std::cout << "REAR에서 검은색 픽셀을 찾을 수 없어서 두께 측정 실패" << std::endl;
+            isPassed = false;
+            
+            // REAR 측정 실패 시에도 박스와 텍스트 그리기
+            cv::Scalar boxColor_rear = cv::Scalar(0, 0, 255); // 빨간색
+            
+            auto drawDottedLine_rear = [&](cv::Point pt1, cv::Point pt2, cv::Scalar color, int thickness = 2) {
+                cv::LineIterator it(resultImage, pt1, pt2, 8);
+                for (int i = 0; i < it.count; i++, ++it) {
+                    if (i % 6 < 3) {
+                        if (it.pos().x >= 0 && it.pos().y >= 0 && 
+                            it.pos().x < resultImage.cols && it.pos().y < resultImage.rows) {
+                            cv::Vec3b& pixel = resultImage.at<cv::Vec3b>(it.pos());
+                            pixel[0] = color[0];
+                            pixel[1] = color[1]; 
+                            pixel[2] = color[2];
+                        }
+                    }
+                }
+            };
+            
+            cv::Point topLeft_rear, topRight_rear, bottomLeft_rear, bottomRight_rear;
+            
+            if (std::abs(angle) < 0.1) {
+                topLeft_rear = cv::Point(boxCenterX_rear - rearThicknessBoxWidth/2, boxCenterY_rear - rearThicknessBoxHeight/2);
+                topRight_rear = cv::Point(boxCenterX_rear + rearThicknessBoxWidth/2, boxCenterY_rear - rearThicknessBoxHeight/2);
+                bottomLeft_rear = cv::Point(boxCenterX_rear - rearThicknessBoxWidth/2, boxCenterY_rear + rearThicknessBoxHeight/2);
+                bottomRight_rear = cv::Point(boxCenterX_rear + rearThicknessBoxWidth/2, boxCenterY_rear + rearThicknessBoxHeight/2);
+            } else {
+                auto rotatePoint_rear = [&](int localX, int localY) -> cv::Point {
+                    int rotatedX = boxCenterX_rear + static_cast<int>(localX * cosA_rear - localY * sinA_rear);
+                    int rotatedY = boxCenterY_rear + static_cast<int>(localX * sinA_rear + localY * cosA_rear);
+                    return cv::Point(rotatedX, rotatedY);
+                };
+                
+                topLeft_rear = rotatePoint_rear(-rearThicknessBoxWidth/2, -rearThicknessBoxHeight/2);
+                topRight_rear = rotatePoint_rear(rearThicknessBoxWidth/2, -rearThicknessBoxHeight/2);
+                bottomLeft_rear = rotatePoint_rear(-rearThicknessBoxWidth/2, rearThicknessBoxHeight/2);
+                bottomRight_rear = rotatePoint_rear(rearThicknessBoxWidth/2, rearThicknessBoxHeight/2);
+            }
+            
+            drawDottedLine_rear(topLeft_rear, topRight_rear, boxColor_rear);
+            drawDottedLine_rear(bottomLeft_rear, bottomRight_rear, boxColor_rear);
+            drawDottedLine_rear(topLeft_rear, bottomLeft_rear, boxColor_rear);
+            drawDottedLine_rear(topRight_rear, bottomRight_rear, boxColor_rear);
+            
+            // REAR 실패 시에도 박스 위치 저장 (Qt 텍스트 그리기용)
+            if (rearBoxTopLeft) {
+                *rearBoxTopLeft = topLeft_rear;
             }
         }
         

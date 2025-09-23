@@ -2342,8 +2342,10 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         logDebug(QString("=== STRIP 검사 임계값: pattern.passThreshold = %1 ===")
                 .arg(pattern.passThreshold, 0, 'f', 3));
                 
-        // 측정된 두께 값들을 저장할 변수
+        // 측정된 두께 값들을 저장할 변수 (FRONT + REAR)
         int measuredMinThickness = 0, measuredMaxThickness = 0, measuredAvgThickness = 0;
+        int rearMeasuredMinThickness = 0, rearMeasuredMaxThickness = 0, rearMeasuredAvgThickness = 0;
+        cv::Point frontBoxTopLeft, rearBoxTopLeft;
                 
         bool isPassed = ImageProcessor::performStripInspection(roiImage, templateImage, 
                                                               pattern.passThreshold, score, 
@@ -2356,13 +2358,26 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                                                               pattern.stripThicknessBoxWidth, pattern.stripThicknessMin, 
                                                               pattern.stripThicknessMax, pattern.stripThicknessBoxHeight,
                                                               &measuredMinThickness, &measuredMaxThickness, &measuredAvgThickness,
+                                                              pattern.stripRearThicknessBoxWidth, pattern.stripRearThicknessMin,
+                                                              pattern.stripRearThicknessMax, pattern.stripRearThicknessBoxHeight,
+                                                              &rearMeasuredMinThickness, &rearMeasuredMaxThickness, &rearMeasuredAvgThickness,
+                                                              &frontBoxTopLeft, &rearBoxTopLeft,
                                                               cv::Rect(pattern.rect.x(), pattern.rect.y(), pattern.rect.width(), pattern.rect.height())); // 원본 패턴 박스
                                                               
-        // 측정된 두께를 검사 결과에 저장
+        // 측정된 두께를 검사 결과에 저장 (FRONT + REAR)
         result.stripMeasuredThicknessMin[pattern.id] = measuredMinThickness;
         result.stripMeasuredThicknessMax[pattern.id] = measuredMaxThickness;
         result.stripMeasuredThicknessAvg[pattern.id] = measuredAvgThickness;
         result.stripThicknessMeasured[pattern.id] = (measuredAvgThickness > 0);
+        
+        result.stripRearMeasuredThicknessMin[pattern.id] = rearMeasuredMinThickness;
+        result.stripRearMeasuredThicknessMax[pattern.id] = rearMeasuredMaxThickness;
+        result.stripRearMeasuredThicknessAvg[pattern.id] = rearMeasuredAvgThickness;
+        result.stripRearThicknessMeasured[pattern.id] = (rearMeasuredAvgThickness > 0);
+        
+        // 박스 위치 저장 (Qt 텍스트 그리기용)
+        result.stripFrontBoxTopLeft[pattern.id] = frontBoxTopLeft;
+        result.stripRearBoxTopLeft[pattern.id] = rearBoxTopLeft;
         
         // Qt로 시각화 추가 (시작점, 끝점, Local Max Gradient 지점들)
         if (!resultImage.empty()) {

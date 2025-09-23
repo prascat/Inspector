@@ -1883,6 +1883,109 @@ void CameraView::drawInspectionResultsVector(QPainter& painter, const Inspection
                 painter.drawRect(edgePoint.x() - 1, edgePoint.y() - 1, 3, 3);
             }
         }
+        
+        // STRIP 검사 FRONT/REAR 박스 텍스트 표시
+        if (result.insMethodTypes.value(patternId, -1) == static_cast<int>(InspectionMethod::STRIP)) {
+            // FRONT 박스 텍스트
+            if (result.stripFrontBoxTopLeft.contains(patternId) && result.stripThicknessMeasured.value(patternId, false)) {
+                cv::Point frontTopLeft = result.stripFrontBoxTopLeft.value(patternId);
+                
+                // 패턴 내부 상대 좌표로 변환 (0~1 범위)
+                QRect patternOriginalRect = QRect(QPoint(inspRectOriginal.x(), inspRectOriginal.y()), 
+                                                QSize(inspRectOriginal.width(), inspRectOriginal.height()));
+                double relativeX = (double)frontTopLeft.x / patternOriginalRect.width();
+                double relativeY = (double)(frontTopLeft.y - 25) / patternOriginalRect.height(); // 텍스트는 박스 위쪽
+                
+                // 현재 화면에서의 패턴 크기에 맞춰 스케일링
+                QPointF scaledPos = QPointF(
+                    inspRect.x() + relativeX * inspRect.width(),
+                    inspRect.y() + relativeY * inspRect.height()
+                );
+                
+                int frontMin = result.stripMeasuredThicknessMin.value(patternId, 0);
+                int frontMax = result.stripMeasuredThicknessMax.value(patternId, 0);
+                bool frontPassed = (frontMin > 0 && frontMax > 0); // 간단한 통과 판정
+                
+                QString frontLabel = "FRONT";
+                QString frontResult = QString("%1-%2").arg(frontMin).arg(frontMax);
+                
+                // 패턴 이름과 동일한 스타일로 텍스트 배경 그리기
+                QFont textFont("Arial", 9, QFont::Bold);
+                painter.setFont(textFont);
+                QFontMetrics fm(textFont);
+                
+                // 라벨과 결과를 한 줄로 표시
+                QString fullText = frontLabel + " " + frontResult;
+                int textWidth = fm.horizontalAdvance(fullText);
+                int textHeight = fm.height();
+                
+                QRect textRect(scaledPos.x(), scaledPos.y(), textWidth + 6, textHeight);
+                
+                // 화면 경계 조정
+                if (textRect.left() < 0) textRect.moveLeft(0);
+                if (textRect.right() > width()) textRect.moveRight(width());
+                if (textRect.top() < 0) textRect.moveTop(0);
+                
+                // 배경 색상 (성공: 녹색, 실패: 빨간색)
+                QColor bgColor = frontPassed ? QColor(0, 200, 0) : QColor(200, 0, 0);
+                bgColor.setAlpha(180);
+                painter.fillRect(textRect, bgColor);
+                
+                // 흰색 텍스트
+                painter.setPen(Qt::white);
+                painter.drawText(textRect, Qt::AlignCenter, fullText);
+            }
+            
+            // REAR 박스 텍스트
+            if (result.stripRearBoxTopLeft.contains(patternId) && result.stripRearThicknessMeasured.value(patternId, false)) {
+                cv::Point rearTopLeft = result.stripRearBoxTopLeft.value(patternId);
+                
+                // 패턴 내부 상대 좌표로 변환 (0~1 범위)
+                QRect patternOriginalRect = QRect(QPoint(inspRectOriginal.x(), inspRectOriginal.y()), 
+                                                QSize(inspRectOriginal.width(), inspRectOriginal.height()));
+                double relativeX = (double)rearTopLeft.x / patternOriginalRect.width();
+                double relativeY = (double)(rearTopLeft.y - 25) / patternOriginalRect.height(); // 텍스트는 박스 위쪽
+                
+                // 현재 화면에서의 패턴 크기에 맞춰 스케일링
+                QPointF scaledPos = QPointF(
+                    inspRect.x() + relativeX * inspRect.width(),
+                    inspRect.y() + relativeY * inspRect.height()
+                );
+                
+                int rearMin = result.stripRearMeasuredThicknessMin.value(patternId, 0);
+                int rearMax = result.stripRearMeasuredThicknessMax.value(patternId, 0);
+                bool rearPassed = (rearMin > 0 && rearMax > 0); // 간단한 통과 판정
+                
+                QString rearLabel = "REAR";
+                QString rearResult = QString("%1-%2").arg(rearMin).arg(rearMax);
+                
+                // 패턴 이름과 동일한 스타일로 텍스트 배경 그리기
+                QFont textFont("Arial", 9, QFont::Bold);
+                painter.setFont(textFont);
+                QFontMetrics fm(textFont);
+                
+                // 라벨과 결과를 한 줄로 표시
+                QString fullText = rearLabel + " " + rearResult;
+                int textWidth = fm.horizontalAdvance(fullText);
+                int textHeight = fm.height();
+                
+                QRect textRect(scaledPos.x(), scaledPos.y(), textWidth + 6, textHeight);
+                
+                // 화면 경계 조정
+                if (textRect.left() < 0) textRect.moveLeft(0);
+                if (textRect.right() > width()) textRect.moveRight(width());
+                if (textRect.top() < 0) textRect.moveTop(0);
+                
+                // 배경 색상 (성공: 녹색, 실패: 빨간색)
+                QColor bgColor = rearPassed ? QColor(0, 200, 0) : QColor(200, 0, 0);
+                bgColor.setAlpha(180);
+                painter.fillRect(textRect, bgColor);
+                
+                // 흰색 텍스트
+                painter.setPen(Qt::white);
+                painter.drawText(textRect, Qt::AlignCenter, fullText);
+            }
+        }
     }
     
     // PASS/FAIL 텍스트 추가 (카메라 정보 아래)
@@ -2177,6 +2280,52 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         
                         painter.drawText(posStartTop.x() - 10, posStartTop.y() - 5, QString("%1%").arg(pattern.stripGradientStartPercent));
                         painter.drawText(posEndTop.x() - 10, posEndTop.y() - 5, QString("%1%").arg(pattern.stripGradientEndPercent));
+                        
+                        // REAR 검사 영역 사각형 (80% 지점, FRONT와 같은 회전 방식)
+                        // gradient end 지점의 중심점 계산 (패턴 각도에 따른 실제 80% 위치)
+                        QPointF gradientEndCenterOrig;
+                        if (std::abs(pattern.angle) < 0.1) {
+                            // 각도가 거의 0인 경우
+                            gradientEndCenterOrig = QPointF(
+                                pattern.rect.x() + pattern.rect.width() * pattern.stripGradientEndPercent / 100.0,
+                                pattern.rect.center().y()
+                            );
+                        } else {
+                            // 회전된 패턴의 경우 중심축을 따라 80% 지점 계산
+                            QPointF patternCenter = pattern.rect.center();
+                            double angleRad = pattern.angle * M_PI / 180.0;
+                            
+                            // 패턴의 너비/2만큼 이동한 후 80% 지점 계산
+                            double halfWidth = pattern.rect.width() / 2.0;
+                            double endDistance = halfWidth * (2.0 * pattern.stripGradientEndPercent / 100.0 - 1.0);
+                            
+                            gradientEndCenterOrig = QPointF(
+                                patternCenter.x() + endDistance * std::cos(angleRad),
+                                patternCenter.y() + endDistance * std::sin(angleRad)
+                            );
+                        }
+                        
+                        // 화면 좌표로 변환된 중심점
+                        QPoint rearBoxCenter = originalToDisplay(gradientEndCenterOrig.toPoint());
+                        
+                        // 사각형 크기도 originalToDisplay와 동일한 zoomFactor 적용
+                        int rearBoxWidth = qRound(pattern.stripRearThicknessBoxWidth * zoomFactor);
+                        int rearBoxHeight = qRound(pattern.stripRearThicknessBoxHeight * zoomFactor);
+                        
+                        // painter의 변환 매트릭스를 사용해 회전된 REAR 사각형 그리기
+                        painter.save();
+                        painter.translate(rearBoxCenter);
+                        painter.rotate(pattern.angle);
+                        
+                        QPen rearAreaPen(QColor(0, 191, 255), 2);  // 하늘색 점선 (FRONT와 동일)
+                        rearAreaPen.setStyle(Qt::DashLine);
+                        painter.setPen(rearAreaPen);
+                        painter.setBrush(Qt::NoBrush);
+                        
+                        QRect rearThicknessBox(-rearBoxWidth/2, -rearBoxHeight/2, rearBoxWidth, rearBoxHeight);
+                        painter.drawRect(rearThicknessBox);
+                        
+                        painter.restore();
                         
                         // 두께 범위 점선 사각형 그리기 (gradient 시작 선의 중앙에서)
                         // 패턴 각도를 반영한 실제 좌표 계산

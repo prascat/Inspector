@@ -389,6 +389,18 @@ private:
     QLabel* insStripThicknessMaxLabel = nullptr;
     QSpinBox* insStripThicknessMaxSpin = nullptr;
 
+    // REAR 두께 측정 관련 위젯들
+    QLabel* insStripRearThicknessWidthLabel = nullptr;
+    QSlider* insStripRearThicknessWidthSlider = nullptr;
+    QLabel* insStripRearThicknessWidthValueLabel = nullptr;
+    QLabel* insStripRearThicknessHeightLabel = nullptr;
+    QSlider* insStripRearThicknessHeightSlider = nullptr;
+    QLabel* insStripRearThicknessHeightValueLabel = nullptr;
+    QLabel* insStripRearThicknessMinLabel = nullptr;
+    QSpinBox* insStripRearThicknessMinSpin = nullptr;
+    QLabel* insStripRearThicknessMaxLabel = nullptr;
+    QSpinBox* insStripRearThicknessMaxSpin = nullptr;
+
     QLabel* fidAngleLabel = nullptr;
     QLabel* fidToLabel = nullptr;
     // 필터 패널

@@ -84,6 +84,11 @@ public:
                                      int thicknessMax = 100, int thicknessBoxHeight = 30,
                                      int* measuredMinThickness = nullptr, int* measuredMaxThickness = nullptr,
                                      int* measuredAvgThickness = nullptr,
+                                     int rearThicknessBoxWidth = 50, int rearThicknessMin = 10,
+                                     int rearThicknessMax = 100, int rearThicknessBoxHeight = 30,
+                                     int* rearMeasuredMinThickness = nullptr, int* rearMeasuredMaxThickness = nullptr,
+                                     int* rearMeasuredAvgThickness = nullptr,
+                                     cv::Point* frontBoxTopLeft = nullptr, cv::Point* rearBoxTopLeft = nullptr,
                                      const cv::Rect& originalPatternRect = cv::Rect());
 };
 
