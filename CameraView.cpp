@@ -2148,22 +2148,26 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         // 가로 방향 벡터 계산
                         QPoint widthVector = topRight - topLeft;
                         
-                        // 가로 기준 20%와 80% 지점 계산
-                        QPoint pos20Top = topLeft + QPoint(widthVector.x() * 0.2, widthVector.y() * 0.2);
-                        QPoint pos20Bottom = bottomLeft + QPoint(widthVector.x() * 0.2, widthVector.y() * 0.2);
-                        QPoint pos80Top = topLeft + QPoint(widthVector.x() * 0.8, widthVector.y() * 0.8);
-                        QPoint pos80Bottom = bottomLeft + QPoint(widthVector.x() * 0.8, widthVector.y() * 0.8);
+                        // 실제 패턴의 gradient 범위 퍼센트 값 사용
+                        float startPercent = pattern.stripGradientStartPercent / 100.0f;
+                        float endPercent = pattern.stripGradientEndPercent / 100.0f;
+                        
+                        // gradient 범위 지점 계산
+                        QPoint posStartTop = topLeft + QPoint(widthVector.x() * startPercent, widthVector.y() * startPercent);
+                        QPoint posStartBottom = bottomLeft + QPoint(widthVector.x() * startPercent, widthVector.y() * startPercent);
+                        QPoint posEndTop = topLeft + QPoint(widthVector.x() * endPercent, widthVector.y() * endPercent);
+                        QPoint posEndBottom = bottomLeft + QPoint(widthVector.x() * endPercent, widthVector.y() * endPercent);
                         
                         // 점선 스타일 설정
                         QPen dashPen(QColor(255, 255, 0), 2);  // 노란색 점선 (선택된 패턴용)
                         dashPen.setStyle(Qt::DashLine);
                         painter.setPen(dashPen);
                         
-                        // 20% 지점 세로 점선 (위에서 아래로)
-                        painter.drawLine(pos20Top, pos20Bottom);
+                        // 시작 지점 세로 점선 (위에서 아래로)
+                        painter.drawLine(posStartTop, posStartBottom);
                         
-                        // 80% 지점 세로 점선 (위에서 아래로)
-                        painter.drawLine(pos80Top, pos80Bottom);
+                        // 끝 지점 세로 점선 (위에서 아래로)
+                        painter.drawLine(posEndTop, posEndBottom);
                         
                         // 범위 텍스트 표시
                         painter.setPen(Qt::yellow);
@@ -2171,8 +2175,96 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         rangeFont.setPointSize(8);
                         painter.setFont(rangeFont);
                         
-                        painter.drawText(pos20Top.x() - 10, pos20Top.y() - 5, "20%");
-                        painter.drawText(pos80Top.x() - 10, pos80Top.y() - 5, "80%");
+                        painter.drawText(posStartTop.x() - 10, posStartTop.y() - 5, QString("%1%").arg(pattern.stripGradientStartPercent));
+                        painter.drawText(posEndTop.x() - 10, posEndTop.y() - 5, QString("%1%").arg(pattern.stripGradientEndPercent));
+                        
+                        // 두께 범위 점선 사각형 그리기 (gradient 시작 선의 중앙에서)
+                        // 패턴 각도를 반영한 실제 좌표 계산
+                        
+                        // 패턴의 중심점 (원본 좌표)
+                        QPointF patternCenterOrig(pattern.rect.center().x(), pattern.rect.center().y());
+                        
+                        // 패턴 크기
+                        float patternWidth = pattern.rect.width();
+                        float patternHeight = pattern.rect.height();
+                        
+                        // 패턴 각도 (라디안)
+                        float angleRad = pattern.angle * M_PI / 180.0f;
+                        float cosAngle = cos(angleRad);
+                        float sinAngle = sin(angleRad);
+                        
+                        // 회전된 패턴의 gradient 시작 위치 계산
+                        // gradient 시작점: 패턴 왼쪽 끝에서 startPercent만큼 이동한 지점
+                        float gradientOffsetX = (startPercent - 0.5f) * patternWidth;  // 중심 기준 오프셋
+                        
+                        // 회전 적용된 gradient 시작점 중앙 계산
+                        QPointF gradientStartCenterOrig = QPointF(
+                            patternCenterOrig.x() + gradientOffsetX * cosAngle,
+                            patternCenterOrig.y() + gradientOffsetX * sinAngle
+                        );
+                        
+                        // 두께 범위 점선 사각형 그리기 (패턴 각도에 맞춰 회전)
+                        QPen thicknessPen(QColor(0, 255, 255), 2);  // 시안색 점선
+                        thicknessPen.setStyle(Qt::DashLine);
+                        painter.setPen(thicknessPen);
+                        
+                        // 화면 좌표로 변환된 중심점
+                        QPoint boxCenter = originalToDisplay(gradientStartCenterOrig.toPoint());
+                        
+                        // 사각형 크기도 originalToDisplay와 동일한 zoomFactor 적용
+                        int boxWidth = qRound(pattern.stripThicknessBoxWidth * zoomFactor);
+                        int boxHeight = qRound(pattern.stripThicknessBoxHeight * zoomFactor);
+                        
+                        // painter의 변환 매트릭스를 사용해 회전된 사각형 그리기
+                        painter.save();
+                        painter.translate(boxCenter);
+                        painter.rotate(pattern.angle);
+                        
+                        QRect thicknessBox(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
+                        painter.drawRect(thicknessBox);
+                        
+                        painter.restore();
+                        
+                        // 두께 범위 텍스트 표시
+                        painter.setPen(Qt::cyan);
+                        QFont thicknessFont = font;
+                        thicknessFont.setPointSize(8);
+                        painter.setFont(thicknessFont);
+                        
+                        QPoint thicknessTextPos = boxCenter + QPoint(5, -15);
+                        
+                        // 검사 모드이고 검사 결과가 있는 경우 측정값 표시
+                        if (isInspectionMode && hasInspectionResult && 
+                            lastInspectionResult.stripThicknessMeasured.contains(pattern.id) &&
+                            lastInspectionResult.stripThicknessMeasured[pattern.id]) {
+                            
+                            int measuredMin = lastInspectionResult.stripMeasuredThicknessMin[pattern.id];
+                            int measuredMax = lastInspectionResult.stripMeasuredThicknessMax[pattern.id];
+                            int measuredAvg = lastInspectionResult.stripMeasuredThicknessAvg[pattern.id];
+                            
+                            QString thicknessText = QString("T:%1~%2px (%3x%4)\nM:%5~%6(%7)px")
+                                                   .arg(pattern.stripThicknessMin)
+                                                   .arg(pattern.stripThicknessMax)
+                                                   .arg(pattern.stripThicknessBoxWidth)
+                                                   .arg(pattern.stripThicknessBoxHeight)
+                                                   .arg(measuredMin)
+                                                   .arg(measuredMax)
+                                                   .arg(measuredAvg);
+                            
+                            // 측정값이 범위를 벗어나면 빨간색으로 표시
+                            bool isInRange = (measuredAvg >= pattern.stripThicknessMin && 
+                                            measuredAvg <= pattern.stripThicknessMax);
+                            painter.setPen(isInRange ? Qt::cyan : Qt::red);
+                            
+                            painter.drawText(thicknessTextPos, thicknessText);
+                        } else {
+                            // 검사 전 또는 측정 실패 시 설정값만 표시
+                            painter.drawText(thicknessTextPos, QString("T:%1~%2px (%3x%4)")
+                                            .arg(pattern.stripThicknessMin)
+                                            .arg(pattern.stripThicknessMax)
+                                            .arg(pattern.stripThicknessBoxWidth)
+                                            .arg(pattern.stripThicknessBoxHeight));
+                        }
                     }
                 }
                 // 선택된 패턴은 회전된 폴리곤만 그리고, drawRect(displayRect)는 그리지 않음!

@@ -2342,13 +2342,27 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         logDebug(QString("=== STRIP 검사 임계값: pattern.passThreshold = %1 ===")
                 .arg(pattern.passThreshold, 0, 'f', 3));
                 
+        // 측정된 두께 값들을 저장할 변수
+        int measuredMinThickness = 0, measuredMaxThickness = 0, measuredAvgThickness = 0;
+                
         bool isPassed = ImageProcessor::performStripInspection(roiImage, templateImage, 
                                                               pattern.passThreshold, score, 
                                                               startPoint, maxGradientPoint, gradientPoints, resultImage, pattern.angle,
                                                               &leftThickness, &rightThickness,
                                                               pattern.stripMorphKernelSize,
                                                               pattern.stripGradientThreshold, pattern.stripGradientStartPercent,
-                                                              pattern.stripGradientEndPercent, pattern.stripMinDataPoints);
+                                                              pattern.stripGradientEndPercent, pattern.stripMinDataPoints,
+                                                              nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+                                                              pattern.stripThicknessBoxWidth, pattern.stripThicknessMin, 
+                                                              pattern.stripThicknessMax, pattern.stripThicknessBoxHeight,
+                                                              &measuredMinThickness, &measuredMaxThickness, &measuredAvgThickness,
+                                                              cv::Rect(pattern.rect.x(), pattern.rect.y(), pattern.rect.width(), pattern.rect.height())); // 원본 패턴 박스
+                                                              
+        // 측정된 두께를 검사 결과에 저장
+        result.stripMeasuredThicknessMin[pattern.id] = measuredMinThickness;
+        result.stripMeasuredThicknessMax[pattern.id] = measuredMaxThickness;
+        result.stripMeasuredThicknessAvg[pattern.id] = measuredAvgThickness;
+        result.stripThicknessMeasured[pattern.id] = (measuredAvgThickness > 0);
         
         // Qt로 시각화 추가 (시작점, 끝점, Local Max Gradient 지점들)
         if (!resultImage.empty()) {
@@ -2774,6 +2788,38 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                 
                 logDebug(QString("두께 측정 결과: 좌측=%1px, 우측=%2px, 길이=%3px")
                         .arg(leftThickness).arg(rightThickness).arg(pixelDistance));
+                
+                // 측정된 두께 정보를 검사 결과에 추가하여 Qt로 표시
+                if (result.stripMeasuredThicknessAvg.contains(pattern.id) && 
+                    result.stripThicknessMeasured[pattern.id]) {
+                    
+                    int measuredMin = result.stripMeasuredThicknessMin[pattern.id];
+                    int measuredMax = result.stripMeasuredThicknessMax[pattern.id]; 
+                    int measuredAvg = result.stripMeasuredThicknessAvg[pattern.id];
+                    
+                    // 두께 정보를 오른쪽 상단에 표시
+                    int textX = qResultImage.width() - 200;
+                    int textY = 30;
+                    
+                    // 배경 박스 그리기
+                    painter.fillRect(textX - 10, textY - 20, 190, 70, QColor(0, 0, 0, 180));
+                    
+                    // 두께 설정 범위 표시
+                    painter.setPen(QPen(QColor(255, 255, 255), 1));
+                    painter.setFont(QFont("Arial", 10, QFont::Bold));
+                    QString rangeText = QString("설정: %1~%2px").arg(pattern.stripThicknessMin).arg(pattern.stripThicknessMax);
+                    painter.drawText(textX, textY, rangeText);
+                    
+                    // 측정된 두께 표시 (범위 내/외에 따라 색상 변경)
+                    bool isInRange = (measuredAvg >= pattern.stripThicknessMin && measuredAvg <= pattern.stripThicknessMax);
+                    painter.setPen(QPen(isInRange ? QColor(0, 255, 0) : QColor(255, 0, 0), 1));
+                    QString measureText = QString("측정: %1~%2(%3)px").arg(measuredMin).arg(measuredMax).arg(measuredAvg);
+                    painter.drawText(textX, textY + 20, measureText);
+                    
+                    // 판정 결과 표시
+                    QString resultText = isInRange ? "PASS" : "FAIL";
+                    painter.drawText(textX, textY + 40, QString("판정: %1").arg(resultText));
+                }
             }
                     
             // QImage를 다시 cv::Mat으로 변환

@@ -79,7 +79,12 @@ public:
                                      int gradientEndPercent = 80, int minDataPoints = 5,
                                      double* neckAvgWidth = nullptr, double* neckMinWidth = nullptr,
                                      double* neckMaxWidth = nullptr, double* neckStdDev = nullptr,
-                                     int* neckMeasureX = nullptr, int* neckMeasureCount = nullptr);
+                                     int* neckMeasureX = nullptr, int* neckMeasureCount = nullptr,
+                                     int thicknessBoxWidth = 50, int thicknessMin = 10, 
+                                     int thicknessMax = 100, int thicknessBoxHeight = 30,
+                                     int* measuredMinThickness = nullptr, int* measuredMaxThickness = nullptr,
+                                     int* measuredAvgThickness = nullptr,
+                                     const cv::Rect& originalPatternRect = cv::Rect());
 };
 
 #endif // IMAGEPROCESSOR_H

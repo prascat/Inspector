@@ -2819,29 +2819,48 @@ void TeachingWidget::createPropertyPanels() {
     insStripGradThreshSpin->setSuffix(" px");
     insStripLayout->addRow(insStripGradThreshLabel, insStripGradThreshSpin);
 
-    // Gradient 계산 범위
+    // Gradient 계산 범위 - 슬라이더로 변경
     QWidget* gradientRangeWidget = new QWidget(insStripPanel);
-    QHBoxLayout* gradientRangeLayout = new QHBoxLayout(gradientRangeWidget);
+    QVBoxLayout* gradientRangeLayout = new QVBoxLayout(gradientRangeWidget);
     gradientRangeLayout->setContentsMargins(0, 0, 0, 0);
-    gradientRangeLayout->setSpacing(5);
+    gradientRangeLayout->setSpacing(3);
     
-    insStripStartLabel = new QLabel("시작:", gradientRangeWidget);
-    insStripStartSpin = new QSpinBox(gradientRangeWidget);
-    insStripStartSpin->setRange(0, 50);
-    insStripStartSpin->setValue(20);
-    insStripStartSpin->setSuffix("%");
+    // 시작 지점 슬라이더
+    QWidget* startWidget = new QWidget(gradientRangeWidget);
+    QHBoxLayout* startLayout = new QHBoxLayout(startWidget);
+    startLayout->setContentsMargins(0, 0, 0, 0);
+    startLayout->setSpacing(5);
     
-    insStripEndLabel = new QLabel("끝:", gradientRangeWidget);
-    insStripEndSpin = new QSpinBox(gradientRangeWidget);
-    insStripEndSpin->setRange(50, 100);
-    insStripEndSpin->setValue(80);
-    insStripEndSpin->setSuffix("%");
+    insStripStartLabel = new QLabel("시작:", startWidget);
+    insStripStartSlider = new QSlider(Qt::Horizontal, startWidget);
+    insStripStartSlider->setRange(0, 50);
+    insStripStartSlider->setValue(20);
+    insStripStartValueLabel = new QLabel("20%", startWidget);
+    insStripStartValueLabel->setMinimumWidth(30);
     
-    gradientRangeLayout->addWidget(insStripStartLabel);
-    gradientRangeLayout->addWidget(insStripStartSpin);
-    gradientRangeLayout->addWidget(insStripEndLabel);
-    gradientRangeLayout->addWidget(insStripEndSpin);
-    gradientRangeLayout->addStretch();
+    startLayout->addWidget(insStripStartLabel);
+    startLayout->addWidget(insStripStartSlider);
+    startLayout->addWidget(insStripStartValueLabel);
+    
+    // 끝 지점 슬라이더
+    QWidget* endWidget = new QWidget(gradientRangeWidget);
+    QHBoxLayout* endLayout = new QHBoxLayout(endWidget);
+    endLayout->setContentsMargins(0, 0, 0, 0);
+    endLayout->setSpacing(5);
+    
+    insStripEndLabel = new QLabel("끝:", endWidget);
+    insStripEndSlider = new QSlider(Qt::Horizontal, endWidget);
+    insStripEndSlider->setRange(50, 100);
+    insStripEndSlider->setValue(80);
+    insStripEndValueLabel = new QLabel("80%", endWidget);
+    insStripEndValueLabel->setMinimumWidth(30);
+    
+    endLayout->addWidget(insStripEndLabel);
+    endLayout->addWidget(insStripEndSlider);
+    endLayout->addWidget(insStripEndValueLabel);
+    
+    gradientRangeLayout->addWidget(startWidget);
+    gradientRangeLayout->addWidget(endWidget);
     
     insStripLayout->addRow("Gradient 범위:", gradientRangeWidget);
 
@@ -2851,6 +2870,74 @@ void TeachingWidget::createPropertyPanels() {
     insStripMinPointsSpin->setRange(3, 20);
     insStripMinPointsSpin->setValue(5);
     insStripLayout->addRow(insStripMinPointsLabel, insStripMinPointsSpin);
+    
+    // 구분선 추가
+    QFrame* separator = new QFrame(insStripPanel);
+    separator->setFrameShape(QFrame::HLine);
+    separator->setFrameShadow(QFrame::Sunken);
+    insStripLayout->addRow(separator);
+    
+    // STRIP 두께 측정 관련 컨트롤들 - 슬라이더 + SpinBox 조합
+    
+    // 측정박스 너비 슬라이더
+    QWidget* thicknessWidthWidget = new QWidget(insStripPanel);
+    QHBoxLayout* thicknessWidthLayout = new QHBoxLayout(thicknessWidthWidget);
+    thicknessWidthLayout->setContentsMargins(0, 0, 0, 0);
+    thicknessWidthLayout->setSpacing(5);
+    
+    insStripThicknessWidthLabel = new QLabel("너비:", thicknessWidthWidget);
+    insStripThicknessWidthSlider = new QSlider(Qt::Horizontal, thicknessWidthWidget);
+    insStripThicknessWidthSlider->setRange(10, 200);
+    insStripThicknessWidthSlider->setValue(50);
+    insStripThicknessWidthValueLabel = new QLabel("50px", thicknessWidthWidget);
+    insStripThicknessWidthValueLabel->setMinimumWidth(40);
+    
+    thicknessWidthLayout->addWidget(insStripThicknessWidthLabel);
+    thicknessWidthLayout->addWidget(insStripThicknessWidthSlider);
+    thicknessWidthLayout->addWidget(insStripThicknessWidthValueLabel);
+    
+    // 측정박스 높이 슬라이더
+    QWidget* thicknessHeightWidget = new QWidget(insStripPanel);
+    QHBoxLayout* thicknessHeightLayout = new QHBoxLayout(thicknessHeightWidget);
+    thicknessHeightLayout->setContentsMargins(0, 0, 0, 0);
+    thicknessHeightLayout->setSpacing(5);
+    
+    insStripThicknessHeightLabel = new QLabel("높이:", thicknessHeightWidget);
+    insStripThicknessHeightSlider = new QSlider(Qt::Horizontal, thicknessHeightWidget);
+    insStripThicknessHeightSlider->setRange(10, 100);
+    insStripThicknessHeightSlider->setValue(30);
+    insStripThicknessHeightValueLabel = new QLabel("30px", thicknessHeightWidget);
+    insStripThicknessHeightValueLabel->setMinimumWidth(40);
+    
+    thicknessHeightLayout->addWidget(insStripThicknessHeightLabel);
+    thicknessHeightLayout->addWidget(insStripThicknessHeightSlider);
+    thicknessHeightLayout->addWidget(insStripThicknessHeightValueLabel);
+    
+    // 최소/최대 두께 SpinBox
+    insStripThicknessMinLabel = new QLabel("최소 두께:", insStripPanel);
+    insStripThicknessMinSpin = new QSpinBox(insStripPanel);
+    insStripThicknessMinSpin->setRange(5, 500);
+    insStripThicknessMinSpin->setValue(10);
+    insStripThicknessMinSpin->setSuffix(" px");
+    
+    insStripThicknessMaxLabel = new QLabel("최대 두께:", insStripPanel);
+    insStripThicknessMaxSpin = new QSpinBox(insStripPanel);
+    insStripThicknessMaxSpin->setRange(10, 500);
+    insStripThicknessMaxSpin->setValue(100);
+    insStripThicknessMaxSpin->setSuffix(" px");
+    
+    // 두께 범위 위젯을 레이아웃에 추가
+    QWidget* thicknessRangeWidget = new QWidget(insStripPanel);
+    QVBoxLayout* thicknessRangeLayout = new QVBoxLayout(thicknessRangeWidget);
+    thicknessRangeLayout->setContentsMargins(0, 0, 0, 0);
+    thicknessRangeLayout->setSpacing(3);
+    
+    thicknessRangeLayout->addWidget(thicknessWidthWidget);
+    thicknessRangeLayout->addWidget(thicknessHeightWidget);
+    
+    insStripLayout->addRow("두께 범위:", thicknessRangeWidget);
+    insStripLayout->addRow(insStripThicknessMinLabel, insStripThicknessMinSpin);
+    insStripLayout->addRow(insStripThicknessMaxLabel, insStripThicknessMaxSpin);
 
     insMainLayout->addWidget(insStripPanel);
 
@@ -4143,10 +4230,15 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
     }
     
-    // Gradient 시작 지점
-    if (insStripStartSpin) {
-        connect(insStripStartSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
+    // Gradient 시작 지점 슬라이더
+    if (insStripStartSlider) {
+        connect(insStripStartSlider, &QSlider::valueChanged, 
                 [this](int value) {
+            // 값 표시 레이블 업데이트
+            if (insStripStartValueLabel) {
+                insStripStartValueLabel->setText(QString("%1%").arg(value));
+            }
+            
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
@@ -4155,16 +4247,23 @@ void TeachingWidget::connectPropertyPanelEvents() {
                     if (pattern && pattern->type == PatternType::INS) {
                         pattern->stripGradientStartPercent = value;
                         cameraView->updatePatternById(patternId, *pattern);
+                        // 카메라뷰 다시 그리기 (점선 위치 업데이트)
+                        cameraView->update();
                     }
                 }
             }
         });
     }
     
-    // Gradient 끝 지점
-    if (insStripEndSpin) {
-        connect(insStripEndSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
+    // Gradient 끝 지점 슬라이더
+    if (insStripEndSlider) {
+        connect(insStripEndSlider, &QSlider::valueChanged, 
                 [this](int value) {
+            // 값 표시 레이블 업데이트
+            if (insStripEndValueLabel) {
+                insStripEndValueLabel->setText(QString("%1%").arg(value));
+            }
+            
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
@@ -4173,6 +4272,8 @@ void TeachingWidget::connectPropertyPanelEvents() {
                     if (pattern && pattern->type == PatternType::INS) {
                         pattern->stripGradientEndPercent = value;
                         cameraView->updatePatternById(patternId, *pattern);
+                        // 카메라뷰 다시 그리기 (점선 위치 업데이트)
+                        cameraView->update();
                     }
                 }
             }
@@ -4191,6 +4292,92 @@ void TeachingWidget::connectPropertyPanelEvents() {
                     if (pattern && pattern->type == PatternType::INS) {
                         pattern->stripMinDataPoints = value;
                         cameraView->updatePatternById(patternId, *pattern);
+                    }
+                }
+            }
+        });
+    }
+    
+    // 두께 측정 박스 너비
+    if (insStripThicknessWidthSlider) {
+        connect(insStripThicknessWidthSlider, &QSlider::valueChanged, 
+                [this](int value) {
+            // 값 표시 레이블 업데이트
+            if (insStripThicknessWidthValueLabel) {
+                insStripThicknessWidthValueLabel->setText(QString("%1px").arg(value));
+            }
+            
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->stripThicknessBoxWidth = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // 두께 측정 박스 높이
+    if (insStripThicknessHeightSlider) {
+        connect(insStripThicknessHeightSlider, &QSlider::valueChanged, 
+                [this](int value) {
+            // 값 표시 레이블 업데이트
+            if (insStripThicknessHeightValueLabel) {
+                insStripThicknessHeightValueLabel->setText(QString("%1px").arg(value));
+            }
+            
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->stripThicknessBoxHeight = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // 최소 두께
+    if (insStripThicknessMinSpin) {
+        connect(insStripThicknessMinSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
+                [this](int value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->stripThicknessMin = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // 최대 두께
+    if (insStripThicknessMaxSpin) {
+        connect(insStripThicknessMaxSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
+                [this](int value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->stripThicknessMax = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
                     }
                 }
             }
@@ -4492,22 +4679,75 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripGradThreshSpin->blockSignals(false);
                     }
                     
-                    if (insStripStartSpin) {
-                        insStripStartSpin->blockSignals(true);
-                        insStripStartSpin->setValue(pattern->stripGradientStartPercent);
-                        insStripStartSpin->blockSignals(false);
+                    if (insStripStartSlider) {
+                        insStripStartSlider->blockSignals(true);
+                        insStripStartSlider->setValue(pattern->stripGradientStartPercent);
+                        insStripStartSlider->blockSignals(false);
+                        
+                        // 값 표시 레이블 업데이트
+                        if (insStripStartValueLabel) {
+                            insStripStartValueLabel->setText(QString("%1%").arg(pattern->stripGradientStartPercent));
+                        }
                     }
                     
-                    if (insStripEndSpin) {
-                        insStripEndSpin->blockSignals(true);
-                        insStripEndSpin->setValue(pattern->stripGradientEndPercent);
-                        insStripEndSpin->blockSignals(false);
+                    if (insStripEndSlider) {
+                        insStripEndSlider->blockSignals(true);
+                        insStripEndSlider->setValue(pattern->stripGradientEndPercent);
+                        insStripEndSlider->blockSignals(false);
+                        
+                        // 값 표시 레이블 업데이트
+                        if (insStripEndValueLabel) {
+                            insStripEndValueLabel->setText(QString("%1%").arg(pattern->stripGradientEndPercent));
+                        }
                     }
                     
                     if (insStripMinPointsSpin) {
                         insStripMinPointsSpin->blockSignals(true);
                         insStripMinPointsSpin->setValue(pattern->stripMinDataPoints);
                         insStripMinPointsSpin->blockSignals(false);
+                    }
+                    
+                    // STRIP 두께 측정 관련 컨트롤 업데이트
+                    if (insStripThicknessWidthSlider) {
+                        // 패턴의 실제 너비 계산
+                        float patternWidth = abs(pattern->rect.width());
+                        
+                        insStripThicknessWidthSlider->blockSignals(true);
+                        // 너비 슬라이더 최대값을 패턴 너비의 절반으로 설정
+                        insStripThicknessWidthSlider->setMaximum(patternWidth / 2);
+                        insStripThicknessWidthSlider->setValue(pattern->stripThicknessBoxWidth);
+                        insStripThicknessWidthSlider->blockSignals(false);
+                        
+                        if (insStripThicknessWidthValueLabel) {
+                            insStripThicknessWidthValueLabel->setText(QString("%1px").arg(pattern->stripThicknessBoxWidth));
+                        }
+                    }
+                    
+                    if (insStripThicknessHeightSlider) {
+                        // 패턴의 실제 높이 계산
+                        float patternHeight = abs(pattern->rect.height());
+                        
+                        insStripThicknessHeightSlider->blockSignals(true);
+                        // 높이 슬라이더 최대값을 패턴 높이 전체로 설정
+                        insStripThicknessHeightSlider->setMaximum(patternHeight);
+                        insStripThicknessHeightSlider->setValue(pattern->stripThicknessBoxHeight);
+                        insStripThicknessHeightSlider->blockSignals(false);
+                        
+                        if (insStripThicknessHeightValueLabel) {
+                            insStripThicknessHeightValueLabel->setText(QString("%1px").arg(pattern->stripThicknessBoxHeight));
+                        }
+                    }
+                    
+                    if (insStripThicknessMinSpin) {
+                        insStripThicknessMinSpin->blockSignals(true);
+                        insStripThicknessMinSpin->setValue(pattern->stripThicknessMin);
+                        insStripThicknessMinSpin->blockSignals(false);
+                    }
+                    
+                    if (insStripThicknessMaxSpin) {
+                        insStripThicknessMaxSpin->blockSignals(true);
+                        insStripThicknessMaxSpin->setValue(pattern->stripThicknessMax);
+                        insStripThicknessMaxSpin->blockSignals(false);
                     }
                     
                     if (insBinaryThreshSpin) {

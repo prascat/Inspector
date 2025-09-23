@@ -13,6 +13,7 @@
 #include <QIcon>
 #include <QDebug>
 #include <QCheckBox>
+#include <QSlider>
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QGroupBox>
@@ -368,11 +369,25 @@ private:
     QLabel* insStripGradThreshLabel = nullptr;
     QDoubleSpinBox* insStripGradThreshSpin = nullptr;
     QLabel* insStripStartLabel = nullptr;
-    QSpinBox* insStripStartSpin = nullptr;
+    QSlider* insStripStartSlider = nullptr;
+    QLabel* insStripStartValueLabel = nullptr;
     QLabel* insStripEndLabel = nullptr;
-    QSpinBox* insStripEndSpin = nullptr;
+    QSlider* insStripEndSlider = nullptr;
+    QLabel* insStripEndValueLabel = nullptr;
     QLabel* insStripMinPointsLabel = nullptr;
     QSpinBox* insStripMinPointsSpin = nullptr;
+    
+    // STRIP 두께 측정 관련 컨트롤
+    QLabel* insStripThicknessWidthLabel = nullptr;
+    QSlider* insStripThicknessWidthSlider = nullptr;
+    QLabel* insStripThicknessWidthValueLabel = nullptr;
+    QLabel* insStripThicknessHeightLabel = nullptr;
+    QSlider* insStripThicknessHeightSlider = nullptr;
+    QLabel* insStripThicknessHeightValueLabel = nullptr;
+    QLabel* insStripThicknessMinLabel = nullptr;
+    QSpinBox* insStripThicknessMinSpin = nullptr;
+    QLabel* insStripThicknessMaxLabel = nullptr;
+    QSpinBox* insStripThicknessMaxSpin = nullptr;
 
     QLabel* fidAngleLabel = nullptr;
     QLabel* fidToLabel = nullptr;

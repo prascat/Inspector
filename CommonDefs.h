@@ -55,6 +55,12 @@ struct InspectionResult {
     QMap<QUuid, double> stripNeckStdDevs;       // 목 폭 표준편차 (패턴 ID -> 표준편차)
     QMap<QUuid, int> stripNeckMeasureX;         // 목 폭 측정 X 좌표 (패턴 ID -> X 좌표)
     QMap<QUuid, int> stripNeckMeasureCount;     // 목 폭 측정 포인트 수 (패턴 ID -> 포인트 수)
+    
+    // STRIP 두께 측정 결과
+    QMap<QUuid, int> stripMeasuredThicknessMin; // 측정된 최소 두께 (패턴 ID -> 최소 두께)
+    QMap<QUuid, int> stripMeasuredThicknessMax; // 측정된 최대 두께 (패턴 ID -> 최대 두께)
+    QMap<QUuid, int> stripMeasuredThicknessAvg; // 측정된 평균 두께 (패턴 ID -> 평균 두께)
+    QMap<QUuid, bool> stripThicknessMeasured;   // 두께 측정 완료 여부 (패턴 ID -> 측정 여부)
 };
 
 // 패턴 유형 열거형
@@ -116,6 +122,12 @@ struct PatternInfo {
     int stripGradientStartPercent = 20;  // Gradient 계산 시작 지점 (%)
     int stripGradientEndPercent = 80;    // Gradient 계산 끝 지점 (%)
     int stripMinDataPoints = 5;          // 최소 데이터 포인트 수
+    
+    // STRIP 두께 측정 관련 파라미터
+    int stripThicknessBoxWidth = 50;     // 두께 측정 박스 너비 (픽셀)
+    int stripThicknessBoxHeight = 30;    // 두께 측정 박스 높이 (픽셀)
+    int stripThicknessMin = 10;          // 최소 두께 (픽셀)
+    int stripThicknessMax = 100;         // 최대 두께 (픽셀)
 
     // 이진화 검사를 위한 추가 속성
     int binaryThreshold = 128;        // 이진화 임계값 (0-255)
