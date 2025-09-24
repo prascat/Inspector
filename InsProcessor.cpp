@@ -2352,6 +2352,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         double edgeMaxDeviation = 0.0;
         cv::Point edgeBoxTopLeft;
         bool edgePassed = true;
+        int edgeAverageX = 0;
                 
         bool isPassed = ImageProcessor::performStripInspection(roiImage, templateImage, 
                                                               pattern.passThreshold, score, 
@@ -2372,7 +2373,8 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                                                               cv::Rect(pattern.rect.x(), pattern.rect.y(), pattern.rect.width(), pattern.rect.height()),
                                                               pattern.edgeEnabled, pattern.edgeOffsetX, pattern.edgeBoxWidth, pattern.edgeBoxHeight,
                                                               pattern.edgeMaxIrregularities,
-                                                              &edgeIrregularityCount, &edgeMaxDeviation, &edgeBoxTopLeft, &edgePassed); // 원본 패턴 박스
+                                                              &edgeIrregularityCount, &edgeMaxDeviation, &edgeBoxTopLeft, &edgePassed,
+                                                              &edgeAverageX); // 원본 패턴 박스
                                                               
         // 측정된 두께를 검사 결과에 저장 (FRONT + REAR)
         result.stripMeasuredThicknessMin[pattern.id] = measuredMinThickness;
@@ -2395,6 +2397,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         result.edgeMaxDeviation[pattern.id] = edgeMaxDeviation;
         result.edgeBoxTopLeft[pattern.id] = edgeBoxTopLeft;
         result.edgeMeasured[pattern.id] = pattern.edgeEnabled;
+        result.edgeAverageX[pattern.id] = edgeAverageX;
         
         // Qt로 시각화 추가 (시작점, 끝점, Local Max Gradient 지점들)
         if (!resultImage.empty()) {

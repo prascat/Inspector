@@ -672,7 +672,8 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                                            bool edgeEnabled, int edgeOffsetX, int edgeBoxWidth, int edgeBoxHeight,
                                            int edgeMaxIrregularities,
                                            int* edgeIrregularityCount, double* edgeMaxDeviation,
-                                           cv::Point* edgeBoxTopLeft, bool* edgePassed) {
+                                           cv::Point* edgeBoxTopLeft, bool* edgePassed,
+                                           int* edgeAverageX) {
     // 결과 이미지용으로 원본의 깨끗한 복사본 생성 (마스킹 제거)
     cv::Mat cleanOriginal;
     roiImage.copyTo(cleanOriginal);
@@ -2256,6 +2257,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         if (edgeIrregularityCount) *edgeIrregularityCount = 0;
         if (edgeMaxDeviation) *edgeMaxDeviation = 0.0;
         if (edgeBoxTopLeft) *edgeBoxTopLeft = cv::Point(0, 0);
+        if (edgeAverageX) *edgeAverageX = 0;
         
         if (edgeEnabled) {
             try {
@@ -2530,6 +2532,9 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                             }
                             double avgX = sumX / leftEdgePoints.size();
                             int averageX = static_cast<int>(avgX);
+                            
+                            // 평균 X 위치를 결과에 저장
+                            if (edgeAverageX) *edgeAverageX = averageX;
                             
                             // EDGE 박스의 위쪽과 아래쪽 Y 좌표 찾기
                             float topmostY = std::min({corners[0].y, corners[1].y, corners[2].y, corners[3].y});

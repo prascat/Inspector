@@ -95,7 +95,8 @@ public:
                                      int edgeBoxWidth = 50, int edgeBoxHeight = 100,
                                      int edgeMaxIrregularities = 5,
                                      int* edgeIrregularityCount = nullptr, double* edgeMaxDeviation = nullptr,
-                                     cv::Point* edgeBoxTopLeft = nullptr, bool* edgePassed = nullptr);
+                                     cv::Point* edgeBoxTopLeft = nullptr, bool* edgePassed = nullptr,
+                                     int* edgeAverageX = nullptr);
 };
 
 #endif // IMAGEPROCESSOR_H

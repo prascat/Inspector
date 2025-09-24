@@ -1591,8 +1591,8 @@ void CameraView::drawInspectionResultsVector(QPainter& painter, const Inspection
         painter.translate(center);
         painter.rotate(finalAngle);
         
-        // 패턴 위쪽에 텍스트 위치 (상대 좌표)
-        QRect textRect(-textWidth/2 - 3, -matchRect.height()/2 - textHeight - 2, textWidth + 6, textHeight);
+        // 패턴 위쪽 왼쪽에 텍스트 위치 (상대 좌표, 왼쪽 정렬)
+        QRect textRect(-matchRect.width()/2, -matchRect.height()/2 - textHeight - 2, textWidth + 6, textHeight);
 
         // 배경 및 텍스트 그리기 (티칭 스타일) - 통과/실패에 따라 배경 색상 조정
         QColor bgColor = passed ? patternColor : QColor(200, 0, 0); // 통과시 패턴 색상, 실패시 빨간색
@@ -1602,7 +1602,7 @@ void CameraView::drawInspectionResultsVector(QPainter& painter, const Inspection
         QColor textColor = UIColors::getTextColor(bgColor);
         painter.setPen(textColor);
         painter.setFont(standardFont);
-        painter.drawText(textRect, Qt::AlignCenter, labelText);
+        painter.drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, labelText);
         
         painter.restore();
     }
@@ -1835,9 +1835,9 @@ void CameraView::drawInspectionResultsVector(QPainter& painter, const Inspection
         painter.translate(inspCenter);
         painter.rotate(insAngle);
         
-        // 패턴 위쪽에 텍스트 위치 (상대 좌표)
-        QPoint textPos(-maxWidth/2, -inspRect.height()/2 - totalHeight - 2);
-        QRect textRect(textPos.x() - 3, textPos.y(), maxWidth + 6, totalHeight);
+        // 패턴 위쪽 왼쪽에 텍스트 위치 (상대 좌표, 왼쪽 정렬)
+        QPoint textPos(-inspRect.width()/2, -inspRect.height()/2 - totalHeight - 2);
+        QRect textRect(textPos.x(), textPos.y(), maxWidth + 6, totalHeight);
         
         // 배경 및 텍스트 그리기
         QColor bgColor = passed ? patternColor : QColor(200, 0, 0);
@@ -1941,22 +1941,22 @@ void CameraView::drawInspectionResultsVector(QPainter& painter, const Inspection
                 int textWidth = fm.horizontalAdvance(fullText);
                 int textHeight = fm.height();
                 
-                // 패턴 각도 적용한 회전 텍스트
+                // 패턴 각도 적용한 회전 텍스트 (왼쪽 정렬) - FRONT 박스 크기 기준
                 painter.save();
                 painter.translate(frontBoxCenter);
                 painter.rotate(insAngle); // INS 패턴 각도 적용
                 
-                // 박스 중심에서 위쪽으로 텍스트 위치 계산 (zoomFactor 적용)
+                // FRONT 박스의 실제 화면 크기 계산 (확대 비율 적용)
                 int displayBoxWidth = qRound(pattern->stripThicknessBoxWidth * zoomFactor);
                 int displayBoxHeight = qRound(pattern->stripThicknessBoxHeight * zoomFactor);
                 
-                // 배경 사각형 (시안색)
-                QRect frontTextRect(-textWidth/2 - 2, -displayBoxHeight/2 - textHeight - 1, textWidth + 4, textHeight);
+                // FRONT 박스 위쪽 중심에 텍스트 위치 (가로는 중심, 세로는 위쪽)
+                QRect frontTextRect(-textWidth/2 - 3, -displayBoxHeight/2 - textHeight - 2, textWidth + 6, textHeight);
                 painter.fillRect(frontTextRect, Qt::cyan);
                 
-                // 검은색 텍스트
+                // 검은색 텍스트 (중앙 정렬)
                 painter.setPen(Qt::black);
-                painter.drawText(frontTextRect, Qt::AlignCenter, fullText);
+                painter.drawText(frontTextRect, Qt::AlignCenter | Qt::AlignVCenter, fullText);
                 
                 painter.restore();
             }
@@ -2011,22 +2011,22 @@ void CameraView::drawInspectionResultsVector(QPainter& painter, const Inspection
                 int textWidth = fm.horizontalAdvance(fullText);
                 int textHeight = fm.height();
                 
-                // 패턴 각도 적용한 회전 텍스트
+                // 패턴 각도 적용한 회전 텍스트 (왼쪽 정렬) - REAR 박스 크기 기준
                 painter.save();
                 painter.translate(rearBoxCenter);
                 painter.rotate(insAngle); // INS 패턴 각도 적용
                 
-                // 박스 중심에서 위쪽으로 텍스트 위치 계산 (zoomFactor 적용)
+                // REAR 박스의 실제 화면 크기 계산 (확대 비율 적용)
                 int displayBoxWidth = qRound(pattern->stripRearThicknessBoxWidth * zoomFactor);
                 int displayBoxHeight = qRound(pattern->stripRearThicknessBoxHeight * zoomFactor);
                 
-                // 배경 사각형 (하늘색)
-                QRect rearTextRect(-textWidth/2 - 2, -displayBoxHeight/2 - textHeight - 1, textWidth + 4, textHeight);
+                // REAR 박스 위쪽 중심에 텍스트 위치 (가로는 중심, 세로는 위쪽)
+                QRect rearTextRect(-textWidth/2 - 3, -displayBoxHeight/2 - textHeight - 2, textWidth + 6, textHeight);
                 painter.fillRect(rearTextRect, QColor(0, 191, 255));
                 
-                // 검은색 텍스트
+                // 검은색 텍스트 (중앙 정렬)
                 painter.setPen(Qt::black);
-                painter.drawText(rearTextRect, Qt::AlignCenter, fullText);
+                painter.drawText(rearTextRect, Qt::AlignCenter | Qt::AlignVCenter, fullText);
                 
                 painter.restore();
             }
@@ -2084,24 +2084,69 @@ void CameraView::drawInspectionResultsVector(QPainter& painter, const Inspection
                 int textWidth = fm.horizontalAdvance(fullText);
                 int textHeight = fm.height();
                 
-                // 패턴 각도 적용한 회전 텍스트
+                // 패턴 각도 적용한 회전 텍스트 (왼쪽 정렬) - EDGE 박스 크기 기준
                 painter.save();
                 painter.translate(edgeBoxCenter);
                 painter.rotate(insAngle); // INS 패턴 각도 적용
                 
-                // 박스 중심에서 위쪽으로 텍스트 위치 계산 (zoomFactor 적용)
+                // EDGE 박스의 실제 화면 크기 계산 (확대 비율 적용)
                 int displayBoxWidth = qRound(pattern->edgeBoxWidth * zoomFactor);
                 int displayBoxHeight = qRound(pattern->edgeBoxHeight * zoomFactor);
                 
-                // 배경 사각형 (주황색)
-                QRect edgeTextRect(-textWidth/2 - 2, -displayBoxHeight/2 - textHeight - 1, textWidth + 4, textHeight);
+                // EDGE 박스 위쪽 중심에 텍스트 위치 (가로는 중심, 세로는 위쪽)
+                QRect edgeTextRect(-textWidth/2 - 3, -displayBoxHeight/2 - textHeight - 2, textWidth + 6, textHeight);
                 painter.fillRect(edgeTextRect, QColor(255, 128, 0));
                 
-                // 검은색 텍스트
+                // 검은색 텍스트 (중앙 정렬)
                 painter.setPen(Qt::black);
-                painter.drawText(edgeTextRect, Qt::AlignCenter, fullText);
+                painter.drawText(edgeTextRect, Qt::AlignCenter | Qt::AlignVCenter, fullText);
                 
                 painter.restore();
+                
+                // EDGE 검사 평균 수직선 그리기 (진한 그린색, 회전 적용)
+                if (result.edgeAverageX.contains(patternId)) {
+                    int averageX = result.edgeAverageX.value(patternId);
+                    
+                    // 패턴 내부 상대좌표를 절대좌표로 변환
+                    int patternCenterX = inspRectOriginal.x() + inspRectOriginal.width()/2;
+                    int patternCenterY = inspRectOriginal.y() + inspRectOriginal.height()/2;
+                    
+                    // 정사각형 크기 계산 (extractROI와 동일한 로직)
+                    double angleRad = std::abs(0.0) * M_PI / 180.0; // 현재 각도 0도 가정
+                    double rotatedWidth = std::abs(inspRectOriginal.width() * std::cos(angleRad)) + std::abs(inspRectOriginal.height() * std::sin(angleRad));
+                    double rotatedHeight = std::abs(inspRectOriginal.width() * std::sin(angleRad)) + std::abs(inspRectOriginal.height() * std::cos(angleRad));
+                    int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
+                    int squareCenterX = maxSize / 2;
+                    int squareCenterY = maxSize / 2;
+                    
+                    // 정사각형 좌표를 패턴 좌표로 변환
+                    int absoluteX = patternCenterX + (averageX - squareCenterX);
+                    
+                    // 수직선의 위아래 좌표 계산 (EDGE 박스 영역 내에서)
+                    int lineTopY = inspRectOriginal.y();
+                    int lineBottomY = inspRectOriginal.y() + inspRectOriginal.height();
+                    
+                    // 화면 좌표로 변환
+                    QPoint topPoint = originalToDisplay(QPoint(absoluteX, lineTopY));
+                    QPoint bottomPoint = originalToDisplay(QPoint(absoluteX, lineBottomY));
+                    
+                    // 패턴 각도 적용한 회전된 수직선 그리기
+                    painter.save();
+                    QPoint patternDisplayCenter = originalToDisplay(QPoint(patternCenterX, patternCenterY));
+                    painter.translate(patternDisplayCenter);
+                    painter.rotate(insAngle); // INS 패턴 각도 적용
+                    
+                    // 패턴 중심 기준 상대 좌표로 변환
+                    QPoint relativeTop = topPoint - patternDisplayCenter;
+                    QPoint relativeBottom = bottomPoint - patternDisplayCenter;
+                    
+                    // 진한 그린색 실선으로 평균 수직선 그리기
+                    QPen averagePen(QColor(0, 150, 0), 2);  // 진한 그린색
+                    painter.setPen(averagePen);
+                    painter.drawLine(relativeTop, relativeBottom);
+                    
+                    painter.restore();
+                }
             }
         }
     }
@@ -2179,14 +2224,27 @@ void CameraView::drawInspectionResultsVector(QPainter& painter, const Inspection
             QPoint tl = originalToDisplay(roiRect.topLeft().toPoint());
             QPoint br = originalToDisplay(roiRect.bottomRight().toPoint());
             QRect drawRoi(tl, br);
-            QPen roiPen(UIColors::ROI_COLOR, 2, Qt::DashLine);
+            QPen roiPen(UIColors::ROI_COLOR, 2, Qt::SolidLine);  // 실선으로 변경
             painter.setPen(roiPen);
             painter.setBrush(Qt::NoBrush);
             painter.drawRect(drawRoi);
-            // 라벨
-            painter.setFont(QFont("Arial", 9, QFont::Bold));
-            painter.setPen(UIColors::getTextColor(UIColors::ROI_COLOR));
-            painter.drawText(drawRoi.topLeft() + QPoint(4, 14), pattern.name);
+            
+            // 라벨 (박스 위쪽에 배경색과 함께 표시) - 티칭 모드와 같은 폰트 크기
+            painter.setFont(QFont("Arial", 10, QFont::Bold));
+            QFontMetrics fm(painter.font());
+            int textWidth = fm.horizontalAdvance(pattern.name);
+            int textHeight = fm.height();
+            
+            // 배경 사각형
+            QRect labelRect(drawRoi.topLeft().x() + 4, drawRoi.topLeft().y() - textHeight - 2, 
+                           textWidth + 6, textHeight);
+            QColor bgColor = UIColors::ROI_COLOR;
+            bgColor.setAlpha(180);
+            painter.fillRect(labelRect, bgColor);
+            
+            // 텍스트
+            painter.setPen(UIColors::getTextColor(bgColor));
+            painter.drawText(labelRect, Qt::AlignLeft | Qt::AlignVCenter, pattern.name);
         }
     }
 
@@ -2361,7 +2419,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                     int displayPatternWidth = qRound(patternRect.width() * zoomFactor);
                     int displayPatternHeight = qRound(patternRect.height() * zoomFactor);
                     
-                    // 패턴 위쪽 왼쪽에 텍스트 위치 (상대 좌표, 왼쪽 정렬)
+                    // 패턴 박스 바깥쪽 왼쪽 상단에 텍스트 위치 (상대 좌표, 왼쪽 정렬)
                     QRect textRect(-displayPatternWidth/2, -displayPatternHeight/2 - textHeight - 2, textWidth + 6, textHeight);
 
                     QColor bgColor = color; // 패턴 타입별 색상 사용
@@ -2441,27 +2499,32 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         painter.drawText(endTextRect, Qt::AlignCenter, endText);
                         painter.restore();
                         
-                        // REAR 검사 영역 사각형 (80% 지점, FRONT와 같은 회전 방식)
-                        // gradient end 지점의 중심점 계산 (패턴 각도에 따른 실제 80% 위치)
+                        // 검사박스는 검사전 모드에서만 표시 (검사후에는 drawInspectionResultsVector에서 표시)
+                        if (!isInspectionMode) {
+                            // REAR 검사 영역 사각형 (80% 지점, FRONT와 같은 회전 방식)
+                            // gradient end 지점의 중심점 계산 (패턴 각도에 따른 실제 80% 위치)
+                            QPointF rearPatternCenterOrig = pattern.rect.center();
+                            float rearPatternWidth = pattern.rect.width();
+                            float rearActualAngle = pattern.angle;
+                        
                         QPointF gradientEndCenterOrig;
-                        if (std::abs(pattern.angle) < 0.1) {
+                        if (std::abs(rearActualAngle) < 0.1) {
                             // 각도가 거의 0인 경우
                             gradientEndCenterOrig = QPointF(
-                                pattern.rect.x() + pattern.rect.width() * pattern.stripGradientEndPercent / 100.0,
-                                pattern.rect.center().y()
+                                rearPatternCenterOrig.x() - rearPatternWidth/2.0 + rearPatternWidth * pattern.stripGradientEndPercent / 100.0,
+                                rearPatternCenterOrig.y()
                             );
                         } else {
                             // 회전된 패턴의 경우 중심축을 따라 80% 지점 계산
-                            QPointF patternCenter = pattern.rect.center();
-                            double angleRad = pattern.angle * M_PI / 180.0;
+                            double angleRad = rearActualAngle * M_PI / 180.0;
                             
                             // 패턴의 너비/2만큼 이동한 후 80% 지점 계산
-                            double halfWidth = pattern.rect.width() / 2.0;
+                            double halfWidth = rearPatternWidth / 2.0;
                             double endDistance = halfWidth * (2.0 * pattern.stripGradientEndPercent / 100.0 - 1.0);
                             
                             gradientEndCenterOrig = QPointF(
-                                patternCenter.x() + endDistance * std::cos(angleRad),
-                                patternCenter.y() + endDistance * std::sin(angleRad)
+                                rearPatternCenterOrig.x() + endDistance * std::cos(angleRad),
+                                rearPatternCenterOrig.y() + endDistance * std::sin(angleRad)
                             );
                         }
                         
@@ -2475,7 +2538,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         // painter의 변환 매트릭스를 사용해 회전된 REAR 사각형 그리기
                         painter.save();
                         painter.translate(rearBoxCenter);
-                        painter.rotate(pattern.angle);
+                        painter.rotate(rearActualAngle);
                         
                         QPen rearAreaPen(QColor(0, 191, 255), 2);  // 하늘색 점선 (FRONT와 동일)
                         rearAreaPen.setStyle(Qt::DashLine);
@@ -2497,28 +2560,46 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         int rearTextWidth = rearFm.horizontalAdvance(rearLabelText);
                         int rearTextHeight = rearFm.height();
                         
-                        // 배경 사각형 그리기 (하늘색)
+                        // 배경 사각형 그리기 (하늘색) - 가로는 중심, 세로는 위쪽
                         QRect rearTextRect(-rearTextWidth/2 - 2, -rearBoxHeight/2 - rearTextHeight - 1, rearTextWidth + 4, rearTextHeight);
                         painter.fillRect(rearTextRect, QColor(0, 191, 255));
                         
-                        // 검은색 텍스트
+                        // 검은색 텍스트 (중앙 정렬)
                         painter.setPen(Qt::black);
-                        painter.drawText(rearTextRect, Qt::AlignCenter, rearLabelText);
+                        painter.drawText(rearTextRect, Qt::AlignCenter | Qt::AlignVCenter, rearLabelText);
                         
                         painter.restore();
                         
-                        // 두께 범위 점선 사각형 그리기 (gradient 시작 선의 중앙에서)
-                        // 패턴 각도를 반영한 실제 좌표 계산
+                        } // REAR 검사박스 그리기 끝 (!isInspectionMode)
                         
-                        // 패턴의 중심점 (원본 좌표)
-                        QPointF patternCenterOrig(pattern.rect.center().x(), pattern.rect.center().y());
+                        // FRONT 검사박스는 검사전 모드에서만 표시 (검사후에는 drawInspectionResultsVector에서 표시)
+                        if (!isInspectionMode) {
+                            // 두께 범위 점선 사각형 그리기 (gradient 시작 선의 중앙에서)
+                            // 패턴 각도를 반영한 실제 좌표 계산
+                            
+                            // 검사전 모드에서는 기존 패턴 좌표 사용
+                            QPointF patternCenterOrig = QPointF(pattern.rect.center().x(), pattern.rect.center().y());
+                            float patternWidth = pattern.rect.width();
+                            float patternHeight = pattern.rect.height();
+                            float actualAngle = pattern.angle;
                         
-                        // 패턴 크기
-                        float patternWidth = pattern.rect.width();
-                        float patternHeight = pattern.rect.height();
+                        if (isInspectionMode && hasInspectionResult && lastInspectionResult.adjustedRects.contains(pattern.id)) {
+                            // 검사 결과의 실제 좌표와 각도 사용
+                            QRectF adjustedRect = lastInspectionResult.adjustedRects[pattern.id];
+                            patternCenterOrig = adjustedRect.center();
+                            patternWidth = adjustedRect.width();
+                            patternHeight = adjustedRect.height();
+                            actualAngle = lastInspectionResult.angles.value(pattern.id, pattern.angle);
+                        } else {
+                            // 검사전 모드에서는 기존 패턴 좌표 사용
+                            patternCenterOrig = QPointF(pattern.rect.center().x(), pattern.rect.center().y());
+                            patternWidth = pattern.rect.width();
+                            patternHeight = pattern.rect.height();
+                            actualAngle = pattern.angle;
+                        }
                         
                         // 패턴 각도 (라디안)
-                        float angleRad = pattern.angle * M_PI / 180.0f;
+                        float angleRad = actualAngle * M_PI / 180.0f;
                         float cosAngle = cos(angleRad);
                         float sinAngle = sin(angleRad);
                         
@@ -2547,7 +2628,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         // painter의 변환 매트릭스를 사용해 회전된 사각형 그리기
                         painter.save();
                         painter.translate(boxCenter);
-                        painter.rotate(pattern.angle);
+                        painter.rotate(actualAngle);
                         
                         QRect thicknessBox(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
                         painter.drawRect(thicknessBox);
@@ -2564,39 +2645,42 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         int frontTextWidth = frontFm.horizontalAdvance(frontLabelText);
                         int frontTextHeight = frontFm.height();
                         
-                        // 배경 사각형 그리기 (시안색)
+                        // 배경 사각형 그리기 (시안색) - 가로는 중심, 세로는 위쪽
                         QRect frontTextRect(-frontTextWidth/2 - 2, -boxHeight/2 - frontTextHeight - 1, frontTextWidth + 4, frontTextHeight);
                         painter.fillRect(frontTextRect, Qt::cyan);
                         
-                        // 검은색 텍스트
+                        // 검은색 텍스트 (중앙 정렬)
                         painter.setPen(Qt::black);
-                        painter.drawText(frontTextRect, Qt::AlignCenter, frontLabelText);
+                        painter.drawText(frontTextRect, Qt::AlignCenter | Qt::AlignVCenter, frontLabelText);
                         
                         painter.restore();
                         
                         // 두께 범위 텍스트는 라벨로 이동되어 제거됨
+                        } // FRONT 검사박스 그리기 끝 (!isInspectionMode)
                     }
                     
-                    // EDGE 검사 박스 그리기 (INS 패턴의 STRIP 검사에서만)
-                    if (pattern.type == PatternType::INS && 
+                    // EDGE 검사 박스 그리기 (INS 패턴의 STRIP 검사에서만, 검사전 모드에서만)
+                    if (!isInspectionMode && pattern.type == PatternType::INS && 
                         pattern.inspectionMethod == InspectionMethod::STRIP &&
                         pattern.edgeEnabled) {
+                        
+                        // 검사전 모드에서는 기존 패턴 좌표 사용
+                        QPointF edgePatternCenterOrig = QPointF(pattern.rect.center().x(), pattern.rect.center().y());
+                        float edgePatternWidth = pattern.rect.width();
+                        float edgeActualAngle = pattern.angle;
+                        
                         // 패턴 각도 (라디안)
-                        float angleRad = pattern.angle * M_PI / 180.0f;
+                        float angleRad = edgeActualAngle * M_PI / 180.0f;
                         float cosAngle = cos(angleRad);
                         float sinAngle = sin(angleRad);
                         
-                        // 패턴의 중심점과 크기
-                        QPointF patternCenterOrig(pattern.rect.center().x(), pattern.rect.center().y());
-                        float patternWidth = pattern.rect.width();
-                        
                         // 패턴 왼쪽에서 edgeOffsetX만큼 떨어진 위치 계산
-                        float edgeOffsetX = (-patternWidth/2.0f) + pattern.edgeOffsetX; // 패턴 중심 기준 오프셋
+                        float edgeOffsetX = (-edgePatternWidth/2.0f) + pattern.edgeOffsetX; // 패턴 중심 기준 오프셋
                         
                         // 회전 적용된 EDGE 검사 중심점 계산
                         QPointF edgeCenterOrig = QPointF(
-                            patternCenterOrig.x() + edgeOffsetX * cosAngle,
-                            patternCenterOrig.y() + edgeOffsetX * sinAngle
+                            edgePatternCenterOrig.x() + edgeOffsetX * cosAngle,
+                            edgePatternCenterOrig.y() + edgeOffsetX * sinAngle
                         );
                         
                         // 화면 좌표로 변환된 중심점
@@ -2609,7 +2693,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         // painter의 변환 매트릭스를 사용해 회전된 EDGE 사각형 그리기
                         painter.save();
                         painter.translate(edgeBoxCenter);
-                        painter.rotate(pattern.angle);
+                        painter.rotate(edgeActualAngle);
                         
                         QPen edgePen(QColor(255, 128, 0), 2);  // 주황색 점선 (다른 검사와 구분)
                         edgePen.setStyle(Qt::DashLine);
@@ -2630,13 +2714,13 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         int edgeTextWidth = edgeFm.horizontalAdvance(edgeLabelText);
                         int edgeTextHeight = edgeFm.height();
                         
-                        // 배경 사각형 그리기 (주황색)
+                        // 배경 사각형 그리기 (주황색) - 가로는 중심, 세로는 위쪽
                         QRect edgeTextRect(-edgeTextWidth/2 - 2, -edgeBoxHeight/2 - edgeTextHeight - 1, edgeTextWidth + 4, edgeTextHeight);
                         painter.fillRect(edgeTextRect, QColor(255, 128, 0));
                         
-                        // 검은색 텍스트
+                        // 검은색 텍스트 (중앙 정렬)
                         painter.setPen(Qt::black);
-                        painter.drawText(edgeTextRect, Qt::AlignCenter, edgeLabelText);
+                        painter.drawText(edgeTextRect, Qt::AlignCenter | Qt::AlignVCenter, edgeLabelText);
                         
                         painter.restore();
                         
@@ -2681,29 +2765,42 @@ void CameraView::paintEvent(QPaintEvent *event) {
                 int textWidth = fm.horizontalAdvance(displayName);
                 int textHeight = fm.height();
 
-                // 텍스트 위치 계산: 회전된 코너 또는 기본 사각형 기준
-                QPoint textPos;
-                if (corners.size() == 4) {
-                    // 회전된 패턴의 경우 첫 번째 코너 사용
-                    textPos = corners[0];
+                // 검사후 모드에서는 검사 결과의 실제 좌표와 각도 사용
+                QPoint center;
+                double patternAngle;
+                
+                if (isInspectionMode && hasInspectionResult && lastInspectionResult.adjustedRects.contains(pattern.id)) {
+                    // 검사 결과의 실제 중심점과 각도 사용
+                    QRectF adjustedRect = lastInspectionResult.adjustedRects[pattern.id];
+                    center = originalToDisplay(adjustedRect.center().toPoint());
+                    patternAngle = lastInspectionResult.angles.value(pattern.id, pattern.angle);
                 } else {
-                    // 폴백: 기본 사각형의 topLeft 사용
-                    QPoint topLeft = originalToDisplay(QPoint(pattern.rect.x(), pattern.rect.y()));
-                    textPos = topLeft;
+                    // 검사전 모드에서는 기존 패턴 좌표 사용
+                    center = originalToDisplay(QPoint(pattern.rect.x() + pattern.rect.width()/2, 
+                                                     pattern.rect.y() + pattern.rect.height()/2));
+                    patternAngle = pattern.angle;
                 }
                 
-                QRect textRect(textPos.x(), textPos.y() - textHeight - 2, textWidth + 6, textHeight);
+                // 패턴 크기를 디스플레이 좌표로 변환
+                int displayWidth = pattern.rect.width() * zoomFactor;
+                int displayHeight = pattern.rect.height() * zoomFactor;
 
-                if (textRect.left() < 0) textRect.moveLeft(0);
-                if (textRect.right() > width()) textRect.moveRight(width());
-                if (textRect.top() < 0) textRect.moveTop(0);
+                // 회전된 상태에서 텍스트 그리기 (검사전 모드와 동일)
+                painter.save();
+                painter.translate(center);
+                painter.rotate(patternAngle);
+                
+                // 패턴 위쪽 왼쪽에 텍스트 위치 (상대 좌표, 왼쪽 정렬)
+                QRect textRect(-displayWidth/2, -displayHeight/2 - textHeight - 2, textWidth + 6, textHeight);
 
                 QColor bgColor = color; // 패턴 타입별 색상 사용
                 bgColor.setAlpha(180);
                 painter.fillRect(textRect, bgColor);
 
                 painter.setPen(Qt::black);
-                painter.drawText(textRect, Qt::AlignCenter, displayName);
+                painter.drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, displayName);
+                
+                painter.restore();
                 
                 // 선택되지 않은 INS 패턴에는 점선을 그리지 않음 (선택된 패턴에만 표시)
             }

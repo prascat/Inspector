@@ -79,6 +79,7 @@ struct InspectionResult {
     QMap<QUuid, cv::Point> edgeBoxTopLeft;          // EDGE 박스 좌상단 좌표 (패턴 ID -> 좌표)
     QMap<QUuid, bool> edgeMeasured;                 // EDGE 측정 완료 여부 (패턴 ID -> 측정 여부)
     QMap<QUuid, std::vector<cv::Point>> edgePoints; // 절단면 포인트들 (패턴 ID -> 포인트 배열)
+    QMap<QUuid, int> edgeAverageX;                  // 절단면 평균 X 위치 (패턴 ID -> X 좌표)
 };
 
 // 패턴 유형 열거형
