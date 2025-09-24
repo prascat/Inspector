@@ -2346,6 +2346,12 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         int measuredMinThickness = 0, measuredMaxThickness = 0, measuredAvgThickness = 0;
         int rearMeasuredMinThickness = 0, rearMeasuredMaxThickness = 0, rearMeasuredAvgThickness = 0;
         cv::Point frontBoxTopLeft, rearBoxTopLeft;
+        
+        // EDGE 검사 결과 변수들
+        int edgeIrregularityCount = 0;
+        double edgeMaxDeviation = 0.0;
+        cv::Point edgeBoxTopLeft;
+        bool edgePassed = true;
                 
         bool isPassed = ImageProcessor::performStripInspection(roiImage, templateImage, 
                                                               pattern.passThreshold, score, 
@@ -2362,7 +2368,11 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                                                               pattern.stripRearThicknessMax, pattern.stripRearThicknessBoxHeight,
                                                               &rearMeasuredMinThickness, &rearMeasuredMaxThickness, &rearMeasuredAvgThickness,
                                                               &frontBoxTopLeft, &rearBoxTopLeft,
-                                                              cv::Rect(pattern.rect.x(), pattern.rect.y(), pattern.rect.width(), pattern.rect.height())); // 원본 패턴 박스
+                                                              pattern.stripFrontEnabled, pattern.stripRearEnabled,
+                                                              cv::Rect(pattern.rect.x(), pattern.rect.y(), pattern.rect.width(), pattern.rect.height()),
+                                                              pattern.edgeEnabled, pattern.edgeOffsetX, pattern.edgeBoxWidth, pattern.edgeBoxHeight,
+                                                              pattern.edgeMaxIrregularities,
+                                                              &edgeIrregularityCount, &edgeMaxDeviation, &edgeBoxTopLeft, &edgePassed); // 원본 패턴 박스
                                                               
         // 측정된 두께를 검사 결과에 저장 (FRONT + REAR)
         result.stripMeasuredThicknessMin[pattern.id] = measuredMinThickness;
@@ -2378,6 +2388,13 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         // 박스 위치 저장 (Qt 텍스트 그리기용)
         result.stripFrontBoxTopLeft[pattern.id] = frontBoxTopLeft;
         result.stripRearBoxTopLeft[pattern.id] = rearBoxTopLeft;
+        
+        // EDGE 검사 결과 저장
+        result.edgeResults[pattern.id] = edgePassed;
+        result.edgeIrregularityCount[pattern.id] = edgeIrregularityCount;
+        result.edgeMaxDeviation[pattern.id] = edgeMaxDeviation;
+        result.edgeBoxTopLeft[pattern.id] = edgeBoxTopLeft;
+        result.edgeMeasured[pattern.id] = pattern.edgeEnabled;
         
         // Qt로 시각화 추가 (시작점, 끝점, Local Max Gradient 지점들)
         if (!resultImage.empty()) {

@@ -1521,9 +1521,51 @@ void TeachingWidget::connectEvents() {
         PatternInfo* pattern = cameraView->getPatternById(id);
         if (!pattern) return;
         
+        // 기존 각도 저장 (그룹화된 패턴들 회전 계산용)
+        double oldAngle = pattern->angle;
+        double angleDelta = angle - oldAngle;
+        
         // 정규화된 각도로 패턴 업데이트
         pattern->angle = angle;
         cameraView->updatePatternById(id, *pattern);
+        
+        // FID 패턴인 경우, 그룹화된 INS 패턴들도 함께 회전
+        if (pattern->type == PatternType::FID && std::abs(angleDelta) > 0.01) {
+            QPointF fidCenter(pattern->rect.x() + pattern->rect.width()/2, 
+                             pattern->rect.y() + pattern->rect.height()/2);
+            
+            // 해당 FID를 부모로 하는 모든 INS 패턴들 찾기
+            QList<PatternInfo>& allPatterns = cameraView->getPatterns();
+            for (int i = 0; i < allPatterns.size(); i++) {
+                PatternInfo& insPattern = allPatterns[i];
+                if (insPattern.parentId == id && insPattern.type == PatternType::INS) {
+                    // INS 패턴 중심점 계산
+                    QPointF insCenter(insPattern.rect.x() + insPattern.rect.width()/2,
+                                     insPattern.rect.y() + insPattern.rect.height()/2);
+                    
+                    // FID 중심을 기준으로 INS 패턴을 회전
+                    double angleRad = angleDelta * M_PI / 180.0;
+                    double dx = insCenter.x() - fidCenter.x();
+                    double dy = insCenter.y() - fidCenter.y();
+                    
+                    // 회전 변환
+                    double newDx = dx * cos(angleRad) - dy * sin(angleRad);
+                    double newDy = dx * sin(angleRad) + dy * cos(angleRad);
+                    
+                    // 새로운 중심점 계산
+                    QPointF newInsCenter(fidCenter.x() + newDx, fidCenter.y() + newDy);
+                    
+                    // INS 패턴 위치 업데이트
+                    insPattern.rect.setX(newInsCenter.x() - insPattern.rect.width()/2);
+                    insPattern.rect.setY(newInsCenter.y() - insPattern.rect.height()/2);
+                    
+                    // INS 패턴 각도도 함께 회전
+                    insPattern.angle = normalizeAngle(insPattern.angle + angleDelta);
+                    
+                    cameraView->updatePatternById(insPattern.id, insPattern);
+                }
+            }
+        }
         
         QTreeWidgetItem* currentItem = patternTree->currentItem();
         if (currentItem && getPatternIdFromItem(currentItem) == id) {
@@ -1581,6 +1623,40 @@ void TeachingWidget::connectEvents() {
                         pattern->stripThicknessBoxHeight = patternHeight;
                     }
                     insStripThicknessHeightSlider->blockSignals(false);
+                }
+                
+                // EDGE 검사 위젯들도 패턴 크기에 맞춰 업데이트
+                if (insEdgeOffsetXSlider) {
+                    insEdgeOffsetXSlider->blockSignals(true);
+                    insEdgeOffsetXSlider->setMaximum(patternWidth);
+                    if (insEdgeOffsetXSlider->value() > patternWidth) {
+                        insEdgeOffsetXSlider->setValue(patternWidth);
+                        pattern->edgeOffsetX = patternWidth;
+                        insEdgeOffsetXValueLabel->setText(QString::number(patternWidth));
+                    }
+                    insEdgeOffsetXSlider->blockSignals(false);
+                }
+                
+                if (insEdgeWidthSlider) {
+                    insEdgeWidthSlider->blockSignals(true);
+                    insEdgeWidthSlider->setMaximum(patternWidth);
+                    if (insEdgeWidthSlider->value() > patternWidth) {
+                        insEdgeWidthSlider->setValue(patternWidth);
+                        pattern->edgeBoxWidth = patternWidth;
+                        insEdgeWidthValueLabel->setText(QString::number(patternWidth));
+                    }
+                    insEdgeWidthSlider->blockSignals(false);
+                }
+                
+                if (insEdgeHeightSlider) {
+                    insEdgeHeightSlider->blockSignals(true);
+                    insEdgeHeightSlider->setMaximum(patternHeight);
+                    if (insEdgeHeightSlider->value() > patternHeight) {
+                        insEdgeHeightSlider->setValue(patternHeight);
+                        pattern->edgeBoxHeight = patternHeight;
+                        insEdgeHeightValueLabel->setText(QString::number(patternHeight));
+                    }
+                    insEdgeHeightSlider->blockSignals(false);
                 }
                 
                 // 패턴 업데이트 후 CameraView에 반영
@@ -2904,8 +2980,8 @@ void TeachingWidget::createPropertyPanels() {
     insStripEndLabel = new QLabel("끝:", endWidget);
     insStripEndSlider = new QSlider(Qt::Horizontal, endWidget);
     insStripEndSlider->setRange(50, 100);
-    insStripEndSlider->setValue(80);
-    insStripEndValueLabel = new QLabel("80%", endWidget);
+    insStripEndSlider->setValue(85);
+    insStripEndValueLabel = new QLabel("85%", endWidget);
     insStripEndValueLabel->setMinimumWidth(30);
     
     endLayout->addWidget(insStripEndLabel);
@@ -2929,6 +3005,10 @@ void TeachingWidget::createPropertyPanels() {
     separator->setFrameShape(QFrame::HLine);
     separator->setFrameShadow(QFrame::Sunken);
     insStripLayout->addRow(separator);
+    
+    // FRONT 두께 검사 체크박스
+    insStripFrontEnabledCheck = new QCheckBox("FRONT 두께 검사 활성화", insStripPanel);
+    insStripLayout->addRow("", insStripFrontEnabledCheck);
     
     // STRIP 두께 측정 관련 컨트롤들 - 슬라이더 + SpinBox 조합
     
@@ -2979,8 +3059,12 @@ void TeachingWidget::createPropertyPanels() {
     insStripThicknessMaxSpin->setValue(100);
     insStripThicknessMaxSpin->setSuffix(" px");
     
+    // REAR 두께 검사 체크박스
+    insStripRearEnabledCheck = new QCheckBox("REAR 두께 검사 활성화", insStripPanel);
+    insStripLayout->addRow("", insStripRearEnabledCheck);
+    
     // REAR 두께 측정 박스 크기 설정
-    insStripRearThicknessWidthLabel = new QLabel("REAR 박스 가로:", insStripPanel);
+    insStripRearThicknessWidthLabel = new QLabel("너비:", insStripPanel);
     insStripRearThicknessWidthSlider = new QSlider(Qt::Horizontal, insStripPanel);
     insStripRearThicknessWidthSlider->setRange(10, 200);
     insStripRearThicknessWidthSlider->setValue(50);
@@ -2996,7 +3080,7 @@ void TeachingWidget::createPropertyPanels() {
     rearThicknessWidthLayout->addWidget(insStripRearThicknessWidthSlider);
     rearThicknessWidthLayout->addWidget(insStripRearThicknessWidthValueLabel);
     
-    insStripRearThicknessHeightLabel = new QLabel("REAR 박스 세로:", insStripPanel);
+    insStripRearThicknessHeightLabel = new QLabel("높이:", insStripPanel);
     insStripRearThicknessHeightSlider = new QSlider(Qt::Horizontal, insStripPanel);
     insStripRearThicknessHeightSlider->setRange(10, 100);
     insStripRearThicknessHeightSlider->setValue(30);
@@ -3049,6 +3133,70 @@ void TeachingWidget::createPropertyPanels() {
     insStripLayout->addRow("REAR 두께 범위:", rearThicknessRangeWidget);
     insStripLayout->addRow(insStripRearThicknessMinLabel, insStripRearThicknessMinSpin);
     insStripLayout->addRow(insStripRearThicknessMaxLabel, insStripRearThicknessMaxSpin);
+
+    // EDGE 검사 위젯 생성
+    insEdgeEnabledCheck = new QCheckBox("EDGE 검사 활성화", insStripPanel);
+    insEdgeEnabledCheck->setChecked(true);  // CommonDefs.h의 기본값과 일치
+    
+    insEdgeOffsetXLabel = new QLabel("패턴 왼쪽 오프셋:", insStripPanel);
+    insEdgeOffsetXSlider = new QSlider(Qt::Horizontal, insStripPanel);
+    insEdgeOffsetXSlider->setRange(1, 500);  // 임시값, 패턴 선택시 동적 조정
+    insEdgeOffsetXSlider->setValue(10);
+    insEdgeOffsetXValueLabel = new QLabel("10", insStripPanel);
+    
+    QWidget* edgeOffsetWidget = new QWidget(insStripPanel);
+    QHBoxLayout* edgeOffsetLayout = new QHBoxLayout(edgeOffsetWidget);
+    edgeOffsetLayout->setContentsMargins(0, 0, 0, 0);
+    edgeOffsetLayout->addWidget(insEdgeOffsetXSlider);
+    edgeOffsetLayout->addWidget(insEdgeOffsetXValueLabel);
+    
+    insEdgeWidthLabel = new QLabel("너비:", insStripPanel);
+    insEdgeWidthSlider = new QSlider(Qt::Horizontal, insStripPanel);
+    insEdgeWidthSlider->setRange(10, 500);  // 임시값, 패턴 선택시 동적 조정
+    insEdgeWidthSlider->setValue(50);
+    insEdgeWidthValueLabel = new QLabel("50", insStripPanel);
+    
+    QWidget* edgeWidthWidget = new QWidget(insStripPanel);
+    QHBoxLayout* edgeWidthLayout = new QHBoxLayout(edgeWidthWidget);
+    edgeWidthLayout->setContentsMargins(0, 0, 0, 0);
+    edgeWidthLayout->addWidget(insEdgeWidthLabel);
+    edgeWidthLayout->addWidget(insEdgeWidthSlider);
+    edgeWidthLayout->addWidget(insEdgeWidthValueLabel);
+    
+    insEdgeHeightLabel = new QLabel("높이:", insStripPanel);
+    insEdgeHeightSlider = new QSlider(Qt::Horizontal, insStripPanel);
+    insEdgeHeightSlider->setRange(20, 500);  // 임시값, 패턴 선택시 동적 조정
+    insEdgeHeightSlider->setValue(100);
+    insEdgeHeightValueLabel = new QLabel("100", insStripPanel);
+    
+    QWidget* edgeHeightWidget = new QWidget(insStripPanel);
+    QHBoxLayout* edgeHeightLayout = new QHBoxLayout(edgeHeightWidget);
+    edgeHeightLayout->setContentsMargins(0, 0, 0, 0);
+    edgeHeightLayout->addWidget(insEdgeHeightLabel);
+    edgeHeightLayout->addWidget(insEdgeHeightSlider);
+    edgeHeightLayout->addWidget(insEdgeHeightValueLabel);
+    
+    // insEdgeThresholdLabel과 insEdgeThresholdSpin 제거됨 (통계적 방법 사용)
+    
+    insEdgeMaxIrregularitiesLabel = new QLabel("허용 최대 불규칙성:", insStripPanel);
+    insEdgeMaxIrregularitiesSpin = new QSpinBox(insStripPanel);
+    insEdgeMaxIrregularitiesSpin->setRange(1, 20);
+    insEdgeMaxIrregularitiesSpin->setValue(5);
+    insEdgeMaxIrregularitiesSpin->setSuffix(" 개");
+    
+    // EDGE 위젯들을 레이아웃에 추가
+    QWidget* edgeRangeWidget = new QWidget(insStripPanel);
+    QVBoxLayout* edgeRangeLayout = new QVBoxLayout(edgeRangeWidget);
+    edgeRangeLayout->setContentsMargins(0, 0, 0, 0);
+    edgeRangeLayout->setSpacing(3);
+    
+    edgeRangeLayout->addWidget(edgeWidthWidget);
+    edgeRangeLayout->addWidget(edgeHeightWidget);
+    
+    insStripLayout->addRow("", insEdgeEnabledCheck);
+    insStripLayout->addRow(insEdgeOffsetXLabel, edgeOffsetWidget);
+    insStripLayout->addRow("EDGE 박스 크기:", edgeRangeWidget);
+    insStripLayout->addRow(insEdgeMaxIrregularitiesLabel, insEdgeMaxIrregularitiesSpin);
 
     insMainLayout->addWidget(insStripPanel);
 
@@ -4581,6 +4729,159 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
     }
     
+    // FRONT 두께 검사 활성화
+    if (insStripFrontEnabledCheck) {
+        connect(insStripFrontEnabledCheck, &QCheckBox::toggled, [this](bool enabled) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->stripFrontEnabled = enabled;
+                        
+                        // FRONT 관련 위젯들 활성화/비활성화
+                        if (insStripThicknessWidthSlider) insStripThicknessWidthSlider->setEnabled(enabled);
+                        if (insStripThicknessHeightSlider) insStripThicknessHeightSlider->setEnabled(enabled);
+                        if (insStripThicknessMinSpin) insStripThicknessMinSpin->setEnabled(enabled);
+                        if (insStripThicknessMaxSpin) insStripThicknessMaxSpin->setEnabled(enabled);
+                        
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // REAR 두께 검사 활성화
+    if (insStripRearEnabledCheck) {
+        connect(insStripRearEnabledCheck, &QCheckBox::toggled, [this](bool enabled) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->stripRearEnabled = enabled;
+                        
+                        // REAR 관련 위젯들 활성화/비활성화
+                        if (insStripRearThicknessWidthSlider) insStripRearThicknessWidthSlider->setEnabled(enabled);
+                        if (insStripRearThicknessHeightSlider) insStripRearThicknessHeightSlider->setEnabled(enabled);
+                        if (insStripRearThicknessMinSpin) insStripRearThicknessMinSpin->setEnabled(enabled);
+                        if (insStripRearThicknessMaxSpin) insStripRearThicknessMaxSpin->setEnabled(enabled);
+                        
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // EDGE 검사 활성화
+    if (insEdgeEnabledCheck) {
+        connect(insEdgeEnabledCheck, &QCheckBox::toggled, [this](bool enabled) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->edgeEnabled = enabled;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // EDGE 오프셋 X
+    if (insEdgeOffsetXSlider) {
+        connect(insEdgeOffsetXSlider, &QSlider::valueChanged, 
+                [this](int value) {
+            insEdgeOffsetXValueLabel->setText(QString::number(value));
+            
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->edgeOffsetX = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // EDGE 박스 가로
+    if (insEdgeWidthSlider) {
+        connect(insEdgeWidthSlider, &QSlider::valueChanged, 
+                [this](int value) {
+            insEdgeWidthValueLabel->setText(QString::number(value));
+            
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->edgeBoxWidth = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // EDGE 박스 세로
+    if (insEdgeHeightSlider) {
+        connect(insEdgeHeightSlider, &QSlider::valueChanged, 
+                [this](int value) {
+            insEdgeHeightValueLabel->setText(QString::number(value));
+            
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->edgeBoxHeight = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // EDGE 불규칙성 임계값
+    // insEdgeThresholdSpin 연결 코드 제거됨 (통계적 방법 사용)
+    
+    // EDGE 최대 불규칙성 개수
+    if (insEdgeMaxIrregularitiesSpin) {
+        connect(insEdgeMaxIrregularitiesSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
+                [this](int value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->edgeMaxIrregularities = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
     // 패턴 각도 텍스트박스
     if (angleEdit) {
         connect(angleEdit, &QLineEdit::textChanged, [this](const QString &text) {
@@ -4988,6 +5289,80 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripRearThicknessMaxSpin->blockSignals(true);
                         insStripRearThicknessMaxSpin->setValue(pattern->stripRearThicknessMax);
                         insStripRearThicknessMaxSpin->blockSignals(false);
+                    }
+                    
+                    // FRONT 두께 검사 활성화 상태 업데이트
+                    if (insStripFrontEnabledCheck) {
+                        insStripFrontEnabledCheck->blockSignals(true);
+                        insStripFrontEnabledCheck->setChecked(pattern->stripFrontEnabled);
+                        insStripFrontEnabledCheck->blockSignals(false);
+                        
+                        // FRONT 관련 위젯들 활성화/비활성화
+                        if (insStripThicknessWidthSlider) insStripThicknessWidthSlider->setEnabled(pattern->stripFrontEnabled);
+                        if (insStripThicknessHeightSlider) insStripThicknessHeightSlider->setEnabled(pattern->stripFrontEnabled);
+                        if (insStripThicknessMinSpin) insStripThicknessMinSpin->setEnabled(pattern->stripFrontEnabled);
+                        if (insStripThicknessMaxSpin) insStripThicknessMaxSpin->setEnabled(pattern->stripFrontEnabled);
+                    }
+                    
+                    // REAR 두께 검사 활성화 상태 업데이트
+                    if (insStripRearEnabledCheck) {
+                        insStripRearEnabledCheck->blockSignals(true);
+                        insStripRearEnabledCheck->setChecked(pattern->stripRearEnabled);
+                        insStripRearEnabledCheck->blockSignals(false);
+                        
+                        // REAR 관련 위젯들 활성화/비활성화
+                        if (insStripRearThicknessWidthSlider) insStripRearThicknessWidthSlider->setEnabled(pattern->stripRearEnabled);
+                        if (insStripRearThicknessHeightSlider) insStripRearThicknessHeightSlider->setEnabled(pattern->stripRearEnabled);
+                        if (insStripRearThicknessMinSpin) insStripRearThicknessMinSpin->setEnabled(pattern->stripRearEnabled);
+                        if (insStripRearThicknessMaxSpin) insStripRearThicknessMaxSpin->setEnabled(pattern->stripRearEnabled);
+                    }
+                    
+                    // EDGE 검사 UI 업데이트
+                    if (insEdgeEnabledCheck) {
+                        insEdgeEnabledCheck->blockSignals(true);
+                        insEdgeEnabledCheck->setChecked(pattern->edgeEnabled);
+                        insEdgeEnabledCheck->blockSignals(false);
+                    }
+                    
+                    if (insEdgeOffsetXSlider) {
+                        // 패턴의 실제 너비 계산
+                        float patternWidth = abs(pattern->rect.width());
+                        
+                        insEdgeOffsetXSlider->blockSignals(true);
+                        insEdgeOffsetXSlider->setMaximum(patternWidth);
+                        insEdgeOffsetXSlider->setValue(pattern->edgeOffsetX);
+                        insEdgeOffsetXValueLabel->setText(QString::number(pattern->edgeOffsetX));
+                        insEdgeOffsetXSlider->blockSignals(false);
+                    }
+                    
+                    if (insEdgeWidthSlider) {
+                        // 패턴의 실제 너비 계산
+                        float patternWidth = abs(pattern->rect.width());
+                        
+                        insEdgeWidthSlider->blockSignals(true);
+                        insEdgeWidthSlider->setMaximum(patternWidth);
+                        insEdgeWidthSlider->setValue(pattern->edgeBoxWidth);
+                        insEdgeWidthValueLabel->setText(QString::number(pattern->edgeBoxWidth));
+                        insEdgeWidthSlider->blockSignals(false);
+                    }
+                    
+                    if (insEdgeHeightSlider) {
+                        // 패턴의 실제 높이 계산
+                        float patternHeight = abs(pattern->rect.height());
+                        
+                        insEdgeHeightSlider->blockSignals(true);
+                        insEdgeHeightSlider->setMaximum(patternHeight);
+                        insEdgeHeightSlider->setValue(pattern->edgeBoxHeight);
+                        insEdgeHeightValueLabel->setText(QString::number(pattern->edgeBoxHeight));
+                        insEdgeHeightSlider->blockSignals(false);
+                    }
+                    
+                    // insEdgeThresholdSpin 업데이트 코드 제거됨 (통계적 방법 사용)
+                    
+                    if (insEdgeMaxIrregularitiesSpin) {
+                        insEdgeMaxIrregularitiesSpin->blockSignals(true);
+                        insEdgeMaxIrregularitiesSpin->setValue(pattern->edgeMaxIrregularities);
+                        insEdgeMaxIrregularitiesSpin->blockSignals(false);
                     }
                     
                     if (insBinaryThreshSpin) {
@@ -8769,6 +9144,13 @@ void TeachingWidget::addPattern() {
             pattern.lowerThreshold = 0.5;
             pattern.upperThreshold = 1.0;
             pattern.ratioType = 0;
+            
+            // EDGE 검사 관련 기본값 설정
+            pattern.edgeEnabled = true;
+            pattern.edgeOffsetX = 90;
+            pattern.edgeBoxWidth = 150;
+            pattern.edgeBoxHeight = 150;
+            pattern.edgeMaxIrregularities = 5;
         }
         
         // 패턴 추가 및 ID 받기

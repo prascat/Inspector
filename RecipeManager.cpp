@@ -762,6 +762,13 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     // 패턴의 실제 회전 각도 저장 (사용자가 회전시킨 각도)
     xml.writeAttribute("patternAngle", QString::number(pattern.angle, 'f', 2));
     
+    // EDGE 검사 관련 속성 저장
+    xml.writeAttribute("edgeEnabled", pattern.edgeEnabled ? "true" : "false");
+    xml.writeAttribute("edgeOffsetX", QString::number(pattern.edgeOffsetX));
+    xml.writeAttribute("edgeBoxWidth", QString::number(pattern.edgeBoxWidth));
+    xml.writeAttribute("edgeBoxHeight", QString::number(pattern.edgeBoxHeight));
+    xml.writeAttribute("edgeMaxIrregularities", QString::number(pattern.edgeMaxIrregularities));
+    
     if (!pattern.templateImage.isNull()) {
         QByteArray ba;
         QBuffer buffer(&ba);
@@ -1331,6 +1338,35 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     if (!patternAngleStr.isEmpty()) {
         pattern.angle = patternAngleStr.toDouble();
     }
+    
+    // EDGE 검사 관련 속성 읽기 (기본값 사용)
+    QString edgeEnabledStr = xml.attributes().value("edgeEnabled").toString();
+    if (!edgeEnabledStr.isEmpty()) {
+        pattern.edgeEnabled = (edgeEnabledStr == "true");
+    } else {
+        // 기존 레시피에 edgeEnabled 속성이 없으면 명시적으로 기본값 설정
+        pattern.edgeEnabled = true;
+    }
+    
+    QString edgeOffsetXStr = xml.attributes().value("edgeOffsetX").toString();
+    if (!edgeOffsetXStr.isEmpty()) {
+        pattern.edgeOffsetX = edgeOffsetXStr.toInt();
+    } // 비어있으면 CommonDefs.h의 기본값(75) 사용
+    
+    QString edgeBoxWidthStr = xml.attributes().value("edgeBoxWidth").toString();
+    if (!edgeBoxWidthStr.isEmpty()) {
+        pattern.edgeBoxWidth = edgeBoxWidthStr.toInt();
+    } // 비어있으면 CommonDefs.h의 기본값(90) 사용
+    
+    QString edgeBoxHeightStr = xml.attributes().value("edgeBoxHeight").toString();
+    if (!edgeBoxHeightStr.isEmpty()) {
+        pattern.edgeBoxHeight = edgeBoxHeightStr.toInt();
+    } // 비어있으면 CommonDefs.h의 기본값(150) 사용
+    
+    QString edgeMaxIrregularitiesStr = xml.attributes().value("edgeMaxIrregularities").toString();
+    if (!edgeMaxIrregularitiesStr.isEmpty()) {
+        pattern.edgeMaxIrregularities = edgeMaxIrregularitiesStr.toInt();
+    } // 비어있으면 CommonDefs.h의 기본값(5) 사용
     
     QString imageStr = xml.attributes().value("templateImage").toString();
     qDebug() << QString("INS 패턴 '%1' templateImage 속성 길이: %2").arg(pattern.name).arg(imageStr.length());

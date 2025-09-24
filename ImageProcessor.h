@@ -89,7 +89,13 @@ public:
                                      int* rearMeasuredMinThickness = nullptr, int* rearMeasuredMaxThickness = nullptr,
                                      int* rearMeasuredAvgThickness = nullptr,
                                      cv::Point* frontBoxTopLeft = nullptr, cv::Point* rearBoxTopLeft = nullptr,
-                                     const cv::Rect& originalPatternRect = cv::Rect());
+                                     bool stripFrontEnabled = true, bool stripRearEnabled = true,
+                                     const cv::Rect& originalPatternRect = cv::Rect(),
+                                     bool edgeEnabled = false, int edgeOffsetX = 10, 
+                                     int edgeBoxWidth = 50, int edgeBoxHeight = 100,
+                                     int edgeMaxIrregularities = 5,
+                                     int* edgeIrregularityCount = nullptr, double* edgeMaxDeviation = nullptr,
+                                     cv::Point* edgeBoxTopLeft = nullptr, bool* edgePassed = nullptr);
 };
 
 #endif // IMAGEPROCESSOR_H

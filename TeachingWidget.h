@@ -378,6 +378,8 @@ private:
     QSpinBox* insStripMinPointsSpin = nullptr;
     
     // STRIP 두께 측정 관련 컨트롤
+    // FRONT 두께 측정 관련 위젯들
+    QCheckBox* insStripFrontEnabledCheck = nullptr;
     QLabel* insStripThicknessWidthLabel = nullptr;
     QSlider* insStripThicknessWidthSlider = nullptr;
     QLabel* insStripThicknessWidthValueLabel = nullptr;
@@ -390,6 +392,7 @@ private:
     QSpinBox* insStripThicknessMaxSpin = nullptr;
 
     // REAR 두께 측정 관련 위젯들
+    QCheckBox* insStripRearEnabledCheck = nullptr;
     QLabel* insStripRearThicknessWidthLabel = nullptr;
     QSlider* insStripRearThicknessWidthSlider = nullptr;
     QLabel* insStripRearThicknessWidthValueLabel = nullptr;
@@ -400,6 +403,21 @@ private:
     QSpinBox* insStripRearThicknessMinSpin = nullptr;
     QLabel* insStripRearThicknessMaxLabel = nullptr;
     QSpinBox* insStripRearThicknessMaxSpin = nullptr;
+
+    // EDGE 검사 관련 위젯들
+    QCheckBox* insEdgeEnabledCheck = nullptr;
+    QLabel* insEdgeOffsetXLabel = nullptr;
+    QSlider* insEdgeOffsetXSlider = nullptr;
+    QLabel* insEdgeOffsetXValueLabel = nullptr;
+    QLabel* insEdgeWidthLabel = nullptr;
+    QSlider* insEdgeWidthSlider = nullptr;
+    QLabel* insEdgeWidthValueLabel = nullptr;
+    QLabel* insEdgeHeightLabel = nullptr;
+    QSlider* insEdgeHeightSlider = nullptr;
+    QLabel* insEdgeHeightValueLabel = nullptr;
+    // insEdgeThresholdLabel과 insEdgeThresholdSpin 제거됨 (통계적 방법 사용)
+    QLabel* insEdgeMaxIrregularitiesLabel = nullptr;
+    QSpinBox* insEdgeMaxIrregularitiesSpin = nullptr;
 
     QLabel* fidAngleLabel = nullptr;
     QLabel* fidToLabel = nullptr;
