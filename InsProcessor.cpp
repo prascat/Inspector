@@ -2354,27 +2354,10 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         bool edgePassed = true;
         int edgeAverageX = 0;
                 
-        bool isPassed = ImageProcessor::performStripInspection(roiImage, templateImage, 
-                                                              pattern.passThreshold, score, 
-                                                              startPoint, maxGradientPoint, gradientPoints, resultImage, pattern.angle,
-                                                              &leftThickness, &rightThickness,
-                                                              pattern.stripMorphKernelSize,
-                                                              pattern.stripGradientThreshold, pattern.stripGradientStartPercent,
-                                                              pattern.stripGradientEndPercent, pattern.stripMinDataPoints,
-                                                              nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                                                              pattern.stripThicknessBoxWidth, pattern.stripThicknessMin, 
-                                                              pattern.stripThicknessMax, pattern.stripThicknessBoxHeight,
-                                                              &measuredMinThickness, &measuredMaxThickness, &measuredAvgThickness,
-                                                              pattern.stripRearThicknessBoxWidth, pattern.stripRearThicknessMin,
-                                                              pattern.stripRearThicknessMax, pattern.stripRearThicknessBoxHeight,
-                                                              &rearMeasuredMinThickness, &rearMeasuredMaxThickness, &rearMeasuredAvgThickness,
-                                                              &frontBoxTopLeft, &rearBoxTopLeft,
-                                                              pattern.stripFrontEnabled, pattern.stripRearEnabled,
-                                                              cv::Rect(pattern.rect.x(), pattern.rect.y(), pattern.rect.width(), pattern.rect.height()),
-                                                              pattern.edgeEnabled, pattern.edgeOffsetX, pattern.edgeBoxWidth, pattern.edgeBoxHeight,
-                                                              pattern.edgeMaxIrregularities,
-                                                              &edgeIrregularityCount, &edgeMaxDeviation, &edgeBoxTopLeft, &edgePassed,
-                                                              &edgeAverageX); // 원본 패턴 박스
+    // performStripInspection 호출을 간소화: PatternInfo 전체를 전달
+    bool isPassed = ImageProcessor::performStripInspection(roiImage, templateImage,
+                                  pattern,
+                                  score, startPoint, maxGradientPoint, gradientPoints, resultImage);
                                                               
         // 측정된 두께를 검사 결과에 저장 (FRONT + REAR)
         result.stripMeasuredThicknessMin[pattern.id] = measuredMinThickness;
@@ -2480,15 +2463,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                     cv::Point rotatedBottomMaxGrad;
                     rotatedBottomMaxGrad.x = static_cast<int>(relX3 * cosA - relY3 * sinA + centerPoint.x);
                     rotatedBottomMaxGrad.y = static_cast<int>(relX3 * sinA + relY3 * cosA + centerPoint.y);
-                    
-                    // 하단으로도 초록색 선 그리기 (주석 처리)
-                    // painter.setPen(QPen(QColor(0, 255, 0), 3)); // 동일한 초록색 선
-                    // painter.drawLine(rotatedStart.x, rotatedStart.y, 
-                    //                rotatedBottomMaxGrad.x, rotatedBottomMaxGrad.y);
-                    
-                    // 하단 max gradient 지점 표시 (주황색 점) - 제거
-                    // painter.setPen(QPen(QColor(0, 128, 255), 4));
-                    // painter.drawPoint(rotatedBottomMaxGrad.x, rotatedBottomMaxGrad.y);
+
                 }
                 
                 // 중간 지점에 길이 표시 (실제 거리 계산)

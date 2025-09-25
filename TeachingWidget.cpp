@@ -1639,11 +1639,12 @@ void TeachingWidget::connectEvents() {
                 
                 if (insEdgeWidthSlider) {
                     insEdgeWidthSlider->blockSignals(true);
-                    insEdgeWidthSlider->setMaximum(patternWidth);
-                    if (insEdgeWidthSlider->value() > patternWidth) {
-                        insEdgeWidthSlider->setValue(patternWidth);
-                        pattern->edgeBoxWidth = patternWidth;
-                        insEdgeWidthValueLabel->setText(QString::number(patternWidth));
+                    int maxEdgeWidth = patternWidth / 3;  // INS 패턴 너비의 1/3로 제한
+                    insEdgeWidthSlider->setMaximum(maxEdgeWidth);
+                    if (insEdgeWidthSlider->value() > maxEdgeWidth) {
+                        insEdgeWidthSlider->setValue(maxEdgeWidth);
+                        pattern->edgeBoxWidth = maxEdgeWidth;
+                        insEdgeWidthValueLabel->setText(QString::number(maxEdgeWidth));
                     }
                     insEdgeWidthSlider->blockSignals(false);
                 }
@@ -3682,11 +3683,7 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
     // 8. 패턴의 템플릿 이미지 업데이트
     pattern->templateImage = qimg.copy();
     
-    qDebug() << QString("FID 패턴 '%1' 템플릿 이미지 설정: 크기=%2x%3, null=%4")
-                .arg(pattern->name)
-                .arg(pattern->templateImage.width())
-                .arg(pattern->templateImage.height())
-                .arg(pattern->templateImage.isNull());
+    // 디버그 메시지 제거: FID 템플릿 정보 출력은 더 이상 필요하지 않음
 
     // UI 업데이트
     if (insTemplateImg) {
@@ -5338,9 +5335,10 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                     if (insEdgeWidthSlider) {
                         // 패턴의 실제 너비 계산
                         float patternWidth = abs(pattern->rect.width());
+                        int maxEdgeWidth = patternWidth / 3;  // INS 패턴 너비의 1/3로 제한
                         
                         insEdgeWidthSlider->blockSignals(true);
-                        insEdgeWidthSlider->setMaximum(patternWidth);
+                        insEdgeWidthSlider->setMaximum(maxEdgeWidth);
                         insEdgeWidthSlider->setValue(pattern->edgeBoxWidth);
                         insEdgeWidthValueLabel->setText(QString::number(pattern->edgeBoxWidth));
                         insEdgeWidthSlider->blockSignals(false);

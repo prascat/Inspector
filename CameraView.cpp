@@ -2030,124 +2030,6 @@ void CameraView::drawInspectionResultsVector(QPainter& painter, const Inspection
                 
                 painter.restore();
             }
-            
-            // EDGE 박스 텍스트
-            if (result.edgeBoxTopLeft.contains(patternId) && result.edgeMeasured.value(patternId, false)) {
-                cv::Point edgeTopLeft = result.edgeBoxTopLeft.value(patternId);
-                
-                // INS 패턴 내부 상대좌표로 변환 후 절대좌표 계산
-                QRectF inspRectOriginal;
-                if (result.adjustedRects.contains(patternId)) {
-                    inspRectOriginal = result.adjustedRects[patternId];
-                } else {
-                    inspRectOriginal = pattern->rect;
-                }
-                
-                // ROI 정사각형 좌표를 패턴 절대 좌표로 변환
-                int patternCenterX = inspRectOriginal.x() + inspRectOriginal.width()/2;
-                int patternCenterY = inspRectOriginal.y() + inspRectOriginal.height()/2;
-                
-                // 정사각형 크기 계산 (extractROI와 동일한 로직)
-                double angleRad = std::abs(0.0) * M_PI / 180.0; // 현재 각도 0도 가정
-                double rotatedWidth = std::abs(inspRectOriginal.width() * std::cos(angleRad)) + std::abs(inspRectOriginal.height() * std::sin(angleRad));
-                double rotatedHeight = std::abs(inspRectOriginal.width() * std::sin(angleRad)) + std::abs(inspRectOriginal.height() * std::cos(angleRad));
-                int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
-                int squareCenterX = maxSize / 2;
-                int squareCenterY = maxSize / 2;
-                
-                // 정사각형 좌표를 패턴 좌표로 변환
-                int absoluteX = patternCenterX + (edgeTopLeft.x - squareCenterX);
-                int absoluteY = patternCenterY + (edgeTopLeft.y - squareCenterY);
-                
-                // 패턴 정보 가져오기 (박스 높이 정보 필요)
-                PatternInfo* pattern = getPatternById(patternId);
-                if (!pattern) return;
-                
-                // 검사 전 시각화와 동일한 방식: 화면 좌표로 변환 후 각도 적용
-                QPoint edgeBoxCenter = originalToDisplay(QPoint(absoluteX + pattern->edgeBoxWidth/2, 
-                                                               absoluteY + pattern->edgeBoxHeight/2));
-                
-                int irregularityCount = result.edgeIrregularityCount.value(patternId, 0);
-                double maxDeviation = result.edgeMaxDeviation.value(patternId, 0.0);
-                bool edgePassed = result.edgeResults.value(patternId, false);
-                
-                QString edgeLabel = "EDGE";
-                QString edgeResult = QString("%1/%2").arg(irregularityCount).arg(pattern->edgeMaxIrregularities);
-                
-                // 패턴 이름과 동일한 스타일로 텍스트 배경 그리기
-                QFont textFont("Arial", 10, QFont::Bold);
-                painter.setFont(textFont);
-                QFontMetrics fm(textFont);
-                
-                // 라벨과 결과를 한 줄로 표시 (콜론 추가)
-                QString fullText = edgeLabel + ":" + edgeResult;
-                int textWidth = fm.horizontalAdvance(fullText);
-                int textHeight = fm.height();
-                
-                // 패턴 각도 적용한 회전 텍스트 (왼쪽 정렬) - EDGE 박스 크기 기준
-                painter.save();
-                painter.translate(edgeBoxCenter);
-                painter.rotate(insAngle); // INS 패턴 각도 적용
-                
-                // EDGE 박스의 실제 화면 크기 계산 (확대 비율 적용)
-                int displayBoxWidth = qRound(pattern->edgeBoxWidth * zoomFactor);
-                int displayBoxHeight = qRound(pattern->edgeBoxHeight * zoomFactor);
-                
-                // EDGE 박스 위쪽 중심에 텍스트 위치 (가로는 중심, 세로는 위쪽)
-                QRect edgeTextRect(-textWidth/2 - 3, -displayBoxHeight/2 - textHeight - 2, textWidth + 6, textHeight);
-                painter.fillRect(edgeTextRect, QColor(255, 128, 0));
-                
-                // 검은색 텍스트 (중앙 정렬)
-                painter.setPen(Qt::black);
-                painter.drawText(edgeTextRect, Qt::AlignCenter | Qt::AlignVCenter, fullText);
-                
-                painter.restore();
-                
-                // EDGE 검사 평균 수직선 그리기 (진한 그린색, 회전 적용)
-                if (result.edgeAverageX.contains(patternId)) {
-                    int averageX = result.edgeAverageX.value(patternId);
-                    
-                    // 패턴 내부 상대좌표를 절대좌표로 변환
-                    int patternCenterX = inspRectOriginal.x() + inspRectOriginal.width()/2;
-                    int patternCenterY = inspRectOriginal.y() + inspRectOriginal.height()/2;
-                    
-                    // 정사각형 크기 계산 (extractROI와 동일한 로직)
-                    double angleRad = std::abs(0.0) * M_PI / 180.0; // 현재 각도 0도 가정
-                    double rotatedWidth = std::abs(inspRectOriginal.width() * std::cos(angleRad)) + std::abs(inspRectOriginal.height() * std::sin(angleRad));
-                    double rotatedHeight = std::abs(inspRectOriginal.width() * std::sin(angleRad)) + std::abs(inspRectOriginal.height() * std::cos(angleRad));
-                    int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
-                    int squareCenterX = maxSize / 2;
-                    int squareCenterY = maxSize / 2;
-                    
-                    // 정사각형 좌표를 패턴 좌표로 변환
-                    int absoluteX = patternCenterX + (averageX - squareCenterX);
-                    
-                    // 수직선의 위아래 좌표 계산 (EDGE 박스 영역 내에서)
-                    int lineTopY = inspRectOriginal.y();
-                    int lineBottomY = inspRectOriginal.y() + inspRectOriginal.height();
-                    
-                    // 화면 좌표로 변환
-                    QPoint topPoint = originalToDisplay(QPoint(absoluteX, lineTopY));
-                    QPoint bottomPoint = originalToDisplay(QPoint(absoluteX, lineBottomY));
-                    
-                    // 패턴 각도 적용한 회전된 수직선 그리기
-                    painter.save();
-                    QPoint patternDisplayCenter = originalToDisplay(QPoint(patternCenterX, patternCenterY));
-                    painter.translate(patternDisplayCenter);
-                    painter.rotate(insAngle); // INS 패턴 각도 적용
-                    
-                    // 패턴 중심 기준 상대 좌표로 변환
-                    QPoint relativeTop = topPoint - patternDisplayCenter;
-                    QPoint relativeBottom = bottomPoint - patternDisplayCenter;
-                    
-                    // 진한 그린색 실선으로 평균 수직선 그리기
-                    QPen averagePen(QColor(0, 150, 0), 2);  // 진한 그린색
-                    painter.setPen(averagePen);
-                    painter.drawLine(relativeTop, relativeBottom);
-                    
-                    painter.restore();
-                }
-            }
         }
     }
     
@@ -2655,8 +2537,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         
                         painter.restore();
                         
-                        // 두께 범위 텍스트는 라벨로 이동되어 제거됨
-                        } // FRONT 검사박스 그리기 끝 (!isInspectionMode)
+                        } 
                     }
                     
                     // EDGE 검사 박스 그리기 (INS 패턴의 STRIP 검사에서만, 검사전 모드에서만)

@@ -69,34 +69,12 @@ public:
     static cv::Point findMaxThicknessGradientPosition(const std::vector<cv::Point>& positions, 
                                                      const std::vector<float>& thicknesses, 
                                                      float& maxGradientValue, std::vector<float>& gradients);
-    static bool performStripInspection(const cv::Mat& roiImage, const cv::Mat& templateImage, 
-                                     double passThreshold, double& score, cv::Point& startPoint, 
-                                     cv::Point& maxGradientPoint, std::vector<cv::Point>& gradientPoints, 
-                                     cv::Mat& resultImage, double angle = 0.0, 
-                                     int* leftThickness = nullptr, int* rightThickness = nullptr,
-                                     int morphKernelSize = 3, 
-                                     float gradientThreshold = 3.0f, int gradientStartPercent = 20,
-                                     int gradientEndPercent = 80, int minDataPoints = 5,
-                                     double* neckAvgWidth = nullptr, double* neckMinWidth = nullptr,
-                                     double* neckMaxWidth = nullptr, double* neckStdDev = nullptr,
-                                     int* neckMeasureX = nullptr, int* neckMeasureCount = nullptr,
-                                     int thicknessBoxWidth = 50, int thicknessMin = 10, 
-                                     int thicknessMax = 100, int thicknessBoxHeight = 30,
-                                     int* measuredMinThickness = nullptr, int* measuredMaxThickness = nullptr,
-                                     int* measuredAvgThickness = nullptr,
-                                     int rearThicknessBoxWidth = 50, int rearThicknessMin = 10,
-                                     int rearThicknessMax = 100, int rearThicknessBoxHeight = 30,
-                                     int* rearMeasuredMinThickness = nullptr, int* rearMeasuredMaxThickness = nullptr,
-                                     int* rearMeasuredAvgThickness = nullptr,
-                                     cv::Point* frontBoxTopLeft = nullptr, cv::Point* rearBoxTopLeft = nullptr,
-                                     bool stripFrontEnabled = true, bool stripRearEnabled = true,
-                                     const cv::Rect& originalPatternRect = cv::Rect(),
-                                     bool edgeEnabled = false, int edgeOffsetX = 10, 
-                                     int edgeBoxWidth = 50, int edgeBoxHeight = 100,
-                                     int edgeMaxIrregularities = 5,
-                                     int* edgeIrregularityCount = nullptr, double* edgeMaxDeviation = nullptr,
-                                     cv::Point* edgeBoxTopLeft = nullptr, bool* edgePassed = nullptr,
-                                     int* edgeAverageX = nullptr);
+    // 간소화된 시그니처: 패턴 정보 하나만 넘기면 내부에서 필요한 파라미터를 참조합니다.
+    static bool performStripInspection(const cv::Mat& roiImage, const cv::Mat& templateImage,
+                                     const PatternInfo& pattern,
+                                     double& score, cv::Point& startPoint,
+                                     cv::Point& maxGradientPoint, std::vector<cv::Point>& gradientPoints,
+                                     cv::Mat& resultImage);
 };
 
 #endif // IMAGEPROCESSOR_H
