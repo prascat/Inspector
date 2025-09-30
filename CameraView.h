@@ -339,7 +339,7 @@ private:
     bool m_inspectionMode = false;
     QVector<bool> m_patternResults;
 
-    void drawInspectionResultsVector(QPainter& painter, const InspectionResult& result);
+    void drawInspectionResults(QPainter& painter, const InspectionResult& result);
     
     // 그룹 바운딩 박스 그리기 함수
     void drawGroupBoundingBox(QPainter& painter, const QList<PatternInfo>& groupPatterns);

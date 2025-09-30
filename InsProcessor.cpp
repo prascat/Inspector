@@ -2360,13 +2360,44 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                                   score, startPoint, maxGradientPoint, gradientPoints, resultImage);
     
     // ROI 좌표를 원본 이미지 좌표로 변환
+    cv::Point2f patternCenter(pattern.rect.x() + pattern.rect.width()/2.0f, 
+                            pattern.rect.y() + pattern.rect.height()/2.0f);
+    cv::Point2f roiCenter(roiImage.cols / 2.0f, roiImage.rows / 2.0f);
+    cv::Point2f offset = patternCenter - roiCenter;
+    
+    // STRIP 4개 포인트 하드코딩 테스트 (로그에서 나온 ROI 상대좌표)
+    cv::Point roiPoint1(602, 341);  // Point 1: (602, 341)
+    cv::Point roiPoint2(602, 425);  // Point 2: (602, 425) 
+    cv::Point roiPoint3(622, 304);  // Point 3: (622, 304)
+    cv::Point roiPoint4(622, 457);  // Point 4: (622, 457)
+    
+    // 절대좌표로 변환
+    QPoint absPoint1(roiPoint1.x + static_cast<int>(offset.x), roiPoint1.y + static_cast<int>(offset.y));
+    QPoint absPoint2(roiPoint2.x + static_cast<int>(offset.x), roiPoint2.y + static_cast<int>(offset.y));
+    QPoint absPoint3(roiPoint3.x + static_cast<int>(offset.x), roiPoint3.y + static_cast<int>(offset.y));
+    QPoint absPoint4(roiPoint4.x + static_cast<int>(offset.x), roiPoint4.y + static_cast<int>(offset.y));
+    
+    // InspectionResult에 저장
+    result.stripPoint1[pattern.id] = absPoint1;
+    result.stripPoint2[pattern.id] = absPoint2;
+    result.stripPoint3[pattern.id] = absPoint3;
+    result.stripPoint4[pattern.id] = absPoint4;
+    result.stripPointsValid[pattern.id] = true;
+    
+    // 기울기 계산 (Point 1-3, Point 2-4)
+    double slope13 = static_cast<double>(absPoint3.y() - absPoint1.y()) / static_cast<double>(absPoint3.x() - absPoint1.x());
+    double slope24 = static_cast<double>(absPoint4.y() - absPoint2.y()) / static_cast<double>(absPoint4.x() - absPoint2.x());
+    result.stripSlope13[pattern.id] = slope13;
+    result.stripSlope24[pattern.id] = slope24;
+    
+    qDebug() << "=== STRIP 4점 좌표 변환 ===";
+    qDebug() << "패턴 중심:" << QPointF(patternCenter.x, patternCenter.y);
+    qDebug() << "ROI 중심:" << QPointF(roiCenter.x, roiCenter.y); 
+    qDebug() << "오프셋:" << QPointF(offset.x, offset.y);
+    qDebug() << "변환된 절대좌표 - P1:" << absPoint1 << "P2:" << absPoint2 << "P3:" << absPoint3 << "P4:" << absPoint4;
+    qDebug() << "기울기 - S13:" << slope13 << "S24:" << slope24;
+    
     if (isPassed) {
-        // 패턴 중심과 ROI 중심 간의 오프셋 계산
-        cv::Point2f patternCenter(pattern.rect.x() + pattern.rect.width()/2.0f, 
-                                pattern.rect.y() + pattern.rect.height()/2.0f);
-        cv::Point2f roiCenter(roiImage.cols / 2.0f, roiImage.rows / 2.0f);
-        cv::Point2f offset = patternCenter - roiCenter;
-        
         // 좌표 변환 적용
         startPoint.x += static_cast<int>(offset.x);
         startPoint.y += static_cast<int>(offset.y);
@@ -2391,7 +2422,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         result.stripRearThicknessMeasured[pattern.id] = (rearMeasuredAvgThickness > 0);
         
         // 박스 위치를 패턴 중심 기준 상대좌표로 저장
-        QPointF patternCenter = pattern.rect.center();
+        QPointF patternCenterForBox = pattern.rect.center();
         
         // FRONT 박스 상대좌표 계산 (패턴 왼쪽 끝에서부터의 퍼센트 위치)
         float startPercent = pattern.stripGradientStartPercent / 100.0f;

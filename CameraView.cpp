@@ -1461,7 +1461,7 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult& res
     update();
 }
 
-void CameraView::drawInspectionResultsVector(QPainter& painter, const InspectionResult& result) {
+void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult& result) {
     // 티칭 모드와 동일한 폰트 및 스타일 설정
     QFont standardFont("Arial", 10);
     standardFont.setBold(true);
@@ -2275,6 +2275,105 @@ void CameraView::drawInspectionResultsVector(QPainter& painter, const Inspection
             drawGroupBoundingBox(painter, groupPatterns);
         }
     }
+    
+    // STRIP 4개 포인트 Qt 렌더링 (OpenCV와 별도)
+    for (auto it = result.stripPointsValid.begin(); it != result.stripPointsValid.end(); ++it) {
+        QUuid patternId = it.key();
+        bool hasValidPoints = it.value();
+        
+        if (!hasValidPoints) continue;
+        
+        // 선택된 패턴 필터링
+        if (hasSelectedPattern && patternId != selectedInspectionPatternId) {
+            continue;
+        }
+        
+        // 패턴 정보 확인
+        const PatternInfo* patternInfo = nullptr;
+        for (const PatternInfo& pattern : patterns) {
+            if (pattern.id == patternId) {
+                patternInfo = &pattern;
+                break;
+            }
+        }
+        
+        if (!patternInfo || patternInfo->type != PatternType::INS) continue;
+        
+        // 현재 카메라에 해당하는 패턴인지 확인
+        bool patternVisible = false;
+        if (!currentCameraUuid.isEmpty()) {
+            patternVisible = (patternInfo->cameraUuid == currentCameraUuid || 
+                            patternInfo->cameraUuid.isEmpty());
+        } else {
+            patternVisible = false;
+        }
+        
+        if (!patternVisible) continue;
+        
+        // 4개 포인트 가져오기
+        QPoint point1 = result.stripPoint1.value(patternId, QPoint());
+        QPoint point2 = result.stripPoint2.value(patternId, QPoint());
+        QPoint point3 = result.stripPoint3.value(patternId, QPoint());
+        QPoint point4 = result.stripPoint4.value(patternId, QPoint());
+        
+        // 화면 좌표로 변환
+        QPoint displayPoint1 = originalToDisplay(point1);
+        QPoint displayPoint2 = originalToDisplay(point2);
+        QPoint displayPoint3 = originalToDisplay(point3);
+        QPoint displayPoint4 = originalToDisplay(point4);
+        
+        painter.save();
+        
+        // 4개 포인트 그리기 (컨투어 엣지 포인트) - OpenCV와 동일한 색상
+        int pointRadius = 8;
+        
+        // Point 1 - Red
+        painter.setPen(QPen(Qt::red, 3));
+        painter.setBrush(QBrush(Qt::red));
+        painter.drawEllipse(displayPoint1, pointRadius, pointRadius);
+        painter.setPen(QPen(Qt::white, 2));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(displayPoint1, pointRadius+2, pointRadius+2);
+        painter.setPen(QPen(Qt::red, 2));
+        painter.drawText(displayPoint1 + QPoint(12, -10), "Q1");
+        
+        // Point 2 - Green  
+        painter.setPen(QPen(Qt::green, 3));
+        painter.setBrush(QBrush(Qt::green));
+        painter.drawEllipse(displayPoint2, pointRadius, pointRadius);
+        painter.setPen(QPen(Qt::white, 2));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(displayPoint2, pointRadius+2, pointRadius+2);
+        painter.setPen(QPen(Qt::green, 2));
+        painter.drawText(displayPoint2 + QPoint(12, 20), "Q2");
+        
+        // Point 3 - Blue
+        painter.setPen(QPen(Qt::blue, 3));
+        painter.setBrush(QBrush(Qt::blue));
+        painter.drawEllipse(displayPoint3, pointRadius, pointRadius);
+        painter.setPen(QPen(Qt::white, 2));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(displayPoint3, pointRadius+2, pointRadius+2);
+        painter.setPen(QPen(Qt::blue, 2));
+        painter.drawText(displayPoint3 + QPoint(12, -10), "Q3");
+        
+        // Point 4 - Cyan
+        painter.setPen(QPen(Qt::cyan, 3));
+        painter.setBrush(QBrush(Qt::cyan));
+        painter.drawEllipse(displayPoint4, pointRadius, pointRadius);
+        painter.setPen(QPen(Qt::white, 2));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(displayPoint4, pointRadius+2, pointRadius+2);
+        painter.setPen(QPen(Qt::cyan, 2));
+        painter.drawText(displayPoint4 + QPoint(12, 20), "Q4");
+        
+        // 기울기선 그리기 (1-3, 2-4)
+        painter.setPen(QPen(Qt::yellow, 2, Qt::DashLine));
+        painter.drawLine(displayPoint1, displayPoint3);
+        painter.drawLine(displayPoint2, displayPoint4);
+        
+        painter.restore();
+    }
 }
 
 void CameraView::paintEvent(QPaintEvent *event) {
@@ -2462,7 +2561,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         painter.drawText(endTextRect, Qt::AlignCenter, endText);
                         painter.restore();
                         
-                        // 검사박스는 검사전 모드에서만 표시 (검사후에는 drawInspectionResultsVector에서 표시)
+                        // 검사박스는 검사전 모드에서만 표시 (검사후에는 drawInspectionResults에서 표시)
                         if (!isInspectionMode) {
                             // REAR 검사 영역 사각형 (80% 지점, FRONT와 같은 회전 방식)
                             // gradient end 지점의 중심점 계산 (패턴 각도에 따른 실제 80% 위치)
@@ -2535,7 +2634,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         
                         } // REAR 검사박스 그리기 끝 (!isInspectionMode)
                         
-                        // FRONT 검사박스는 검사전 모드에서만 표시 (검사후에는 drawInspectionResultsVector에서 표시)
+                        // FRONT 검사박스는 검사전 모드에서만 표시 (검사후에는 drawInspectionResults에서 표시)
                         if (!isInspectionMode) {
                             // 두께 범위 점선 사각형 그리기 (gradient 시작 선의 중앙에서)
                             // 패턴 각도를 반영한 실제 좌표 계산
@@ -2992,7 +3091,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         Qt::AlignLeft | Qt::AlignVCenter, cameraIdText);
 
         if (isInspectionMode && hasInspectionResult) {
-            drawInspectionResultsVector(painter, lastInspectionResult);
+            drawInspectionResults(painter, lastInspectionResult);
         }
     }
     

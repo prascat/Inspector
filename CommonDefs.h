@@ -83,6 +83,15 @@ struct InspectionResult {
     QMap<QUuid, bool> edgeMeasured;                 // EDGE 측정 완료 여부 (패턴 ID -> 측정 여부)
     QMap<QUuid, std::vector<cv::Point>> edgePoints; // 절단면 포인트들 (패턴 ID -> 포인트 배열)
     QMap<QUuid, int> edgeAverageX;                  // 절단면 평균 X 위치 (패턴 ID -> X 좌표)
+    
+    // STRIP 4개 컨투어 포인트 (절대좌표)
+    QMap<QUuid, QPoint> stripPoint1;               // STRIP Point 1 (패턴 ID -> 절대좌표)
+    QMap<QUuid, QPoint> stripPoint2;               // STRIP Point 2 (패턴 ID -> 절대좌표)
+    QMap<QUuid, QPoint> stripPoint3;               // STRIP Point 3 (패턴 ID -> 절대좌표)
+    QMap<QUuid, QPoint> stripPoint4;               // STRIP Point 4 (패턴 ID -> 절대좌표)
+    QMap<QUuid, bool> stripPointsValid;            // 4개 포인트 유효성 (패턴 ID -> 유효 여부)
+    QMap<QUuid, double> stripSlope13;              // Point 1-3 기울기 (패턴 ID -> 기울기)
+    QMap<QUuid, double> stripSlope24;              // Point 2-4 기울기 (패턴 ID -> 기울기)
 };
 
 // 패턴 유형 열거형
