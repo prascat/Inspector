@@ -5663,13 +5663,8 @@ void TeachingWidget::detectCameras() {
             info.isConnected = true;
             info.name = QString("카메라 %1").arg(i + 1);
             
-            // 카메라 연결 시 시뮬레이션 모드 해제
-            if (camOff) {
-                camOff = false;
-                // 시뮬레이션 이미지 초기화 - cameraFrames 클리어
-                
-                // 카메라뷰의 시뮬레이션 상태도 초기화
-            }
+            // 카메라 연결되어도 camOff 상태는 사용자가 명시적으로 켜기 전까지 유지
+            // camOff 상태와 카메라 연결은 독립적
             
             // 상세 정보 업데이트
             updateCameraDetailInfo(info);
@@ -8812,10 +8807,8 @@ bool TeachingWidget::connectSpinnakerCamera(int index, CameraInfo& info)
         // **중요**: startCamera()에서 capture 체크를 하므로 더미 capture 생성
         info.capture = new cv::VideoCapture();
         
-        // 카메라 연결 시 시뮬레이션 모드 해제
-        if (camOff) {
-            camOff = false;
-        }
+        // 카메라 연결되어도 camOff 상태는 사용자가 명시적으로 켜기 전까지 유지
+        // camOff 상태와 카메라 연결은 독립적
         
         return true;
     }
