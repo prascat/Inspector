@@ -692,9 +692,16 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
     int rearThicknessMin = pattern.stripRearThicknessMin;
     int rearThicknessMax = pattern.stripRearThicknessMax;
 
-    // 원본 패턴 영역(Rect)
-    cv::Rect originalPatternRect(static_cast<int>(pattern.rect.x()), static_cast<int>(pattern.rect.y()),
-                     static_cast<int>(pattern.rect.width()), static_cast<int>(pattern.rect.height()));
+    // ROI 내부 패턴 영역 (ROI 중앙에 위치)
+    cv::Rect roiPatternRect(
+        static_cast<int>(roiImage.cols/2 - pattern.rect.width()/2),   // ROI 중앙 - 패턴폭/2  
+        static_cast<int>(roiImage.rows/2 - pattern.rect.height()/2),  // ROI 중앙 - 패턴높이/2
+        static_cast<int>(pattern.rect.width()), 
+        static_cast<int>(pattern.rect.height())
+    );
+    
+    std::cout << "ROI 내부 패턴 영역: (" << roiPatternRect.x << "," << roiPatternRect.y 
+              << ") 크기: " << roiPatternRect.width << "x" << roiPatternRect.height << std::endl;
 
     // 이전 시그니처에서 사용하던 out-parameter 포인터들 (헤더에서 제거됨)
     // 컴파일을 위해 nullptr로 선언해 기존 if(ptr) 체크가 동작하도록 함
@@ -930,15 +937,15 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         }
         
         // 3. 상단과 하단 각각의 의미있는 gradient 계산 (원본 패턴 크기 기준)
-        auto calculateMeaningfulGradients = [gradientThreshold, gradientStartPercent, gradientEndPercent, minDataPoints, &originalPatternRect]
+        auto calculateMeaningfulGradients = [gradientThreshold, gradientStartPercent, gradientEndPercent, minDataPoints, &roiPatternRect]
             (const std::vector<float>& thicknesses, const std::vector<cv::Point>& positions) -> std::vector<float> {
             std::vector<float> gradients(thicknesses.size(), 0.0f);
             
             if (thicknesses.size() < static_cast<size_t>(minDataPoints)) return gradients; // 파라미터로 받은 최소 개수
             
             // 원본 패턴 크기 기준으로 start/end X 좌표 계산
-            int patternStartX = originalPatternRect.x;
-            int patternWidth = originalPatternRect.width;
+            int patternStartX = roiPatternRect.x;
+            int patternWidth = roiPatternRect.width;
             int gradientStartX = patternStartX + (patternWidth * gradientStartPercent / 100);
             int gradientEndX = patternStartX + (patternWidth * gradientEndPercent / 100);
             
@@ -1054,7 +1061,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         int neckMeasureXPos = 0;
         
         // 20% X 지점 계산 - 원본 패턴 박스 기준
-        int measureX = originalPatternRect.x + (originalPatternRect.width * gradientStartPercent / 100);
+        int measureX = roiPatternRect.x + (roiPatternRect.width * gradientStartPercent / 100);
         
         // measureX 경계 체크 및 보정
         if (measureX < 0) measureX = 0;
@@ -1074,14 +1081,14 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                   << ") 세로(" << verticalVec.x << "," << verticalVec.y << ")" << std::endl;
         
         // 20% X 지점부터 width만큼 X를 이동하면서 각 X 위치에서 Y축 방향 검은색 픽셀 개수 측정
-        for (int x = measureX; x < originalPatternRect.x + originalPatternRect.width; x++) {
+        for (int x = measureX; x < roiPatternRect.x + roiPatternRect.width; x++) {
             // 현재 X 위치에서 Y축 방향으로 검은색 픽셀 개수 세기
             int blackPixelCount = 0;
-            cv::Point2f startPos(x, originalPatternRect.y);
+            cv::Point2f startPos(x, roiPatternRect.y);
             cv::Point2f actualStartPos = startPos;
             
             // 위에서 아래로 Y축 스캔하면서 연속된 검은색 픽셀 개수 카운트
-            for (int y = originalPatternRect.y; y < originalPatternRect.y + originalPatternRect.height; y++) {
+            for (int y = roiPatternRect.y; y < roiPatternRect.y + roiPatternRect.height; y++) {
                 
                 // 경계 체크
                 if (x < 0 || x >= blackRegions.cols || y < 0 || y >= blackRegions.rows) break;
@@ -1724,29 +1731,27 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         std::cout << "hasMinimumFeatures: " << (hasMinimumFeatures ? "true" : "false") << std::endl;
         std::cout << "최종 판정: " << (isPassed ? "PASS" : "FAIL") << std::endl;
         
-        // STRIP 두께 측정 - 검은색 픽셀 기반 (검출된 boundRect 기준 고정 위치)
+        // STRIP 두께 측정을 위한 공통 변수 정의
+        cv::Point roiPatternCenter(roiImage.cols / 2, roiImage.rows / 2);
+        float patternWidth = static_cast<float>(roiPatternRect.width);
+        // angleRad는 이미 위에서 정의됨 (1073줄)
+        
+        // STRIP 두께 측정 - FRONT 지점
         if (!topPositions.empty() && !bottomPositions.empty() && stripFrontEnabled) {
-            // 검출된 boundRect 기준으로 두께 측정 위치 계산 (고정)
             float startPercent = gradientStartPercent / 100.0f;
-            double angleRad = angle * CV_PI / 180.0;
             
-            // 검출된 boundRect의 중심점과 크기
-            cv::Point boundRectCenter(boundRect.x + boundRect.width / 2, 
-                                     boundRect.y + boundRect.height / 2);
-            int boundRectWidth = boundRect.width;
+            // gradient 시작점까지의 거리 (패턴 왼쪽 끝에서 startPercent만큼)
+            float gradientStartX = roiPatternCenter.x - (patternWidth/2) + (startPercent * patternWidth);
             
-            // gradient 시작점까지의 거리 (boundRect 왼쪽 끝에서 startPercent만큼)
-            float gradientStartX = boundRect.x + (startPercent * boundRectWidth);
-            
-            // 각도 적용한 실제 gradient 시작점 중앙 계산 (boundRect 중심 기준으로 회전)
-            float localX = gradientStartX - boundRectCenter.x;  // boundRect 중심 기준 상대 좌표
+            // 각도 적용한 실제 gradient 시작점 중앙 계산 (패턴 중심 기준으로 회전)
+            float localX = gradientStartX - roiPatternCenter.x;  // 패턴 중심 기준 상대 좌표
             float localY = 0;  // Y는 boundRect 중심선 기준
             
-            int boxCenterX = boundRectCenter.x + static_cast<int>(localX * cos(angleRad) - localY * sin(angleRad));
-            int boxCenterY = boundRectCenter.y + static_cast<int>(localX * sin(angleRad) + localY * cos(angleRad));
+            int boxCenterX = roiPatternCenter.x + static_cast<int>(localX * cos(angleRad) - localY * sin(angleRad));
+            int boxCenterY = roiPatternCenter.y + static_cast<int>(localX * sin(angleRad) + localY * cos(angleRad));
             
-            std::cout << "boundRect 기준 두께 측정 위치: (" << boxCenterX << ", " << boxCenterY << ")" << std::endl;
-            std::cout << "boundRect 중심: (" << boundRectCenter.x << ", " << boundRectCenter.y << ")" << std::endl;
+            std::cout << "패턴 중심 기준 두께 측정 위치: (" << boxCenterX << ", " << boxCenterY << ")" << std::endl;
+            std::cout << "ROI 패턴 중심: (" << roiPatternCenter.x << ", " << roiPatternCenter.y << ")" << std::endl;
             std::cout << "패턴 각도: " << angle << "도, startPercent: " << gradientStartPercent << "%" << std::endl;
             std::cout << "두께 측정 영역 크기: " << thicknessBoxWidth << " x " << thicknessBoxHeight << "px" << std::endl;
             
@@ -2000,25 +2005,23 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         if (stripRearEnabled) {
         std::cout << "\n=== REAR 두께 측정 시작 (END 지점 " << gradientEndPercent << "%) ===\n";
         
-        // REAR 구간에서 사용할 변수들 재정의 (FRONT 구간과 같은 값들)
-        cv::Point boundRectCenter_rear(boundRect.x + boundRect.width / 2, 
-                                      boundRect.y + boundRect.height / 2);
-        int boundRectWidth_rear = boundRect.width;
+        // REAR 구간에서 사용할 변수들 (패턴 중심 기준)
+        cv::Point roiPatternCenter_rear = roiPatternCenter;  // 동일한 패턴 중심 사용
         double cosA_rear = cos(angleRad);
         double sinA_rear = sin(angleRad);
         
-        // END 지점(80%) 기준으로 두께 측정 위치 계산
+        // END 지점 기준으로 두께 측정 위치 계산
         float endPercent = gradientEndPercent / 100.0f;
         
-        // gradient 끝점까지의 거리 (boundRect 왼쪽 끝에서 endPercent만큼)
-        float gradientEndX_rear = boundRect.x + (endPercent * boundRectWidth_rear);
+        // gradient 끝점까지의 거리 (패턴 왼쪽 끝에서 endPercent만큼)
+        float gradientEndX_rear = roiPatternCenter_rear.x - (patternWidth/2) + (endPercent * patternWidth);
         
-        // 각도 적용한 실제 gradient 끝점 중앙 계산 (boundRect 중심 기준으로 회전)
-        float localX_rear = gradientEndX_rear - boundRectCenter_rear.x;  // boundRect 중심 기준 상대 좌표
-        float localY_rear = 0;  // Y는 boundRect 중심선 기준
+        // 각도 적용한 실제 gradient 끝점 중앙 계산 (패턴 중심 기준으로 회전)
+        float localX_rear = gradientEndX_rear - roiPatternCenter_rear.x;  // 패턴 중심 기준 상대 좌표
+        float localY_rear = 0;  // Y는 패턴 중심선 기준
         
-        int boxCenterX_rear = boundRectCenter_rear.x + static_cast<int>(localX_rear * cos(angleRad) - localY_rear * sin(angleRad));
-        int boxCenterY_rear = boundRectCenter_rear.y + static_cast<int>(localX_rear * sin(angleRad) + localY_rear * cos(angleRad));
+        int boxCenterX_rear = roiPatternCenter_rear.x + static_cast<int>(localX_rear * cos(angleRad) - localY_rear * sin(angleRad));
+        int boxCenterY_rear = roiPatternCenter_rear.y + static_cast<int>(localX_rear * sin(angleRad) + localY_rear * cos(angleRad));
         
         std::cout << "REAR 두께 측정 위치: (" << boxCenterX_rear << ", " << boxCenterY_rear << ")" << std::endl;
         std::cout << "패턴 각도: " << angle << "도, endPercent: " << gradientEndPercent << "%" << std::endl;
@@ -2484,24 +2487,30 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                         
                         std::cout << "EDGE 검사 완료: " << (edgePassResult ? "PASS" : "FAIL") << std::endl;
                         
-                        // 결과 시각화 - 제거됨
-                        // cv::Scalar boxColor = edgePassResult ? cv::Scalar(0, 128, 255) : cv::Scalar(0, 0, 255);  // 주황/빨강
-                        // 
-                        // // 검사 박스 그리기 (점선)
-                        // auto drawEdgeDottedLine = [&](cv::Point p1, cv::Point p2, cv::Scalar color) {
-                        //     cv::LineIterator it(resultImage, p1, p2, 8);
-                        //     for (int i = 0; i < it.count; i++, ++it) {
-                        //         if (i % 10 < 5) { // 점선 패턴
-                        //             resultImage.at<cv::Vec3b>(it.pos()) = cv::Vec3b(color[0], color[1], color[2]);
-                        //         }
-                        //     }
-                        // };
-                        // 
-                        // for (int i = 0; i < 4; i++) {
-                        //     cv::Point pt1(static_cast<int>(corners[i].x), static_cast<int>(corners[i].y));
-                        //     cv::Point pt2(static_cast<int>(corners[(i + 1) % 4].x), static_cast<int>(corners[(i + 1) % 4].y));
-                        //     drawEdgeDottedLine(pt1, pt2, boxColor);
-                        // }
+                        // Edge 검사 박스 그리기 (활성화)
+                        cv::Scalar boxColor = edgePassResult ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 0, 255);  // 초록/빨강
+                        
+                        // 검사 박스 그리기 (점선)
+                        auto drawEdgeDottedLine = [&](cv::Point p1, cv::Point p2, cv::Scalar color) {
+                            cv::LineIterator it(resultImage, p1, p2, 8);
+                            for (int i = 0; i < it.count; i++, ++it) {
+                                if (i % 6 < 3) { // 3픽셀 그리고 3픽셀 건너뛰기 (STRIP과 동일)
+                                    if (it.pos().x >= 0 && it.pos().y >= 0 && 
+                                        it.pos().x < resultImage.cols && it.pos().y < resultImage.rows) {
+                                        cv::Vec3b& pixel = resultImage.at<cv::Vec3b>(it.pos());
+                                        pixel[0] = color[0];
+                                        pixel[1] = color[1]; 
+                                        pixel[2] = color[2];
+                                    }
+                                }
+                            }
+                        };
+                        
+                        for (int i = 0; i < 4; i++) {
+                            cv::Point pt1(static_cast<int>(corners[i].x), static_cast<int>(corners[i].y));
+                            cv::Point pt2(static_cast<int>(corners[(i + 1) % 4].x), static_cast<int>(corners[(i + 1) % 4].y));
+                            drawEdgeDottedLine(pt1, pt2, boxColor);
+                        }
                         
                         // 절단면 포인트를 정상/이상치로 색상 구분하여 그리기 (큰 크기로)
                         for (size_t i = 0; i < leftEdgePoints.size(); i++) {
