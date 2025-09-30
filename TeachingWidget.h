@@ -197,6 +197,10 @@ public:
     void setFilterAdjusting(bool adjusting) { isFilterAdjusting = adjusting; }
     bool getFilterAdjusting() const { return isFilterAdjusting; }
     
+    // 패턴 업데이트 중 UI 업데이트 방지
+    void setUpdatingPattern(bool updating) { isUpdatingPattern = updating; }
+    bool getUpdatingPattern() const { return isUpdatingPattern; }
+    
     void saveRecipe();
     void deleRecipe();
     bool loadRecipe(const QString &fileName = QString());
@@ -277,6 +281,9 @@ private:
     
     // 필터 설정 중 프로퍼티 패널 업데이트 방지 플래그
     bool isFilterAdjusting = false;
+    
+    // 패턴 업데이트 중 UI 업데이트 방지 플래그
+    bool isUpdatingPattern = false;
     
     // 카메라 UUID별 캘리브레이션 정보 맵
     QMap<QString, CalibrationInfo> cameraCalibrationMap;

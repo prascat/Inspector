@@ -68,15 +68,18 @@ struct InspectionResult {
     QMap<QUuid, int> stripRearMeasuredThicknessAvg; // REAR 측정된 평균 두께 (패턴 ID -> 평균 두께)
     QMap<QUuid, bool> stripRearThicknessMeasured;   // REAR 두께 측정 완료 여부 (패턴 ID -> 측정 여부)
     
-    // STRIP 박스 위치 정보 (Qt 텍스트 그리기용)
-    QMap<QUuid, cv::Point> stripFrontBoxTopLeft;    // FRONT 박스 좌상단 좌표
-    QMap<QUuid, cv::Point> stripRearBoxTopLeft;     // REAR 박스 좌상단 좌표
+    // STRIP 박스 위치 정보 (패턴 중심 기준 상대좌표)
+    QMap<QUuid, QPointF> stripFrontBoxCenter;       // FRONT 박스 중심 상대좌표 (패턴 중심 기준)
+    QMap<QUuid, QSizeF> stripFrontBoxSize;          // FRONT 박스 크기 (width, height)
+    QMap<QUuid, QPointF> stripRearBoxCenter;        // REAR 박스 중심 상대좌표 (패턴 중심 기준)
+    QMap<QUuid, QSizeF> stripRearBoxSize;           // REAR 박스 크기 (width, height)
     
     // EDGE 검사 결과 (심선 끝 절단면 품질)
     QMap<QUuid, bool> edgeResults;                  // EDGE 검사 통과 여부 (패턴 ID -> 통과 여부)
     QMap<QUuid, int> edgeIrregularityCount;         // 불규칙성 개수 (패턴 ID -> 개수)
     QMap<QUuid, double> edgeMaxDeviation;           // 최대 편차 (패턴 ID -> 편차)
-    QMap<QUuid, cv::Point> edgeBoxTopLeft;          // EDGE 박스 좌상단 좌표 (패턴 ID -> 좌표)
+    QMap<QUuid, QPointF> edgeBoxCenter;             // EDGE 박스 중심 상대좌표 (패턴 중심 기준)
+    QMap<QUuid, QSizeF> edgeBoxSize;                // EDGE 박스 크기 (width, height)
     QMap<QUuid, bool> edgeMeasured;                 // EDGE 측정 완료 여부 (패턴 ID -> 측정 여부)
     QMap<QUuid, std::vector<cv::Point>> edgePoints; // 절단면 포인트들 (패턴 ID -> 포인트 배열)
     QMap<QUuid, int> edgeAverageX;                  // 절단면 평균 X 위치 (패턴 ID -> X 좌표)

@@ -2358,6 +2358,26 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     bool isPassed = ImageProcessor::performStripInspection(roiImage, templateImage,
                                   pattern,
                                   score, startPoint, maxGradientPoint, gradientPoints, resultImage);
+    
+    // ROI 좌표를 원본 이미지 좌표로 변환
+    if (isPassed) {
+        // 패턴 중심과 ROI 중심 간의 오프셋 계산
+        cv::Point2f patternCenter(pattern.rect.x() + pattern.rect.width()/2.0f, 
+                                pattern.rect.y() + pattern.rect.height()/2.0f);
+        cv::Point2f roiCenter(roiImage.cols / 2.0f, roiImage.rows / 2.0f);
+        cv::Point2f offset = patternCenter - roiCenter;
+        
+        // 좌표 변환 적용
+        startPoint.x += static_cast<int>(offset.x);
+        startPoint.y += static_cast<int>(offset.y);
+        maxGradientPoint.x += static_cast<int>(offset.x);
+        maxGradientPoint.y += static_cast<int>(offset.y);
+        
+        for (auto& point : gradientPoints) {
+            point.x += static_cast<int>(offset.x);
+            point.y += static_cast<int>(offset.y);
+        }
+    }
                                                               
         // 측정된 두께를 검사 결과에 저장 (FRONT + REAR)
         result.stripMeasuredThicknessMin[pattern.id] = measuredMinThickness;
@@ -2370,15 +2390,34 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         result.stripRearMeasuredThicknessAvg[pattern.id] = rearMeasuredAvgThickness;
         result.stripRearThicknessMeasured[pattern.id] = (rearMeasuredAvgThickness > 0);
         
-        // 박스 위치 저장 (Qt 텍스트 그리기용)
-        result.stripFrontBoxTopLeft[pattern.id] = frontBoxTopLeft;
-        result.stripRearBoxTopLeft[pattern.id] = rearBoxTopLeft;
+        // 박스 위치를 패턴 중심 기준 상대좌표로 저장
+        QPointF patternCenter = pattern.rect.center();
+        
+        // FRONT 박스 상대좌표 계산 (패턴 왼쪽 끝에서부터의 퍼센트 위치)
+        float startPercent = pattern.stripGradientStartPercent / 100.0f;
+        float frontBoxOffsetX = (startPercent - 0.5f) * pattern.rect.width(); // 왼쪽 끝에서의 위치를 중심 기준으로 변환
+        QPointF frontBoxRelativeCenter(frontBoxOffsetX, 0); // Y는 패턴 중심과 동일
+        result.stripFrontBoxCenter[pattern.id] = frontBoxRelativeCenter;
+        result.stripFrontBoxSize[pattern.id] = QSizeF(pattern.stripThicknessBoxWidth, pattern.stripThicknessBoxHeight);
+        
+        // REAR 박스 상대좌표 계산 (패턴 왼쪽 끝에서부터의 퍼센트 위치)
+        float endPercent = pattern.stripGradientEndPercent / 100.0f;
+        float rearBoxOffsetX = (endPercent - 0.5f) * pattern.rect.width(); // 왼쪽 끝에서의 위치를 중심 기준으로 변환
+        QPointF rearBoxRelativeCenter(rearBoxOffsetX, 0); // Y는 패턴 중심과 동일
+        result.stripRearBoxCenter[pattern.id] = rearBoxRelativeCenter;
+        result.stripRearBoxSize[pattern.id] = QSizeF(pattern.stripRearThicknessBoxWidth, pattern.stripRearThicknessBoxHeight);
         
         // EDGE 검사 결과 저장
         result.edgeResults[pattern.id] = edgePassed;
         result.edgeIrregularityCount[pattern.id] = edgeIrregularityCount;
         result.edgeMaxDeviation[pattern.id] = edgeMaxDeviation;
-        result.edgeBoxTopLeft[pattern.id] = edgeBoxTopLeft;
+        
+        // EDGE 박스 상대좌표 계산 (패턴 왼쪽에서 edgeOffsetX만큼 떨어진 위치)
+        float edgeOffsetX = (-pattern.rect.width()/2.0f) + pattern.edgeOffsetX; // 중심 기준 오프셋
+        QPointF edgeBoxRelativeCenter(edgeOffsetX, 0); // Y는 패턴 중심과 동일
+        result.edgeBoxCenter[pattern.id] = edgeBoxRelativeCenter;
+        result.edgeBoxSize[pattern.id] = QSizeF(pattern.edgeBoxWidth, pattern.edgeBoxHeight);
+        
         result.edgeMeasured[pattern.id] = pattern.edgeEnabled;
         result.edgeAverageX[pattern.id] = edgeAverageX;
         

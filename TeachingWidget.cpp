@@ -15,6 +15,8 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QDomDocument>
+#include <QDomElement>
 #include <QDateTime>
 #include <QInputDialog>
 #include <QMessageBox>
@@ -580,6 +582,7 @@ void TeachingWidget::openRecipe(bool autoMode) {
         onRecipeSelected(selectedRecipe);
     }
 }
+
 
 void TeachingWidget::initBasicSettings() {
     insProcessor = new InsProcessor(this);
@@ -4827,8 +4830,8 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
+                        // 패턴을 직접 수정 (updatePatternById 호출 없이)
                         pattern->edgeBoxWidth = value;
-                        cameraView->updatePatternById(patternId, *pattern);
                         cameraView->update();
                     }
                 }
@@ -4848,8 +4851,8 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
+                        // 패턴을 직접 수정 (updatePatternById 호출 없이)
                         pattern->edgeBoxHeight = value;
-                        cameraView->updatePatternById(patternId, *pattern);
                         cameraView->update();
                     }
                 }
@@ -5831,13 +5834,26 @@ void TeachingWidget::updatePreviewFrames() {
 void TeachingWidget::startCamera() {
     qDebug() << "startCamera() 함수 시작";
     
-    // 1. CAM 버튼 상태 먼저 업데이트 (즉시 UI 반응)
+    // 1. 기존 데이터 모두 정리 (카메라 켜기 전에)
+    qDebug() << "[startCamera] 기존 데이터 정리 중...";
+    
+    // 1-4. 선택된 패턴 정리
+    if (cameraView) {
+        cameraView->setSelectedPatternId(QUuid());
+    }
+    
+    // 1-6. 프로퍼티 패널 초기화
+    if (propertyStackWidget) {
+        propertyStackWidget->setCurrentIndex(0); // 기본 패널로
+    }
+    
+    // 2. CAM 버튼 상태 먼저 업데이트 (즉시 UI 반응)
     updateCameraButtonState(true);
     
-    // 2. 카메라 정보 갱신
+    // 3. 카메라 정보 갱신
     detectCameras();
 
-    // 2. 기존 스레드 중지 및 정리
+    // 4. 기존 스레드 중지 및 정리
     for (CameraGrabberThread* thread : cameraThreads) {
         if (thread && thread->isRunning()) {
             thread->stopGrabbing();
@@ -5852,7 +5868,7 @@ void TeachingWidget::startCamera() {
         uiUpdateThread->wait();
     }
 
-    // 3. 카메라가 하나도 연결되어 있지 않은 경우
+    // 5. 카메라가 하나도 연결되어 있지 않은 경우
     qDebug() << "[startCamera] cameraInfos 크기:" << cameraInfos.size();
     if (cameraInfos.isEmpty()) {
         qDebug() << "[startCamera] ❌ 카메라 정보가 비어있음 - 경고 메시지 표시";
@@ -5863,7 +5879,7 @@ void TeachingWidget::startCamera() {
         qDebug() << "[startCamera] ✓ 카메라 정보 확인됨, 카메라 수:" << cameraInfos.size();
     }
 
-    // 4. 메인 카메라 설정
+    // 6. 메인 카메라 설정
     cameraIndex = 0;
   
     // 현재 카메라 UUID 및 이름 설정
@@ -5943,14 +5959,82 @@ void TeachingWidget::startCamera() {
         }
     }
     
-    // 카메라가 연결된 경우에만 레시피 로드 (camOff 모드에서는 수동 로드만)
+    // 카메라가 연결된 경우에만 현재 카메라의 레시피 로드
     if (cameraStarted) {
         qDebug() << QString("startCamera: 카메라가 연결되어 레시피 로드 시작");
         
-        // 자동 레시피 로드
-        openRecipe(true);  // true = 자동 모드
+        // 현재 연결된 카메라들의 UUID 목록 생성
+        QStringList connectedCameraUuids;
+        for (const auto& info : cameraInfos) {
+            connectedCameraUuids.append(info.uniqueId);
+        }
+        qDebug() << "[startCamera] 연결된 카메라 UUID 목록:" << connectedCameraUuids;
         
-        qDebug() << "startCamera: 레시피 로드 완료";
+        // 최근 레시피의 카메라 UUID 확인
+        bool shouldLoadRecipe = false;
+        QString lastRecipePath = ConfigManager::instance()->getLastRecipePath();
+        
+        if (!lastRecipePath.isEmpty()) {
+            QString xmlFilePath = QString("recipes/%1/%2.xml").arg(lastRecipePath).arg(lastRecipePath);
+            QFile recipeFile(xmlFilePath);
+            
+            if (recipeFile.exists()) {
+                QDomDocument doc;
+                if (recipeFile.open(QIODevice::ReadOnly) && doc.setContent(&recipeFile)) {
+                    QDomElement root = doc.documentElement();
+                    QDomElement cameraElement = root.firstChildElement("Camera");
+                    
+                    if (!cameraElement.isNull()) {
+                        QString recipeCameraUuid = cameraElement.attribute("uuid").trimmed();
+                        qDebug() << "[startCamera] 최근 레시피 " << lastRecipePath << "의 카메라 UUID:" << recipeCameraUuid;
+                        
+                        // 현재 연결된 카메라 UUID와 일치하는지 확인
+                        if (!recipeCameraUuid.isEmpty() && connectedCameraUuids.contains(recipeCameraUuid)) {
+                            shouldLoadRecipe = true;
+                            qDebug() << "[startCamera] ✓ 최근 레시피의 카메라 UUID가 일치함 - 자동 로드 진행";
+                        } else {
+                            qDebug() << "[startCamera] ❌ 최근 레시피의 카메라 UUID가 연결된 카메라와 불일치 - 로드 건너뜀";
+                        }
+                    } else {
+                        qDebug() << "[startCamera] ❌ 최근 레시피에 카메라 UUID 정보 없음 - 로드 건너뜀";
+                    }
+                }
+                recipeFile.close();
+            } else {
+                qDebug() << "[startCamera] ❌ 최근 레시피 파일이 존재하지 않음:" << xmlFilePath;
+            }
+        } else {
+            qDebug() << "[startCamera] ❌ 최근 레시피 정보 없음";
+        }
+        
+        if (shouldLoadRecipe) {
+            // 기존 자동 레시피 로드 방식 사용 (최근 레시피 UUID가 일치함)
+            qDebug() << "[startCamera] 최근 레시피 자동 로드 시작";
+            openRecipe(true);  // true = 자동 모드
+            qDebug() << "startCamera: 레시피 로드 완료";
+        } else {
+            qDebug() << "startCamera: 카메라 UUID 불일치로 레시피 로드 건너뜀 - 화면 초기화";
+            
+            // 화면 완전 초기화
+            // 1. CameraView 초기화 (패턴 그리기 중지)
+            if (cameraView) {
+                cameraView->setSelectedPatternId(QUuid());
+                cameraView->clearPatterns(); // 패턴 그리기 중지
+                cameraView->update(); // 화면 갱신
+            }
+            
+            // 2. 패턴 트리 초기화
+            if (patternTree) {
+                patternTree->clear();
+            }
+            
+            // 3. 프로퍼티 패널을 기본 상태로
+            if (propertyStackWidget) {
+                propertyStackWidget->setCurrentIndex(0);
+            }
+            
+            qDebug() << "startCamera: 화면 초기화 완료";
+        }
     } else {
         qDebug() << "startCamera: 카메라가 연결되지 않아 레시피 로드하지 않음";
     }
@@ -10531,6 +10615,8 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
         ConfigManager::instance()->setLastRecipePath(recipeName);
         ConfigManager::instance()->saveConfig();
         qDebug() << QString("레시피 로드 완료: %1").arg(recipeName);
+        
+        // TODO: 현재 연결된 카메라의 패턴만 필터링하는 기능 추가 예정
         
         // 패턴 동기화 및 트리 업데이트
         syncPatternsFromCameraView();
