@@ -2965,6 +2965,10 @@ void TeachingWidget::createPropertyPanels() {
     insStripStartSlider = new QSlider(Qt::Horizontal, startWidget);
     insStripStartSlider->setRange(0, 50);
     insStripStartSlider->setValue(20);
+    insStripStartSlider->setStyleSheet(
+        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
+        "QSlider::handle:horizontal { background: #ff4444; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
+        "QSlider::sub-page:horizontal { background: #ff8888; border-radius: 3px; }");
     insStripStartValueLabel = new QLabel("20%", startWidget);
     insStripStartValueLabel->setMinimumWidth(30);
     
@@ -2982,6 +2986,10 @@ void TeachingWidget::createPropertyPanels() {
     insStripEndSlider = new QSlider(Qt::Horizontal, endWidget);
     insStripEndSlider->setRange(50, 100);
     insStripEndSlider->setValue(85);
+    insStripEndSlider->setStyleSheet(
+        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
+        "QSlider::handle:horizontal { background: #4444ff; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
+        "QSlider::sub-page:horizontal { background: #8888ff; border-radius: 3px; }");
     insStripEndValueLabel = new QLabel("85%", endWidget);
     insStripEndValueLabel->setMinimumWidth(30);
     
@@ -3046,6 +3054,10 @@ void TeachingWidget::createPropertyPanels() {
     insStripThicknessWidthSlider = new QSlider(Qt::Horizontal, thicknessWidthWidget);
     insStripThicknessWidthSlider->setRange(10, 200);
     insStripThicknessWidthSlider->setValue(50);
+    insStripThicknessWidthSlider->setStyleSheet(
+        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
+        "QSlider::handle:horizontal { background: #44ff44; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
+        "QSlider::sub-page:horizontal { background: #88ff88; border-radius: 3px; }");
     insStripThicknessWidthValueLabel = new QLabel("50px", thicknessWidthWidget);
     insStripThicknessWidthValueLabel->setMinimumWidth(40);
     
@@ -3063,6 +3075,10 @@ void TeachingWidget::createPropertyPanels() {
     insStripThicknessHeightSlider = new QSlider(Qt::Horizontal, thicknessHeightWidget);
     insStripThicknessHeightSlider->setRange(10, 100);
     insStripThicknessHeightSlider->setValue(30);
+    insStripThicknessHeightSlider->setStyleSheet(
+        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
+        "QSlider::handle:horizontal { background: #ff8844; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
+        "QSlider::sub-page:horizontal { background: #ffaa88; border-radius: 3px; }");
     insStripThicknessHeightValueLabel = new QLabel("30px", thicknessHeightWidget);
     insStripThicknessHeightValueLabel->setMinimumWidth(40);
     
@@ -3091,6 +3107,10 @@ void TeachingWidget::createPropertyPanels() {
     insStripRearThicknessWidthSlider = new QSlider(Qt::Horizontal, insStripPanel);
     insStripRearThicknessWidthSlider->setRange(10, 200);
     insStripRearThicknessWidthSlider->setValue(50);
+    insStripRearThicknessWidthSlider->setStyleSheet(
+        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
+        "QSlider::handle:horizontal { background: #8844ff; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
+        "QSlider::sub-page:horizontal { background: #aa88ff; border-radius: 3px; }");
     insStripRearThicknessWidthValueLabel = new QLabel("50", insStripPanel);
     insStripRearThicknessWidthValueLabel->setMinimumWidth(40);
     
@@ -3107,6 +3127,10 @@ void TeachingWidget::createPropertyPanels() {
     insStripRearThicknessHeightSlider = new QSlider(Qt::Horizontal, insStripPanel);
     insStripRearThicknessHeightSlider->setRange(10, 100);
     insStripRearThicknessHeightSlider->setValue(30);
+    insStripRearThicknessHeightSlider->setStyleSheet(
+        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
+        "QSlider::handle:horizontal { background: #4488ff; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
+        "QSlider::sub-page:horizontal { background: #88aaff; border-radius: 3px; }");
     insStripRearThicknessHeightValueLabel = new QLabel("30", insStripPanel);
     insStripRearThicknessHeightValueLabel->setMinimumWidth(40);
     
@@ -3178,6 +3202,10 @@ void TeachingWidget::createPropertyPanels() {
     insEdgeOffsetXSlider = new QSlider(Qt::Horizontal, insStripPanel);
     insEdgeOffsetXSlider->setRange(1, 500);  // 임시값, 패턴 선택시 동적 조정
     insEdgeOffsetXSlider->setValue(10);
+    insEdgeOffsetXSlider->setStyleSheet(
+        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
+        "QSlider::handle:horizontal { background: #ffdd44; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
+        "QSlider::sub-page:horizontal { background: #ffee88; border-radius: 3px; }");
     insEdgeOffsetXValueLabel = new QLabel("10", insStripPanel);
     
     QWidget* edgeOffsetWidget = new QWidget(insStripPanel);
@@ -3190,6 +3218,10 @@ void TeachingWidget::createPropertyPanels() {
     insEdgeWidthSlider = new QSlider(Qt::Horizontal, insStripPanel);
     insEdgeWidthSlider->setRange(10, 300);  // 최대값 300으로 고정
     insEdgeWidthSlider->setValue(50);
+    insEdgeWidthSlider->setStyleSheet(
+        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
+        "QSlider::handle:horizontal { background: #ff44aa; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
+        "QSlider::sub-page:horizontal { background: #ff88cc; border-radius: 3px; }");
     insEdgeWidthValueLabel = new QLabel("50", insStripPanel);
     
     QWidget* edgeWidthWidget = new QWidget(insStripPanel);
@@ -3203,6 +3235,10 @@ void TeachingWidget::createPropertyPanels() {
     insEdgeHeightSlider = new QSlider(Qt::Horizontal, insStripPanel);
     insEdgeHeightSlider->setRange(20, 300);  // 최대값 300으로 고정
     insEdgeHeightSlider->setValue(100);
+    insEdgeHeightSlider->setStyleSheet(
+        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
+        "QSlider::handle:horizontal { background: #44ffaa; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
+        "QSlider::sub-page:horizontal { background: #88ffcc; border-radius: 3px; }");
     insEdgeHeightValueLabel = new QLabel("100", insStripPanel);
     
     QWidget* edgeHeightWidget = new QWidget(insStripPanel);
