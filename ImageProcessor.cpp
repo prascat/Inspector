@@ -1657,40 +1657,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         // 원본 이미지 복사 (컨투어 선 제거, 연결선과 원만 표시) - 보정된 이미지 사용
         cleanOriginal.copyTo(resultImage);
         
-        // 4개 핵심 포인트를 숫자와 점으로 표시 (더 크게, 더 명확하게)
-        std::cout << "\n=== 4개 포인트 시각화 ===\n";
-        
-        if (hasPoint1) {
-            std::cout << "Point 1 원본 위치: (" << point1.x << "," << point1.y << ")" << std::endl;
-            cv::circle(resultImage, point1, 6, cv::Scalar(0, 0, 255), -1); // 빨간색 원 (작게)
-            cv::circle(resultImage, point1, 8, cv::Scalar(255, 255, 255), 2); // 흰색 테두리
-            cv::putText(resultImage, "1", cv::Point(point1.x + 12, point1.y - 10), 
-                       cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 2); // 빨간색 숫자 (작게)
-        }
-        
-        if (hasPoint2) {
-            std::cout << "Point 2 원본 위치: (" << point2.x << "," << point2.y << ")" << std::endl;
-            cv::circle(resultImage, point2, 6, cv::Scalar(0, 255, 0), -1); // 초록색 원 (작게)
-            cv::circle(resultImage, point2, 8, cv::Scalar(255, 255, 255), 2); // 흰색 테두리
-            cv::putText(resultImage, "2", cv::Point(point2.x + 12, point2.y + 20), 
-                       cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 2); // 초록색 숫자 (작게)
-        }
-        
-        if (hasPoint3) {
-            std::cout << "Point 3 원본 위치: (" << point3.x << "," << point3.y << ")" << std::endl;
-            cv::circle(resultImage, point3, 6, cv::Scalar(255, 0, 0), -1); // 파란색 원 (작게)
-            cv::circle(resultImage, point3, 8, cv::Scalar(255, 255, 255), 2); // 흰색 테두리
-            cv::putText(resultImage, "3", cv::Point(point3.x - 18, point3.y - 10), 
-                       cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 0, 0), 2); // 파란색 숫자 (작게)
-        }
-        
-        if (hasPoint4) {
-            std::cout << "Point 4 원본 위치: (" << point4.x << "," << point4.y << ")" << std::endl;
-            cv::circle(resultImage, point4, 6, cv::Scalar(255, 255, 0), -1); // 청록색 원 (작게)
-            cv::circle(resultImage, point4, 8, cv::Scalar(255, 255, 255), 2); // 흰색 테두리
-            cv::putText(resultImage, "4", cv::Point(point4.x - 18, point4.y + 20), 
-                       cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 0), 2); // 청록색 숫자 (작게)
-        }
+        // OpenCV 4점 시각화 제거됨 - Qt에서 처리
         
         // 4개 컨투어 점 시각화 제거 (깔끔한 화면을 위해)
         std::cout << "\n=== 4개 컨투어 점 시각화 생략 ===\n";

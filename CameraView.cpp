@@ -2339,7 +2339,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         painter.save();
         
         // 4개 포인트 그리기 (컨투어 엣지 포인트) - OpenCV와 동일한 색상
-        int pointRadius = 8;
+        int pointRadius = 4;
         
         // Point 1 - Red
         painter.setPen(QPen(Qt::red, 3));

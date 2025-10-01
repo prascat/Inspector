@@ -27,6 +27,12 @@ public:
 
     // ROI 추출 함수 (패턴 위치에서 영역 가져오기)
     cv::Mat extractROI(const cv::Mat& image, const QRectF& rect, double angle = 0.0, bool isTemplate = false);
+    
+    // INS 패턴 내부 좌표점들을 역회전시켜 고정 위치로 변환하는 유틸리티 함수
+    static QList<QPoint> transformPatternPoints(const std::vector<cv::Point>& roiPoints, 
+                                               const cv::Size& roiSize, 
+                                               double patternAngle,
+                                               const cv::Point2f& offset);
 
 signals:
     void logMessage(const QString& message);
