@@ -429,9 +429,17 @@ private:
     QLabel* insEdgeHeightLabel = nullptr;
     QSlider* insEdgeHeightSlider = nullptr;
     QLabel* insEdgeHeightValueLabel = nullptr;
-    // insEdgeThresholdLabel과 insEdgeThresholdSpin 제거됨 (통계적 방법 사용)
+
     QLabel* insEdgeMaxIrregularitiesLabel = nullptr;
     QSpinBox* insEdgeMaxIrregularitiesSpin = nullptr;
+    QLabel* insEdgeDistanceMinLabel = nullptr;
+    QSpinBox* insEdgeDistanceMinSpin = nullptr;
+    QLabel* insEdgeDistanceMaxLabel = nullptr;
+    QSpinBox* insEdgeDistanceMaxSpin = nullptr;
+    QLabel* insEdgeStartPercentLabel = nullptr;
+    QSpinBox* insEdgeStartPercentSpin = nullptr;
+    QLabel* insEdgeEndPercentLabel = nullptr;
+    QSpinBox* insEdgeEndPercentSpin = nullptr;
 
     // SLOPE 검사 관련 위젯들
     QCheckBox* insSlopeEnabledCheck = nullptr;

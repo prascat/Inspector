@@ -3250,11 +3250,35 @@ void TeachingWidget::createPropertyPanels() {
     
     // insEdgeThresholdLabel과 insEdgeThresholdSpin 제거됨 (통계적 방법 사용)
     
-    insEdgeMaxIrregularitiesLabel = new QLabel("허용 최대 불규칙성:", insStripPanel);
+    insEdgeMaxIrregularitiesLabel = new QLabel("허용 최대 불량 개수:", insStripPanel);
     insEdgeMaxIrregularitiesSpin = new QSpinBox(insStripPanel);
     insEdgeMaxIrregularitiesSpin->setRange(1, 20);
     insEdgeMaxIrregularitiesSpin->setValue(5);
     insEdgeMaxIrregularitiesSpin->setSuffix(" 개");
+    
+    insEdgeDistanceMinLabel = new QLabel("평균선 최소 거리:", insStripPanel);
+    insEdgeDistanceMinSpin = new QSpinBox(insStripPanel);
+    insEdgeDistanceMinSpin->setRange(0, 100);
+    insEdgeDistanceMinSpin->setValue(1);
+    insEdgeDistanceMinSpin->setSuffix(" px");
+    
+    insEdgeDistanceMaxLabel = new QLabel("평균선 최대 거리:", insStripPanel);
+    insEdgeDistanceMaxSpin = new QSpinBox(insStripPanel);
+    insEdgeDistanceMaxSpin->setRange(1, 200);
+    insEdgeDistanceMaxSpin->setValue(10);
+    insEdgeDistanceMaxSpin->setSuffix(" px");
+    
+    insEdgeStartPercentLabel = new QLabel("시작 제외 비율:", insStripPanel);
+    insEdgeStartPercentSpin = new QSpinBox(insStripPanel);
+    insEdgeStartPercentSpin->setRange(1, 50);
+    insEdgeStartPercentSpin->setValue(10);
+    insEdgeStartPercentSpin->setSuffix(" %");
+    
+    insEdgeEndPercentLabel = new QLabel("끝 제외 비율:", insStripPanel);
+    insEdgeEndPercentSpin = new QSpinBox(insStripPanel);
+    insEdgeEndPercentSpin->setRange(1, 50);
+    insEdgeEndPercentSpin->setValue(10);
+    insEdgeEndPercentSpin->setSuffix(" %");
     
     // EDGE 위젯들을 레이아웃에 추가
     QWidget* edgeRangeWidget = new QWidget(insStripPanel);
@@ -3269,6 +3293,10 @@ void TeachingWidget::createPropertyPanels() {
     insStripLayout->addRow(insEdgeOffsetXLabel, edgeOffsetWidget);
     insStripLayout->addRow("EDGE 박스 크기:", edgeRangeWidget);
     insStripLayout->addRow(insEdgeMaxIrregularitiesLabel, insEdgeMaxIrregularitiesSpin);
+    insStripLayout->addRow(insEdgeDistanceMinLabel, insEdgeDistanceMinSpin);
+    insStripLayout->addRow(insEdgeDistanceMaxLabel, insEdgeDistanceMaxSpin);
+    insStripLayout->addRow(insEdgeStartPercentLabel, insEdgeStartPercentSpin);
+    insStripLayout->addRow(insEdgeEndPercentLabel, insEdgeEndPercentSpin);
 
     // SLOPE 검사 구분선
     QFrame* slopeSeparator = new QFrame(insStripPanel);
@@ -5025,7 +5053,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
     // EDGE 불규칙성 임계값
     // insEdgeThresholdSpin 연결 코드 제거됨 (통계적 방법 사용)
     
-    // EDGE 최대 불규칙성 개수
+    // EDGE 최대 불량 개수
     if (insEdgeMaxIrregularitiesSpin) {
         connect(insEdgeMaxIrregularitiesSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
                 [this](int value) {
@@ -5035,7 +5063,83 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->edgeMaxIrregularities = value;
+                        pattern->edgeMaxOutliers = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // EDGE 평균선 최소 거리
+    if (insEdgeDistanceMinSpin) {
+        connect(insEdgeDistanceMinSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
+                [this](int value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->edgeDistanceMin = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // EDGE 평균선 최대 거리
+    if (insEdgeDistanceMaxSpin) {
+        connect(insEdgeDistanceMaxSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
+                [this](int value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->edgeDistanceMax = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // EDGE 시작 제외 퍼센트
+    if (insEdgeStartPercentSpin) {
+        connect(insEdgeStartPercentSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
+                [this](int value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->edgeStartPercent = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // EDGE 끝 제외 퍼센트
+    if (insEdgeEndPercentSpin) {
+        connect(insEdgeEndPercentSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
+                [this](int value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->edgeEndPercent = value;
                         cameraView->updatePatternById(patternId, *pattern);
                         cameraView->update();
                     }
@@ -5598,8 +5702,32 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                     
                     if (insEdgeMaxIrregularitiesSpin) {
                         insEdgeMaxIrregularitiesSpin->blockSignals(true);
-                        insEdgeMaxIrregularitiesSpin->setValue(pattern->edgeMaxIrregularities);
+                        insEdgeMaxIrregularitiesSpin->setValue(pattern->edgeMaxOutliers);
                         insEdgeMaxIrregularitiesSpin->blockSignals(false);
+                    }
+                    
+                    if (insEdgeDistanceMinSpin) {
+                        insEdgeDistanceMinSpin->blockSignals(true);
+                        insEdgeDistanceMinSpin->setValue(pattern->edgeDistanceMin);
+                        insEdgeDistanceMinSpin->blockSignals(false);
+                    }
+                    
+                    if (insEdgeDistanceMaxSpin) {
+                        insEdgeDistanceMaxSpin->blockSignals(true);
+                        insEdgeDistanceMaxSpin->setValue(pattern->edgeDistanceMax);
+                        insEdgeDistanceMaxSpin->blockSignals(false);
+                    }
+                    
+                    if (insEdgeStartPercentSpin) {
+                        insEdgeStartPercentSpin->blockSignals(true);
+                        insEdgeStartPercentSpin->setValue(pattern->edgeStartPercent);
+                        insEdgeStartPercentSpin->blockSignals(false);
+                    }
+                    
+                    if (insEdgeEndPercentSpin) {
+                        insEdgeEndPercentSpin->blockSignals(true);
+                        insEdgeEndPercentSpin->setValue(pattern->edgeEndPercent);
+                        insEdgeEndPercentSpin->blockSignals(false);
                     }
                     
                     // SLOPE 검사 UI 업데이트
@@ -9404,7 +9532,11 @@ void TeachingWidget::addPattern() {
             pattern.edgeOffsetX = 90;
             pattern.edgeBoxWidth = 150;
             pattern.edgeBoxHeight = 150;
-            pattern.edgeMaxIrregularities = 5;
+            pattern.edgeMaxOutliers = 5;
+            pattern.edgeDistanceMin = 1;
+            pattern.edgeDistanceMax = 10;
+            pattern.edgeStartPercent = 10;
+            pattern.edgeEndPercent = 10;
         }
         
         // 패턴 추가 및 ID 받기

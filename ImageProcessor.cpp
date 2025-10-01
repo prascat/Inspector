@@ -719,7 +719,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
     int edgeOffsetX = pattern.edgeOffsetX;
     int edgeBoxWidth = pattern.edgeBoxWidth;
     int edgeBoxHeight = pattern.edgeBoxHeight;
-    int edgeMaxIrregularities = pattern.edgeMaxIrregularities;
+    int edgeMaxOutliers = pattern.edgeMaxOutliers;
     // 이전 시그니처의 out-parameters (placeholder)
     int* edgeIrregularityCount = nullptr;
     double* edgeMaxDeviation = nullptr;
@@ -2239,34 +2239,29 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 cv::Point2f patternCenter(roiImage.cols / 2.0f, roiImage.rows / 2.0f);
                 float patternWidth = roiImage.cols;
                 
-                // 각도 계산 (라디안)
-                float angleRad = angle * M_PI / 180.0f;
-                float cosAngle = cos(angleRad);
-                float sinAngle = sin(angleRad);
+                // EDGE는 항상 수직이어야 하므로 회전각을 적용하지 않음
+                std::cout << "🔹 EDGE 검사는 수직 절단면이므로 회전각 무시" << std::endl;
                 
-                // EDGE 검사 영역 중심점 계산 (패턴 왼쪽에서 edgeOffsetX만큼 안쪽)
+                // EDGE 검사 영역 중심점 계산 (패턴 왼쪽에서 edgeOffsetX만큼 안쪽, 회전 없음)
                 float edgeOffsetFromCenter = (-patternWidth/2.0f) + edgeOffsetX;
                 cv::Point2f edgeCenter(
-                    patternCenter.x + edgeOffsetFromCenter * cosAngle,
-                    patternCenter.y + edgeOffsetFromCenter * sinAngle
+                    patternCenter.x + edgeOffsetFromCenter,  // 회전 없이 단순 오프셋만 적용
+                    patternCenter.y                          // Y는 패턴 중심과 동일
                 );
                 
-                // EDGE 검사 박스 꼭짓점 계산 (회전 적용)
+                // EDGE 검사 박스 꼭짓점 계산 (수직 박스, 회전 없음)
                 float halfWidth = edgeBoxWidth / 2.0f;
                 float halfHeight = edgeBoxHeight / 2.0f;
                 
                 cv::Point2f corners[4];
-                corners[0] = cv::Point2f(-halfWidth, -halfHeight);  // 좌상
-                corners[1] = cv::Point2f(halfWidth, -halfHeight);   // 우상
-                corners[2] = cv::Point2f(halfWidth, halfHeight);    // 우하
-                corners[3] = cv::Point2f(-halfWidth, halfHeight);   // 좌하
+                corners[0] = cv::Point2f(edgeCenter.x - halfWidth, edgeCenter.y - halfHeight);  // 좌상
+                corners[1] = cv::Point2f(edgeCenter.x + halfWidth, edgeCenter.y - halfHeight);  // 우상
+                corners[2] = cv::Point2f(edgeCenter.x + halfWidth, edgeCenter.y + halfHeight);  // 우하
+                corners[3] = cv::Point2f(edgeCenter.x - halfWidth, edgeCenter.y + halfHeight);  // 좌하
                 
-                // 회전 변환 적용
-                for (int i = 0; i < 4; i++) {
-                    float x = corners[i].x * cosAngle - corners[i].y * sinAngle;
-                    float y = corners[i].x * sinAngle + corners[i].y * cosAngle;
-                    corners[i] = cv::Point2f(edgeCenter.x + x, edgeCenter.y + y);
-                }
+                std::cout << "🔸 EDGE 박스 꼭짓점 (수직): [" 
+                          << corners[0].x << "," << corners[0].y << "] [" 
+                          << corners[2].x << "," << corners[2].y << "]" << std::endl;
                 
                 // 검사 영역이 이미지 범위 내에 있는지 확인
                 bool inBounds = true;
@@ -2295,14 +2290,27 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     cv::threshold(grayImageForEdge, binaryImageForEdge, 128, 255, cv::THRESH_BINARY_INV);
                     
                     // EDGE 검사 영역에서 절단면 분석 (Y별 수평 스캔)
-                    int scanLines = static_cast<int>(edgeBoxHeight * 0.8);  // 박스 높이의 80%만 스캔
-                    float startY = edgeCenter.y - edgeBoxHeight * 0.4f;     // 위쪽부터 시작
-                    float stepY = (edgeBoxHeight * 0.8f) / scanLines;       // Y 방향 스텝
+                    // 퍼센트를 고려해서 스캔 범위 조정
+                    float startPercentOffset = pattern.edgeStartPercent / 100.0f;  // 시작 퍼센트
+                    float endPercentOffset = pattern.edgeEndPercent / 100.0f;      // 끝 퍼센트
+                    
+                    float effectiveHeight = edgeBoxHeight * (1.0f - startPercentOffset - endPercentOffset);  // 유효한 스캔 높이
+                    int scanLines = static_cast<int>(effectiveHeight);  // 유효 높이만큼 스캔
+                    
+                    float startY = edgeCenter.y - edgeBoxHeight * 0.5f + (edgeBoxHeight * startPercentOffset);  // 시작 퍼센트만큼 아래에서 시작
+                    float stepY = effectiveHeight / scanLines;  // Y 방향 스텝
                     
                     std::cout << "EDGE Y별 수평 스캔 설정: scanLines=" << scanLines << ", startY=" << startY 
                               << ", stepY=" << stepY << ", 박스크기=" << edgeBoxWidth << "x" << edgeBoxHeight << std::endl;
+                    std::cout << "🔹 EDGE 스캔 범위 조정: 시작=" << pattern.edgeStartPercent << "%, 끝=" << pattern.edgeEndPercent 
+                              << "%, 유효높이=" << effectiveHeight << "px" << std::endl;
                     
                     std::vector<cv::Point> leftEdgePoints;  // 절단면 포인트들
+                    
+                    // 회전 각도 계산 (라디안)
+                    float angleRad = angle * M_PI / 180.0f;
+                    float cosAngle = cos(angleRad);
+                    float sinAngle = sin(angleRad);
                     
                     for (int i = 0; i < scanLines; i++) {
                         float scanY = startY + i * stepY;  // Y를 1씩 증가
@@ -2311,16 +2319,23 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                         float edgeBoxLeft = edgeCenter.x - edgeBoxWidth / 2.0f;
                         float edgeBoxRight = edgeCenter.x + edgeBoxWidth / 2.0f;
                         
-                        // 검사박스 안에서만 스캔
+                        // 검사박스 안에서만 스캔 (회전 고려)
                         cv::Point edgePoint(-1, -1);  // 초기값: 찾지 못함
                         
                         for (float x = edgeBoxLeft; x < edgeBoxRight; x += 0.5f) {
-                            int px = static_cast<int>(x);
-                            int py = static_cast<int>(scanY);
+                            // 회전된 스캔라인 계산: 박스 중심에서의 상대 좌표를 회전
+                            float relX = x - edgeCenter.x;
+                            float relY = scanY - edgeCenter.y;
                             
-                            // 검사박스 경계 체크 + 이미지 경계 체크
-                            if (px >= edgeBoxLeft && px < edgeBoxRight && 
-                                px >= 0 && px < binaryImageForEdge.cols && 
+                            // 회전 변환 적용
+                            float rotatedX = edgeCenter.x + (relX * cosAngle - relY * sinAngle);
+                            float rotatedY = edgeCenter.y + (relX * sinAngle + relY * cosAngle);
+                            
+                            int px = static_cast<int>(rotatedX);
+                            int py = static_cast<int>(rotatedY);
+                            
+                            // 이미지 경계 체크
+                            if (px >= 0 && px < binaryImageForEdge.cols && 
                                 py >= 0 && py < binaryImageForEdge.rows) {
                                 
                                 bool isBlack = binaryImageForEdge.at<uchar>(py, px) > 128;
@@ -2339,7 +2354,44 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                         }
                     }
                     
-                    std::cout << "절단면 포인트 개수: " << leftEdgePoints.size() << std::endl;
+                    std::cout << "절단면 포인트 개수 (필터링 전): " << leftEdgePoints.size() << std::endl;
+                    
+                    // 수평선 제거: 기울기가 너무 수평인 구간 필터링
+                    if (leftEdgePoints.size() > 10) {
+                        std::vector<cv::Point> filteredPoints;
+                        
+                        for (size_t i = 0; i < leftEdgePoints.size(); i++) {
+                            bool isValidPoint = true;
+                            
+                            // 현재 점 주변 5개 점의 기울기 검사
+                            if (i >= 2 && i < leftEdgePoints.size() - 2) {
+                                cv::Point p1 = leftEdgePoints[i-2];
+                                cv::Point p2 = leftEdgePoints[i+2];
+                                
+                                float dx = abs(p2.x - p1.x);
+                                float dy = abs(p2.y - p1.y);
+                                
+                                // 기울기가 너무 수평이면 (X 변화량이 Y 변화량의 3배 이상) 제외
+                                if (dy > 0 && dx > dy * 3.0f) {
+                                    isValidPoint = false;
+                                }
+                                
+                                // X 좌표가 급격히 변하는 경우도 제외 (노이즈)
+                                if (dx > 50) {  // 50픽셀 이상 급변하면 노이즈로 판단
+                                    isValidPoint = false;
+                                }
+                            }
+                            
+                            if (isValidPoint) {
+                                filteredPoints.push_back(leftEdgePoints[i]);
+                            }
+                        }
+                        
+                        leftEdgePoints = filteredPoints;
+                        std::cout << "수평선 필터링 후 포인트 개수: " << leftEdgePoints.size() << std::endl;
+                    }
+                    
+                    std::cout << "절단면 포인트 개수 (최종): " << leftEdgePoints.size() << std::endl;
                     
                     // 절단면 포인트들의 위치 출력 (처음 10개만)
                     for (size_t i = 0; i < std::min(leftEdgePoints.size(), (size_t)10); i++) {
@@ -2349,116 +2401,67 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                         std::cout << "... (총 " << leftEdgePoints.size() << "개 포인트)" << std::endl;
                     }
                     
-                    // 이동평균 기반 불규칙성 검출
+                    // 평균선 거리 기반 불량 포인트 검출
                     if (leftEdgePoints.size() >= 5) {
-                        std::cout << "=== 이동평균 기반 불규칙성 검출 시작 ===" << std::endl;
+                        std::cout << "=== 평균선 거리 기반 불량 포인트 검출 시작 ===" << std::endl;
                         
-                        // Y 좌표순으로 정렬 (위에서 아래로)
-                        std::sort(leftEdgePoints.begin(), leftEdgePoints.end(), 
-                                 [](const cv::Point& a, const cv::Point& b) { return a.y < b.y; });
-                        
-                        // 각 점의 X 좌표만 추출
-                        std::vector<double> xCoords;
+                        // 모든 EDGE 포인트의 평균 X 좌표 계산
+                        double sumX = 0.0;
                         for (const auto& pt : leftEdgePoints) {
-                            xCoords.push_back(pt.x);
+                            sumX += pt.x;
                         }
+                        double avgX = sumX / leftEdgePoints.size();
                         
-                        // 이동평균 계산 (윈도우 크기 5)
-                        int windowSize = std::min(5, (int)xCoords.size());
-                        std::vector<double> movingAverage(xCoords.size());
-                        std::vector<double> deviations(xCoords.size());
-                        
-                        for (size_t i = 0; i < xCoords.size(); i++) {
-                            // 윈도우 범위 계산 (현재 점을 중심으로)
-                            int start = std::max(0, (int)i - windowSize/2);
-                            int end = std::min((int)xCoords.size(), start + windowSize);
-                            start = std::max(0, end - windowSize);  // 윈도우 크기 유지
-                            
-                            // 윈도우 내 평균 계산
-                            double sum = 0.0;
-                            for (int j = start; j < end; j++) {
-                                sum += xCoords[j];
-                            }
-                            movingAverage[i] = sum / (end - start);
-                            
-                            // 이동평균으로부터의 편차 계산
-                            deviations[i] = std::abs(xCoords[i] - movingAverage[i]);
-                        }
-                        
-                        // 편차들의 통계 계산
-                        double meanDeviation = 0.0;
-                        for (double dev : deviations) {
-                            meanDeviation += dev;
-                        }
-                        meanDeviation /= deviations.size();
-                        
-                        // 표준편차 계산
-                        double variance = 0.0;
-                        for (double dev : deviations) {
-                            variance += (dev - meanDeviation) * (dev - meanDeviation);
-                        }
-                        double stdDeviation = std::sqrt(variance / deviations.size());
-                        
-                        // 이상치 임계값 계산 (평균 + 2×표준편차)
-                        double outlierThreshold = meanDeviation + 2.0 * stdDeviation;
-                        
-                        // 불규칙성 검출 (임계값을 넘는 점들, 단 양 끝 3개씩 제외)
-                        int irregularityCount = 0;
-                        double maxDeviation = 0.0;
+                        // 각 포인트와 평균선 사이의 거리 계산 및 범위 체크
+                        int outlierCount = 0;
+                        double maxDistance = 0.0;
+                        std::vector<double> distances(leftEdgePoints.size());
                         std::vector<bool> isOutlier(leftEdgePoints.size(), false);
                         
-                        int excludeEdgeCount = std::min(3, (int)deviations.size() / 6);  // 양 끝 3개씩 또는 전체의 1/6
-                        
-                        for (size_t i = 0; i < deviations.size(); i++) {
-                            maxDeviation = std::max(maxDeviation, deviations[i]);
+                        for (size_t i = 0; i < leftEdgePoints.size(); i++) {
+                            // 평균 X값과의 거리 계산 (픽셀 단위)
+                            double distance = std::abs(leftEdgePoints[i].x - avgX);
+                            distances[i] = distance;
+                            maxDistance = std::max(maxDistance, distance);
                             
-                            // 양 끝단 점들은 이상치 검사에서 제외
-                            bool isEdgePoint = (i < excludeEdgeCount) || (i >= deviations.size() - excludeEdgeCount);
-                            
-                            if (!isEdgePoint && deviations[i] > outlierThreshold) {
-                                irregularityCount++;
+                            // 허용 범위 체크 (edgeDistanceMin ~ edgeDistanceMax)
+                            if (distance < pattern.edgeDistanceMin || distance > pattern.edgeDistanceMax) {
+                                outlierCount++;
                                 isOutlier[i] = true;
                             }
                         }
                         
-                        std::cout << "통계 정보:" << std::endl;
-                        std::cout << "- 평균 편차: " << meanDeviation << "px" << std::endl;
-                        std::cout << "- 표준편차: " << stdDeviation << "px" << std::endl;
-                        std::cout << "- 이상치 임계값: " << outlierThreshold << "px" << std::endl;
-                        std::cout << "- 최대 편차: " << maxDeviation << "px" << std::endl;
-                        std::cout << "- 양 끝 제외 개수: " << excludeEdgeCount << "개씩" << std::endl;
-                        std::cout << "- 불규칙성 개수: " << irregularityCount << "/" << (leftEdgePoints.size() - 2*excludeEdgeCount) << std::endl;
+                        std::cout << "평균선 거리 검사 정보:" << std::endl;
+                        std::cout << "- 평균 X 위치: " << avgX << "px" << std::endl;
+                        std::cout << "- 허용 거리 범위: " << pattern.edgeDistanceMin << " ~ " << pattern.edgeDistanceMax << "px" << std::endl;
+                        std::cout << "- 최대 거리: " << maxDistance << "px" << std::endl;
+                        std::cout << "- 범위 벗어난 포인트: " << outlierCount << "개" << std::endl;
+                        std::cout << "- 허용 최대 개수: " << edgeMaxOutliers << "개" << std::endl;
                         
                         // 검사 통과 여부 결정
-                        bool edgePassResult = (irregularityCount <= edgeMaxIrregularities);
+                        bool edgePassResult = (outlierCount <= edgeMaxOutliers);
                         if (edgePassed) *edgePassed = edgePassResult;
-                        if (edgeIrregularityCount) *edgeIrregularityCount = irregularityCount;
-                        if (edgeMaxDeviation) *edgeMaxDeviation = maxDeviation;
+                        if (edgeIrregularityCount) *edgeIrregularityCount = outlierCount;
+                        if (edgeMaxDeviation) *edgeMaxDeviation = maxDistance;
                         
                         std::cout << "EDGE 검사 완료: " << (edgePassResult ? "PASS" : "FAIL") << std::endl;
                         
-                        // 절단면 포인트를 정상/이상치로 색상 구분하여 그리기 (큰 크기로)
+                        // 절단면 포인트를 정상/불량으로 색상 구분하여 표시 정보 준비
                         for (size_t i = 0; i < leftEdgePoints.size(); i++) {
                             const auto& pt = leftEdgePoints[i];
-                            double deviation = deviations[i];
+                            double distance = distances[i];
                             bool outlier = isOutlier[i];
                             
-                            // 양 끝단 점 여부 확인
-                            bool isEdgePoint = (i < excludeEdgeCount) || (i >= leftEdgePoints.size() - excludeEdgeCount);
-                            
-                            // 통계적 분석 결과에 따른 색상 결정
+                            // 거리 기반 색상 결정 정보 (Qt 렌더링에서 활용 가능)
                             cv::Scalar pointColor;
-                            int pointSize = 2;  // 작은 점 크기
+                            int pointSize = 2;  // 기본 점 크기
                             
-                            if (isEdgePoint) {
-                                // 양 끝단 점들은 회색으로 표시 (검사 제외됨을 나타냄)
-                                pointColor = cv::Scalar(128, 128, 128);  // BGR: 회색
-                            } else if (outlier) {
-                                // 이상치 - 빨간색 (불량)
+                            if (outlier) {
+                                // 허용 범위 벗어남 - 빨간색 (불량)
                                 pointColor = cv::Scalar(0, 0, 255);  // BGR: 빨강
-                                pointSize = 3;  // 이상치는 조금 크게
-                            } else if (deviation > meanDeviation + stdDeviation) {
-                                // 정상이지만 편차가 큰 경우 - 노란색 (주의)
+                                pointSize = 3;  // 불량 포인트는 조금 크게
+                            } else if (distance > pattern.edgeDistanceMax * 0.7) {
+                                // 허용 범위 내이지만 거리가 큰 경우 - 노란색 (주의)
                                 pointColor = cv::Scalar(0, 255, 255);  // BGR: 노랑
                             } else {
                                 // 정상 - 녹색 (양호)
@@ -2468,25 +2471,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                             // OpenCV 시각화 제거: Qt에서 좌표 기반으로 렌더링됨
                         }
                         
-                        // 평균 수직 위치 계산 및 기준선 그리기
-                        if (!leftEdgePoints.empty()) {
-                            // 모든 절단면 포인트의 평균 X 좌표 계산 (수직 기준선)
-                            double sumX = 0.0;
-                            for (const auto& pt : leftEdgePoints) {
-                                sumX += pt.x;
-                            }
-                            double avgX = sumX / leftEdgePoints.size();
-                            int averageX = static_cast<int>(avgX);
-                            
-                            // 평균 X 위치를 결과에 저장
-                            if (edgeAverageX) *edgeAverageX = averageX;
-                            
-                            // EDGE 박스의 위쪽과 아래쪽 Y 좌표 찾기
-                            float topmostY = std::min({corners[0].y, corners[1].y, corners[2].y, corners[3].y});
-                            float bottommostY = std::max({corners[0].y, corners[1].y, corners[2].y, corners[3].y});
-                    
-                            std::cout << "- 절단면 평균 X 위치: " << avgX << "px (수직 기준선 표시)" << std::endl;
-                        }
+                        // 평균 X 위치를 결과에 저장
+                        int averageX = static_cast<int>(avgX);
+                        if (edgeAverageX) *edgeAverageX = averageX;
+                        
+                        std::cout << "- 절단면 평균 X 위치: " << avgX << "px (수직 기준선 표시)" << std::endl;
                         
                         // EDGE 포인트들을 외부 매개변수로 전달 (Qt 렌더링용)
                         if (edgePoints) {

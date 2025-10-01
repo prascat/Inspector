@@ -767,7 +767,7 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("edgeOffsetX", QString::number(pattern.edgeOffsetX));
     xml.writeAttribute("edgeBoxWidth", QString::number(pattern.edgeBoxWidth));
     xml.writeAttribute("edgeBoxHeight", QString::number(pattern.edgeBoxHeight));
-    xml.writeAttribute("edgeMaxIrregularities", QString::number(pattern.edgeMaxIrregularities));
+    xml.writeAttribute("edgeMaxOutliers", QString::number(pattern.edgeMaxOutliers));
     
     if (!pattern.templateImage.isNull()) {
         QByteArray ba;
@@ -1363,9 +1363,9 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
         pattern.edgeBoxHeight = edgeBoxHeightStr.toInt();
     } // 비어있으면 CommonDefs.h의 기본값(150) 사용
     
-    QString edgeMaxIrregularitiesStr = xml.attributes().value("edgeMaxIrregularities").toString();
-    if (!edgeMaxIrregularitiesStr.isEmpty()) {
-        pattern.edgeMaxIrregularities = edgeMaxIrregularitiesStr.toInt();
+    QString edgeMaxOutliersStr = xml.attributes().value("edgeMaxOutliers").toString();
+    if (!edgeMaxOutliersStr.isEmpty()) {
+        pattern.edgeMaxOutliers = edgeMaxOutliersStr.toInt();
     } // 비어있으면 CommonDefs.h의 기본값(5) 사용
     
     QString imageStr = xml.attributes().value("templateImage").toString();

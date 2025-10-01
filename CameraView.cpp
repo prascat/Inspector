@@ -2093,7 +2093,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 int edgeIrregularityCount = result.edgeIrregularityCount.value(patternId, 0);
                 
                 QString edgeLabelText = QString("EDGE:/%1")
-                                      .arg(pattern->edgeMaxIrregularities);
+                                      .arg(pattern->edgeMaxOutliers);
                 
                 QFont edgeLabelFont("Arial", 10, QFont::Bold);
                 painter.setFont(edgeLabelFont);
@@ -2446,6 +2446,75 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             // 점들을 연결하는 선 그리기
             for (int i = 0; i < displayPoints.size() - 1; i++) {
                 painter.drawLine(displayPoints[i], displayPoints[i + 1]);
+            }
+            
+            // EDGE 절단면 평균 X값 계산 및 회전된 기준선 그리기
+            if (!edgePoints.isEmpty() && patternInfo) {
+                // 원본 좌표에서 평균 X값 및 Y값 계산
+                int totalX = 0, totalY = 0;
+                for (const QPoint& point : edgePoints) {
+                    totalX += point.x();
+                    totalY += point.y();
+                }
+                float averageX = static_cast<float>(totalX) / edgePoints.size();
+                float averageY = static_cast<float>(totalY) / edgePoints.size();
+                
+                // 패턴 각도 가져오기 (검출된 각도가 있으면 사용, 없으면 티칭 각도 사용)
+                float patternAngle = patternInfo->angle;
+                if (result.angles.contains(patternId)) {
+                    patternAngle = static_cast<float>(result.angles[patternId]);
+                }
+                
+                // EDGE 포인트들의 Y 범위 계산 (시작점과 끝점)
+                int minY = edgePoints[0].y();
+                int maxY = edgePoints[0].y();
+                for (const QPoint& point : edgePoints) {
+                    if (point.y() < minY) minY = point.y();
+                    if (point.y() > maxY) maxY = point.y();
+                }
+                
+                // 수직 기준선 그리기 (EDGE 포인트 Y 범위만큼)
+                QPen avgLinePen(Qt::cyan, 2, Qt::DashLine);  // 청록색 점선
+                painter.setPen(avgLinePen);
+                
+                // 평균 X값 위치에서 EDGE 포인트들의 Y 범위만큼 수직선 그리기
+                QPoint lineStart = originalToDisplay(QPoint(static_cast<int>(averageX), minY));
+                QPoint lineEnd = originalToDisplay(QPoint(static_cast<int>(averageX), maxY));
+                
+                painter.drawLine(lineStart, lineEnd);
+                
+                // 각 절단면 포인트에서 평균 수직선까지 연결선 그리기
+                for (const QPoint& edgePoint : edgePoints) {
+                    // 절단면 포인트의 화면 좌표
+                    QPoint displayEdgePoint = originalToDisplay(edgePoint);
+                    
+                    // 평균선 상의 같은 Y 위치 점 (수직 투영)
+                    QPoint avgLinePoint = originalToDisplay(QPoint(static_cast<int>(averageX), edgePoint.y()));
+                    
+                    // 거리 계산 (픽셀 단위)
+                    float distance = abs(edgePoint.x() - static_cast<int>(averageX));
+                    
+                    // 허용 범위 확인 (패턴 정보에서 가져오기)
+                    bool isWithinRange = (distance >= patternInfo->edgeDistanceMin && 
+                                        distance <= patternInfo->edgeDistanceMax);
+                    
+                    // 조건에 따른 색상 설정: 양품(초록색), 불량(빨간색)
+                    QPen connectionPen;
+                    if (isWithinRange) {
+                        connectionPen = QPen(QColor(0, 255, 0), 1);  // 초록색 (양품)
+                    } else {
+                        connectionPen = QPen(QColor(255, 0, 0), 2);  // 빨간색 (불량, 두껍게)
+                    }
+                    
+                    painter.setPen(connectionPen);
+                    painter.drawLine(displayEdgePoint, avgLinePoint);
+                }
+                
+                // 평균 X값 표시 텍스트
+                painter.setPen(QPen(Qt::white, 1));
+                painter.setFont(QFont("Arial", 10));
+                QString avgText = QString("Avg X: %1 (∠%2°)").arg(static_cast<int>(averageX)).arg(static_cast<int>(patternAngle));
+                painter.drawText(lineStart.x() + 5, lineStart.y() - 10, avgText);
             }
             
             // EDGE 시작점과 끝점 표시 (작은 원)
@@ -2855,7 +2924,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         
                         // EDGE 라벨 표시 (검사 박스 위에) - 회전된 상태에서 그리기
                         QString edgeLabelText = QString("EDGE:/%1")
-                                              .arg(pattern.edgeMaxIrregularities);
+                                              .arg(pattern.edgeMaxOutliers);
                         
                         // 텍스트 크기 계산
                         QFont edgeLabelFont("Arial", 10, QFont::Bold);

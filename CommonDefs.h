@@ -181,7 +181,13 @@ struct PatternInfo {
     int edgeOffsetX = 75;                    // 패턴 왼쪽에서의 오프셋 (픽셀)
     int edgeBoxWidth = 90;                   // EDGE 검사 박스 너비 (픽셀)
     int edgeBoxHeight = 150;                 // EDGE 검사 박스 높이 (픽셀)
-    int edgeMaxIrregularities = 5;           // 허용 최대 불규칙성 개수
+    int edgeMaxOutliers = 5;                 // 허용 최대 불량 포인트 개수 (평균선 거리 기준)
+    int edgeStartPercent = 3;                // EDGE 시작 제외 퍼센트 (1-50%)
+    int edgeEndPercent = 3;                  // EDGE 끝 제외 퍼센트 (1-50%)
+    
+    // EDGE 평균선 거리 검사 파라미터
+    int edgeDistanceMin = 1;                 // 평균선에서 최소 허용 거리 (픽셀)
+    int edgeDistanceMax = 10;                // 평균선에서 최대 허용 거리 (픽셀)
 
     // SLOPE 검사 관련 파라미터 (STRIP 4점 기울기 검사)
     bool slopeEnabled = true;                // SLOPE 검사 활성화 여부

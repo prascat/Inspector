@@ -2460,8 +2460,28 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         
         // EDGE 포인트들을 절대좌표로 변환 (회전 없이 오프셋만 적용)
         if (!edgePoints.empty()) {
+            // EDGE 포인트 필터링: 시작/끝 퍼센트만큼 제외
+            int totalPoints = edgePoints.size();
+            int startSkip = (totalPoints * pattern.edgeStartPercent) / 100;
+            int endSkip = (totalPoints * pattern.edgeEndPercent) / 100;
+            
+            qDebug() << "🔹🔹🔹 EDGE 포인트 필터링 적용 🔹🔹🔹";
+            qDebug() << "📊 전체 EDGE 포인트 개수:" << totalPoints;
+            qDebug() << "🚫 시작 제외 퍼센트:" << pattern.edgeStartPercent << "% (" << startSkip << "개 포인트)";
+            qDebug() << "🚫 끝 제외 퍼센트:" << pattern.edgeEndPercent << "% (" << endSkip << "개 포인트)";
+            
+            // 유효한 범위 확인
+            int validStart = startSkip;
+            int validEnd = totalPoints - endSkip;
+            if (validStart >= validEnd) {
+                qDebug() << "EDGE 필터링 오류: 유효한 포인트가 없음 (시작:" << validStart << ", 끝:" << validEnd << ")";
+                validStart = 0;
+                validEnd = totalPoints;
+            }
+            
             QList<QPoint> absoluteEdgePoints;
-            for (const cv::Point& point : edgePoints) {
+            for (int i = validStart; i < validEnd; i++) {
+                const cv::Point& point = edgePoints[i];
                 // EDGE는 수직 절단면이므로 회전 적용하지 않고 오프셋만 적용
                 QPoint absolutePoint(point.x + static_cast<int>(offset.x), 
                                    point.y + static_cast<int>(offset.y));
@@ -2469,9 +2489,9 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             }
             result.edgeAbsolutePoints[pattern.id] = absoluteEdgePoints;
             
-            qDebug() << "=== EDGE 절대좌표 변환 완료 ===";
-            qDebug() << "원본 EDGE 포인트 개수:" << edgePoints.size();
-            qDebug() << "변환된 절대좌표 개수:" << absoluteEdgePoints.size();
+            qDebug() << "✅✅✅ EDGE 절대좌표 변환 완료 (필터링 적용됨) ✅✅✅";
+            qDebug() << "🎯 필터링된 EDGE 포인트 개수:" << (validEnd - validStart);
+            qDebug() << "📍 변환된 절대좌표 개수:" << absoluteEdgePoints.size();
             if (!absoluteEdgePoints.isEmpty()) {
                 qDebug() << "첫 번째 EDGE 절대좌표:" << absoluteEdgePoints.first();
                 qDebug() << "마지막 EDGE 절대좌표:" << absoluteEdgePoints.last();
