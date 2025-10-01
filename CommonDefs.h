@@ -84,7 +84,7 @@ struct InspectionResult {
     QMap<QUuid, QPointF> edgeBoxCenter;             // EDGE 박스 중심 상대좌표 (패턴 중심 기준)
     QMap<QUuid, QSizeF> edgeBoxSize;                // EDGE 박스 크기 (width, height)
     QMap<QUuid, bool> edgeMeasured;                 // EDGE 측정 완료 여부 (패턴 ID -> 측정 여부)
-    QMap<QUuid, std::vector<cv::Point>> edgePoints; // 절단면 포인트들 (패턴 ID -> 포인트 배열)
+    QMap<QUuid, QList<QPoint>> edgeAbsolutePoints; // EDGE 절대좌표 포인트들 (패턴 ID -> Qt 포인트 배열)
     QMap<QUuid, int> edgeAverageX;                  // 절단면 평균 X 위치 (패턴 ID -> X 좌표)
     
     // STRIP 4개 컨투어 포인트 (절대좌표)
@@ -100,9 +100,9 @@ struct InspectionResult {
 // 패턴 유형 열거형
 enum class PatternType {
     ROI,            // 1. 관심영역 (최상위)
-    FID,       // 2. 피듀셜 매칭 (ROI 내부에만 가능)
-    INS,     // 3. 검사영역 (피듀셜 내외부 가능)
-    FIL          // 4. 필터 (검사영역 내부에만 가능) 
+    FID,            // 2. 피듀셜 매칭 (ROI 내부에만 가능)
+    INS,            // 3. 검사영역 (피듀셜 내외부 가능)
+    FIL             // 4. 필터 (검사영역 내부에만 가능)
 };
 
 // 필터 정보 구조체

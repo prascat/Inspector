@@ -74,7 +74,7 @@ public:
                                      const PatternInfo& pattern,
                                      double& score, cv::Point& startPoint,
                                      cv::Point& maxGradientPoint, std::vector<cv::Point>& gradientPoints,
-                                     cv::Mat& resultImage);
+                                     cv::Mat& resultImage, std::vector<cv::Point>* edgePoints = nullptr);
 };
 
 #endif // IMAGEPROCESSOR_H

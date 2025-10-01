@@ -2399,6 +2399,70 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         
         painter.restore();
     }
+    
+    // EDGE 포인트 그리기 (절단면 중심선)
+    for (auto it = result.edgeAbsolutePoints.begin(); it != result.edgeAbsolutePoints.end(); ++it) {
+        QUuid patternId = it.key();
+        QList<QPoint> edgePoints = it.value();
+        
+        // 선택된 패턴 필터링
+        if (hasSelectedPattern && patternId != selectedInspectionPatternId) {
+            continue;
+        }
+        
+        // 패턴 정보 찾기
+        const PatternInfo* patternInfo = nullptr;
+        for (const PatternInfo& pattern : patterns) {
+            if (pattern.id == patternId) {
+                patternInfo = &pattern;
+                break;
+            }
+        }
+        
+        if (!patternInfo || patternInfo->type != PatternType::INS) continue;
+        
+        // 패턴 가시성 확인
+        bool patternVisible = true;
+        if (hasSelectedPattern) {
+            patternVisible = (patternId == selectedInspectionPatternId);
+        } else if (!selectedPatternId.isNull()) {
+            patternVisible = (patternId == selectedPatternId);
+        }
+        
+        if (!patternVisible || edgePoints.isEmpty()) continue;
+        
+        painter.save();
+        
+        // EDGE 중심선 그리기 (연결된 선)
+        if (edgePoints.size() >= 2) {
+            QPen edgePen(Qt::magenta, 2);  // 마젠타 색상으로 EDGE 중심선
+            painter.setPen(edgePen);
+            
+            QVector<QPoint> displayPoints;
+            for (const QPoint& point : edgePoints) {
+                displayPoints.append(originalToDisplay(point));
+            }
+            
+            // 점들을 연결하는 선 그리기
+            for (int i = 0; i < displayPoints.size() - 1; i++) {
+                painter.drawLine(displayPoints[i], displayPoints[i + 1]);
+            }
+            
+            // EDGE 시작점과 끝점 표시 (작은 원)
+            if (!displayPoints.isEmpty()) {
+                painter.setPen(QPen(Qt::white, 2));
+                painter.setBrush(QBrush(Qt::magenta));
+                
+                // 시작점 (위쪽)
+                painter.drawEllipse(displayPoints.first(), 3, 3);
+                
+                // 끝점 (아래쪽)
+                painter.drawEllipse(displayPoints.last(), 3, 3);
+            }
+        }
+        
+        painter.restore();
+    }
 }
 
 void CameraView::paintEvent(QPaintEvent *event) {

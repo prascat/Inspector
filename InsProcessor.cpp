@@ -2097,24 +2097,24 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
                 break;
         }
         
-        // 결과 시각화 이미지 생성
+        // EDGE 포인트들을 절대좌표로 변환 (Qt 그리기용)
+        QList<QPoint> absoluteEdgePoints = transformPatternPoints(edgePoints, 
+                                                                 cv::Size(roi.cols, roi.rows),
+                                                                 pattern.angle, 
+                                                                 cv::Point2f(pattern.rect.center().x(), pattern.rect.center().y()));
+        result.edgeAbsolutePoints[pattern.id] = absoluteEdgePoints;
+        
+        qDebug() << "=== EDGE 절대좌표 변환 완료 ===";
+        qDebug() << "원본 EDGE 포인트 개수:" << edgePoints.size();
+        qDebug() << "변환된 절대좌표 개수:" << absoluteEdgePoints.size();
+        if (!absoluteEdgePoints.isEmpty()) {
+            qDebug() << "첫 번째 EDGE 절대좌표:" << absoluteEdgePoints.first();
+            qDebug() << "마지막 EDGE 절대좌표:" << absoluteEdgePoints.last();
+        }
+        
+        // 결과 시각화 이미지 생성 (원본 ROI 사용)
         cv::Mat visualEdges;
         cv::cvtColor(edges, visualEdges, cv::COLOR_GRAY2BGR);
-        
-        // 현재 엣지는 빨간색, 템플릿 엣지는 녹색으로 표시
-        for (int y = 0; y < edges.rows; y++) {
-            for (int x = 0; x < edges.cols; x++) {
-                if (edges.at<uchar>(y, x) > 0) {
-                    visualEdges.at<cv::Vec3b>(y, x) = cv::Vec3b(0, 0, 255);  // 빨간색
-                }
-                if (templateEdges.at<uchar>(y, x) > 0) {
-                    visualEdges.at<cv::Vec3b>(y, x) = cv::Vec3b(0, 255, 0);  // 녹색
-                }
-                if (edges.at<uchar>(y, x) > 0 && templateEdges.at<uchar>(y, x) > 0) {
-                    visualEdges.at<cv::Vec3b>(y, x) = cv::Vec3b(255, 255, 0); // 노란색 (일치)
-                }
-            }
-        }
         
         // 결과 이미지 저장
         result.insProcessedImages[pattern.id] = visualEdges;
@@ -2333,11 +2333,12 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         cv::Point edgeBoxTopLeft;
         bool edgePassed = true;
         int edgeAverageX = 0;
+        std::vector<cv::Point> edgePoints;  // EDGE 포인트들을 받을 변수
                 
     // performStripInspection 호출을 간소화: PatternInfo 전체를 전달
     bool isPassed = ImageProcessor::performStripInspection(roiImage, templateImage,
                                   pattern,
-                                  score, startPoint, maxGradientPoint, gradientPoints, resultImage);
+                                  score, startPoint, maxGradientPoint, gradientPoints, resultImage, &edgePoints);
     
     // ROI 좌표를 원본 이미지 좌표로 변환
     cv::Point2f patternCenter(pattern.rect.x() + pattern.rect.width()/2.0f, 
@@ -2456,6 +2457,26 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         
         result.edgeMeasured[pattern.id] = pattern.edgeEnabled;
         result.edgeAverageX[pattern.id] = edgeAverageX;
+        
+        // EDGE 포인트들을 절대좌표로 변환 (회전 없이 오프셋만 적용)
+        if (!edgePoints.empty()) {
+            QList<QPoint> absoluteEdgePoints;
+            for (const cv::Point& point : edgePoints) {
+                // EDGE는 수직 절단면이므로 회전 적용하지 않고 오프셋만 적용
+                QPoint absolutePoint(point.x + static_cast<int>(offset.x), 
+                                   point.y + static_cast<int>(offset.y));
+                absoluteEdgePoints.append(absolutePoint);
+            }
+            result.edgeAbsolutePoints[pattern.id] = absoluteEdgePoints;
+            
+            qDebug() << "=== EDGE 절대좌표 변환 완료 ===";
+            qDebug() << "원본 EDGE 포인트 개수:" << edgePoints.size();
+            qDebug() << "변환된 절대좌표 개수:" << absoluteEdgePoints.size();
+            if (!absoluteEdgePoints.isEmpty()) {
+                qDebug() << "첫 번째 EDGE 절대좌표:" << absoluteEdgePoints.first();
+                qDebug() << "마지막 EDGE 절대좌표:" << absoluteEdgePoints.last();
+            }
+        }
         
         // Qt로 시각화 추가 (시작점, 끝점, Local Max Gradient 지점들)
         if (!resultImage.empty()) {

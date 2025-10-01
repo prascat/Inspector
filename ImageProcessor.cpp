@@ -650,7 +650,7 @@ cv::Point ImageProcessor::findMaxThicknessGradientPosition(const std::vector<cv:
 bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::Mat& templateImage, 
                                            const PatternInfo& pattern, double& score, cv::Point& startPoint, 
                                            cv::Point& maxGradientPoint, std::vector<cv::Point>& gradientPoints, 
-                                           cv::Mat& resultImage) {
+                                           cv::Mat& resultImage, std::vector<cv::Point>* edgePoints) {
     // 결과 이미지용으로 원본의 깨끗한 복사본 생성 (마스킹 제거)
     cv::Mat cleanOriginal;
     roiImage.copyTo(cleanOriginal);
@@ -2465,13 +2465,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                                 pointColor = cv::Scalar(0, 255, 0);  // BGR: 초록
                             }
                             
-                            // 1픽셀 색깔 찍기 (circle 대신)
-                            if (pt.x >= 0 && pt.x < resultImage.cols && pt.y >= 0 && pt.y < resultImage.rows) {
-                                cv::Vec3b& pixel = resultImage.at<cv::Vec3b>(pt.y, pt.x);
-                                pixel[0] = pointColor[0]; // B
-                                pixel[1] = pointColor[1]; // G
-                                pixel[2] = pointColor[2]; // R
-                            }
+                            // OpenCV 시각화 제거: Qt에서 좌표 기반으로 렌더링됨
                         }
                         
                         // 평균 수직 위치 계산 및 기준선 그리기
@@ -2492,6 +2486,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                             float bottommostY = std::max({corners[0].y, corners[1].y, corners[2].y, corners[3].y});
                     
                             std::cout << "- 절단면 평균 X 위치: " << avgX << "px (수직 기준선 표시)" << std::endl;
+                        }
+                        
+                        // EDGE 포인트들을 외부 매개변수로 전달 (Qt 렌더링용)
+                        if (edgePoints) {
+                            *edgePoints = leftEdgePoints;
                         }
                     } else {
                         std::cout << "EDGE 검사 실패: 절단면 포인트 부족 (" << leftEdgePoints.size() << "개)" << std::endl;
