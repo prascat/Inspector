@@ -650,7 +650,9 @@ cv::Point ImageProcessor::findMaxThicknessGradientPosition(const std::vector<cv:
 bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::Mat& templateImage, 
                                            const PatternInfo& pattern, double& score, cv::Point& startPoint, 
                                            cv::Point& maxGradientPoint, std::vector<cv::Point>& gradientPoints, 
-                                           cv::Mat& resultImage, std::vector<cv::Point>* edgePoints) {
+                                           cv::Mat& resultImage, std::vector<cv::Point>* edgePoints,
+                                           bool* stripLengthPassed, double* stripMeasuredLength, 
+                                           cv::Point* stripLengthStartPoint, cv::Point* stripLengthEndPoint) {
     // 결과 이미지용으로 원본의 깨끗한 복사본 생성 (마스킹 제거)
     cv::Mat cleanOriginal;
     roiImage.copyTo(cleanOriginal);
@@ -2222,6 +2224,71 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         }
         } // stripRearEnabled 조건문 종료
         
+        // STRIP 길이 검사 수행 (활성화된 경우)
+        if (stripLengthPassed) *stripLengthPassed = true;  // 기본값: PASS
+        if (stripMeasuredLength) *stripMeasuredLength = 0.0;
+        if (stripLengthStartPoint) *stripLengthStartPoint = cv::Point(0, 0);
+        if (stripLengthEndPoint) *stripLengthEndPoint = cv::Point(0, 0);
+        
+        // EDGE 검사 영역 중심점 계산 (STRIP 길이 측정용)
+        cv::Point2f patternCenter(roiImage.cols / 2.0f, roiImage.rows / 2.0f);
+        float edgeOffsetFromCenter = (-patternWidth/2.0f) + edgeOffsetX;
+        cv::Point edgeBoxCenter = cv::Point(
+            static_cast<int>(patternCenter.x + edgeOffsetFromCenter),
+            static_cast<int>(patternCenter.y)
+        );
+        
+        if (pattern.stripLengthEnabled && gradientPoints.size() >= 4) {
+            std::cout << "=== STRIP 길이 검사 시작 ===" << std::endl;
+            
+            // 이미 계산된 P2, P4 점들 사용 (gradientPoints에서)
+            cv::Point p2 = gradientPoints[1];  // 하단 첫번째 변화점
+            cv::Point p4 = gradientPoints[3];  // 하단 두번째 변화점
+            
+            // P2, P4 중간점 계산 (상단-하단 중심)
+            cv::Point p24MidPoint = cv::Point((p2.x + p4.x) / 2, (p2.y + p4.y) / 2);
+            
+            // EDGE 절단면 평균 X 위치와 EDGE 포인트들의 중심 Y 위치로 시작점 계산
+            cv::Point edgeStartPoint;
+            if (edgeAverageX && *edgeAverageX > 0 && edgePoints && !edgePoints->empty()) {
+                // EDGE 포인트들의 중심 Y 위치 계산
+                double sumY = 0.0;
+                for (const auto& pt : *edgePoints) {
+                    sumY += pt.y;
+                }
+                int edgeCenterY = static_cast<int>(sumY / edgePoints->size());
+                
+                // 시작점: EDGE 평균 X 위치 + EDGE 포인트들의 중심 Y 위치
+                edgeStartPoint = cv::Point(*edgeAverageX, edgeCenterY);
+            } else {
+                // 폴백: EDGE 검사 영역 중심점 사용
+                edgeStartPoint = edgeBoxCenter;
+            }
+            
+            // 두 점 사이의 픽셀 거리 계산
+            double lengthDistance = cv::norm(p24MidPoint - edgeStartPoint);
+            
+            // 허용 범위 확인
+            bool lengthInRange = (lengthDistance >= pattern.stripLengthMin && 
+                                lengthDistance <= pattern.stripLengthMax);
+            
+            std::cout << "P2,P4 중간점: (" << p24MidPoint.x << "," << p24MidPoint.y << ")" << std::endl;
+            std::cout << "EDGE 절단면 평균 시작점: (" << edgeStartPoint.x << "," << edgeStartPoint.y << ")" << std::endl;
+            std::cout << "측정된 STRIP 길이: " << lengthDistance << " 픽셀" << std::endl;
+            std::cout << "허용 범위: " << pattern.stripLengthMin << " ~ " << pattern.stripLengthMax << " 픽셀" << std::endl;
+            std::cout << "STRIP 길이 판정: " << (lengthInRange ? "PASS" : "FAIL") << std::endl;
+            
+            // 결과 저장
+            if (stripLengthPassed) *stripLengthPassed = lengthInRange;
+            if (stripMeasuredLength) *stripMeasuredLength = lengthDistance;
+            if (stripLengthStartPoint) *stripLengthStartPoint = edgeStartPoint;
+            if (stripLengthEndPoint) *stripLengthEndPoint = p24MidPoint;
+            
+            isPassed = isPassed && lengthInRange;  // 전체 STRIP 검사 결과에 반영
+        } else {
+            std::cout << "STRIP 길이 검사가 비활성화되어 있거나 gradient 포인트가 부족합니다." << std::endl;
+        }
+        
         // EDGE 검사 수행 (활성화된 경우)
         if (edgePassed) *edgePassed = true;  // 기본값: PASS
         if (edgeIrregularityCount) *edgeIrregularityCount = 0;
@@ -2235,19 +2302,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 std::cout << "패턴 크기: " << roiImage.cols << "x" << roiImage.rows << std::endl;
                 std::cout << "EDGE 오프셋: " << edgeOffsetX << ", 박스 크기: " << edgeBoxWidth << "x" << edgeBoxHeight << std::endl;
                 
-                // 패턴 중심과 크기 계산
-                cv::Point2f patternCenter(roiImage.cols / 2.0f, roiImage.rows / 2.0f);
-                float patternWidth = roiImage.cols;
-                
                 // EDGE는 항상 수직이어야 하므로 회전각을 적용하지 않음
                 std::cout << "🔹 EDGE 검사는 수직 절단면이므로 회전각 무시" << std::endl;
                 
-                // EDGE 검사 영역 중심점 계산 (패턴 왼쪽에서 edgeOffsetX만큼 안쪽, 회전 없음)
-                float edgeOffsetFromCenter = (-patternWidth/2.0f) + edgeOffsetX;
-                cv::Point2f edgeCenter(
-                    patternCenter.x + edgeOffsetFromCenter,  // 회전 없이 단순 오프셋만 적용
-                    patternCenter.y                          // Y는 패턴 중심과 동일
-                );
+                // 이미 계산된 EDGE 검사 박스 중심점 사용
+                cv::Point2f edgeCenter(edgeBoxCenter.x, edgeBoxCenter.y);
                 
                 // EDGE 검사 박스 꼭짓점 계산 (수직 박스, 회전 없음)
                 float halfWidth = edgeBoxWidth / 2.0f;

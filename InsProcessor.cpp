@@ -2334,11 +2334,18 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         bool edgePassed = true;
         int edgeAverageX = 0;
         std::vector<cv::Point> edgePoints;  // EDGE 포인트들을 받을 변수
+        
+        // STRIP 길이 검사 결과 변수들
+        bool stripLengthPassed = true;
+        double stripMeasuredLength = 0.0;
+        cv::Point stripLengthStartPoint;
+        cv::Point stripLengthEndPoint;
                 
     // performStripInspection 호출을 간소화: PatternInfo 전체를 전달
     bool isPassed = ImageProcessor::performStripInspection(roiImage, templateImage,
                                   pattern,
-                                  score, startPoint, maxGradientPoint, gradientPoints, resultImage, &edgePoints);
+                                  score, startPoint, maxGradientPoint, gradientPoints, resultImage, &edgePoints,
+                                  &stripLengthPassed, &stripMeasuredLength, &stripLengthStartPoint, &stripLengthEndPoint);
     
     // ROI 좌표를 원본 이미지 좌표로 변환
     cv::Point2f patternCenter(pattern.rect.x() + pattern.rect.width()/2.0f, 
@@ -2395,6 +2402,16 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     double slope24 = static_cast<double>(absPoint4.y() - absPoint2.y()) / static_cast<double>(absPoint4.x() - absPoint2.x());
     result.stripSlope13[pattern.id] = slope13;
     result.stripSlope24[pattern.id] = slope24;
+    
+    // STRIP 길이 검사 결과 저장
+    result.stripLengthResults[pattern.id] = stripLengthPassed;
+    result.stripMeasuredLength[pattern.id] = stripMeasuredLength;
+    
+    // STRIP 길이 측정 점들을 절대 좌표로 변환
+    QPoint absStripLengthStart = QPoint(stripLengthStartPoint.x + offset.x, stripLengthStartPoint.y + offset.y);
+    QPoint absStripLengthEnd = QPoint(stripLengthEndPoint.x + offset.x, stripLengthEndPoint.y + offset.y);
+    result.stripLengthStartPoint[pattern.id] = absStripLengthStart;
+    result.stripLengthEndPoint[pattern.id] = absStripLengthEnd;
     
     qDebug() << "=== STRIP 4점 좌표 변환 ===";
     qDebug() << "패턴 중심:" << QPointF(patternCenter.x, patternCenter.y);

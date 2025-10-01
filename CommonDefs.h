@@ -95,6 +95,12 @@ struct InspectionResult {
     QMap<QUuid, bool> stripPointsValid;            // 4개 포인트 유효성 (패턴 ID -> 유효 여부)
     QMap<QUuid, double> stripSlope13;              // Point 1-3 기울기 (패턴 ID -> 기울기)
     QMap<QUuid, double> stripSlope24;              // Point 2-4 기울기 (패턴 ID -> 기울기)
+    
+    // STRIP 길이 검사 결과
+    QMap<QUuid, bool> stripLengthResults;          // STRIP 길이 검사 통과 여부 (패턴 ID -> 통과 여부)
+    QMap<QUuid, double> stripMeasuredLength;       // 측정된 STRIP 길이 (패턴 ID -> 길이)
+    QMap<QUuid, QPoint> stripLengthStartPoint;     // 길이 측정 시작점 (EDGE 평균선 중점)
+    QMap<QUuid, QPoint> stripLengthEndPoint;       // 길이 측정 끝점 (P3,P4 중점)
 };
 
 // 패턴 유형 열거형
@@ -192,7 +198,7 @@ struct PatternInfo {
     // SLOPE 검사 관련 파라미터 (STRIP 4점 기울기 검사)
     bool slopeEnabled = true;                // SLOPE 검사 활성화 여부
     double slopeTopTolerance = 2.0;          // 상단(P1-P3) 허용 기울기 오차 (도)
-    double slopeBottomTolerance = 2.0;       // 하단(P2-P4) 허용 기울기 오차 (도)
+    double slopeBottomTolerance = 2.0;       // 하단(P3-P4) 허용 기울기 오차 (도)
 
     // 이진화 검사를 위한 추가 속성
     int binaryThreshold = 128;        // 이진화 임계값 (0-255)

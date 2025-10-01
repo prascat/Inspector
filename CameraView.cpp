@@ -2397,6 +2397,43 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         painter.drawLine(displayPoint1, displayPoint3);
         painter.drawLine(displayPoint2, displayPoint4);
         
+        // STRIP 길이 측정선 그리기 (있는 경우에만)
+        if (result.stripLengthStartPoint.contains(patternId) && result.stripLengthEndPoint.contains(patternId)) {
+            QPoint lengthStartPoint = result.stripLengthStartPoint.value(patternId);
+            QPoint lengthEndPoint = result.stripLengthEndPoint.value(patternId);
+            
+            // 절대좌표를 화면좌표로 변환
+            QPoint displayLengthStart = originalToDisplay(lengthStartPoint);
+            QPoint displayLengthEnd = originalToDisplay(lengthEndPoint);
+            
+            // 길이 검사 통과 여부에 따른 색상 설정
+            bool lengthPassed = result.stripLengthResults.value(patternId, true);
+            QColor lengthLineColor = lengthPassed ? QColor(255, 255, 0) : QColor(255, 0, 0); // 통과시 노란색, 실패시 빨간색
+            
+            // STRIP 길이 측정선 그리기 (점선)
+            QPen lengthPen(lengthLineColor, 3, Qt::DashLine);
+            painter.setPen(lengthPen);
+            painter.drawLine(displayLengthStart, displayLengthEnd);
+            
+            // 시작점과 끝점에 작은 원 그리기
+            painter.setPen(QPen(lengthLineColor, 2));
+            painter.setBrush(QBrush(lengthLineColor));
+            painter.drawEllipse(displayLengthStart, 3, 3);
+            painter.drawEllipse(displayLengthEnd, 3, 3);
+            
+            // 길이 수치 표시
+            double measuredLength = result.stripMeasuredLength.value(patternId, 0.0);
+            QString lengthText = QString("L:%1px").arg(static_cast<int>(measuredLength));
+            
+            // 측정선 중간지점에 텍스트 표시
+            QPoint textPos = QPoint((displayLengthStart.x() + displayLengthEnd.x()) / 2,
+                                   (displayLengthStart.y() + displayLengthEnd.y()) / 2);
+            
+            painter.setPen(QPen(Qt::white, 1));
+            painter.setFont(QFont("Arial", 10, QFont::Bold));
+            painter.drawText(textPos + QPoint(5, -5), lengthText);
+        }
+        
         painter.restore();
     }
     
