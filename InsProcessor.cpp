@@ -2377,16 +2377,41 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         cv::Point roiPoint3 = gradientPoints[1];  // Point 3: 오른쪽 위
         cv::Point roiPoint4 = gradientPoints[3];  // Point 4: 오른쪽 아래
         
-        qDebug() << "OpenCV 검출 STRIP 4점 사용 - P1:" << QPoint(roiPoint1.x, roiPoint1.y) 
+        qDebug() << "OpenCV 검출 STRIP 4점 (회전 전) - P1:" << QPoint(roiPoint1.x, roiPoint1.y) 
                  << "P2:" << QPoint(roiPoint2.x, roiPoint2.y) 
                  << "P3:" << QPoint(roiPoint3.x, roiPoint3.y) 
                  << "P4:" << QPoint(roiPoint4.x, roiPoint4.y);
         
-        // 절대좌표로 변환
-        absPoint1 = QPoint(roiPoint1.x + static_cast<int>(offset.x), roiPoint1.y + static_cast<int>(offset.y));
-        absPoint2 = QPoint(roiPoint2.x + static_cast<int>(offset.x), roiPoint2.y + static_cast<int>(offset.y));
-        absPoint3 = QPoint(roiPoint3.x + static_cast<int>(offset.x), roiPoint3.y + static_cast<int>(offset.y));
-        absPoint4 = QPoint(roiPoint4.x + static_cast<int>(offset.x), roiPoint4.y + static_cast<int>(offset.y));
+        // 패턴 회전각만큼 4점을 역회전시켜 0도 기준 위치로 고정
+        cv::Point2f roiCenter(roiImage.cols / 2.0f, roiImage.rows / 2.0f);
+        double reverseAngle = -pattern.angle * CV_PI / 180.0; // 역회전각 (라디안)
+        
+        auto rotatePoint = [&](cv::Point p) -> cv::Point {
+            cv::Point2f pt(p.x - roiCenter.x, p.y - roiCenter.y);  // 중심 기준으로 이동
+            float cos_a = cos(reverseAngle);
+            float sin_a = sin(reverseAngle);
+            cv::Point2f rotated;
+            rotated.x = pt.x * cos_a - pt.y * sin_a;
+            rotated.y = pt.x * sin_a + pt.y * cos_a;
+            return cv::Point(rotated.x + roiCenter.x, rotated.y + roiCenter.y);  // 원점 복원
+        };
+        
+        // 역회전 적용
+        cv::Point fixedPoint1 = rotatePoint(roiPoint1);
+        cv::Point fixedPoint2 = rotatePoint(roiPoint2);  
+        cv::Point fixedPoint3 = rotatePoint(roiPoint3);
+        cv::Point fixedPoint4 = rotatePoint(roiPoint4);
+        
+        qDebug() << "역회전 적용 STRIP 4점 (0도 기준) - P1:" << QPoint(fixedPoint1.x, fixedPoint1.y) 
+                 << "P2:" << QPoint(fixedPoint2.x, fixedPoint2.y) 
+                 << "P3:" << QPoint(fixedPoint3.x, fixedPoint3.y) 
+                 << "P4:" << QPoint(fixedPoint4.x, fixedPoint4.y);
+        
+        // 절대좌표로 변환 (고정된 점 사용)
+        absPoint1 = QPoint(fixedPoint1.x + static_cast<int>(offset.x), fixedPoint1.y + static_cast<int>(offset.y));
+        absPoint2 = QPoint(fixedPoint2.x + static_cast<int>(offset.x), fixedPoint2.y + static_cast<int>(offset.y));
+        absPoint3 = QPoint(fixedPoint3.x + static_cast<int>(offset.x), fixedPoint3.y + static_cast<int>(offset.y));
+        absPoint4 = QPoint(fixedPoint4.x + static_cast<int>(offset.x), fixedPoint4.y + static_cast<int>(offset.y));
     } else {
         qDebug() << "경고: gradientPoints 개수 부족 (" << gradientPoints.size() << "/4)";
         return true; // 검출 실패시 early return
