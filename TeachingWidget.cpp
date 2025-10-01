@@ -2808,8 +2808,8 @@ void TeachingWidget::createPropertyPanels() {
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::COLOR));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::EDGE));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::BINARY));
-    insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::AI_MATCH1));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::STRIP));
+    insMethodCombo->setCurrentIndex(0);  // 기본값을 COLOR로 설정
     basicInspectionLayout->addRow(insMethodLabel, insMethodCombo);
 
     // 합격 임계값
@@ -3010,6 +3010,29 @@ void TeachingWidget::createPropertyPanels() {
     separator->setFrameShadow(QFrame::Sunken);
     insStripLayout->addRow(separator);
     
+    // STRIP 길이검사 체크박스
+    insStripLengthEnabledCheck = new QCheckBox("STRIP 길이검사 활성화", insStripPanel);
+    insStripLayout->addRow("", insStripLengthEnabledCheck);
+    
+    // STRIP 길이검사 범위 설정
+    insStripLengthMinLabel = new QLabel("최소 길이 (px):", insStripPanel);
+    insStripLengthMinSpin = new QSpinBox(insStripPanel);
+    insStripLengthMinSpin->setRange(10, 9999);
+    insStripLengthMinSpin->setValue(100);
+    insStripLayout->addRow(insStripLengthMinLabel, insStripLengthMinSpin);
+    
+    insStripLengthMaxLabel = new QLabel("최대 길이 (px):", insStripPanel);
+    insStripLengthMaxSpin = new QSpinBox(insStripPanel);
+    insStripLengthMaxSpin->setRange(10, 9999);
+    insStripLengthMaxSpin->setValue(500);
+    insStripLayout->addRow(insStripLengthMaxLabel, insStripLengthMaxSpin);
+    
+    // FRONT 두께검사 구분선 추가
+    QFrame* frontSeparator = new QFrame(insStripPanel);
+    frontSeparator->setFrameShape(QFrame::HLine);
+    frontSeparator->setFrameShadow(QFrame::Sunken);
+    insStripLayout->addRow(frontSeparator);
+    
     // FRONT 두께 검사 체크박스
     insStripFrontEnabledCheck = new QCheckBox("FRONT 두께 검사 활성화", insStripPanel);
     insStripLayout->addRow("", insStripFrontEnabledCheck);
@@ -3065,7 +3088,6 @@ void TeachingWidget::createPropertyPanels() {
     
     // REAR 두께 검사 체크박스
     insStripRearEnabledCheck = new QCheckBox("REAR 두께 검사 활성화", insStripPanel);
-    insStripLayout->addRow("", insStripRearEnabledCheck);
     
     // REAR 두께 측정 박스 크기 설정
     insStripRearThicknessWidthLabel = new QLabel("너비:", insStripPanel);
@@ -3134,10 +3156,24 @@ void TeachingWidget::createPropertyPanels() {
     insStripLayout->addRow("FRONT 두께 범위:", thicknessRangeWidget);
     insStripLayout->addRow(insStripThicknessMinLabel, insStripThicknessMinSpin);
     insStripLayout->addRow(insStripThicknessMaxLabel, insStripThicknessMaxSpin);
+    
+    // REAR 두께 검사 구분선
+    QFrame* rearSeparator = new QFrame(insStripPanel);
+    rearSeparator->setFrameShape(QFrame::HLine);
+    rearSeparator->setFrameShadow(QFrame::Sunken);
+    insStripLayout->addRow(rearSeparator);
+    
+    insStripLayout->addRow("", insStripRearEnabledCheck);
     insStripLayout->addRow("REAR 두께 범위:", rearThicknessRangeWidget);
     insStripLayout->addRow(insStripRearThicknessMinLabel, insStripRearThicknessMinSpin);
     insStripLayout->addRow(insStripRearThicknessMaxLabel, insStripRearThicknessMaxSpin);
 
+    // EDGE 검사 구분선
+    QFrame* edgeSeparator = new QFrame(insStripPanel);
+    edgeSeparator->setFrameShape(QFrame::HLine);
+    edgeSeparator->setFrameShadow(QFrame::Sunken);
+    insStripLayout->addRow(edgeSeparator);
+    
     // EDGE 검사 위젯 생성
     insEdgeEnabledCheck = new QCheckBox("EDGE 검사 활성화", insStripPanel);
     insEdgeEnabledCheck->setChecked(true);  // CommonDefs.h의 기본값과 일치
@@ -3202,6 +3238,35 @@ void TeachingWidget::createPropertyPanels() {
     insStripLayout->addRow("EDGE 박스 크기:", edgeRangeWidget);
     insStripLayout->addRow(insEdgeMaxIrregularitiesLabel, insEdgeMaxIrregularitiesSpin);
 
+    // SLOPE 검사 구분선
+    QFrame* slopeSeparator = new QFrame(insStripPanel);
+    slopeSeparator->setFrameShape(QFrame::HLine);
+    slopeSeparator->setFrameShadow(QFrame::Sunken);
+    insStripLayout->addRow(slopeSeparator);
+
+    // SLOPE 검사 위젯 생성
+    insSlopeEnabledCheck = new QCheckBox("SLOPE 기울기 검사 활성화", insStripPanel);
+    insSlopeEnabledCheck->setChecked(true);
+
+    insSlopeTopToleranceLabel = new QLabel("상단(P1-P3) 허용 오차:", insStripPanel);
+    insSlopeTopToleranceSpin = new QDoubleSpinBox(insStripPanel);
+    insSlopeTopToleranceSpin->setRange(0.1, 10.0);
+    insSlopeTopToleranceSpin->setValue(2.0);
+    insSlopeTopToleranceSpin->setDecimals(1);
+    insSlopeTopToleranceSpin->setSuffix(" 도");
+
+    insSlopeBottomToleranceLabel = new QLabel("하단(P2-P4) 허용 오차:", insStripPanel);
+    insSlopeBottomToleranceSpin = new QDoubleSpinBox(insStripPanel);
+    insSlopeBottomToleranceSpin->setRange(0.1, 10.0);
+    insSlopeBottomToleranceSpin->setValue(2.0);
+    insSlopeBottomToleranceSpin->setDecimals(1);
+    insSlopeBottomToleranceSpin->setSuffix(" 도");
+
+    // SLOPE 위젯들을 레이아웃에 추가
+    insStripLayout->addRow("", insSlopeEnabledCheck);
+    insStripLayout->addRow(insSlopeTopToleranceLabel, insSlopeTopToleranceSpin);
+    insStripLayout->addRow(insSlopeBottomToleranceLabel, insSlopeBottomToleranceSpin);
+
     insMainLayout->addWidget(insStripPanel);
 
     // 여백 추가
@@ -3216,11 +3281,9 @@ void TeachingWidget::createPropertyPanels() {
         [this](int index) {
             insBinaryPanel->setVisible(index == InspectionMethod::BINARY);  // 이진화
             insStripPanel->setVisible(index == InspectionMethod::STRIP);    // STRIP
-            // AI 기반 검사에서는 결과 반전 옵션 필요 없음
+            // 결과 반전 옵션 표시 (필요시)
             if (insInvertCheck) {
-                bool visible = (index != InspectionMethod::AI_MATCH1);
-                insInvertCheck->setVisible(visible);
-                if (!visible) insInvertCheck->setChecked(false);
+                insInvertCheck->setVisible(true);
             }
     });
 
@@ -4138,9 +4201,15 @@ void TeachingWidget::connectPropertyPanelEvents() {
                             insBinaryPanel->setVisible(index == InspectionMethod::BINARY);
                         }
                         
-                        // AI 기반 검사에서는 결과 반전 옵션 필요 없음
+                        // STRIP 검사에서는 검사 임계값과 결과 반전 옵션 필요 없음
+                        if (insPassThreshSpin && insPassThreshLabel) {
+                            bool threshVisible = (index != InspectionMethod::STRIP);
+                            insPassThreshSpin->setVisible(threshVisible);
+                            insPassThreshLabel->setVisible(threshVisible);
+                        }
+                        
                         if (insInvertCheck) {
-                            bool visible = (index != InspectionMethod::AI_MATCH1);
+                            bool visible = (index != InspectionMethod::STRIP);
                             insInvertCheck->setVisible(visible);
                             if (!visible) insInvertCheck->setChecked(false);
                         }
@@ -4729,6 +4798,59 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
     }
     
+    // STRIP 길이검사 활성화
+    if (insStripLengthEnabledCheck) {
+        connect(insStripLengthEnabledCheck, &QCheckBox::toggled, [this](bool enabled) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->stripLengthEnabled = enabled;
+                        
+                        // 길이검사 관련 위젯들 활성화/비활성화
+                        if (insStripLengthMinSpin) insStripLengthMinSpin->setEnabled(enabled);
+                        if (insStripLengthMaxSpin) insStripLengthMaxSpin->setEnabled(enabled);
+                        
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+        
+        // 길이검사 최소값 변경 이벤트
+        connect(insStripLengthMinSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->stripLengthMin = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                    }
+                }
+            }
+        });
+        
+        // 길이검사 최대값 변경 이벤트
+        connect(insStripLengthMaxSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->stripLengthMax = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                    }
+                }
+            }
+        });
+    }
+    
     // FRONT 두께 검사 활성화
     if (insStripFrontEnabledCheck) {
         connect(insStripFrontEnabledCheck, &QCheckBox::toggled, [this](bool enabled) {
@@ -4874,6 +4996,62 @@ void TeachingWidget::connectPropertyPanelEvents() {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
                         pattern->edgeMaxIrregularities = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // SLOPE 검사 활성화
+    if (insSlopeEnabledCheck) {
+        connect(insSlopeEnabledCheck, &QCheckBox::toggled, [this](bool enabled) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->slopeEnabled = enabled;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // SLOPE 상단 허용 오차
+    if (insSlopeTopToleranceSpin) {
+        connect(insSlopeTopToleranceSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), 
+                [this](double value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->slopeTopTolerance = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // SLOPE 하단 허용 오차
+    if (insSlopeBottomToleranceSpin) {
+        connect(insSlopeBottomToleranceSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), 
+                [this](double value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->slopeBottomTolerance = value;
                         cameraView->updatePatternById(patternId, *pattern);
                         cameraView->update();
                     }
@@ -5145,11 +5323,18 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                     }
                     
                     if (insPassThreshSpin) {
-                        insPassThreshSpin->setValue(pattern->passThreshold);
+                        // STRIP 검사에서는 합격 임계값 숨김 (각 항목별 개별 판정)
+                        bool passThreshVisible = (pattern->inspectionMethod != InspectionMethod::STRIP);
+                        insPassThreshLabel->setVisible(passThreshVisible);
+                        insPassThreshSpin->setVisible(passThreshVisible);
+                        if (passThreshVisible) {
+                            insPassThreshSpin->setValue(pattern->passThreshold);
+                        }
                     }
                     
                     if (insInvertCheck) {
-                        bool visible = (pattern->inspectionMethod != InspectionMethod::AI_MATCH1);
+                        // STRIP에서는 결과 반전 숨김
+                        bool visible = (pattern->inspectionMethod != InspectionMethod::STRIP);
                         insInvertCheck->setVisible(visible);
                         insInvertCheck->setChecked(visible ? pattern->invertResult : false);
                     }
@@ -5291,6 +5476,30 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripRearThicknessMaxSpin->blockSignals(false);
                     }
                     
+                    // STRIP 길이검사 활성화 상태 업데이트
+                    if (insStripLengthEnabledCheck) {
+                        insStripLengthEnabledCheck->blockSignals(true);
+                        insStripLengthEnabledCheck->setChecked(pattern->stripLengthEnabled);
+                        insStripLengthEnabledCheck->blockSignals(false);
+                        
+                        // 길이검사 관련 위젯들 활성화/비활성화
+                        if (insStripLengthMinSpin) insStripLengthMinSpin->setEnabled(pattern->stripLengthEnabled);
+                        if (insStripLengthMaxSpin) insStripLengthMaxSpin->setEnabled(pattern->stripLengthEnabled);
+                    }
+                    
+                    // 길이검사 범위 값들 업데이트
+                    if (insStripLengthMinSpin) {
+                        insStripLengthMinSpin->blockSignals(true);
+                        insStripLengthMinSpin->setValue(pattern->stripLengthMin);
+                        insStripLengthMinSpin->blockSignals(false);
+                    }
+                    
+                    if (insStripLengthMaxSpin) {
+                        insStripLengthMaxSpin->blockSignals(true);
+                        insStripLengthMaxSpin->setValue(pattern->stripLengthMax);
+                        insStripLengthMaxSpin->blockSignals(false);
+                    }
+                    
                     // FRONT 두께 검사 활성화 상태 업데이트
                     if (insStripFrontEnabledCheck) {
                         insStripFrontEnabledCheck->blockSignals(true);
@@ -5364,6 +5573,25 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insEdgeMaxIrregularitiesSpin->blockSignals(true);
                         insEdgeMaxIrregularitiesSpin->setValue(pattern->edgeMaxIrregularities);
                         insEdgeMaxIrregularitiesSpin->blockSignals(false);
+                    }
+                    
+                    // SLOPE 검사 UI 업데이트
+                    if (insSlopeEnabledCheck) {
+                        insSlopeEnabledCheck->blockSignals(true);
+                        insSlopeEnabledCheck->setChecked(pattern->slopeEnabled);
+                        insSlopeEnabledCheck->blockSignals(false);
+                    }
+                    
+                    if (insSlopeTopToleranceSpin) {
+                        insSlopeTopToleranceSpin->blockSignals(true);
+                        insSlopeTopToleranceSpin->setValue(pattern->slopeTopTolerance);
+                        insSlopeTopToleranceSpin->blockSignals(false);
+                    }
+                    
+                    if (insSlopeBottomToleranceSpin) {
+                        insSlopeBottomToleranceSpin->blockSignals(true);
+                        insSlopeBottomToleranceSpin->setValue(pattern->slopeBottomTolerance);
+                        insSlopeBottomToleranceSpin->blockSignals(false);
                     }
                     
                     if (insBinaryThreshSpin) {
@@ -7697,84 +7925,8 @@ bool TeachingWidget::runInspection(const cv::Mat& frame, int specificCameraIndex
             cameraView->getPatterns() = updatedPatterns;
         }
         
-        // --- AI_MATCH1 패턴이 있으면 multi_predict 호출하여 heatmap/score 병합 ---
-        QList<QJsonObject> aiRects;
-        QJsonArray rectsArray;
-        QMap<QUuid, QRectF> aiRectsMap;  // 패턴 ID별 rect 정보 저장
-        bool hasAiMatch1 = false;
-        for (auto it = result.insMethodTypes.begin(); it != result.insMethodTypes.end(); ++it) {
-            if (it.value() == InspectionMethod::AI_MATCH1) {
-                QUuid pid = it.key();
-                qDebug() << "runInspection: found AI_MATCH1 pattern" << pid.toString();
-                if (result.adjustedRects.contains(pid)) {
-                    QRectF rf = result.adjustedRects[pid];
-                    double angle = result.parentAngles.contains(pid) ? result.parentAngles[pid] : 0.0;
-                    QJsonObject rj;
-                    rj["id"] = pid.toString();
-                    rj["x"] = static_cast<int>(std::lround(rf.x()));
-                    rj["y"] = static_cast<int>(std::lround(rf.y()));
-                    rj["w"] = static_cast<int>(std::lround(rf.width()));
-                    rj["h"] = static_cast<int>(std::lround(rf.height()));
-                    rj["angle"] = angle;
-                    rectsArray.append(rj);
-                    aiRectsMap[pid] = rf;  // rect 정보 저장
-                    hasAiMatch1 = true;
-                    qDebug() << "runInspection: added AI rect for pattern" << pid.toString() << "rect:" << rf;
-                }
-            }
-        }
-
-        // 검사 결과를 CameraView에 전달 - AI_MATCH1이 없는 경우에만 먼저 호출
-        if (!hasAiMatch1) {
-            cameraView->updateInspectionResult(result.isPassed, result);
-        }
-
-        // AI_MATCH1이 있는 경우에만 AI 처리 수행
-        if (hasAiMatch1 && !rectsArray.isEmpty()) {
-            // 이미지 파일을 /deploy/results/<recipe>/input_<ts>.png 형식으로 저장
-            QString recipeName = getCurrentRecipeName();
-            if (recipeName.isEmpty()) {
-                // Try to discover recipe from deploy/models or deploy/results
-                QString detected;
-                QString modelsBase = QDir::cleanPath(QDir::currentPath() + "/deploy/models");
-                QDir dmodels(modelsBase);
-                QStringList dirs = dmodels.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-                if (!dirs.isEmpty()) {
-                    detected = dirs.first();
-                    qDebug() << "runInspection: detected recipe from deploy/models:" << detected;
-                } else {
-                    QString resultsBase = QDir::cleanPath(QDir::currentPath() + "/deploy/results");
-                    QDir dres(resultsBase);
-                    QStringList rdirs = dres.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-                    if (!rdirs.isEmpty()) {
-                        detected = rdirs.first();
-                        qDebug() << "runInspection: detected recipe from deploy/results:" << detected;
-                    }
-                }
-
-                if (!detected.isEmpty()) {
-                    recipeName = detected;
-                } else {
-                    qWarning() << "runInspection: recipeName is empty and no recipe detected, falling back to 'default_recipe'";
-                    recipeName = "default_recipe";
-                }
-            }
-
-            // 시뮬레이션 모드에서는 AI 검사를 위한 이미지 경로가 필요하지만
-            // 현재 구조에서는 이미지 경로를 추적하지 않으므로 AI 검사는 실행하지 않음
-            if (true) {
-                // AI 검사는 시뮬레이션 모드에서 사용할 수 없음
-                qWarning() << "runInspection: AI inspection not available in simulation mode for recipe" << recipeName;
-                return false;
-            }
-        } else if (hasAiMatch1) {
-            // AI_MATCH1이 있지만 rects가 없는 경우에도 결과 업데이트
-        }
-        
-        // AI_MATCH1이 있는 경우 결과 업데이트 (AI 처리 완료 후)
-        if (hasAiMatch1) {
-            cameraView->updateInspectionResult(result.isPassed, result);
-        }
+        // 검사 결과를 CameraView에 전달
+        cameraView->updateInspectionResult(result.isPassed, result);
         
         // 배경은 원본 이미지만 설정 (검사 결과 오버레이 없이)
         QImage originalImage = InsProcessor::matToQImage(frame);

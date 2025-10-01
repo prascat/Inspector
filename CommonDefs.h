@@ -14,7 +14,10 @@
 
 // TR 매크로 정의
 #ifndef TR
-#define TR(key) LanguageManager::instance()->getText(key)
+#define TR(key) Languag            case BINARY:
+                return "이진화 검사";
+            case STRIP:
+                return "STRIP 검사";er::instance()->getText(key)
 #endif
 
 #define SIMPLE_MOVE_PIXELS      1
@@ -154,6 +157,11 @@ struct PatternInfo {
     int stripGradientEndPercent = 85;    // Gradient 계산 끝 지점 (%)
     int stripMinDataPoints = 5;          // 최소 데이터 포인트 수
     
+    // STRIP 길이검사 관련 파라미터
+    bool stripLengthEnabled = true;      // STRIP 길이검사 활성화 여부
+    int stripLengthMin = 100;            // 최소 길이 (픽셀)
+    int stripLengthMax = 500;            // 최대 길이 (픽셀)
+    
     // STRIP 두께 측정 관련 파라미터 (프론트)
     bool stripFrontEnabled = true;       // FRONT 두께 검사 활성화 여부
     int stripThicknessBoxWidth = 100;    // 두께 측정 박스 너비 (픽셀)
@@ -174,6 +182,11 @@ struct PatternInfo {
     int edgeBoxWidth = 90;                   // EDGE 검사 박스 너비 (픽셀)
     int edgeBoxHeight = 150;                 // EDGE 검사 박스 높이 (픽셀)
     int edgeMaxIrregularities = 5;           // 허용 최대 불규칙성 개수
+
+    // SLOPE 검사 관련 파라미터 (STRIP 4점 기울기 검사)
+    bool slopeEnabled = true;                // SLOPE 검사 활성화 여부
+    double slopeTopTolerance = 2.0;          // 상단(P1-P3) 허용 기울기 오차 (도)
+    double slopeBottomTolerance = 2.0;       // 하단(P2-P4) 허용 기울기 오차 (도)
 
     // 이진화 검사를 위한 추가 속성
     int binaryThreshold = 128;        // 이진화 임계값 (0-255)
@@ -272,9 +285,7 @@ namespace InspectionMethod {
     const int COLOR = 0;        // 색상 검사
     const int EDGE = 1;         // 엣지 검사
     const int BINARY = 2;       // 이진화 검사
-    const int AI_MATCH1 = 3;    // AI 기반 매칭 1 (확장용)
-    const int STRIP = 4;        // STRIP 두께 검사
-    const int EDGE_CUT = 5;     // EDGE 절단면 품질 검사
+    const int STRIP = 3;        // STRIP 검사
     
     // 검사 방법 이름 반환 함수
     inline QString getName(int method) {
@@ -285,19 +296,15 @@ namespace InspectionMethod {
                 return "EDGE";
             case BINARY:
                 return "BINARY";
-            case AI_MATCH1:
-                return "AI_MATCH1";
             case STRIP:
                 return "STRIP";
-            case EDGE_CUT:
-                return "EDGE_CUT";
             default:
                 return "UNKNOWN";
         }
     }
     
     // 검사 방법 개수
-    const int COUNT = 7;
+    const int COUNT = 4;
 }
 
 namespace UIColors {

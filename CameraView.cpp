@@ -3102,9 +3102,10 @@ void CameraView::paintEvent(QPaintEvent *event) {
         QRect idTextRect = painter.fontMetrics().boundingRect(cameraIdText);
         idTextRect.adjust(-5, -5, 5, 5);
         
-        int yPos = 10;
+        // 카메라 이름을 더 위쪽으로 배치하여 PASS/FAIL 결과와 겹치지 않게 함
+        int yPos = 5;
         if (!statusInfo.isEmpty()) {
-            yPos = 40;
+            yPos = 30;
         }
         
         painter.setBrush(QColor(0, 0, 0, 150));

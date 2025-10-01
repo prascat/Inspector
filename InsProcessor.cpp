@@ -535,11 +535,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                     inspPassed = checkBinary(image, adjustedPattern, inspScore, result);
                     logDebug(QString("이진화 검사 수행: %1 (method=%2)").arg(pattern.name).arg(pattern.inspectionMethod));
                     break;
-
-                case InspectionMethod::AI_MATCH1:
-                    inspPassed = checkAiMatch1(image, adjustedPattern, inspScore, result);
-                    logDebug(QString("AI_MATCH1 검사 수행: %1 (method=%2)").arg(pattern.name).arg(pattern.inspectionMethod));
-                    break;
                     
                 case InspectionMethod::STRIP:
                 {
@@ -2152,21 +2147,6 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
 }
 
 // 간단한 AI 기반 매칭 스텁 (확장 포인트)
-bool InsProcessor::checkAiMatch1(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result) {
-    // AI_MATCH1 다중 영역 검사 호출 구현
-    logDebug(QString("checkAiMatch1: AI_MATCH1 다중 검사 시작 (스캔용 패턴: %1)").arg(pattern.name));
-
-    // 이 함수는 단일 패턴 호출을 허용하지만, 여기서는 performInspection에서
-    // 모든 AI_MATCH1 패턴을 모아 한 번에 호출하도록 되어 있으므로, 기본 동작은
-    // 단일 패턴에 대해서는 로컬 API를 호출하지 않고 실패를 반환합니다.
-    // 대신 performInspection에서 일괄 호출을 수행하도록 구현되어야 합니다.
-
-    // 표시: 현재 위치에서는 단일 패턴 검사 요청일 경우에는 stub 동작.
-    result.insMethodTypes[pattern.id] = InspectionMethod::AI_MATCH1;
-    score = 0.0;
-    return false;
-}
-
 void InsProcessor::logDebug(const QString& message) {
     QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
     QString formattedMessage = QString("\"%1\" - \"%2\"").arg(timestamp).arg(message);

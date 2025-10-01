@@ -384,6 +384,13 @@ private:
     QLabel* insStripMinPointsLabel = nullptr;
     QSpinBox* insStripMinPointsSpin = nullptr;
     
+    // STRIP 길이검사 관련 위젯들
+    QCheckBox* insStripLengthEnabledCheck = nullptr;
+    QLabel* insStripLengthMinLabel = nullptr;
+    QSpinBox* insStripLengthMinSpin = nullptr;
+    QLabel* insStripLengthMaxLabel = nullptr;
+    QSpinBox* insStripLengthMaxSpin = nullptr;
+    
     // STRIP 두께 측정 관련 컨트롤
     // FRONT 두께 측정 관련 위젯들
     QCheckBox* insStripFrontEnabledCheck = nullptr;
@@ -425,6 +432,13 @@ private:
     // insEdgeThresholdLabel과 insEdgeThresholdSpin 제거됨 (통계적 방법 사용)
     QLabel* insEdgeMaxIrregularitiesLabel = nullptr;
     QSpinBox* insEdgeMaxIrregularitiesSpin = nullptr;
+
+    // SLOPE 검사 관련 위젯들
+    QCheckBox* insSlopeEnabledCheck = nullptr;
+    QLabel* insSlopeTopToleranceLabel = nullptr;
+    QDoubleSpinBox* insSlopeTopToleranceSpin = nullptr;
+    QLabel* insSlopeBottomToleranceLabel = nullptr;
+    QDoubleSpinBox* insSlopeBottomToleranceSpin = nullptr;
 
     QLabel* fidAngleLabel = nullptr;
     QLabel* fidToLabel = nullptr;
