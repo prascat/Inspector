@@ -380,8 +380,8 @@ void CameraView::mouseMoveEvent(QMouseEvent* event) {
         // ★★★ 완벽한 코드와 동일한 방식: 회전 고려한 정밀한 계산 ★★★
         double fx = fixedScreenPos.x();
         double fy = fixedScreenPos.y();
-        double mx = event->x();
-        double my = event->y();
+        double mx = event->position().x();
+        double my = event->position().y();
 
         // 중심점은 마우스와 고정점의 중간 (실수 정밀도 유지)
         double cx = (fx + mx) / 2.0;
@@ -4197,8 +4197,8 @@ void CameraView::applyFiltersToImage(cv::Mat& image) {
         // 필터가 없으면 건너뜀
         if (pattern.filters.isEmpty()) continue;
         
-        printf("[CameraView] 필터 적용 중 - 패턴: %s, 필터 수: %d\n", 
-               pattern.name.toStdString().c_str(), pattern.filters.size());
+        printf("[CameraView] 필터 적용 중 - 패턴: %s, 필터 수: %lld\n", 
+               pattern.name.toStdString().c_str(), (long long)pattern.filters.size());
         fflush(stdout);
         
         // 패턴의 rect는 이미 원본 이미지 좌표계에 있음

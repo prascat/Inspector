@@ -2,21 +2,18 @@ cmake_minimum_required(VERSION 3.5)
 
 project(MV)  # 프로젝트 이름을 MV로 변경
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)  # Qt6는 C++17 필요
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(CMAKE_PREFIX_PATH "/opt/homebrew/opt/qt@5")
+set(CMAKE_PREFIX_PATH "/opt/homebrew/lib/cmake")  # Qt6 경로로 변경
 set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DDEBUG")
 
 # macOS에서 앱 번들이 아닌 일반 실행 파일로 빌드되도록 설정
 set(CMAKE_MACOSX_BUNDLE FALSE)
 
-# Qt5 Widgets 패키지 찾기
-find_package(Qt5Widgets REQUIRED)
-find_package(Qt5Xml REQUIRED)
-find_package(Qt5Network REQUIRED)
-find_package(Qt5SerialPort REQUIRED)
+# Qt6 Widgets 패키지 찾기
+find_package(Qt6 REQUIRED COMPONENTS Widgets Xml Network SerialPort)
 
 # OpenCV 패키지 찾기
 find_package(OpenCV REQUIRED)
@@ -149,12 +146,12 @@ add_executable(MV
     SerialCommunication.cpp
 )
 
-# Qt5, OpenCV 및 추가 라이브러리 연결
+# Qt6, OpenCV 및 추가 라이브러리 연결
 target_link_libraries(MV 
-    Qt5::Widgets 
-    Qt5::Xml
-    Qt5::Network
-    Qt5::SerialPort
+    Qt6::Widgets 
+    Qt6::Xml
+    Qt6::Network
+    Qt6::SerialPort
     ${OpenCV_LIBS}
     ${EXTRA_LIBS}
 )

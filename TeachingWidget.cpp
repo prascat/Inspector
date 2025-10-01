@@ -1640,6 +1640,24 @@ void TeachingWidget::connectEvents() {
                     insEdgeOffsetXSlider->blockSignals(false);
                 }
                 
+                // EDGE Width 슬라이더 업데이트 (blockSignals 적용)
+                if (insEdgeWidthSlider) {
+                    insEdgeWidthSlider->blockSignals(true);
+                    // 값 변경 없이 repaint 강제
+                    insEdgeWidthSlider->update();
+                    insEdgeWidthSlider->repaint();
+                    insEdgeWidthSlider->blockSignals(false);
+                }
+                
+                // EDGE Height 슬라이더 업데이트 (blockSignals 적용)
+                if (insEdgeHeightSlider) {
+                    insEdgeHeightSlider->blockSignals(true);
+                    // 값 변경 없이 repaint 강제
+                    insEdgeHeightSlider->update();
+                    insEdgeHeightSlider->repaint();
+                    insEdgeHeightSlider->blockSignals(false);
+                }
+                
 
                 
                 // 패턴 업데이트 후 CameraView에 반영
@@ -4920,8 +4938,9 @@ void TeachingWidget::connectPropertyPanelEvents() {
     
     // EDGE 박스 너비
     if (insEdgeWidthSlider) {
+        
         connect(insEdgeWidthSlider, &QSlider::valueChanged, 
-                [this](int value) {
+                this, [this](int value) {
             // 값 표시 레이블 업데이트
             if (insEdgeWidthValueLabel) {
                 insEdgeWidthValueLabel->setText(QString::number(value));
@@ -4934,7 +4953,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
                         pattern->edgeBoxWidth = value;
-                        cameraView->updatePatternById(patternId, *pattern);
+                        // 메인 카메라뷰만 간단히 갱신 (패턴 전체 업데이트 불필요)
                         cameraView->update();
                     }
                 }
@@ -4944,8 +4963,9 @@ void TeachingWidget::connectPropertyPanelEvents() {
     
     // EDGE 박스 높이
     if (insEdgeHeightSlider) {
+        
         connect(insEdgeHeightSlider, &QSlider::valueChanged, 
-                [this](int value) {
+                this, [this](int value) {
             // 값 표시 레이블 업데이트
             if (insEdgeHeightValueLabel) {
                 insEdgeHeightValueLabel->setText(QString::number(value));
@@ -4958,7 +4978,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
                         pattern->edgeBoxHeight = value;
-                        cameraView->updatePatternById(patternId, *pattern);
+                        // 메인 카메라뷰만 간단히 갱신 (패턴 전체 업데이트 불필요)
                         cameraView->update();
                     }
                 }
@@ -8338,7 +8358,7 @@ void TeachingWidget::updateAllPatternTemplateImages() {
                     }
                     
                     // 패턴의 자체 필터 적용
-                    printf("[TeachingWidget] 패턴 '%s'에 %d개 필터 적용\n", pattern.name.toStdString().c_str(), pattern.filters.size());
+                    printf("[TeachingWidget] 패턴 '%s'에 %lld개 필터 적용\n", pattern.name.toStdString().c_str(), (long long)pattern.filters.size());
                     fflush(stdout);
                     for (const FilterInfo& filter : pattern.filters) {
                         if (filter.enabled) {

@@ -125,7 +125,7 @@ void FilterDialog::addFilterWidget(int filterType, QGroupBox* groupBox) {
     propertyWidget->setEnabled(checkBox->isChecked());
     
     // 체크박스 상태 변경 시 프로퍼티 위젯 활성화/비활성화 및 필터 적용
-    connect(checkBox, &QCheckBox::stateChanged, this, &FilterDialog::onFilterCheckStateChanged);
+    connect(checkBox, &QCheckBox::checkStateChanged, this, &FilterDialog::onFilterCheckStateChanged);
     checkBox->setProperty("filterType", filterType);
     
     // 파라미터 변경 시 필터 업데이트
