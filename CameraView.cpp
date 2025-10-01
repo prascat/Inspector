@@ -1713,8 +1713,8 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         QRect rotatedRect(-inspRect.width()/2, -inspRect.height()/2, 
                          inspRect.width(), inspRect.height());
         
-        // 검사 영역 사각형 그리기 (회전된 박스)
-        painter.drawRect(rotatedRect);
+        // 검사 영역 사각형 그리기 제거됨 (중복 표시 방지)
+        // painter.drawRect(rotatedRect);
         // 회전 변환 복원
         painter.restore();
         

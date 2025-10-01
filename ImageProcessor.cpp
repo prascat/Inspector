@@ -1866,7 +1866,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 }
                 
                 // 두께 측정 박스를 점선으로 그리기
-                cv::Scalar boxColor = thicknessPassed ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 0, 255); // 통과시 초록, 실패시 빨강
+              //  cv::Scalar boxColor = thicknessPassed ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 0, 255); // 통과시 초록, 실패시 빨강
                 
                 // 점선 그리기 함수
                 auto drawDottedLine = [&](cv::Point pt1, cv::Point pt2, cv::Scalar color, int thickness = 2) {
@@ -1906,12 +1906,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     bottomLeft = rotatePoint(-thicknessBoxWidth/2, thicknessBoxHeight/2);
                     bottomRight = rotatePoint(thicknessBoxWidth/2, thicknessBoxHeight/2);
                 }
-                
-                // 두께 측정 박스 그리기 (점선)
-                drawDottedLine(topLeft, topRight, boxColor);       // 상단
-                drawDottedLine(bottomLeft, bottomRight, boxColor); // 하단
-                drawDottedLine(topLeft, bottomLeft, boxColor);     // 좌측
-                drawDottedLine(topRight, bottomRight, boxColor);   // 우측
                 
                 // FRONT 박스 위치 저장 (Qt 텍스트 그리기용)
                 if (frontBoxTopLeft) {
@@ -1960,11 +1954,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     bottomLeft = rotatePoint(-thicknessBoxWidth/2, thicknessBoxHeight/2);
                     bottomRight = rotatePoint(thicknessBoxWidth/2, thicknessBoxHeight/2);
                 }
-                
-                drawDottedLine(topLeft, topRight, boxColor);
-                drawDottedLine(bottomLeft, bottomRight, boxColor);
-                drawDottedLine(topLeft, bottomLeft, boxColor);
-                drawDottedLine(topRight, bottomRight, boxColor);
             }
         }
         
@@ -2172,12 +2161,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 bottomLeft_rear = rotatePoint_rear(-rearThicknessBoxWidth/2, rearThicknessBoxHeight/2);
                 bottomRight_rear = rotatePoint_rear(rearThicknessBoxWidth/2, rearThicknessBoxHeight/2);
             }
-            
-            // REAR 두께 측정 박스 그리기 (점선)
-            drawDottedLine_rear(topLeft_rear, topRight_rear, boxColor_rear);       // 상단
-            drawDottedLine_rear(bottomLeft_rear, bottomRight_rear, boxColor_rear); // 하단
-            drawDottedLine_rear(topLeft_rear, bottomLeft_rear, boxColor_rear);     // 좌측
-            drawDottedLine_rear(topRight_rear, bottomRight_rear, boxColor_rear);   // 우측
             
             // REAR 박스 위치 저장 (Qt 텍스트 그리기용)
             if (rearBoxTopLeft) {
@@ -2454,31 +2437,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                         
                         std::cout << "EDGE 검사 완료: " << (edgePassResult ? "PASS" : "FAIL") << std::endl;
                         
-                        // Edge 검사 박스 그리기 (활성화)
-                        cv::Scalar boxColor = edgePassResult ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 0, 255);  // 초록/빨강
-                        
-                        // 검사 박스 그리기 (점선)
-                        auto drawEdgeDottedLine = [&](cv::Point p1, cv::Point p2, cv::Scalar color) {
-                            cv::LineIterator it(resultImage, p1, p2, 8);
-                            for (int i = 0; i < it.count; i++, ++it) {
-                                if (i % 6 < 3) { // 3픽셀 그리고 3픽셀 건너뛰기 (STRIP과 동일)
-                                    if (it.pos().x >= 0 && it.pos().y >= 0 && 
-                                        it.pos().x < resultImage.cols && it.pos().y < resultImage.rows) {
-                                        cv::Vec3b& pixel = resultImage.at<cv::Vec3b>(it.pos());
-                                        pixel[0] = color[0];
-                                        pixel[1] = color[1]; 
-                                        pixel[2] = color[2];
-                                    }
-                                }
-                            }
-                        };
-                        
-                        for (int i = 0; i < 4; i++) {
-                            cv::Point pt1(static_cast<int>(corners[i].x), static_cast<int>(corners[i].y));
-                            cv::Point pt2(static_cast<int>(corners[(i + 1) % 4].x), static_cast<int>(corners[(i + 1) % 4].y));
-                            drawEdgeDottedLine(pt1, pt2, boxColor);
-                        }
-                        
                         // 절단면 포인트를 정상/이상치로 색상 구분하여 그리기 (큰 크기로)
                         for (size_t i = 0; i < leftEdgePoints.size(); i++) {
                             const auto& pt = leftEdgePoints[i];
@@ -2532,68 +2490,16 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                             // EDGE 박스의 위쪽과 아래쪽 Y 좌표 찾기
                             float topmostY = std::min({corners[0].y, corners[1].y, corners[2].y, corners[3].y});
                             float bottommostY = std::max({corners[0].y, corners[1].y, corners[2].y, corners[3].y});
-                            
-                            // 평균 X 위치에 세로 기준선 그리기 (흰색 점선) - 제거됨
-                            // cv::Point lineStart(averageX, static_cast<int>(topmostY));
-                            // cv::Point lineEnd(averageX, static_cast<int>(bottommostY));
-                            // 
-                            // cv::LineIterator it(resultImage, lineStart, lineEnd, 8);
-                            // for (int i = 0; i < it.count; i++, ++it) {
-                            //     if (i % 8 < 4) { // 점선 패턴 (8픽셀마다 4픽셀 그리기)
-                            //         cv::Vec3b& pixel = resultImage.at<cv::Vec3b>(it.pos());
-                            //         pixel[0] = 255; // B (흰색)
-                            //         pixel[1] = 255; // G
-                            //         pixel[2] = 255; // R
-                            //     }
-                            // }
-                            
+                    
                             std::cout << "- 절단면 평균 X 위치: " << avgX << "px (수직 기준선 표시)" << std::endl;
                         }
                     } else {
                         std::cout << "EDGE 검사 실패: 절단면 포인트 부족 (" << leftEdgePoints.size() << "개)" << std::endl;
                         if (edgePassed) *edgePassed = false;
-                        
-                        // 포인트 부족 시에도 기본 시각화 (박스만) - 제거됨
-                        // cv::Scalar boxColor = cv::Scalar(0, 0, 255);  // 빨간색
-                        // auto drawEdgeDottedLine = [&](cv::Point p1, cv::Point p2, cv::Scalar color) {
-                        //     cv::LineIterator it(resultImage, p1, p2, 8);
-                        //     for (int i = 0; i < it.count; i++, ++it) {
-                        //         if (i % 10 < 5) {
-                        //             resultImage.at<cv::Vec3b>(it.pos()) = cv::Vec3b(color[0], color[1], color[2]);
-                        //         }
-                        //     }
-                        // };
-                        // 
-                        // for (int i = 0; i < 4; i++) {
-                        //     cv::Point pt1(static_cast<int>(corners[i].x), static_cast<int>(corners[i].y));
-                        //     cv::Point pt2(static_cast<int>(corners[(i + 1) % 4].x), static_cast<int>(corners[(i + 1) % 4].y));
-                        //     drawEdgeDottedLine(pt1, pt2, boxColor);
-                        // }
                     }
                 } else {
                     std::cout << "EDGE 검사 실패: 검사 영역이 이미지 범위를 벗어남" << std::endl;
                     if (edgePassed) *edgePassed = false;
-                    
-                    // 범위 벗어남 시에도 박스 시각화 (회색) - 제거됨
-                    // cv::Scalar boxColor = cv::Scalar(128, 128, 128);  // 회색
-                    // auto drawEdgeDottedLine = [&](cv::Point p1, cv::Point p2, cv::Scalar color) {
-                    //     cv::LineIterator it(resultImage, p1, p2, 8);
-                    //     for (int i = 0; i < it.count; i++, ++it) {
-                    //         if (i % 10 < 5) {
-                    //             // 이미지 범위 내에서만 그리기
-                    //             if (it.pos().x >= 0 && it.pos().x < resultImage.cols && 
-                    //                 it.pos().y >= 0 && it.pos().y < resultImage.rows) {
-                    //                 resultImage.at<cv::Vec3b>(it.pos()) = cv::Vec3b(color[0], color[1], color[2]);
-                    //             }
-                    //         }
-                    //     }
-                    // };
-                    // 
-                    // for (int i = 0; i < 4; i++) {
-                    //     cv::Point pt1(static_cast<int>(corners[i].x), static_cast<int>(corners[i].y));
-                    //     cv::Point pt2(static_cast<int>(corners[(i + 1) % 4].x), static_cast<int>(corners[(i + 1) % 4].y));
-                    //     drawEdgeDottedLine(pt1, pt2, boxColor);
-                    // }
                 }
             } catch (const cv::Exception& e) {
                 std::cout << "EDGE 검사 예외: " << e.what() << std::endl;

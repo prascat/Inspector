@@ -1640,28 +1640,7 @@ void TeachingWidget::connectEvents() {
                     insEdgeOffsetXSlider->blockSignals(false);
                 }
                 
-                if (insEdgeWidthSlider) {
-                    insEdgeWidthSlider->blockSignals(true);
-                    int maxEdgeWidth = patternWidth / 3;  // INS 패턴 너비의 1/3로 제한
-                    insEdgeWidthSlider->setMaximum(maxEdgeWidth);
-                    if (insEdgeWidthSlider->value() > maxEdgeWidth) {
-                        insEdgeWidthSlider->setValue(maxEdgeWidth);
-                        pattern->edgeBoxWidth = maxEdgeWidth;
-                        insEdgeWidthValueLabel->setText(QString::number(maxEdgeWidth));
-                    }
-                    insEdgeWidthSlider->blockSignals(false);
-                }
-                
-                if (insEdgeHeightSlider) {
-                    insEdgeHeightSlider->blockSignals(true);
-                    insEdgeHeightSlider->setMaximum(patternHeight);
-                    if (insEdgeHeightSlider->value() > patternHeight) {
-                        insEdgeHeightSlider->setValue(patternHeight);
-                        pattern->edgeBoxHeight = patternHeight;
-                        insEdgeHeightValueLabel->setText(QString::number(patternHeight));
-                    }
-                    insEdgeHeightSlider->blockSignals(false);
-                }
+
                 
                 // 패턴 업데이트 후 CameraView에 반영
                 cameraView->updatePatternById(id, *pattern);
@@ -3173,8 +3152,7 @@ void TeachingWidget::createPropertyPanels() {
     edgeSeparator->setFrameShape(QFrame::HLine);
     edgeSeparator->setFrameShadow(QFrame::Sunken);
     insStripLayout->addRow(edgeSeparator);
-    
-    // EDGE 검사 위젯 생성
+
     insEdgeEnabledCheck = new QCheckBox("EDGE 검사 활성화", insStripPanel);
     insEdgeEnabledCheck->setChecked(true);  // CommonDefs.h의 기본값과 일치
     
@@ -3192,7 +3170,7 @@ void TeachingWidget::createPropertyPanels() {
     
     insEdgeWidthLabel = new QLabel("너비:", insStripPanel);
     insEdgeWidthSlider = new QSlider(Qt::Horizontal, insStripPanel);
-    insEdgeWidthSlider->setRange(10, 500);  // 임시값, 패턴 선택시 동적 조정
+    insEdgeWidthSlider->setRange(10, 300);  // 최대값 300으로 고정
     insEdgeWidthSlider->setValue(50);
     insEdgeWidthValueLabel = new QLabel("50", insStripPanel);
     
@@ -3205,7 +3183,7 @@ void TeachingWidget::createPropertyPanels() {
     
     insEdgeHeightLabel = new QLabel("높이:", insStripPanel);
     insEdgeHeightSlider = new QSlider(Qt::Horizontal, insStripPanel);
-    insEdgeHeightSlider->setRange(20, 500);  // 임시값, 패턴 선택시 동적 조정
+    insEdgeHeightSlider->setRange(20, 300);  // 최대값 300으로 고정
     insEdgeHeightSlider->setValue(100);
     insEdgeHeightValueLabel = new QLabel("100", insStripPanel);
     
@@ -4940,11 +4918,14 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
     }
     
-    // EDGE 박스 가로
+    // EDGE 박스 너비
     if (insEdgeWidthSlider) {
         connect(insEdgeWidthSlider, &QSlider::valueChanged, 
                 [this](int value) {
-            insEdgeWidthValueLabel->setText(QString::number(value));
+            // 값 표시 레이블 업데이트
+            if (insEdgeWidthValueLabel) {
+                insEdgeWidthValueLabel->setText(QString::number(value));
+            }
             
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
@@ -4952,8 +4933,8 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        // 패턴을 직접 수정 (updatePatternById 호출 없이)
                         pattern->edgeBoxWidth = value;
+                        cameraView->updatePatternById(patternId, *pattern);
                         cameraView->update();
                     }
                 }
@@ -4961,11 +4942,14 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
     }
     
-    // EDGE 박스 세로
+    // EDGE 박스 높이
     if (insEdgeHeightSlider) {
         connect(insEdgeHeightSlider, &QSlider::valueChanged, 
                 [this](int value) {
-            insEdgeHeightValueLabel->setText(QString::number(value));
+            // 값 표시 레이블 업데이트
+            if (insEdgeHeightValueLabel) {
+                insEdgeHeightValueLabel->setText(QString::number(value));
+            }
             
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
@@ -4973,8 +4957,8 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        // 패턴을 직접 수정 (updatePatternById 호출 없이)
                         pattern->edgeBoxHeight = value;
+                        cameraView->updatePatternById(patternId, *pattern);
                         cameraView->update();
                     }
                 }
@@ -5534,34 +5518,21 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                     }
                     
                     if (insEdgeOffsetXSlider) {
-                        // 패턴의 실제 너비 계산
-                        float patternWidth = abs(pattern->rect.width());
-                        
                         insEdgeOffsetXSlider->blockSignals(true);
-                        insEdgeOffsetXSlider->setMaximum(patternWidth);
                         insEdgeOffsetXSlider->setValue(pattern->edgeOffsetX);
                         insEdgeOffsetXValueLabel->setText(QString::number(pattern->edgeOffsetX));
                         insEdgeOffsetXSlider->blockSignals(false);
                     }
                     
                     if (insEdgeWidthSlider) {
-                        // 패턴의 실제 너비 계산
-                        float patternWidth = abs(pattern->rect.width());
-                        int maxEdgeWidth = patternWidth / 3;  // INS 패턴 너비의 1/3로 제한
-                        
                         insEdgeWidthSlider->blockSignals(true);
-                        insEdgeWidthSlider->setMaximum(maxEdgeWidth);
                         insEdgeWidthSlider->setValue(pattern->edgeBoxWidth);
                         insEdgeWidthValueLabel->setText(QString::number(pattern->edgeBoxWidth));
                         insEdgeWidthSlider->blockSignals(false);
                     }
                     
                     if (insEdgeHeightSlider) {
-                        // 패턴의 실제 높이 계산
-                        float patternHeight = abs(pattern->rect.height());
-                        
                         insEdgeHeightSlider->blockSignals(true);
-                        insEdgeHeightSlider->setMaximum(patternHeight);
                         insEdgeHeightSlider->setValue(pattern->edgeBoxHeight);
                         insEdgeHeightValueLabel->setText(QString::number(pattern->edgeBoxHeight));
                         insEdgeHeightSlider->blockSignals(false);
