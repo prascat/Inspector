@@ -2365,17 +2365,32 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     cv::Point2f roiCenter(roiImage.cols / 2.0f, roiImage.rows / 2.0f);
     cv::Point2f offset = patternCenter - roiCenter;
     
-    // STRIP 4개 포인트 하드코딩 테스트 (로그에서 나온 ROI 상대좌표)
-    cv::Point roiPoint1(602, 341);  // Point 1: (602, 341)
-    cv::Point roiPoint2(602, 425);  // Point 2: (602, 425) 
-    cv::Point roiPoint3(622, 304);  // Point 3: (622, 304)
-    cv::Point roiPoint4(622, 457);  // Point 4: (622, 457)
+    // OpenCV에서 검출된 gradientPoints를 사용 (4개 포인트)
+    QPoint absPoint1, absPoint2, absPoint3, absPoint4;
     
-    // 절대좌표로 변환
-    QPoint absPoint1(roiPoint1.x + static_cast<int>(offset.x), roiPoint1.y + static_cast<int>(offset.y));
-    QPoint absPoint2(roiPoint2.x + static_cast<int>(offset.x), roiPoint2.y + static_cast<int>(offset.y));
-    QPoint absPoint3(roiPoint3.x + static_cast<int>(offset.x), roiPoint3.y + static_cast<int>(offset.y));
-    QPoint absPoint4(roiPoint4.x + static_cast<int>(offset.x), roiPoint4.y + static_cast<int>(offset.y));
+    if (gradientPoints.size() >= 4) {
+        // OpenCV gradientPoints 순서 재정렬 - 올바른 위치로 매핑
+        // gradientPoints[0] = 왼쪽위, gradientPoints[1] = 오른쪽위 
+        // gradientPoints[2] = 왼쪽아래, gradientPoints[3] = 오른쪽아래
+        cv::Point roiPoint1 = gradientPoints[0];  // Point 1: 왼쪽 위
+        cv::Point roiPoint2 = gradientPoints[2];  // Point 2: 왼쪽 아래 
+        cv::Point roiPoint3 = gradientPoints[1];  // Point 3: 오른쪽 위
+        cv::Point roiPoint4 = gradientPoints[3];  // Point 4: 오른쪽 아래
+        
+        qDebug() << "OpenCV 검출 STRIP 4점 사용 - P1:" << QPoint(roiPoint1.x, roiPoint1.y) 
+                 << "P2:" << QPoint(roiPoint2.x, roiPoint2.y) 
+                 << "P3:" << QPoint(roiPoint3.x, roiPoint3.y) 
+                 << "P4:" << QPoint(roiPoint4.x, roiPoint4.y);
+        
+        // 절대좌표로 변환
+        absPoint1 = QPoint(roiPoint1.x + static_cast<int>(offset.x), roiPoint1.y + static_cast<int>(offset.y));
+        absPoint2 = QPoint(roiPoint2.x + static_cast<int>(offset.x), roiPoint2.y + static_cast<int>(offset.y));
+        absPoint3 = QPoint(roiPoint3.x + static_cast<int>(offset.x), roiPoint3.y + static_cast<int>(offset.y));
+        absPoint4 = QPoint(roiPoint4.x + static_cast<int>(offset.x), roiPoint4.y + static_cast<int>(offset.y));
+    } else {
+        qDebug() << "경고: gradientPoints 개수 부족 (" << gradientPoints.size() << "/4)";
+        return true; // 검출 실패시 early return
+    }
     
     // InspectionResult에 저장
     result.stripPoint1[pattern.id] = absPoint1;

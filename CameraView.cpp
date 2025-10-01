@@ -2316,11 +2316,25 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         QPoint point3 = result.stripPoint3.value(patternId, QPoint());
         QPoint point4 = result.stripPoint4.value(patternId, QPoint());
         
-        // 화면 좌표로 변환
+        // STRIP 4점을 원본 좌표 그대로 사용 (회전 변환 완전 제거)
+        qDebug() << "=== STRIP 4점 원본 좌표 직접 사용 ===";
+        qDebug() << "패턴 각도:" << patternInfo->angle << "도 (무시함)";
+        qDebug() << "원본 STRIP 좌표 - P1:" << point1 << "P2:" << point2 << "P3:" << point3 << "P4:" << point4;
+        
+        // 회전 변환 없이 원본 좌표를 직접 화면 좌표로 변환
         QPoint displayPoint1 = originalToDisplay(point1);
         QPoint displayPoint2 = originalToDisplay(point2);
         QPoint displayPoint3 = originalToDisplay(point3);
         QPoint displayPoint4 = originalToDisplay(point4);
+        
+        qDebug() << "화면 좌표 - P1:" << displayPoint1 << "P2:" << displayPoint2 << "P3:" << displayPoint3 << "P4:" << displayPoint4;
+        
+        // originalToDisplay 내부 계산 확인
+        if (!backgroundPixmap.isNull()) {
+            QSize viewportSize = size();
+            QSize imgSize = backgroundPixmap.size();
+            qDebug() << "줌팩터 확인 - viewportSize:" << viewportSize << "imgSize:" << imgSize << "zoomFactor:" << zoomFactor;
+        }
         
         painter.save();
         
@@ -2366,6 +2380,17 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         painter.drawEllipse(displayPoint4, pointRadius+2, pointRadius+2);
         painter.setPen(QPen(Qt::cyan, 2));
         painter.drawText(displayPoint4 + QPoint(12, 20), "Q4");
+        
+        // STRIP 점들을 연결하는 점선 그리기
+        // Point 1-3 연결선 (빨간색 점선)
+        QPen dashedPen1(Qt::red, 2, Qt::DashLine);
+        painter.setPen(dashedPen1);
+        painter.drawLine(displayPoint1, displayPoint3);
+        
+        // Point 2-4 연결선 (초록색 점선)
+        QPen dashedPen2(Qt::green, 2, Qt::DashLine);
+        painter.setPen(dashedPen2);
+        painter.drawLine(displayPoint2, displayPoint4);
         
         // 기울기선 그리기 (1-3, 2-4)
         painter.setPen(QPen(Qt::yellow, 2, Qt::DashLine));
