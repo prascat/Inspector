@@ -9778,7 +9778,7 @@ void TeachingWidget::setupCalibrationTools() {
         // 사용자에게 실제 길이 입력 요청
         bool ok;
         double realLength = QInputDialog::getDouble(this, TR("REAL_LENGTH_INPUT_TITLE"),
-            TR("REAL_LENGTH_INPUT_MSG"), 50.0, 1.0, 10000.0, 1, &ok); 
+            TR("REAL_LENGTH_INPUT_MSG"), 500.0, 1.0, 100000.0, 1, &ok); 
 
         if (ok) {
             finishCalibration(rect, realLength);
