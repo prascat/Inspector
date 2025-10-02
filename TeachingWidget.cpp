@@ -1049,12 +1049,7 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                         inspectionCameraIndex = cameraIndex;
                     }
                     
-                    qDebug() << QString("✅ [검사 실행] inspectionFrame 준비 완료 - 크기: %1x%2, 타입: %3")
-                                .arg(inspectionFrame.cols).arg(inspectionFrame.rows).arg(inspectionFrame.type());
-                    
                     bool passed = runInspection(inspectionFrame, inspectionCameraIndex);
-                    
-                    qDebug() << QString("📋 [검사 완료] 결과: %1").arg(passed ? "PASS" : "FAIL");
                     
                     // **8. 버튼 상태 업데이트**
                     btn->setText(TR("STOP"));
@@ -6210,10 +6205,6 @@ void TeachingWidget::updatePreviewFrames() {
 }
 
 void TeachingWidget::startCamera() {
-    qDebug() << "startCamera() 함수 시작";
-    
-    // 1. 기존 데이터 모두 정리 (카메라 켜기 전에)
-    qDebug() << "[startCamera] 기존 데이터 정리 중...";
     
     // 1-4. 선택된 패턴 정리
     if (cameraView) {
@@ -6246,15 +6237,11 @@ void TeachingWidget::startCamera() {
         uiUpdateThread->wait();
     }
 
-    // 5. 카메라가 하나도 연결되어 있지 않은 경우
-    qDebug() << "[startCamera] cameraInfos 크기:" << cameraInfos.size();
+
     if (cameraInfos.isEmpty()) {
-        qDebug() << "[startCamera] ❌ 카메라 정보가 비어있음 - 경고 메시지 표시";
         UIColors::showWarning(this, "카메라 오류", "연결된 카메라가 없습니다.");
         updateCameraButtonState(false);  // 버튼 상태 업데이트
         return;
-    } else {
-        qDebug() << "[startCamera] ✓ 카메라 정보 확인됨, 카메라 수:" << cameraInfos.size();
     }
 
     // 6. 메인 카메라 설정
@@ -6271,7 +6258,6 @@ void TeachingWidget::startCamera() {
             cameraName = QString("Camera %1").arg(cameraIndex + 1);
         }
         cameraView->setCurrentCameraName(cameraName);
-        qDebug() << "[startCamera] 카메라 이름 내부 설정:" << cameraName;
     }
 
     // 5. 미리보기 레이블 초기화 및 할당
@@ -6338,16 +6324,13 @@ void TeachingWidget::startCamera() {
     }
     
     // 카메라가 연결된 경우에만 현재 카메라의 레시피 로드
-    if (cameraStarted) {
-        qDebug() << QString("startCamera: 카메라가 연결되어 레시피 로드 시작");
-        
+    if (cameraStarted) {  
         // 현재 연결된 카메라들의 UUID 목록 생성
         QStringList connectedCameraUuids;
         for (const auto& info : cameraInfos) {
             connectedCameraUuids.append(info.uniqueId);
         }
-        qDebug() << "[startCamera] 연결된 카메라 UUID 목록:" << connectedCameraUuids;
-        
+  
         // 최근 레시피의 카메라 UUID 확인
         bool shouldLoadRecipe = false;
         QString lastRecipePath = ConfigManager::instance()->getLastRecipePath();
@@ -6364,35 +6347,21 @@ void TeachingWidget::startCamera() {
                     
                     if (!cameraElement.isNull()) {
                         QString recipeCameraUuid = cameraElement.attribute("uuid").trimmed();
-                        qDebug() << "[startCamera] 최근 레시피 " << lastRecipePath << "의 카메라 UUID:" << recipeCameraUuid;
-                        
+                      
                         // 현재 연결된 카메라 UUID와 일치하는지 확인
                         if (!recipeCameraUuid.isEmpty() && connectedCameraUuids.contains(recipeCameraUuid)) {
                             shouldLoadRecipe = true;
-                            qDebug() << "[startCamera] ✓ 최근 레시피의 카메라 UUID가 일치함 - 자동 로드 진행";
-                        } else {
-                            qDebug() << "[startCamera] ❌ 최근 레시피의 카메라 UUID가 연결된 카메라와 불일치 - 로드 건너뜀";
+                
                         }
-                    } else {
-                        qDebug() << "[startCamera] ❌ 최근 레시피에 카메라 UUID 정보 없음 - 로드 건너뜀";
                     }
                 }
                 recipeFile.close();
-            } else {
-                qDebug() << "[startCamera] ❌ 최근 레시피 파일이 존재하지 않음:" << xmlFilePath;
-            }
-        } else {
-            qDebug() << "[startCamera] ❌ 최근 레시피 정보 없음";
+            } 
         }
         
         if (shouldLoadRecipe) {
-            // 기존 자동 레시피 로드 방식 사용 (최근 레시피 UUID가 일치함)
-            qDebug() << "[startCamera] 최근 레시피 자동 로드 시작";
             openRecipe(true);  // true = 자동 모드
-            qDebug() << "startCamera: 레시피 로드 완료";
-        } else {
-            qDebug() << "startCamera: 카메라 UUID 불일치로 레시피 로드 건너뜀 - 화면 초기화";
-            
+        } else {         
             // 화면 완전 초기화
             // 1. CameraView 초기화 (패턴 그리기 중지)
             if (cameraView) {
@@ -6410,12 +6379,8 @@ void TeachingWidget::startCamera() {
             if (propertyStackWidget) {
                 propertyStackWidget->setCurrentIndex(0);
             }
-            
-            qDebug() << "startCamera: 화면 초기화 완료";
         }
-    } else {
-        qDebug() << "startCamera: 카메라가 연결되지 않아 레시피 로드하지 않음";
-    }
+    } 
     
     // 10. 패턴 트리 업데이트 (라이브 모드 시작 시 현재 카메라 패턴 표시)
     updatePatternTree();
@@ -6810,16 +6775,11 @@ void TeachingWidget::updatePreviewUI() {
 }
 
 void TeachingWidget::updateCameraFrame() {
-    qDebug() << QString("[updateCameraFrame] 시작 - camOff: %1, cameraIndex: %2, cameraFrames 크기: %3")
-                .arg(camOff).arg(cameraIndex).arg(cameraFrames.size());
-    
     // **시뮬레이션 모드 처리**
     if (camOff && cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
         !cameraFrames[cameraIndex].empty()) {
         
         cv::Mat currentFrame = cameraFrames[cameraIndex];
-        qDebug() << QString("[updateCameraFrame] 시뮬레이션 모드에서 필터 적용 - 이미지 크기: %1x%2")
-                    .arg(currentFrame.cols).arg(currentFrame.rows);
         
         // 시뮬레이션 이미지에 필터 적용
         cv::Mat filteredFrame = cameraFrames[cameraIndex].clone();
@@ -6853,15 +6813,8 @@ void TeachingWidget::updateCameraFrame() {
         cameraView->repaint();  // 강제 repaint 추가
         QApplication::processEvents(); // 이벤트 강제 처리
         
-        qDebug() << QString("[updateCameraFrame] 시뮬레이션 모드 필터 적용 완료 - 픽스맵 크기: %1x%2")
-                    .arg(pixmap.width()).arg(pixmap.height());
         return;
-    } else if (camOff) {
-        qDebug() << QString("[updateCameraFrame] camOff 모드이지만 조건 불만족 - cameraIndex: %1, cameraFrames 크기: %2, 프레임 비어있음: %3")
-                    .arg(cameraIndex).arg(cameraFrames.size())
-                    .arg(cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) ? 
-                         (cameraFrames[cameraIndex].empty() ? "true" : "false") : "인덱스 범위 밖");
-    }
+    } 
     
     // **메인 카메라 프레임 업데이트만 처리**
     if (cameraIndex >= 0 && cameraIndex < cameraInfos.size() && 
@@ -7090,9 +7043,7 @@ void TeachingWidget::switchToCamera(const QString& cameraUuid) {
             !cameraFrames[cameraIndex].empty()) {
             
             cv::Mat currentFrame = cameraFrames[cameraIndex];
-            qDebug() << QString("switchToCamera - camOff 모드에서 티칭 이미지 설정: cameraIndex=%1, 크기=%2x%3")
-                        .arg(cameraIndex).arg(currentFrame.cols).arg(currentFrame.rows);
-            
+       
             // OpenCV Mat을 QImage로 변환
             QImage qImage;
             if (currentFrame.channels() == 3) {
@@ -7106,9 +7057,6 @@ void TeachingWidget::switchToCamera(const QString& cameraUuid) {
             if (!qImage.isNull()) {
                 QPixmap pixmap = QPixmap::fromImage(qImage);
                 cameraView->setBackgroundPixmap(pixmap);
-                qDebug() << QString("switchToCamera - 배경 이미지 설정 완료");
-            } else {
-                qDebug() << QString("switchToCamera - QImage 변환 실패");
             }
         }
         cameraView->update();
@@ -7957,17 +7905,11 @@ QString TeachingWidget::getCameraName(int index) {
 }
 
 bool TeachingWidget::runInspection(const cv::Mat& frame, int specificCameraIndex) {
-    qDebug() << QString("🔍 [runInspection 시작] frame크기: %1x%2, empty: %3, specificCameraIndex: %4")
-                .arg(frame.cols).arg(frame.rows).arg(frame.empty()).arg(specificCameraIndex);
-    
     if (frame.empty()) {
-        qDebug() << "❌ [runInspection] frame이 empty임";
         return false;
     }
     
     if (!cameraView || !insProcessor) {
-        qDebug() << QString("❌ [runInspection] 시스템 미초기화 - cameraView: %1, insProcessor: %2")
-                    .arg(cameraView ? "OK" : "NULL").arg(insProcessor ? "OK" : "NULL");
         return false;
     }
     
@@ -8003,7 +7945,7 @@ bool TeachingWidget::runInspection(const cv::Mat& frame, int specificCameraIndex
                 QUuid fidId = it.key();
                 double detectedAngle = it.value();
                 
-                qDebug() << QString("패턴 ID: %1, 각도: %2°").arg(fidId.toString()).arg(detectedAngle);
+
                 
                 // 해당 FID 패턴 찾기
                 PatternInfo* fidPattern = nullptr;
@@ -8030,11 +7972,7 @@ bool TeachingWidget::runInspection(const cv::Mat& frame, int specificCameraIndex
                 // 각도 차이 계산 (검출 각도 - 원본 각도)
                 double angleDiff = detectedAngle - originalFidAngle;
                 
-                qDebug() << QString("★ 패턴 '%1' FID 중심 그룹 회전: 티칭각도=%2°, 검출각도=%3°, 차이=%4°")
-                        .arg(fidPattern->name)
-                        .arg(originalFidAngle)
-                        .arg(detectedAngle)
-                        .arg(angleDiff);
+
                 
                 // FID 패턴 업데이트 (위치와 각도)
                 fidPattern->rect.moveCenter(detectedFidCenter);
@@ -8064,14 +8002,7 @@ bool TeachingWidget::runInspection(const cv::Mat& frame, int specificCameraIndex
                         pattern.rect.moveCenter(newInsCenter);
                         pattern.angle = pattern.angle + angleDiff; // INS 원본 각도 + FID 회전 차이
                         
-                        qDebug() << QString("INS 패턴 '%1' FID 중심 덩어리 회전: (%2,%3) -> (%4,%5), 각도 %6° -> %7°")
-                                .arg(pattern.name)
-                                .arg(insOriginalCenter.x())
-                                .arg(insOriginalCenter.y())
-                                .arg(newInsCenter.x())
-                                .arg(newInsCenter.y())
-                                .arg(pattern.angle - angleDiff) // 원본 각도
-                                .arg(pattern.angle);            // 새 각도
+
                     }
                 }
             }
@@ -8131,10 +8062,7 @@ void TeachingWidget::resumeToLiveMode() {
         
         // **2.5. camOn 상태에서만 카메라 시작**
         if (!camOff && startCameraButton && !startCameraButton->isChecked()) {
-            qDebug() << "[라이브 모드 복귀] camOn 모드에서 카메라 다시 시작";
             startCamera();
-        } else if (camOff) {
-            qDebug() << "[라이브 모드 복귀] camOff 모드 유지 - 카메라 시작하지 않음";
         }
         
         // **3. 검사 모드 해제**
@@ -8177,9 +8105,6 @@ void TeachingWidget::resumeToLiveMode() {
         // **camOff 모드에서는 티칭 이미지를 유지**
         if (!camOff && cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
             cameraFrames[cameraIndex] = cv::Mat();
-            qDebug() << QString("[resumeToLiveMode] camOn 모드 - cameraFrames[%1] 초기화").arg(cameraIndex);
-        } else if (camOff) {
-            qDebug() << QString("[resumeToLiveMode] camOff 모드 - cameraFrames[%1] 유지 (티칭 이미지)").arg(cameraIndex);
         }
         
         // **6. UI 이벤트 처리**
@@ -8384,12 +8309,6 @@ void TeachingWidget::updateAllPatternTemplateImages() {
             }
         } else {
             currentImage = getCurrentFrame();
-            qDebug() << QString("검사 실행 - 현재 카메라 인덱스: %1, 전체 카메라 수: %2")
-                        .arg(cameraIndex).arg(cameraFrames.size());
-            if (cameraIndex >= 0 && cameraIndex < cameraFrames.size()) {
-                qDebug() << QString("검사 실행 - 현재 카메라 영상 크기: %1x%2")
-                            .arg(currentImage.cols).arg(currentImage.rows);
-            }
         }
         if (currentImage.empty()) {
             return;
@@ -8576,12 +8495,10 @@ void TeachingWidget::updateAllPatternTemplateImages() {
 }
 
 void TeachingWidget::saveRecipe() {
-    qDebug() << QString("saveRecipe() 호출됨 - 현재 레시피 이름: '%1', 시뮬레이션 모드: %2").arg(currentRecipeName).arg(camOff);
-    
+   
     // 현재 레시피 이름이 있으면 개별 파일로 저장, 없으면 사용자에게 물어봄
     if (currentRecipeName.isEmpty()) {
-        qDebug() << "currentRecipeName이 비어있어 사용자에게 새 레시피 생성을 물어봅니다.";
-        
+    
         // 사용자에게 새 레시피 생성 여부 묻기
         QMessageBox msgBox;
         msgBox.setWindowTitle("새 레시피 생성");
@@ -8593,28 +8510,15 @@ void TeachingWidget::saveRecipe() {
         if (msgBox.exec() == QMessageBox::Yes) {
             // 자동으로 타임스탬프 이름 생성
             QDateTime now = QDateTime::currentDateTime();
-            currentRecipeName = now.toString("yyyyMMdd_HHmmss_zzz");
-            qDebug() << QString("새로 생성된 레시피 이름: %1").arg(currentRecipeName);
+            currentRecipeName = now.toString("yyyyMMdd_HHmmss_zzz");        
         } else {
-            qDebug() << "사용자가 새 레시피 생성을 취소했습니다.";
             return; // 저장 취소
         }
-    } else {
-        qDebug() << QString("기존 레시피 '%1'에 덮어쓰기 저장합니다.").arg(currentRecipeName);
     }
     
     // 현재 편집 모드 저장 (저장 후 복원하기 위해)
     CameraView::EditMode currentMode = cameraView->getEditMode();
     bool currentModeToggleState = modeToggleButton->isChecked();
-    
-    // 모드별 이미지 저장 처리
-    if (!camOff) {
-        // 라이브 모드: 티칭 이미지는 XML에 base64로 저장됨
-        qDebug() << "라이브 모드: 티칭 이미지는 XML에 base64로 저장됩니다.";
-    } else {
-        // camOff 모드: 티칭 이미지는 XML에 base64로 저장됨
-        qDebug() << "camOff 모드: 티칭 이미지는 XML에 base64로 저장됩니다.";
-    }
     
     // 개별 레시피 파일로 저장
     RecipeManager manager;
@@ -8633,7 +8537,6 @@ void TeachingWidget::saveRecipe() {
         // 최근 사용한 레시피를 ConfigManager에 저장
         ConfigManager::instance()->setLastRecipePath(currentRecipeName);
         ConfigManager::instance()->saveConfig();
-        qDebug() << QString("최근 레시피 저장: %1").arg(currentRecipeName);
         
         UIColors::showInformation(this, "레시피 저장", 
             QString("'%1' 레시피가 성공적으로 저장되었습니다.").arg(currentRecipeName));

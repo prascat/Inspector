@@ -670,7 +670,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
     
     try {
     // 디버그: 전달받은 각도 확인 (패턴에 저장된 각도 사용)
-    std::cout << "=== STRIP 검사 시작: 전달받은 각도 = " << pattern.angle << "도 ===" << std::endl;
+
         
     gradientPoints.clear();
 
@@ -721,12 +721,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         static_cast<int>(rectHeight)
     );
     
-    std::cout << "=== 크기 정보 디버깅 ===" << std::endl;
-    std::cout << "패턴 원본 크기: " << rectWidth << "x" << rectHeight << std::endl;
-    std::cout << "회전된 크기: " << rotatedWidth << "x" << rotatedHeight << std::endl;
-    std::cout << "maxSize (패딩제거): " << maxSize << std::endl;
-    std::cout << "ROI 내부 패턴 영역: (" << roiPatternRect.x << "," << roiPatternRect.y 
-              << ") 크기: " << roiPatternRect.width << "x" << roiPatternRect.height << std::endl;
+
 
     // 이전 시그니처에서 사용하던 out-parameter 포인터들 (헤더에서 제거됨)
     // 컴파일을 위해 nullptr로 선언해 기존 if(ptr) 체크가 동작하도록 함
@@ -781,7 +776,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         cv::Mat maskedProcessed = processed.clone();
         maskedProcessed.setTo(255, ~validMask); // 유효하지 않은 영역을 흰색으로
         
-        std::cout << "INS 패턴 영역 마스킹 완료: 유효하지 않은 영역을 흰색으로 처리" << std::endl;
+
         
         // ===== 2단계: 컨투어 검출 (마스킹된 이미지에서) =====
         std::vector<std::vector<cv::Point>> contours;
@@ -803,14 +798,13 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             });
         
         cv::Rect boundRect = cv::boundingRect(largestContour);
-        std::cout << "검출된 컨투어 경계: (" << boundRect.x << "," << boundRect.y << ") " 
-                  << boundRect.width << "x" << boundRect.height << std::endl;
+
         
         // boundRect 유효성 검사
         if (boundRect.width <= 0 || boundRect.height <= 0 || 
             boundRect.x < 0 || boundRect.y < 0 ||
             boundRect.x >= roiImage.cols || boundRect.y >= roiImage.rows) {
-            std::cout << "유효하지 않은 boundRect 검출됨" << std::endl;
+
             score = 0.0;
             cleanOriginal.copyTo(resultImage);
             return false;
@@ -1101,9 +1095,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         cv::Point2f horizontalVec(cos(angleRad), sin(angleRad));      // 패턴의 가로 방향
         cv::Point2f verticalVec(-sin(angleRad), cos(angleRad));       // 패턴의 세로 방향 (가로에 수직)
         
-        std::cout << "=== 목 부분 절단 품질 측정 (각도: " << angle << "도, 20% X지점: " << measureX << ") ===" << std::endl;
-        std::cout << "측정 방향 벡터: 가로(" << horizontalVec.x << "," << horizontalVec.y 
-                  << ") 세로(" << verticalVec.x << "," << verticalVec.y << ")" << std::endl;
+
         
         // 20% X 지점부터 width만큼 X를 이동하면서 각 X 위치에서 Y축 방향 검은색 픽셀 개수 측정
         for (int x = measureX; x < roiPatternRect.x + roiPatternRect.width; x++) {
@@ -1166,18 +1158,13 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             }
             neckWidthStdDev = sqrt(variance / neckWidths.size());
             
-            std::cout << "측정 포인트 수: " << neckWidths.size() << "개" << std::endl;
-            std::cout << "평균 검은색 픽셀 개수: " << avgNeckWidth << "px" << std::endl;
-            std::cout << "최소 검은색 픽셀 개수: " << minNeckWidth << "px" << std::endl;
-            std::cout << "최대 검은색 픽셀 개수: " << maxNeckWidth << "px" << std::endl;
-            std::cout << "표준편차: " << neckWidthStdDev << "px" << std::endl;
-            std::cout << "편차: " << (maxNeckWidth - minNeckWidth) << "px" << std::endl;
+
             
             // 목 폭 통계는 내부 로컬 변수에 계산됨. 외부 포인터 반환은 더 이상 사용하지 않음.
             
             // 측정 결과를 이미지 위에 텍스트로 표시 (회전 각도 고려)
             if (!neckWidths.empty()) {
-                std::cout << "텍스트 그리기 시작 - 측정 개수: " << neckWidths.size() << std::endl;
+
                 
                 // 패턴 중심점 계산
                 cv::Point2f center(boundRect.x + boundRect.width / 2.0f, 
@@ -1201,8 +1188,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 if (textPos.x + boxWidth >= resultImage.cols) textPos.x = resultImage.cols - boxWidth - 10;
                 if (textPos.y + boxHeight >= resultImage.rows) textPos.y = resultImage.rows - boxHeight - 10;
                 
-                std::cout << "텍스트 위치 (회전 고려): center(" << center.x << "," << center.y 
-                          << ") -> textPos(" << textPos.x << "," << textPos.y << ")" << std::endl;
+
                 
                 // 배경 박스 그리기 (더 눈에 띄는 색상으로)
                 cv::Rect textBgRect(textPos.x, textPos.y, boxWidth, boxHeight);
@@ -1214,7 +1200,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 std::string maxText = "Max: " + std::to_string((int)maxNeckWidth) + "px";
                 std::string avgText = "Avg: " + std::to_string((int)avgNeckWidth) + "px";
                 
-                std::cout << "텍스트 내용: " << minMaxText << ", " << maxText << ", " << avgText << std::endl;
+
                 
                 // 폰트 설정 (크기 증가)
                 int fontFace = cv::FONT_HERSHEY_SIMPLEX;
@@ -1230,9 +1216,9 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 cv::putText(resultImage, avgText, cv::Point(textBgRect.x + 10, textBgRect.y + 60), 
                            fontFace, fontScale, textColor, thickness);
                            
-                std::cout << "텍스트 그리기 완료" << std::endl;
+
             } else {
-                std::cout << "neckWidths가 비어있음 - 텍스트 그리기 스킵" << std::endl;
+
             }
             
             // 두께 측정 영역을 점선 사각형으로 표시 (패턴 각도 적용)
@@ -1342,14 +1328,14 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         // 더 민감한 임계값 사용 (기본값의 50%)
         float sensitiveThreshold = gradientThreshold * 0.5f;
         
-        std::cout << "급격한 변화 탐지 - 임계값: " << sensitiveThreshold << std::endl;
+
         
         // 상단 컨투어에서 급격한 변화 지점 찾기 (10%-90% 구간으로 확장)
         if (!topPositions.empty() && !topGradients.empty()) {
             size_t startIdx = topPositions.size() * 10 / 100; // 10%
             size_t endIdx = topPositions.size() * 90 / 100;   // 90%
             
-            std::cout << "상단 탐색 구간: " << startIdx << " ~ " << endIdx << " (총 " << topPositions.size() << "개)" << std::endl;
+
             
             // 첫 번째 급격한 변화 지점 (앞쪽에서)
             for (size_t i = startIdx; i < endIdx; i++) {
@@ -1685,7 +1671,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         // OpenCV 4점 시각화 제거됨 - Qt에서 처리
         
         // 4개 컨투어 점 시각화 제거 (깔끔한 화면을 위해)
-        std::cout << "\n=== 4개 컨투어 점 시각화 생략 ===\n";
+
         
         // ROI 경계 확인 함수는 남겨둠 (다른 용도로 사용 가능)
         auto isInROI = [&resultImage](const cv::Point& p) -> bool {
@@ -1698,8 +1684,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         int totalTopPoints = hasPoint1 && !topPositions.empty() ? topPositions.size() : 0;
         int totalBottomPoints = hasPoint2 && !bottomPositions.empty() ? bottomPositions.size() : 0;
         
-        std::cout << "상단 컨투어 점 개수: " << totalTopPoints << "개 (표시 생략)\n";
-        std::cout << "하단 컨투어 점 개수: " << totalBottomPoints << "개 (표시 생략)\n";
+
         
         // 점수 계산 (Peak 개수와 품질 기반)
         float peakQuality = 0;
@@ -1714,14 +1699,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         bool hasMinimumFeatures = gradientPoints.size() >= 1;
         bool isPassed = hasMinimumFeatures && (score >= passThreshold);
         
-        // 디버그: STRIP 검사 점수 및 판정 로그
-        std::cout << "=== STRIP 검사 결과 ===" << std::endl;
-        std::cout << "gradientPoints 개수: " << gradientPoints.size() << std::endl;
-        std::cout << "peakQuality: " << peakQuality << std::endl;
-        std::cout << "계산된 점수: " << score << std::endl;
-        std::cout << "임계값: " << passThreshold << std::endl;
-        std::cout << "hasMinimumFeatures: " << (hasMinimumFeatures ? "true" : "false") << std::endl;
-        std::cout << "최종 판정: " << (isPassed ? "PASS" : "FAIL") << std::endl;
+
         
         // STRIP 두께 측정을 위한 공통 변수 정의
         cv::Point roiPatternCenter(roiImage.cols / 2, roiImage.rows / 2);
@@ -1742,10 +1720,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             int boxCenterX = roiPatternCenter.x + static_cast<int>(localX * cos(angleRad) - localY * sin(angleRad));
             int boxCenterY = roiPatternCenter.y + static_cast<int>(localX * sin(angleRad) + localY * cos(angleRad));
             
-            std::cout << "패턴 중심 기준 두께 측정 위치: (" << boxCenterX << ", " << boxCenterY << ")" << std::endl;
-            std::cout << "ROI 패턴 중심: (" << roiPatternCenter.x << ", " << roiPatternCenter.y << ")" << std::endl;
-            std::cout << "패턴 각도: " << angle << "도, startPercent: " << gradientStartPercent << "%" << std::endl;
-            std::cout << "두께 측정 영역 크기: " << thicknessBoxWidth << " x " << thicknessBoxHeight << "px" << std::endl;
+
             
             std::vector<int> thicknesses;
             std::vector<cv::Point> measurementLines; // 측정 라인 저장
@@ -1868,11 +1843,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 // 최종 판정에 두께 조건 추가
                 isPassed = isPassed && thicknessPassed;
                 
-                std::cout << "=== STRIP 두께 측정 검사 (검은색 픽셀 기반) ===" << std::endl;
-                std::cout << "가로 검사 범위: " << thicknessBoxWidth << "px (스캔라인 개수: " << (thicknessBoxWidth/3 + 1) << "개)" << std::endl;
-                std::cout << "측정된 두께 - 최소: " << minThickness << "px, 최대: " << maxThickness << "px, 평균: " << avgThickness << "px" << std::endl;
-                std::cout << "허용 범위: " << thicknessMin << " ~ " << thicknessMax << " px" << std::endl;
-                std::cout << "두께 판정: " << (thicknessPassed ? "PASS" : "FAIL") << std::endl;
+
                 
                 // 측정 위치에 빨간색 선 그리기
                 for (size_t i = 0; i < measurementLines.size(); i += 2) {
@@ -1984,8 +1955,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         
         // ===== REAR 두께 측정 (END 지점) =====
         if (stripRearEnabled) {
-        std::cout << "\n=== REAR 두께 측정 시작 (END 지점 " << gradientEndPercent << "%) ===\n";
-        
         // REAR 구간에서 사용할 변수들 (패턴 중심 기준)
         cv::Point roiPatternCenter_rear = roiPatternCenter;  // 동일한 패턴 중심 사용
         double cosA_rear = cos(angleRad);
@@ -2003,9 +1972,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         
         int boxCenterX_rear = roiPatternCenter_rear.x + static_cast<int>(localX_rear * cos(angleRad) - localY_rear * sin(angleRad));
         int boxCenterY_rear = roiPatternCenter_rear.y + static_cast<int>(localX_rear * sin(angleRad) + localY_rear * cos(angleRad));
-        
-        std::cout << "REAR 두께 측정 위치: (" << boxCenterX_rear << ", " << boxCenterY_rear << ")" << std::endl;
-        std::cout << "패턴 각도: " << angle << "도, endPercent: " << gradientEndPercent << "%" << std::endl;
         
         std::vector<int> thicknesses_rear;
         std::vector<cv::Point> measurementLines_rear; // 측정 라인 저장
@@ -2123,11 +2089,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             // 최종 판정에 REAR 두께 조건도 추가
             isPassed = isPassed && thicknessPassed_rear;
             
-            std::cout << "=== REAR 두께 측정 검사 (검은색 픽셀 기반) ===" << std::endl;
-            std::cout << "가로 검사 범위: " << rearThicknessBoxWidth << "px (스캔라인 개수: " << (rearThicknessBoxWidth/3 + 1) << "개)" << std::endl;
-            std::cout << "측정된 두께 - 최소: " << minThickness_rear << "px, 최대: " << maxThickness_rear << "px, 평균: " << avgThickness_rear << "px" << std::endl;
-            std::cout << "허용 범위: " << rearThicknessMin << " ~ " << rearThicknessMax << " px" << std::endl;
-            std::cout << "REAR 두께 판정: " << (thicknessPassed_rear ? "PASS" : "FAIL") << std::endl;
+
             
             // 측정 위치에 빨간색 선 그리기 (FRONT와 동일한 색상)
             for (size_t i = 0; i < measurementLines_rear.size(); i += 2) {
@@ -2262,8 +2224,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         );
         
         if (pattern.stripLengthEnabled && gradientPoints.size() >= 4) {
-            std::cout << "=== STRIP 길이 검사 시작 ===" << std::endl;
-            
             // 이미 계산된 P2, P4 점들 사용 (gradientPoints에서)
             cv::Point p2 = gradientPoints[1];  // 하단 첫번째 변화점
             cv::Point p4 = gradientPoints[3];  // 하단 두번째 변화점
@@ -2295,11 +2255,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             bool lengthInRange = (lengthDistance >= pattern.stripLengthMin && 
                                 lengthDistance <= pattern.stripLengthMax);
             
-            std::cout << "P2,P4 중간점: (" << p24MidPoint.x << "," << p24MidPoint.y << ")" << std::endl;
-            std::cout << "EDGE 절단면 평균 시작점: (" << edgeStartPoint.x << "," << edgeStartPoint.y << ")" << std::endl;
-            std::cout << "측정된 STRIP 길이: " << lengthDistance << " 픽셀" << std::endl;
-            std::cout << "허용 범위: " << pattern.stripLengthMin << " ~ " << pattern.stripLengthMax << " 픽셀" << std::endl;
-            std::cout << "STRIP 길이 판정: " << (lengthInRange ? "PASS" : "FAIL") << std::endl;
+
             
             // 결과 저장
             if (stripLengthPassed) *stripLengthPassed = lengthInRange;
@@ -2321,12 +2277,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         
         if (edgeEnabled) {
             try {
-                std::cout << "=== EDGE 검사 시작: 각도 = " << angle << "도 ===" << std::endl;
-                std::cout << "패턴 크기: " << roiImage.cols << "x" << roiImage.rows << std::endl;
-                std::cout << "EDGE 오프셋: " << edgeOffsetX << ", 박스 크기: " << edgeBoxWidth << "x" << edgeBoxHeight << std::endl;
-                
-                // EDGE는 항상 수직이어야 하므로 회전각을 적용하지 않음
-                std::cout << "🔹 EDGE 검사는 수직 절단면이므로 회전각 무시" << std::endl;
+
                 
                 // 이미 계산된 EDGE 검사 박스 중심점 사용
                 cv::Point2f edgeCenter(edgeBoxCenter.x, edgeBoxCenter.y);
@@ -2341,9 +2292,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 corners[2] = cv::Point2f(edgeCenter.x + halfWidth, edgeCenter.y + halfHeight);  // 우하
                 corners[3] = cv::Point2f(edgeCenter.x - halfWidth, edgeCenter.y + halfHeight);  // 좌하
                 
-                std::cout << "🔸 EDGE 박스 꼭짓점 (수직): [" 
-                          << corners[0].x << "," << corners[0].y << "] [" 
-                          << corners[2].x << "," << corners[2].y << "]" << std::endl;
+
                 
                 // 검사 영역이 이미지 범위 내에 있는지 확인
                 bool inBounds = true;
@@ -2382,10 +2331,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     float startY = edgeCenter.y - edgeBoxHeight * 0.5f + (edgeBoxHeight * startPercentOffset);  // 시작 퍼센트만큼 아래에서 시작
                     float stepY = effectiveHeight / scanLines;  // Y 방향 스텝
                     
-                    std::cout << "EDGE Y별 수평 스캔 설정: scanLines=" << scanLines << ", startY=" << startY 
-                              << ", stepY=" << stepY << ", 박스크기=" << edgeBoxWidth << "x" << edgeBoxHeight << std::endl;
-                    std::cout << "🔹 EDGE 스캔 범위 조정: 시작=" << pattern.edgeStartPercent << "%, 끝=" << pattern.edgeEndPercent 
-                              << "%, 유효높이=" << effectiveHeight << "px" << std::endl;
+
                     
                     std::vector<cv::Point> leftEdgePoints;  // 절단면 포인트들
                     
@@ -2436,7 +2382,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                         }
                     }
                     
-                    std::cout << "절단면 포인트 개수 (필터링 전): " << leftEdgePoints.size() << std::endl;
+
                     
                     // 수평선 제거: 기울기가 너무 수평인 구간 필터링
                     if (leftEdgePoints.size() > 10) {
@@ -2470,22 +2416,16 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                         }
                         
                         leftEdgePoints = filteredPoints;
-                        std::cout << "수평선 필터링 후 포인트 개수: " << leftEdgePoints.size() << std::endl;
+
                     }
                     
-                    std::cout << "절단면 포인트 개수 (최종): " << leftEdgePoints.size() << std::endl;
+
                     
-                    // 절단면 포인트들의 위치 출력 (처음 10개만)
-                    for (size_t i = 0; i < std::min(leftEdgePoints.size(), (size_t)10); i++) {
-                        std::cout << "절단면 포인트[" << i << "]: (" << leftEdgePoints[i].x << "," << leftEdgePoints[i].y << ")" << std::endl;
-                    }
-                    if (leftEdgePoints.size() > 10) {
-                        std::cout << "... (총 " << leftEdgePoints.size() << "개 포인트)" << std::endl;
-                    }
+
                     
                     // 평균선 거리 기반 불량 포인트 검출
                     if (leftEdgePoints.size() >= 5) {
-                        std::cout << "=== 평균선 거리 기반 불량 포인트 검출 시작 ===" << std::endl;
+
                         
                         // 모든 EDGE 포인트의 평균 X 좌표 계산
                         double sumX = 0.0;
@@ -2513,12 +2453,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                             }
                         }
                         
-                        std::cout << "평균선 거리 검사 정보:" << std::endl;
-                        std::cout << "- 평균 X 위치: " << avgX << "px" << std::endl;
-                        std::cout << "- 허용 거리 범위: " << pattern.edgeDistanceMin << " ~ " << pattern.edgeDistanceMax << "px" << std::endl;
-                        std::cout << "- 최대 거리: " << maxDistance << "px" << std::endl;
-                        std::cout << "- 범위 벗어난 포인트: " << outlierCount << "개" << std::endl;
-                        std::cout << "- 허용 최대 개수: " << edgeMaxOutliers << "개" << std::endl;
+
                         
                         // 검사 통과 여부 결정
                         bool edgePassResult = (outlierCount <= edgeMaxOutliers);
@@ -2564,7 +2499,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                             *edgePoints = leftEdgePoints;
                         }
                     } else {
-                        std::cout << "EDGE 검사 실패: 절단면 포인트 부족 (" << leftEdgePoints.size() << "개)" << std::endl;
+
                         if (edgePassed) *edgePassed = false;
                     }
                 } else {
@@ -2577,17 +2512,12 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             }
         }
         
-        // 크기 정보 상세 디버깅
-        std::cout << "=== 크기 정보 디버깅 ===" << std::endl;
-        std::cout << "resultImage 원본 크기: " << resultImage.cols << "x" << resultImage.rows << std::endl;
-        std::cout << "roiImage 크기: " << roiImage.cols << "x" << roiImage.rows << std::endl;
-        std::cout << "roiPatternRect: (" << roiPatternRect.x << "," << roiPatternRect.y << ") " 
-                  << roiPatternRect.width << "x" << roiPatternRect.height << std::endl;
+
         
         // 오버레이 크기를 ROI 크기에 정확히 맞춤
         if (!resultImage.empty()) {
             cv::resize(resultImage, resultImage, cv::Size(roiImage.cols, roiImage.rows));
-            std::cout << "오버레이 최종 크기: " << resultImage.cols << "x" << resultImage.rows << std::endl;
+
         }
         
         return isPassed;

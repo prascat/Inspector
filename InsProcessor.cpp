@@ -543,7 +543,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                             .arg(adjustedPattern.angle, 0, 'f', 2));
                     
                     inspPassed = checkStrip(image, adjustedPattern, inspScore, result);
-                    logDebug(QString("STRIP 검사 수행: %1 (점수: %.3f, method=%2)").arg(pattern.name).arg(pattern.inspectionMethod).arg(inspScore));
+
                     break;
                 }
                     
@@ -2388,14 +2388,9 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     
     cv::Point2f offset(squareRoi.x, squareRoi.y);
     
-    qDebug() << "🎯 정밀 계산:";
-    qDebug() << "center 소수점:" << QPointF(center.x, center.y);
-    qDebug() << "center 정수변환:" << QPoint(static_cast<int>(center.x), static_cast<int>(center.y));
-    qDebug() << "halfSize:" << halfSize;
-    qDebug() << "squareRoi 계산:" << QPoint(static_cast<int>(center.x) - halfSize, static_cast<int>(center.y) - halfSize);
+
     
-    qDebug() << "🔥 좌표변환 계산 - 패턴중심:" << QPointF(patternCenter.x, patternCenter.y) 
-             << "maxSize:" << maxSize << "squareRoi:" << QRect(squareRoi.x, squareRoi.y, squareRoi.width, squareRoi.height);
+
     
     // OpenCV에서 검출된 gradientPoints를 사용 (4개 포인트)
     QPoint absPoint1, absPoint2, absPoint3, absPoint4;
@@ -2409,10 +2404,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             gradientPoints[3]   // Point 4: 오른쪽 아래
         };
         
-        qDebug() << "OpenCV 검출 STRIP 4점 (회전 전) - P1:" << QPoint(orderedPoints[0].x, orderedPoints[0].y) 
-                 << "P2:" << QPoint(orderedPoints[1].x, orderedPoints[1].y) 
-                 << "P3:" << QPoint(orderedPoints[2].x, orderedPoints[2].y) 
-                 << "P4:" << QPoint(orderedPoints[3].x, orderedPoints[3].y);
+
         
         // 유틸리티 함수를 사용하여 점들을 변환
         QList<QPoint> transformedPoints = InsProcessor::transformPatternPoints(
@@ -2466,13 +2458,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     qDebug() << "실제 ROI 크기:" << roiImage.cols << "x" << roiImage.rows;
     qDebug() << "크기 차이:" << (roiImage.cols - maxSize) << "픽셀";
     
-    qDebug() << "=== STRIP 4점 좌표 변환 ===";
-    qDebug() << "패턴 중심:" << QPointF(patternCenter.x, patternCenter.y);
-    qDebug() << "halfSize:" << halfSize;
-    qDebug() << "squareRoi:" << QRect(squareRoi.x, squareRoi.y, squareRoi.width, squareRoi.height);
-    qDebug() << "오프셋:" << QPointF(offset.x, offset.y);
-    qDebug() << "변환된 절대좌표 - P1:" << absPoint1 << "P2:" << absPoint2 << "P3:" << absPoint3 << "P4:" << absPoint4;
-    qDebug() << "기울기 - S13:" << slope13 << "S24:" << slope24;
+
     
     if (isPassed) {
         // 좌표 변환 적용
@@ -2536,10 +2522,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             int startSkip = (totalPoints * pattern.edgeStartPercent) / 100;
             int endSkip = (totalPoints * pattern.edgeEndPercent) / 100;
             
-            qDebug() << "🔹🔹🔹 EDGE 포인트 필터링 적용 🔹🔹🔹";
-            qDebug() << "📊 전체 EDGE 포인트 개수:" << totalPoints;
-            qDebug() << "🚫 시작 제외 퍼센트:" << pattern.edgeStartPercent << "% (" << startSkip << "개 포인트)";
-            qDebug() << "🚫 끝 제외 퍼센트:" << pattern.edgeEndPercent << "% (" << endSkip << "개 포인트)";
+
             
             // 유효한 범위 확인
             int validStart = startSkip;
@@ -2560,13 +2543,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             }
             result.edgeAbsolutePoints[pattern.id] = absoluteEdgePoints;
             
-            qDebug() << "✅✅✅ EDGE 절대좌표 변환 완료 (필터링 적용됨) ✅✅✅";
-            qDebug() << "🎯 필터링된 EDGE 포인트 개수:" << (validEnd - validStart);
-            qDebug() << "📍 변환된 절대좌표 개수:" << absoluteEdgePoints.size();
-            if (!absoluteEdgePoints.isEmpty()) {
-                qDebug() << "첫 번째 EDGE 절대좌표:" << absoluteEdgePoints.first();
-                qDebug() << "마지막 EDGE 절대좌표:" << absoluteEdgePoints.last();
-            }
+
         }
         
         // Qt로 시각화 추가 (시작점, 끝점, Local Max Gradient 지점들)
@@ -3072,8 +3049,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             }
         }
         
-        logDebug(QString("STRIP 검사 완료 - %1: 점수=%.3f, 통과=%2, 좌측두께=%3px, 우측두께=%4px")
-                .arg(pattern.name).arg(isPassed ? "예" : "아니오").arg(score).arg(leftThickness).arg(rightThickness));
+
         
         return isPassed;
         
@@ -3131,8 +3107,7 @@ QList<QPoint> InsProcessor::transformPatternPoints(const std::vector<cv::Point>&
         transformedPoints.append(absPoint);
     }
     
-    qDebug() << "transformPatternPoints: 입력점수" << roiPoints.size() 
-             << "패턴각도" << patternAngle << "도 -> 변환완료" << transformedPoints.size() << "점";
+
     
     return transformedPoints;
 }

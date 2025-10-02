@@ -1361,11 +1361,8 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult& res
         // 이미 null이므로 그대로 유지 (모든 검사 결과 표시)
     }
     
-    qDebug() << "=== updateInspectionResult 호출됨 ===";
-    qDebug() << "검출된 각도 정보:";
-    for (auto it = result.angles.begin(); it != result.angles.end(); ++it) {
-        qDebug() << QString("패턴 ID: %1, 각도: %2°").arg(it.key().toString()).arg(it.value());
-    }
+
+
     
     // 매칭 결과에서 업데이트된 각도 정보를 패턴에 반영
     for (auto it = result.angles.begin(); it != result.angles.end(); ++it) {
@@ -1377,8 +1374,7 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult& res
             if (patterns[i].id == patternId) {
                 double oldAngle = patterns[i].angle;
                 patterns[i].angle = detectedAngle;
-                qDebug() << QString("★ 패턴 '%1' 각도 UI 업데이트: %2° → %3°")
-                            .arg(patterns[i].name).arg(oldAngle).arg(detectedAngle);
+
                 
                 // 각도 변경 신호 발송
                 emit patternAngleChanged(patternId, detectedAngle);
@@ -1436,12 +1432,7 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult& res
                             double childOldAngle = patterns[j].angle;
                             patterns[j].angle = childOldAngle + angleDiff;
 
-                            qDebug() << QString("INS 패턴 '%1' 그룹 변환 적용: 중심 (%2,%3) 각도 %4° -> %5°")
-                                        .arg(patterns[j].name)
-                                        .arg(QString::number(childTeachingCenter.x(), 'f', 3))
-                                        .arg(QString::number(childTeachingCenter.y(), 'f', 3))
-                                        .arg(QString::number(childOldAngle, 'f', 2))
-                                        .arg(QString::number(patterns[j].angle, 'f', 2));
+
 
                             // 각도 변경 신호 발송 (UI 업데이트용)
                             emit patternAngleChanged(patterns[j].id, patterns[j].angle);
@@ -1923,7 +1914,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 QPoint frontBoxCenter = originalToDisplay(frontBoxAbsoluteCenter.toPoint());
                 
                 // FRONT 박스 그리기 (시안색 점선)
-                qDebug() << "FRONT 박스 그리기: 중심" << frontBoxCenter << "각도" << patternAngle << "크기" << frontBoxSize;
                 painter.save();
                 painter.translate(frontBoxCenter);
                 painter.rotate(patternAngle);
@@ -1937,7 +1927,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 int displayBoxHeight = qRound(frontBoxSize.height() * zoomFactor);
                 QRect frontBox(-displayBoxWidth/2, -displayBoxHeight/2, displayBoxWidth, displayBoxHeight);
                 painter.drawRect(frontBox);
-                qDebug() << "FRONT 박스 그려짐: 표시크기" << displayBoxWidth << "x" << displayBoxHeight;
                 
                 // FRONT 라벨 그리기
                 int frontMin = result.stripMeasuredThicknessMin.value(patternId, 0);
@@ -1998,7 +1987,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 QPoint rearBoxCenter = originalToDisplay(rearBoxAbsoluteCenter.toPoint());
                 
                 // REAR 박스 그리기 (하늘색 점선)
-                qDebug() << "REAR 박스 그리기: 중심" << rearBoxCenter << "각도" << patternAngle << "크기" << rearBoxSize;
                 painter.save();
                 painter.translate(rearBoxCenter);
                 painter.rotate(patternAngle);
@@ -2012,7 +2000,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 int displayBoxHeight = qRound(rearBoxSize.height() * zoomFactor);
                 QRect rearBox(-displayBoxWidth/2, -displayBoxHeight/2, displayBoxWidth, displayBoxHeight);
                 painter.drawRect(rearBox);
-                qDebug() << "REAR 박스 그려짐: 표시크기" << displayBoxWidth << "x" << displayBoxHeight;
                 
                 // REAR 라벨 그리기
                 int rearMin = result.stripRearMeasuredThicknessMin.value(patternId, 0);
@@ -2183,28 +2170,16 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 continue; // 현재 카메라의 패턴이 아니면 건너뛰기
             }
             
-            // extractROI와 동일한 방식으로 실제 검사 영역 계산
-            double angleRad = std::abs(pattern.angle) * M_PI / 180.0;
-            double width = pattern.rect.width();
-            double height = pattern.rect.height();
-            double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
-            double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
-            int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
+            // ROI 패턴은 검사 전후 크기가 동일해야 함 (원본 패턴 크기 사용)
+            QRectF roiRect = pattern.rect;
             
-            // 실제 ROI 영역 계산 (extractROI와 동일)
-            cv::Point2f center(pattern.rect.x() + pattern.rect.width()/2.0f, 
-                              pattern.rect.y() + pattern.rect.height()/2.0f);
-            int halfSize = maxSize / 2;
-            QRectF roiRect(
-                std::round(center.x) - halfSize,
-                std::round(center.y) - halfSize,
-                maxSize,
-                maxSize
-            );
+
             
             QPoint tl = originalToDisplay(roiRect.topLeft().toPoint());
             QPoint br = originalToDisplay(roiRect.bottomRight().toPoint());
             QRect drawRoi(tl, br);
+            
+
             QPen roiPen(UIColors::ROI_COLOR, 2, Qt::SolidLine);  // 실선으로 변경
             painter.setPen(roiPen);
             painter.setBrush(Qt::NoBrush);
@@ -2334,26 +2309,12 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         QPoint point3 = result.stripPoint3.value(patternId, QPoint());
         QPoint point4 = result.stripPoint4.value(patternId, QPoint());
         
-        // STRIP 4점을 원본 좌표 그대로 사용 (회전 변환 완전 제거)
-        qDebug() << "=== STRIP 4점 원본 좌표 직접 사용 ===";
-        qDebug() << "패턴 각도:" << patternInfo->angle << "도 (무시함)";
-        qDebug() << "원본 STRIP 좌표 - P1:" << point1 << "P2:" << point2 << "P3:" << point3 << "P4:" << point4;
-        
         // 회전 변환 없이 원본 좌표를 직접 화면 좌표로 변환
         QPoint displayPoint1 = originalToDisplay(point1);
         QPoint displayPoint2 = originalToDisplay(point2);
         QPoint displayPoint3 = originalToDisplay(point3);
         QPoint displayPoint4 = originalToDisplay(point4);
-        
-        qDebug() << "화면 좌표 - P1:" << displayPoint1 << "P2:" << displayPoint2 << "P3:" << displayPoint3 << "P4:" << displayPoint4;
-        
-        // originalToDisplay 내부 계산 확인
-        if (!backgroundPixmap.isNull()) {
-            QSize viewportSize = size();
-            QSize imgSize = backgroundPixmap.size();
-            qDebug() << "줌팩터 확인 - viewportSize:" << viewportSize << "imgSize:" << imgSize << "zoomFactor:" << zoomFactor;
-        }
-        
+            
         painter.save();
         
         // 4개 포인트 그리기 (컨투어 엣지 포인트) - OpenCV와 동일한 색상
@@ -2655,12 +2616,26 @@ void CameraView::paintEvent(QPaintEvent *event) {
             if (!pattern.enabled) continue;
 
             QColor color = UIColors::getPatternColor(pattern.type);
+            
+
+            
+
 
             if (pattern.id == selectedPatternId) {
                 QVector<QPoint> corners = getRotatedCorners();
                 if (corners.size() == 4) {
+                    // 🔥 검사 전 ROI 크기 디버그 (선택된 패턴만)
+                    if (pattern.type == PatternType::ROI) {
+                        QRect boundingRect = QPolygon(corners).boundingRect();
+                        qDebug() << "🔥 [검사 전] ROI 패턴" << pattern.name 
+                                 << "원본 rect:" << pattern.rect 
+                                 << "화면 bounding:" << boundingRect;
+                    }
                     QPolygon poly;
                     for (const QPoint& pt : corners) poly << pt;
+                    
+
+                    
                     painter.setPen(QPen(color, 3));
                     QColor fillColor = color; fillColor.setAlpha(40);
                     painter.setBrush(QBrush(fillColor));
@@ -3009,6 +2984,9 @@ void CameraView::paintEvent(QPaintEvent *event) {
                 if (corners.size() == 4) {
                     QPolygon poly;
                     for (const QPoint& pt : corners) poly << pt;
+                    
+
+                    
                     painter.setPen(QPen(color, 2));
                     painter.setBrush(Qt::NoBrush);
                     painter.drawPolygon(poly);
