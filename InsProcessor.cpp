@@ -286,13 +286,11 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                     // FID 점수 확인 - 1.0이면 위치 조정 생략
                     double fidScore = result.matchScores.value(pattern.parentId, 0.0);
                     if (fidScore >= 0.999) {
-                        logDebug(QString("INS 패턴 '%1': 부모 FID 점수가 %.6f이므로 원래 위치에서 검사")
-                                .arg(pattern.name).arg(fidScore));
+
                         // 위치 조정하지 않고 원래 패턴 위치 그대로 사용
                         adjustedRect = originalRect;
                     } else {
-                        logDebug(QString("INS 패턴 '%1': 부모 FID 점수가 %.6f이므로 위치 조정 수행")
-                                .arg(pattern.name).arg(fidScore));
+
                     
                     // 부모 FID의 위치 정보가 있는 경우 조정
                     if (result.locations.contains(pattern.parentId)) {
@@ -2154,7 +2152,7 @@ void InsProcessor::logDebug(const QString& message) {
 }
 
 cv::Mat InsProcessor::extractROI(const cv::Mat& image, const QRectF& rect, double angle, bool isTemplate) {
-    qDebug() << "🚨🚨🚨 extractROI 호출됨! 🚨🚨🚨";
+
     try {
         cv::Mat roiMat;
         
@@ -2173,14 +2171,14 @@ cv::Mat InsProcessor::extractROI(const cv::Mat& image, const QRectF& rect, doubl
         // 정사각형 크기는 회전된 경계 상자 중 더 큰 값 (padding 제거로 정확한 크기)
         int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
         
-        qDebug() << "🎯 padding 제거: rotatedWidth=" << rotatedWidth << "rotatedHeight=" << rotatedHeight << "maxSize=" << maxSize;
+
         
-        qDebug() << "🔥🔥🔥 === extractROI 디버깅 === 🔥🔥🔥";
-        qDebug() << "패턴 rect: (" << rect.x() << "," << rect.y() << ") " << rect.width() << "x" << rect.height();
-        qDebug() << "패턴 중심: (" << center.x << "," << center.y << ")";
-        qDebug() << "회전각: " << angle << "도";
-        qDebug() << "회전된 크기: " << rotatedWidth << "x" << rotatedHeight;
-        qDebug() << "최종 maxSize (패딩제거): " << maxSize;
+
+
+
+
+
+
         
         // 정사각형 ROI 영역 계산 (중심점 기준)
         int halfSize = maxSize / 2;
@@ -2191,8 +2189,8 @@ cv::Mat InsProcessor::extractROI(const cv::Mat& image, const QRectF& rect, doubl
             maxSize
         );
         
-        qDebug() << "🔥 squareRoi: (" << squareRoi.x << "," << squareRoi.y << ") " << squareRoi.width << "x" << squareRoi.height;
-        qDebug() << "🔥 ROI 내 패턴 중심: (" << (center.x - squareRoi.x) << "," << (center.y - squareRoi.y) << ")";
+
+
         
         // 이미지 경계와 교집합 구하기
         cv::Rect imageBounds(0, 0, image.cols, image.rows);
@@ -2449,14 +2447,14 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     result.stripLengthStartPoint[pattern.id] = absStripLengthStart;
     result.stripLengthEndPoint[pattern.id] = absStripLengthEnd;
     
-    qDebug() << "��� 크기 비교 분석 ���";
-    qDebug() << "INS 패턴 원본 크기:" << pattern.rect.width() << "x" << pattern.rect.height();
-    qDebug() << "회전 각도:" << pattern.angle << "도";
-    qDebug() << "계산된 회전 크기:" << rotatedWidth << "x" << rotatedHeight;
+
+
+
+
     // padding 제거됨
-    qDebug() << "최종 maxSize:" << maxSize;
-    qDebug() << "실제 ROI 크기:" << roiImage.cols << "x" << roiImage.rows;
-    qDebug() << "크기 차이:" << (roiImage.cols - maxSize) << "픽셀";
+
+
+
     
 
     

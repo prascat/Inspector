@@ -933,8 +933,7 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                 // 2. 카메라 및 프레임 확인 (시뮬레이션 모드 고려)
                 if (camOff) {
                     // 시뮬레이션 모드: 현재 카메라 프레임이 있는지 확인
-                    qDebug() << QString("🔍 camOff 모드 검사 시작 - cameraIndex: %1, cameraFrames.size(): %2")
-                                .arg(cameraIndex).arg(cameraFrames.size());
+
                     if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
                         qDebug() << QString("cameraFrames[%1] 상태: empty=%2, size=%3x%4")
                                     .arg(cameraIndex)
@@ -996,7 +995,7 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                 for (const PatternInfo& pattern : patterns) {
                     originalPatternBackup[pattern.id] = pattern;
                 }
-                qDebug() << QString("[검사 시작] %1개 패턴 백업 완료").arg(originalPatternBackup.size());
+
                 
                 // **5. 로그 뷰어 표시**
                 if (logViewer) {
@@ -1013,19 +1012,7 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                     cv::Mat inspectionFrame;
                     int inspectionCameraIndex;
                     
-                    if (camOff) {
-                        // 시뮬레이션 모드: 현재 카메라 프레임 사용
-                        qDebug() << QString("🔍 [검사 실행 단계] cameraIndex: %1, cameraFrames.size(): %2")
-                                    .arg(cameraIndex).arg(cameraFrames.size());
-                        
-                        if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
-                            qDebug() << QString("🔍 [검사 실행 단계] cameraFrames[%1] - empty: %2, rows: %3, cols: %4")
-                                        .arg(cameraIndex)
-                                        .arg(cameraFrames[cameraIndex].empty())
-                                        .arg(cameraFrames[cameraIndex].rows)
-                                        .arg(cameraFrames[cameraIndex].cols);
-                        }
-                        
+                    if (camOff) {                
                         if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
                             cameraFrames[cameraIndex].empty()) {
                             btn->blockSignals(true);
