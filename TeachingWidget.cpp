@@ -3002,13 +3002,13 @@ void TeachingWidget::createPropertyPanels() {
     insStripLayout->addRow("", insStripLengthEnabledCheck);
     
     // STRIP 길이검사 범위 설정
-    insStripLengthMinLabel = new QLabel("최소 길이 (px):", insStripPanel);
+    insStripLengthMinLabel = new QLabel("최소 길이 (mm):", insStripPanel);
     insStripLengthMinSpin = new QSpinBox(insStripPanel);
     insStripLengthMinSpin->setRange(10, 9999);
     insStripLengthMinSpin->setValue(100);
     insStripLayout->addRow(insStripLengthMinLabel, insStripLengthMinSpin);
     
-    insStripLengthMaxLabel = new QLabel("최대 길이 (px):", insStripPanel);
+    insStripLengthMaxLabel = new QLabel("최대 길이 (mm):", insStripPanel);
     insStripLengthMaxSpin = new QSpinBox(insStripPanel);
     insStripLengthMaxSpin->setRange(10, 9999);
     insStripLengthMaxSpin->setValue(500);
@@ -3040,7 +3040,7 @@ void TeachingWidget::createPropertyPanels() {
         "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
         "QSlider::handle:horizontal { background: #44ff44; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
         "QSlider::sub-page:horizontal { background: #88ff88; border-radius: 3px; }");
-    insStripThicknessWidthValueLabel = new QLabel("50px", thicknessWidthWidget);
+    insStripThicknessWidthValueLabel = new QLabel("50mm", thicknessWidthWidget);
     insStripThicknessWidthValueLabel->setMinimumWidth(40);
     
     thicknessWidthLayout->addWidget(insStripThicknessWidthLabel);
@@ -3061,7 +3061,7 @@ void TeachingWidget::createPropertyPanels() {
         "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
         "QSlider::handle:horizontal { background: #ff8844; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
         "QSlider::sub-page:horizontal { background: #ffaa88; border-radius: 3px; }");
-    insStripThicknessHeightValueLabel = new QLabel("30px", thicknessHeightWidget);
+    insStripThicknessHeightValueLabel = new QLabel("30mm", thicknessHeightWidget);
     insStripThicknessHeightValueLabel->setMinimumWidth(40);
     
     thicknessHeightLayout->addWidget(insStripThicknessHeightLabel);
@@ -3073,13 +3073,13 @@ void TeachingWidget::createPropertyPanels() {
     insStripThicknessMinSpin = new QSpinBox(insStripPanel);
     insStripThicknessMinSpin->setRange(5, 500);
     insStripThicknessMinSpin->setValue(10);
-    insStripThicknessMinSpin->setSuffix(" px");
+    insStripThicknessMinSpin->setSuffix(" mm");
     
     insStripThicknessMaxLabel = new QLabel("최대 두께:", insStripPanel);
     insStripThicknessMaxSpin = new QSpinBox(insStripPanel);
     insStripThicknessMaxSpin->setRange(10, 500);
     insStripThicknessMaxSpin->setValue(100);
-    insStripThicknessMaxSpin->setSuffix(" px");
+    insStripThicknessMaxSpin->setSuffix(" mm");
     
     // REAR 두께 검사 체크박스
     insStripRearEnabledCheck = new QCheckBox("REAR 두께 검사 활성화", insStripPanel);
@@ -3130,13 +3130,13 @@ void TeachingWidget::createPropertyPanels() {
     insStripRearThicknessMinSpin = new QSpinBox(insStripPanel);
     insStripRearThicknessMinSpin->setRange(5, 500);
     insStripRearThicknessMinSpin->setValue(10);
-    insStripRearThicknessMinSpin->setSuffix(" px");
+    insStripRearThicknessMinSpin->setSuffix(" mm");
     
     insStripRearThicknessMaxLabel = new QLabel("REAR 최대 두께:", insStripPanel);
     insStripRearThicknessMaxSpin = new QSpinBox(insStripPanel);
     insStripRearThicknessMaxSpin->setRange(10, 500);
     insStripRearThicknessMaxSpin->setValue(100);
-    insStripRearThicknessMaxSpin->setSuffix(" px");
+    insStripRearThicknessMaxSpin->setSuffix(" mm");
     
     // 두께 범위 위젯을 레이아웃에 추가
     QWidget* thicknessRangeWidget = new QWidget(insStripPanel);
@@ -3242,13 +3242,13 @@ void TeachingWidget::createPropertyPanels() {
     insEdgeDistanceMinSpin = new QSpinBox(insStripPanel);
     insEdgeDistanceMinSpin->setRange(0, 100);
     insEdgeDistanceMinSpin->setValue(1);
-    insEdgeDistanceMinSpin->setSuffix(" px");
+    insEdgeDistanceMinSpin->setSuffix(" mm");
     
     insEdgeDistanceMaxLabel = new QLabel("평균선 최대 거리:", insStripPanel);
     insEdgeDistanceMaxSpin = new QSpinBox(insStripPanel);
     insEdgeDistanceMaxSpin->setRange(1, 200);
     insEdgeDistanceMaxSpin->setValue(10);
-    insEdgeDistanceMaxSpin->setSuffix(" px");
+    insEdgeDistanceMaxSpin->setSuffix(" mm");
     
     insEdgeStartPercentLabel = new QLabel("시작 제외 비율:", insStripPanel);
     insEdgeStartPercentSpin = new QSpinBox(insStripPanel);
@@ -4674,7 +4674,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 [this](int value) {
             // 값 표시 레이블 업데이트
             if (insStripThicknessWidthValueLabel) {
-                insStripThicknessWidthValueLabel->setText(QString("%1px").arg(value));
+                insStripThicknessWidthValueLabel->setText(QString("%1mm").arg(value));
             }
             
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
@@ -4698,7 +4698,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 [this](int value) {
             // 값 표시 레이블 업데이트
             if (insStripThicknessHeightValueLabel) {
-                insStripThicknessHeightValueLabel->setText(QString("%1px").arg(value));
+                insStripThicknessHeightValueLabel->setText(QString("%1mm").arg(value));
             }
             
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
@@ -4760,7 +4760,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 [this](int value) {
             // 값 표시 레이블 업데이트
             if (insStripRearThicknessWidthValueLabel) {
-                insStripRearThicknessWidthValueLabel->setText(QString("%1px").arg(value));
+                insStripRearThicknessWidthValueLabel->setText(QString("%1mm").arg(value));
             }
             
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
@@ -4784,7 +4784,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 [this](int value) {
             // 값 표시 레이블 업데이트
             if (insStripRearThicknessHeightValueLabel) {
-                insStripRearThicknessHeightValueLabel->setText(QString("%1px").arg(value));
+                insStripRearThicknessHeightValueLabel->setText(QString("%1mm").arg(value));
             }
             
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
@@ -5528,7 +5528,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripThicknessWidthSlider->blockSignals(false);
                         
                         if (insStripThicknessWidthValueLabel) {
-                            insStripThicknessWidthValueLabel->setText(QString("%1px").arg(pattern->stripThicknessBoxWidth));
+                            insStripThicknessWidthValueLabel->setText(QString("%1mm").arg(pattern->stripThicknessBoxWidth));
                         }
                     }
                     
@@ -5543,7 +5543,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripThicknessHeightSlider->blockSignals(false);
                         
                         if (insStripThicknessHeightValueLabel) {
-                            insStripThicknessHeightValueLabel->setText(QString("%1px").arg(pattern->stripThicknessBoxHeight));
+                            insStripThicknessHeightValueLabel->setText(QString("%1mm").arg(pattern->stripThicknessBoxHeight));
                         }
                     }
                     
@@ -5571,7 +5571,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripRearThicknessWidthSlider->blockSignals(false);
                         
                         if (insStripRearThicknessWidthValueLabel) {
-                            insStripRearThicknessWidthValueLabel->setText(QString("%1px").arg(pattern->stripRearThicknessBoxWidth));
+                            insStripRearThicknessWidthValueLabel->setText(QString("%1mm").arg(pattern->stripRearThicknessBoxWidth));
                         }
                     }
                     
@@ -5586,7 +5586,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripRearThicknessHeightSlider->blockSignals(false);
                         
                         if (insStripRearThicknessHeightValueLabel) {
-                            insStripRearThicknessHeightValueLabel->setText(QString("%1px").arg(pattern->stripRearThicknessBoxHeight));
+                            insStripRearThicknessHeightValueLabel->setText(QString("%1mm").arg(pattern->stripRearThicknessBoxHeight));
                         }
                     }
                     

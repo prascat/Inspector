@@ -2637,7 +2637,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                 
                 painter.setPen(QPen(QColor(0, 255, 0), 1)); // 초록색 텍스트
                 painter.setFont(QFont("Arial", 12, QFont::Bold));
-                QString distanceText = QString("길이: %1px").arg(pixelDistance);
+                QString distanceText = QString("길이: %1mm").arg(pixelDistance);
                 painter.drawText(midX - 35, midY, distanceText);
                 
                 // 두께 측정 시각화 (Max Gradient 지점 기준 좌우 100px 위치에서)

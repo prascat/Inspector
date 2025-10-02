@@ -1933,7 +1933,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 int frontMax = result.stripMeasuredThicknessMax.value(patternId, 0);
                 bool frontPassed = (frontMin > 0 && frontMax > 0); // 간단한 통과 판정
                 
-                QString frontLabelText = QString("FRONT:%1~%2px")
+                QString frontLabelText = QString("FRONT:%1~%2mm")
                                        .arg(pattern->stripThicknessMin)
                                        .arg(pattern->stripThicknessMax);
                 
@@ -2006,7 +2006,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 int rearMax = result.stripRearMeasuredThicknessMax.value(patternId, 0);
                 bool rearPassed = (rearMin > 0 && rearMax > 0); // 간단한 통과 판정
                 
-                QString rearLabelText = QString("REAR:%1~%2px")
+                QString rearLabelText = QString("REAR:%1~%2mm")
                                       .arg(pattern->stripRearThicknessMin)
                                       .arg(pattern->stripRearThicknessMax);
                 
@@ -2402,7 +2402,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             
             // 길이 수치 표시
             double measuredLength = result.stripMeasuredLength.value(patternId, 0.0);
-            QString lengthText = QString("L:%1px").arg(static_cast<int>(measuredLength));
+            QString lengthText = QString("L:%1mm").arg(static_cast<int>(measuredLength));
             
             // 측정선 중간지점에 텍스트 표시
             QPoint textPos = QPoint((displayLengthStart.x() + displayLengthEnd.x()) / 2,
@@ -2799,7 +2799,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         painter.drawRect(rearThicknessBox);
                         
                         // REAR 라벨 표시 (검사 박스 위에) - 회전된 상태에서 그리기
-                        QString rearLabelText = QString("REAR:%1~%2px")
+                        QString rearLabelText = QString("REAR:%1~%2mm")
                                               .arg(pattern.stripRearThicknessMin)
                                               .arg(pattern.stripRearThicknessMax);
                         
@@ -2884,7 +2884,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         painter.drawRect(thicknessBox);
                         
                         // FRONT 라벨 표시 (검사 박스 위에) - 회전된 상태에서 그리기
-                        QString frontLabelText = QString("FRONT:%1~%2px")
+                        QString frontLabelText = QString("FRONT:%1~%2mm")
                                                .arg(pattern.stripThicknessMin)
                                                .arg(pattern.stripThicknessMax);
                         
