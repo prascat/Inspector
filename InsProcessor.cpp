@@ -2154,6 +2154,7 @@ void InsProcessor::logDebug(const QString& message) {
 }
 
 cv::Mat InsProcessor::extractROI(const cv::Mat& image, const QRectF& rect, double angle, bool isTemplate) {
+    qDebug() << "🚨🚨🚨 extractROI 호출됨! 🚨🚨🚨";
     try {
         cv::Mat roiMat;
         
@@ -2169,8 +2170,17 @@ cv::Mat InsProcessor::extractROI(const cv::Mat& image, const QRectF& rect, doubl
         double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
         double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
         
-        // 정사각형 크기는 회전된 경계 상자 중 더 큰 값 + 여유분
-        int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
+        // 정사각형 크기는 회전된 경계 상자 중 더 큰 값 (padding 제거로 정확한 크기)
+        int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
+        
+        qDebug() << "🎯 padding 제거: rotatedWidth=" << rotatedWidth << "rotatedHeight=" << rotatedHeight << "maxSize=" << maxSize;
+        
+        qDebug() << "🔥🔥🔥 === extractROI 디버깅 === 🔥🔥🔥";
+        qDebug() << "패턴 rect: (" << rect.x() << "," << rect.y() << ") " << rect.width() << "x" << rect.height();
+        qDebug() << "패턴 중심: (" << center.x << "," << center.y << ")";
+        qDebug() << "회전각: " << angle << "도";
+        qDebug() << "회전된 크기: " << rotatedWidth << "x" << rotatedHeight;
+        qDebug() << "최종 maxSize (패딩제거): " << maxSize;
         
         // 정사각형 ROI 영역 계산 (중심점 기준)
         int halfSize = maxSize / 2;
@@ -2180,6 +2190,9 @@ cv::Mat InsProcessor::extractROI(const cv::Mat& image, const QRectF& rect, doubl
             maxSize,
             maxSize
         );
+        
+        qDebug() << "🔥 squareRoi: (" << squareRoi.x << "," << squareRoi.y << ") " << squareRoi.width << "x" << squareRoi.height;
+        qDebug() << "🔥 ROI 내 패턴 중심: (" << (center.x - squareRoi.x) << "," << (center.y - squareRoi.y) << ")";
         
         // 이미지 경계와 교집합 구하기
         cv::Rect imageBounds(0, 0, image.cols, image.rows);
@@ -2200,8 +2213,8 @@ cv::Mat InsProcessor::extractROI(const cv::Mat& image, const QRectF& rect, doubl
             // 패턴 영역 외부 마스킹 (패턴 영역만 보이도록)
             cv::Mat mask = cv::Mat::zeros(maxSize, maxSize, CV_8UC1);
             
-            // 정사각형 중심을 기준으로 패턴 영역 계산
-            cv::Point2f patternCenter(maxSize / 2.0f, maxSize / 2.0f);
+            // ROI 내에서 패턴의 실제 위치 계산 (중앙 배치 대신 원래 위치 유지)
+            cv::Point2f patternCenter(center.x - squareRoi.x, center.y - squareRoi.y);
             cv::Size2f patternSize(rect.width(), rect.height());
             
             if (std::abs(angle) > 0.1) {
@@ -2347,11 +2360,42 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                                   score, startPoint, maxGradientPoint, gradientPoints, resultImage, &edgePoints,
                                   &stripLengthPassed, &stripMeasuredLength, &stripLengthStartPoint, &stripLengthEndPoint);
     
-    // ROI 좌표를 원본 이미지 좌표로 변환
+    // ROI 좌표를 원본 이미지 좌표로 변환 (extractROI와 정확히 동일한 방식으로 계산)
     cv::Point2f patternCenter(pattern.rect.x() + pattern.rect.width()/2.0f, 
                             pattern.rect.y() + pattern.rect.height()/2.0f);
-    cv::Point2f roiCenter(roiImage.cols / 2.0f, roiImage.rows / 2.0f);
-    cv::Point2f offset = patternCenter - roiCenter;
+    
+    // extractROI와 동일한 maxSize 계산
+    double angleRad = std::abs(pattern.angle) * M_PI / 180.0;
+    double width = pattern.rect.width();
+    double height = pattern.rect.height();
+    double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
+    double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
+    int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
+    
+    // extractROI와 정확히 동일한 squareRoi 계산 (소수점 처리도 동일하게)
+    int halfSize = maxSize / 2;
+    
+    // extractROI와 동일한 center 계산 방식
+    cv::Point2f center(pattern.rect.x() + pattern.rect.width()/2.0f, 
+                      pattern.rect.y() + pattern.rect.height()/2.0f);
+    
+    cv::Rect squareRoi(
+        static_cast<int>(center.x) - halfSize,    // extractROI와 정확히 동일
+        static_cast<int>(center.y) - halfSize,    // extractROI와 정확히 동일
+        maxSize,
+        maxSize
+    );
+    
+    cv::Point2f offset(squareRoi.x, squareRoi.y);
+    
+    qDebug() << "🎯 정밀 계산:";
+    qDebug() << "center 소수점:" << QPointF(center.x, center.y);
+    qDebug() << "center 정수변환:" << QPoint(static_cast<int>(center.x), static_cast<int>(center.y));
+    qDebug() << "halfSize:" << halfSize;
+    qDebug() << "squareRoi 계산:" << QPoint(static_cast<int>(center.x) - halfSize, static_cast<int>(center.y) - halfSize);
+    
+    qDebug() << "🔥 좌표변환 계산 - 패턴중심:" << QPointF(patternCenter.x, patternCenter.y) 
+             << "maxSize:" << maxSize << "squareRoi:" << QRect(squareRoi.x, squareRoi.y, squareRoi.width, squareRoi.height);
     
     // OpenCV에서 검출된 gradientPoints를 사용 (4개 포인트)
     QPoint absPoint1, absPoint2, absPoint3, absPoint4;
@@ -2413,9 +2457,19 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     result.stripLengthStartPoint[pattern.id] = absStripLengthStart;
     result.stripLengthEndPoint[pattern.id] = absStripLengthEnd;
     
+    qDebug() << "��� 크기 비교 분석 ���";
+    qDebug() << "INS 패턴 원본 크기:" << pattern.rect.width() << "x" << pattern.rect.height();
+    qDebug() << "회전 각도:" << pattern.angle << "도";
+    qDebug() << "계산된 회전 크기:" << rotatedWidth << "x" << rotatedHeight;
+    // padding 제거됨
+    qDebug() << "최종 maxSize:" << maxSize;
+    qDebug() << "실제 ROI 크기:" << roiImage.cols << "x" << roiImage.rows;
+    qDebug() << "크기 차이:" << (roiImage.cols - maxSize) << "픽셀";
+    
     qDebug() << "=== STRIP 4점 좌표 변환 ===";
     qDebug() << "패턴 중심:" << QPointF(patternCenter.x, patternCenter.y);
-    qDebug() << "ROI 중심:" << QPointF(roiCenter.x, roiCenter.y); 
+    qDebug() << "halfSize:" << halfSize;
+    qDebug() << "squareRoi:" << QRect(squareRoi.x, squareRoi.y, squareRoi.width, squareRoi.height);
     qDebug() << "오프셋:" << QPointF(offset.x, offset.y);
     qDebug() << "변환된 절대좌표 - P1:" << absPoint1 << "P2:" << absPoint2 << "P3:" << absPoint3 << "P4:" << absPoint4;
     qDebug() << "기울기 - S13:" << slope13 << "S24:" << slope24;

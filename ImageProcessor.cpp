@@ -694,14 +694,37 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
     int rearThicknessMin = pattern.stripRearThicknessMin;
     int rearThicknessMax = pattern.stripRearThicknessMax;
 
-    // ROI 내부 패턴 영역 (ROI 중앙에 위치)
+    // ROI 내부 패턴 영역 계산 (extractROI와 완전히 동일한 로직 적용)
+    double angleRadians = std::abs(angle) * M_PI / 180.0;
+    double rectWidth = pattern.rect.width();
+    double rectHeight = pattern.rect.height();
+    
+    // extractROI와 완전히 동일한 회전 크기 계산
+    double rotatedWidth = std::abs(rectWidth * std::cos(angleRadians)) + std::abs(rectHeight * std::sin(angleRadians));
+    double rotatedHeight = std::abs(rectWidth * std::sin(angleRadians)) + std::abs(rectHeight * std::cos(angleRadians));
+    
+    // padding 제거로 정확한 크기 계산 (extractROI와 일치)
+    int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
+    
+    // extractROI가 수정됨: 패턴이 원래 위치 그대로 배치됨
+    // ROI 시작점을 기준으로 패턴의 상대 위치 계산
+    cv::Point2f patternCenter(pattern.rect.center().x(), pattern.rect.center().y());
+    int halfSize = maxSize / 2;
+    cv::Point roiStart(std::round(patternCenter.x) - halfSize, 
+                      std::round(patternCenter.y) - halfSize);
+    
+    // extractROI에서 패턴이 원래 위치에 배치되므로 ROI 내 패턴 위치도 그에 맞게 계산
     cv::Rect roiPatternRect(
-        static_cast<int>(roiImage.cols/2 - pattern.rect.width()/2),   // ROI 중앙 - 패턴폭/2  
-        static_cast<int>(roiImage.rows/2 - pattern.rect.height()/2),  // ROI 중앙 - 패턴높이/2
-        static_cast<int>(pattern.rect.width()), 
-        static_cast<int>(pattern.rect.height())
+        static_cast<int>(pattern.rect.x() - roiStart.x),        // 패턴 왼쪽 위 모서리 - ROI 시작점
+        static_cast<int>(pattern.rect.y() - roiStart.y),        // 패턴 왼쪽 위 모서리 - ROI 시작점
+        static_cast<int>(rectWidth), 
+        static_cast<int>(rectHeight)
     );
     
+    std::cout << "=== 크기 정보 디버깅 ===" << std::endl;
+    std::cout << "패턴 원본 크기: " << rectWidth << "x" << rectHeight << std::endl;
+    std::cout << "회전된 크기: " << rotatedWidth << "x" << rotatedHeight << std::endl;
+    std::cout << "maxSize (패딩제거): " << maxSize << std::endl;
     std::cout << "ROI 내부 패턴 영역: (" << roiPatternRect.x << "," << roiPatternRect.y 
               << ") 크기: " << roiPatternRect.width << "x" << roiPatternRect.height << std::endl;
 
@@ -2231,11 +2254,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         if (stripLengthEndPoint) *stripLengthEndPoint = cv::Point(0, 0);
         
         // EDGE 검사 영역 중심점 계산 (STRIP 길이 측정용)
-        cv::Point2f patternCenter(roiImage.cols / 2.0f, roiImage.rows / 2.0f);
+        cv::Point2f edgeCenter(roiImage.cols / 2.0f, roiImage.rows / 2.0f);
         float edgeOffsetFromCenter = (-patternWidth/2.0f) + edgeOffsetX;
         cv::Point edgeBoxCenter = cv::Point(
-            static_cast<int>(patternCenter.x + edgeOffsetFromCenter),
-            static_cast<int>(patternCenter.y)
+            static_cast<int>(edgeCenter.x + edgeOffsetFromCenter),
+            static_cast<int>(edgeCenter.y)
         );
         
         if (pattern.stripLengthEnabled && gradientPoints.size() >= 4) {
@@ -2552,6 +2575,19 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 std::cout << "EDGE 검사 예외: " << e.what() << std::endl;
                 if (edgePassed) *edgePassed = false;
             }
+        }
+        
+        // 크기 정보 상세 디버깅
+        std::cout << "=== 크기 정보 디버깅 ===" << std::endl;
+        std::cout << "resultImage 원본 크기: " << resultImage.cols << "x" << resultImage.rows << std::endl;
+        std::cout << "roiImage 크기: " << roiImage.cols << "x" << roiImage.rows << std::endl;
+        std::cout << "roiPatternRect: (" << roiPatternRect.x << "," << roiPatternRect.y << ") " 
+                  << roiPatternRect.width << "x" << roiPatternRect.height << std::endl;
+        
+        // 오버레이 크기를 ROI 크기에 정확히 맞춤
+        if (!resultImage.empty()) {
+            cv::resize(resultImage, resultImage, cv::Size(roiImage.cols, roiImage.rows));
+            std::cout << "오버레이 최종 크기: " << resultImage.cols << "x" << resultImage.rows << std::endl;
         }
         
         return isPassed;

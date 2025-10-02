@@ -1729,16 +1729,16 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     int originalWidth = inspRect.width();
                     int originalHeight = inspRect.height();
                     
-                    // 회전각에 따른 최소 필요 사각형 크기 계산 (extractROI와 동일한 로직)
+                    // 회전각에 따른 최소 필요 사각형 크기 계산 (extractROI와 완전히 동일한 로직)
                     double angleRad = std::abs(insAngle) * M_PI / 180.0;
                     double rotatedWidth = std::abs(originalWidth * std::cos(angleRad)) + std::abs(originalHeight * std::sin(angleRad));
                     double rotatedHeight = std::abs(originalWidth * std::sin(angleRad)) + std::abs(originalHeight * std::cos(angleRad));
-                    int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
+                    int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)); // padding 제거
                     
-                    // 정사각형 표시 영역 계산 (중심점 기준)
+                    // 정사각형 표시 영역 계산 (extractROI와 동일한 방식)
                     QRect squareRect(
-                        inspCenter.x() - maxSize/2,
-                        inspCenter.y() - maxSize/2,
+                        std::round(inspCenter.x()) - maxSize/2,
+                        std::round(inspCenter.y()) - maxSize/2,
                         maxSize,
                         maxSize
                     );
@@ -2183,7 +2183,25 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 continue; // 현재 카메라의 패턴이 아니면 건너뛰기
             }
             
-            QRectF roiRect = pattern.rect;
+            // extractROI와 동일한 방식으로 실제 검사 영역 계산
+            double angleRad = std::abs(pattern.angle) * M_PI / 180.0;
+            double width = pattern.rect.width();
+            double height = pattern.rect.height();
+            double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
+            double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
+            int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
+            
+            // 실제 ROI 영역 계산 (extractROI와 동일)
+            cv::Point2f center(pattern.rect.x() + pattern.rect.width()/2.0f, 
+                              pattern.rect.y() + pattern.rect.height()/2.0f);
+            int halfSize = maxSize / 2;
+            QRectF roiRect(
+                std::round(center.x) - halfSize,
+                std::round(center.y) - halfSize,
+                maxSize,
+                maxSize
+            );
+            
             QPoint tl = originalToDisplay(roiRect.topLeft().toPoint());
             QPoint br = originalToDisplay(roiRect.bottomRight().toPoint());
             QRect drawRoi(tl, br);
