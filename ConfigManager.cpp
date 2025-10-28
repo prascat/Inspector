@@ -23,8 +23,6 @@ ConfigManager::ConfigManager(QObject* parent) : QObject(parent) {
     m_lastRecipePath = "";
     m_serialPort = "";
     m_serialBaudRate = 115200;  // 기본 보드레이트
-    m_userSetLivePath = "UserSet0.dat";     // LIVE 모드 UserSet 파일
-    m_userSetInspectPath = "UserSet1.dat"; // INSPECT 모드 UserSet 파일
 }
 
 ConfigManager::~ConfigManager() {
@@ -81,12 +79,6 @@ bool ConfigManager::loadConfig() {
             } else if (xml.name() == "SerialBaudRate") {
                 m_serialBaudRate = xml.readElementText().toInt();
                 qDebug() << "[ConfigManager] 시리얼 보드레이트 로드됨:" << m_serialBaudRate;
-            } else if (xml.name() == "UserSetLivePath") {
-                m_userSetLivePath = xml.readElementText();
-                qDebug() << "[ConfigManager] LIVE UserSet 경로 로드됨:" << m_userSetLivePath;
-            } else if (xml.name() == "UserSetInspectPath") {
-                m_userSetInspectPath = xml.readElementText();
-                qDebug() << "[ConfigManager] INSPECT UserSet 경로 로드됨:" << m_userSetInspectPath;
             } else {
                 xml.skipCurrentElement();
             }
@@ -145,10 +137,6 @@ bool ConfigManager::saveConfig() {
         xml.writeTextElement("SerialPort", m_serialPort);
     }
     xml.writeTextElement("SerialBaudRate", QString::number(m_serialBaudRate));
-    
-    // UserSet 파일 경로 저장
-    xml.writeTextElement("UserSetLivePath", m_userSetLivePath);
-    xml.writeTextElement("UserSetInspectPath", m_userSetInspectPath);
     
     xml.writeEndElement(); // Config
     xml.writeEndDocument();
@@ -222,31 +210,5 @@ void ConfigManager::setSerialBaudRate(int baudRate) {
         saveConfig(); // 즉시 저장
         emit configChanged();
         qDebug() << "[ConfigManager] 시리얼 보드레이트 변경됨:" << baudRate;
-    }
-}
-
-QString ConfigManager::getUserSetLivePath() const {
-    return m_userSetLivePath;
-}
-
-void ConfigManager::setUserSetLivePath(const QString& path) {
-    if (m_userSetLivePath != path) {
-        m_userSetLivePath = path;
-        saveConfig(); // 즉시 저장
-        emit configChanged();
-        qDebug() << "[ConfigManager] LIVE UserSet 경로 변경됨:" << path;
-    }
-}
-
-QString ConfigManager::getUserSetInspectPath() const {
-    return m_userSetInspectPath;
-}
-
-void ConfigManager::setUserSetInspectPath(const QString& path) {
-    if (m_userSetInspectPath != path) {
-        m_userSetInspectPath = path;
-        saveConfig(); // 즉시 저장
-        emit configChanged();
-        qDebug() << "[ConfigManager] INSPECT UserSet 경로 변경됨:" << path;
     }
 }

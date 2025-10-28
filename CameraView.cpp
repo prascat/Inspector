@@ -2101,35 +2101,36 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         }
     }
     
-    // PASS/FAIL 텍스트 추가 (카메라 정보 아래)
+    // PASS/NG 텍스트 추가 (카메라 정보 아래)
     QFont resultFont("Arial", 28, QFont::Bold);
     painter.setFont(resultFont);
     
-    QString resultText = lastInspectionPassed ? "PASS" : "FAIL";
-    QColor resultColor = lastInspectionPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+    QString resultText = lastInspectionPassed ? "PASS" : "NG";
+    QColor textColor = lastInspectionPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);  // 글자 색상
     
-    // 텍스트 크기 정확히 측정
+    // 텍스트 크기 정확히 측정 - PASS 기준으로 너비 고정
     QFontMetrics fm(resultFont);
+    QRect passTextBounds = fm.boundingRect("PASS");  // PASS 기준으로 너비 계산
     QRect textBounds = fm.boundingRect(resultText);
     
-    // 배경 박스 크기 설정 (패딩 포함)
+    // 배경 박스 크기 설정 (PASS 너비로 고정)
     int padding = 10;
     QRect resultTextRect(
         10,  // x 위치 (CAM 정보와 동일)
         60,  // y 위치 (CAM 정보 아래)
-        textBounds.width() + padding * 2,  // 너비
+        passTextBounds.width() + padding * 2,  // PASS 기준 너비로 고정
         textBounds.height() + padding * 2  // 높이
     );
     
-    // 배경을 CAM 정보와 같은 반투명 색상으로 변경
+    // 배경을 원래 검은색으로 설정
     painter.setBrush(QColor(0, 0, 0, 150));
     painter.setPen(Qt::NoPen);
     painter.drawRoundedRect(resultTextRect, 3, 3);
     
-    // 벡터 스타일 텍스트 - 배경 박스 중앙에 정확히 위치
+    // 벡터 스타일 텍스트 - 배경 박스 중앙에 정확히 위치 (중앙 정렬)
     QPainterPath textPath;
     QPoint textPosition(
-        resultTextRect.x() + padding,
+        resultTextRect.x() + (resultTextRect.width() - textBounds.width()) / 2,  // 가로 중앙 정렬
         resultTextRect.y() + padding + fm.ascent()  // ascent로 정확한 베이스라인 계산
     );
     textPath.addText(textPosition, resultFont, resultText);
@@ -2139,9 +2140,9 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
     painter.setBrush(Qt::NoBrush);
     painter.drawPath(textPath);
     
-    // 메인 텍스트 그리기
+    // 메인 텍스트 그리기 (PASS/NG 색상)
     painter.setPen(Qt::NoPen);
-    painter.setBrush(resultColor);
+    painter.setBrush(textColor);
     painter.drawPath(textPath);
     
     // **추가**: 검사 결과에서도 그룹 바운딩 박스 그리기
