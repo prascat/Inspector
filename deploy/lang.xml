@@ -1,0 +1,1316 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LanguageStrings>
+ <!-- 패턴 트리 헤더 --> 
+    <String key="PATTERN_NAME">
+        <ko>패턴 이름</ko>
+        <en>Pattern Name</en>
+        <ja>パターン名</ja>
+        <zh>模式名称</zh>
+    </String>
+    <String key="PATTERN_TYPE">
+        <ko>타입</ko>
+        <en>Type</en>
+        <ja>タイプ</ja>
+        <zh>类型</zh>
+    </String>
+    <String key="PATTERN_STATUS">
+        <ko>상태</ko>
+        <en>Status</en>
+        <ja>状態</ja>
+        <zh>状态</zh>
+    </String>
+    <!-- TeachingWidget에서 발견된 문자열 -->
+    <String key="RECIPES_ELEMENT_NOT_FOUND">
+        <ko>'Recipes' 요소를 찾을 수 없습니다.</ko>
+        <en>'Recipes' element not found.</en>
+        <ja>'Recipes'要素が見つかりません。</ja>
+        <zh>未找到'Recipes'元素。</zh>
+    </String>
+    <String key="RECIPE_LOAD_FAILURE">
+        <ko>레시피 로드 실패</ko>
+        <en>Recipe Load Failed</en>
+        <ja>レシピの読み込み失敗</ja>
+        <zh>配方加载失败</zh>
+    </String>
+    <String key="NO_CAMERAS_CONNECTED">
+        <ko>연결된 카메라가 없습니다.</ko>
+        <en>No cameras connected.</en>
+        <ja>カメラが接続されていません。</ja>
+        <zh>没有连接的相机。</zh>
+    </String>
+    <String key="CAMERA_UUID_MISMATCH">
+        <ko>현재 연결된 카메라와 레시피 파일의 카메라가 다릅니다.</ko>
+        <en>The camera in the recipe file is different from the currently connected camera.</en>
+        <ja>レシピファイルのカメラは現在接続されているカメラと異なります。</ja>
+        <zh>配方文件中的相机与当前连接的相机不同。</zh>
+    </String>
+    <String key="RECIPE_UUID">
+        <ko>레시피 카메라 UUID</ko>
+        <en>Recipe Camera UUID</en>
+        <ja>レシピカメラUUID</ja>
+        <zh>配方相机UUID</zh>
+    </String>
+    <String key="CURRENT_UUID">
+        <ko>현재 카메라 UUID</ko>
+        <en>Current Camera UUID</en>
+        <ja>現在のカメラUUID</ja>
+        <zh>当前相机UUID</zh>
+    </String>
+    <String key="CONTINUE_QUESTION">
+        <ko>계속 진행하시겠습니까?</ko>
+        <en>Do you want to continue?</en>
+        <ja>続行しますか？</ja>
+        <zh>是否继续？</zh>
+    </String>
+    <String key="UPDATE_UUID_QUESTION">
+        <ko>레시피의 카메라 UUID를 현재 카메라 UUID로 업데이트하시겠습니까?</ko>
+        <en>Do you want to update the recipe's camera UUID to the current camera's UUID?</en>
+        <ja>レシピのカメラUUIDを現在のカメラUUIDに更新しますか？</ja>
+        <zh>是否要将配方的相机UUID更新为当前相机的UUID？</zh>
+    </String>
+    <String key="CAMERA_UUID_UPDATE">
+        <ko>카메라 UUID 업데이트</ko>
+        <en>Update Camera UUID</en>
+        <ja>カメラUUIDの更新</ja>
+        <zh>更新相机UUID</zh>
+    </String>
+    <String key="XML_PARSING_ERROR">
+        <ko>XML 파싱 오류</ko>
+        <en>XML Parsing Error</en>
+        <ja>XMLパース エラー</ja>
+        <zh>XML解析错误</zh>
+    </String>
+    <String key="RECIPE_FILE_READ_ERROR">
+        <ko>레시피 파일 읽기 중 오류가 발생했습니다</ko>
+        <en>An error occurred while reading the recipe file</en>
+        <ja>レシピファイルの読み込み中にエラーが発生しました</ja>
+        <zh>读取配方文件时发生错误</zh>
+    </String>
+    <String key="RECIPE_LOAD_SUCCESS">
+        <ko>레시피가 성공적으로 로드되었습니다.</ko>
+        <en>Recipe loaded successfully.</en>
+        <ja>レシピが正常にロードされました。</ja>
+        <zh>配方已成功加载。</zh>
+    </String>
+    <String key="RECIPE_LOAD_ERROR">
+        <ko>레시피 로드 오류</ko>
+        <en>Recipe Load Error</en>
+        <ja>レシピ読み込みエラー</ja>
+        <zh>配方加载错误</zh>
+    </String>
+    <String key="RECIPE_CHECK_ERROR">
+        <ko>레시피 확인 오류</ko>
+        <en>Recipe Check Error</en>
+        <ja>レシピ確認エラー</ja>
+        <zh>配方检查错误</zh>
+    </String>
+    <String key="PATTERN_SKIPPED_EMPTY_RECT">
+        <ko>패턴 로드 건너뜀: 빈 사각형</ko>
+        <en>Pattern loading skipped: Empty rectangle</en>
+        <ja>パターンの読み込みをスキップ: 空の矩形</ja>
+        <zh>跳过加载模式：空矩形</zh>
+    </String>
+    <String key="CHILD_PATTERN_SKIPPED_EMPTY_RECT">
+        <ko>자식 패턴 로드 건너뜀: 빈 사각형</ko>
+        <en>Child pattern loading skipped: Empty rectangle</en>
+        <ja>子パターンの読み込みをスキップ: 空の矩形</ja>
+        <zh>跳过加载子模式：空矩形</zh>
+    </String>
+    <String key="RECIPE_LOAD_COMPLETE">
+        <ko>레시피 로드 완료</ko>
+        <en>Recipe load complete</en>
+        <ja>レシピ読み込み完了</ja>
+        <zh>配方加载完成</zh>
+    </String>
+    <String key="PATTERNS_LOADED">
+        <ko>개의 패턴 로드됨</ko>
+        <en>patterns loaded</en>
+        <ja>パターンがロードされました</ja>
+        <zh>模式已加载</zh>
+    </String>
+    <String key="RECIPE_TEMPLATE_UPDATE">
+        <ko>레시피 로드 후 INS 템플릿 갱신</ko>
+        <en>INS template updated after recipe load</en>
+        <ja>レシピ読み込み後にINSテンプレートを更新</ja>
+        <zh>配方加载后更新INS模板</zh>
+    </String>
+    
+    <!-- 메뉴 관련 -->
+    <String key="FILE_MENU">
+        <ko>파일</ko>
+        <en>File</en>
+        <ja>ファイル</ja>
+        <zh>文件</zh>
+    </String>
+    <String key="OPEN_RECIPE">
+        <ko>레시피 열기</ko>
+        <en>Open Recipe</en>
+        <ja>レシピを開く</ja>
+        <zh>打开配方</zh>
+    </String>
+    <String key="SAVE_RECIPE">
+        <ko>레시피 저장</ko>
+        <en>Save Recipe</en>
+        <ja>レシピを保存</ja>
+        <zh>保存配方</zh>
+    </String>
+    <String key="DELETE_RECIPE">
+        <ko>레시피 삭제</ko>
+        <en>Delete Recipe</en>
+        <ja>レシピを削除</ja>
+        <zh>删除配方</zh>
+    </String>
+    <String key="EXIT">
+        <ko>종료</ko>
+        <en>Exit</en>
+        <ja>終了</ja>
+        <zh>退出</zh>
+    </String>
+    <String key="MODE">
+        <ko>모드</ko>
+        <en>Mode</en>
+        <ja>モード</ja>
+        <zh>模式</zh>
+    </String>
+    <String key="SIMULATION">
+        <ko>시뮬레이션 모드</ko>
+        <en>Simulation Mode</en>
+        <ja>シミュレーションモード</ja>
+        <zh>仿真模式</zh>
+    </String>
+    <String key="SIMULATE">
+        <ko>시뮬레이션</ko>
+        <en>Simulation</en>
+        <ja>シミュレーション</ja>
+        <zh>仿真</zh>
+    </String>
+    <String key="SIMULATE_MENU">
+        <ko>시뮬레이션</ko>
+        <en>Simulation</en>
+        <ja>シミュレーション</ja>
+        <zh>仿真</zh>
+    </String>
+    <String key="OPEN_SIMULATION">
+        <ko>시뮬레이션 열기</ko>
+        <en>Open Simulation</en>
+        <ja>シミュレーションを開く</ja>
+        <zh>打开仿真</zh>
+    </String>
+    <String key="SIMULATION_CAMERA_NAME">
+        <ko>시뮬레이션 카메라 이름</ko>
+        <en>Simulation Camera Name</en>
+        <ja>シミュレーションカメラ名</ja>
+        <zh>仿真相机名称</zh>
+    </String>
+    <String key="ENTER_CAMERA_NAME">
+        <ko>카메라 이름을 입력하세요:</ko>
+        <en>Enter camera name:</en>
+        <ja>カメラ名を入力してください:</ja>
+        <zh>请输入相机名称:</zh>
+    </String>
+    <String key="SAVE_CANCELLED">
+        <ko>저장 취소</ko>
+        <en>Save Cancelled</en>
+        <ja>保存キャンセル</ja>
+        <zh>保存取消</zh>
+    </String>
+    <String key="CAMERA_NAME_REQUIRED">
+        <ko>카메라 이름이 입력되지 않아 저장을 취소합니다.</ko>
+        <en>Save cancelled because camera name was not entered.</en>
+        <ja>カメラ名が入力されていないため、保存をキャンセルします。</ja>
+        <zh>由于未输入相机名称，取消保存。</zh>
+    </String>
+    <String key="SIMULATION_RECIPE_SAVED">
+        <ko>시뮬레이션 레시피가 성공적으로 저장되었습니다.</ko>
+        <en>Simulation recipe saved successfully.</en>
+        <ja>シミュレーションレシピが正常に保存されました。</ja>
+        <zh>仿真配方保存成功。</zh>
+    </String>
+    <String key="SIMULATION_RECIPE_SAVE_FAILED">
+        <ko>시뮬레이션 레시피 저장에 실패했습니다.</ko>
+        <en>Failed to save simulation recipe.</en>
+        <ja>シミュレーションレシピの保存に失敗しました。</ja>
+        <zh>仿真配方保存失败。</zh>
+    </String>
+    <String key="FILE_LOCATION">
+        <ko>파일 위치</ko>
+        <en>File Location</en>
+        <ja>ファイル位置</ja>
+        <zh>文件位置</zh>
+    </String>
+    <String key="SETTINGS_MENU">
+        <ko>설정</ko>
+        <en>Settings</en>
+        <ja>設定</ja>
+        <zh>设置</zh>
+    </String>
+    <String key="TOOLS_MENU">
+        <ko>도구</ko>
+        <en>Tools</en>
+        <ja>ツール</ja>
+        <zh>工具</zh>
+    </String>
+    <String key="HELP_MENU">
+        <ko>정보</ko>
+        <en>Info</en>
+        <ja>情報</ja>
+        <zh>信息</zh>
+    </String>
+    <String key="ABOUT">
+        <ko>정보</ko>
+        <en>About</en>
+        <ja>情報</ja>
+        <zh>关于</zh>
+    </String>
+    <String key="LANGUAGE_SETTINGS">
+        <ko>언어 설정</ko>
+        <en>Language Settings</en>
+        <ja>言語設定</ja>
+        <zh>语言设置</zh>
+    </String>
+    
+    <!-- 패턴 타입 -->
+    <String key="ROI">
+        <ko>ROI</ko>
+        <en>ROI</en>
+        <ja>ROI</ja>
+        <zh>ROI</zh>
+    </String>
+    <String key="FID">
+        <ko>FID</ko>
+        <en>FID</en>
+        <ja>FID</ja>
+        <zh>FID</zh>
+    </String>
+    <String key="INS">
+        <ko>INS</ko>
+        <en>INS</en>
+        <ja>INS</ja>
+        <zh>INS</zh>
+    </String>
+    <String key="FIL">
+        <ko>FIL</ko>
+        <en>FIL</en>
+        <ja>FIL</ja>
+        <zh>FIL</zh>
+    </String>
+    <String key="ACTIVE">
+        <ko>활성</ko>
+        <en>Active</en>
+        <ja>アクティブ</ja>
+        <zh>激活</zh>
+    </String>
+    <String key="INACTIVE">
+        <ko>비활성</ko>
+        <en>Inactive</en>
+        <ja>非アクティブ</ja>
+        <zh>未激活</zh>
+    </String>
+    <String key="PATTERN">
+        <ko>패턴</ko>
+        <en>Pattern</en>
+        <ja>パターン</ja>
+        <zh>模式</zh>
+    </String>
+    
+    <!-- 버튼 텍스트 -->
+    <String key="ADD">
+        <ko>ADD</ko>
+        <en>ADD</en>
+        <ja>追加</ja>
+        <zh>添加</zh>
+    </String>
+    <String key="DELETE">
+        <ko>DELETE</ko>
+        <en>DELETE</en>
+        <ja>削除</ja>
+        <zh>删除</zh>
+    </String>
+    <String key="FILTER">
+        <ko>FILTER</ko>
+        <en>FILTER</en>
+        <ja>フィルタ</ja>
+        <zh>过滤器</zh>
+    </String>
+    <String key="SAVE">
+        <ko>SAVE</ko>
+        <en>SAVE</en>
+        <ja>保存</ja>
+        <zh>保存</zh>
+    </String>
+    <String key="MOVE">
+        <ko>MOVE</ko>
+        <en>MOVE</en>
+        <ja>移動</ja>
+        <zh>移动</zh>
+    </String>
+    <String key="DRAW">
+        <ko>DRAW</ko>
+        <en>DRAW</en>
+        <ja>描画</ja>
+        <zh>绘制</zh>
+    </String>
+    <String key="RUN">
+        <ko>RUN</ko>
+        <en>RUN</en>
+        <ja>実行</ja>
+        <zh>运行</zh>
+    </String>
+    <String key="CAM">
+        <ko>CAM</ko>
+        <en>CAM</en>
+        <ja>カメラ</ja>
+        <zh>相机</zh>
+    </String>
+    <!-- 프로퍼티 패널 -->
+    <String key="SELECT_PATTERN_TO_SHOW_PROPS">
+        <ko>패턴을 선택하면 속성이 표시됩니다</ko>
+        <en>Select a pattern to display properties</en>
+        <ja>パターンを選択してプロパティを表示</ja>
+        <zh>选择一个模式以显示属性</zh>
+    </String>
+    <String key="BASIC_INFO">
+        <ko>기본 정보</ko>
+        <en>Basic Info</en>
+        <ja>基本情報</ja>
+        <zh>基本信息</zh>
+    </String>
+    <String key="ID">
+        <ko>ID</ko>
+        <en>ID</en>
+        <ja>ID</ja>
+        <zh>ID</zh>
+    </String>
+    <String key="NAME">
+        <ko>이름</ko>
+        <en>Name</en>
+        <ja>名前</ja>
+        <zh>名称</zh>
+    </String>
+    <String key="TYPE">
+        <ko>타입</ko>
+        <en>Type</en>
+        <ja>タイプ</ja>
+        <zh>类型</zh>
+    </String>
+    <String key="CAM">
+        <ko>카메라</ko>
+        <en>Camera</en>
+        <ja>カメラ</ja>
+        <zh>相机</zh>
+    </String>
+    <String key="POSITION_SIZE">
+        <ko>위치 및 크기</ko>
+        <en>Position and Size</en>
+        <ja>位置とサイズ</ja>
+        <zh>位置和大小</zh>
+    </String>
+    <String key="COORDINATES">
+        <ko>좌표</ko>
+        <en>Coordinates</en>
+        <ja>座標</ja>
+        <zh>坐标</zh>
+    </String>
+    <String key="SIZE">
+        <ko>크기</ko>
+        <en>Size</en>
+        <ja>サイズ</ja>
+        <zh>大小</zh>
+    </String>
+    <String key="TYPE_SPECIFIC_PROPS">
+        <ko>타입별 속성</ko>
+        <en>Type-Specific Properties</en>
+        <ja>タイプ別プロパティ</ja>
+        <zh>类型特定属性</zh>
+    </String>
+    <String key="INCLUDE_ALL_CAMERA">
+        <ko>전체 카메라 영역 포함</ko>
+        <en>Include all camera area</en>
+        <ja>すべてのカメラ領域を含む</ja>
+        <zh>包括所有相机区域</zh>
+    </String>
+    <String key="MATCHING_INSPECTION_ENABLE">
+        <ko>매칭 검사 활성화</ko>
+        <en>Enable matching inspection</en>
+        <ja>マッチング検査を有効にする</ja>
+        <zh>启用匹配检查</zh>
+    </String>
+    <String key="MATCHING_METHOD">
+        <ko>매칭 방법</ko>
+        <en>Matching method</en>
+        <ja>マッチング方法</ja>
+        <zh>匹配方法</zh>
+    </String>
+    <String key="TEMPLATE_MATCHING">
+        <ko>템플릿 매칭</ko>
+        <en>Template matching</en>
+        <ja>テンプレートマッチング</ja>
+        <zh>模板匹配</zh>
+    </String>
+    <String key="FEATURE_MATCHING">
+        <ko>특징점 매칭</ko>
+        <en>Feature matching</en>
+        <ja>特徴点マッチング</ja>
+        <zh>特征匹配</zh>
+    </String>
+    <String key="CONTOUR_MATCHING">
+        <ko>윤곽선 매칭</ko>
+        <en>Contour matching</en>
+        <ja>輪郭マッチング</ja>
+        <zh>轮廓匹配</zh>
+    </String>
+    <String key="MATCHING_THRESHOLD">
+        <ko>매칭 임계값</ko>
+        <en>Matching threshold</en>
+        <ja>マッチングしきい値</ja>
+        <zh>匹配阈值</zh>
+    </String>
+    <String key="PASS_THRESHOLD">
+        <ko>합격 임계값</ko>
+        <en>Pass threshold</en>
+        <ja>合格しきい値</ja>
+        <zh>通过阈值</zh>
+    </String>
+    <String key="INSPECTION_METHOD">
+        <ko>검사 방법</ko>
+        <en>Inspection method</en>
+        <ja>検査方法</ja>
+        <zh>检查方法</zh>
+    </String>
+    <String key="BINARY_THRESHOLD">
+        <ko>이진화 임계값</ko>
+        <en>Binary threshold</en>
+        <ja>二値化しきい値</ja>
+        <zh>二值化阈值</zh>
+    </String>
+    <String key="COMPARISON_METHOD">
+        <ko>비교 방식</ko>
+        <en>Comparison method</en>
+        <ja>比較方式</ja>
+        <zh>比较方式</zh>
+    </String>
+    <String key="GREATER_THAN">
+        <ko>이상 (&gt;=)</ko>
+        <en>Greater than or equal (&gt;=)</en>
+        <ja>以上 (&gt;=)</ja>
+        <zh>大于等于 (&gt;=)</zh>
+    </String>
+    <String key="LESS_THAN">
+        <ko>이하 (&lt;=)</ko>
+        <en>Less than or equal (&lt;=)</en>
+        <ja>以下 (&lt;=)</ja>
+        <zh>小于等于 (&lt;=)</zh>
+    </String>
+    <String key="WITHIN_RANGE">
+        <ko>범위 내</ko>
+        <en>Within range</en>
+        <ja>範囲内</ja>
+        <zh>范围内</zh>
+    </String>
+    <String key="INVERT_RESULT">
+        <ko>결과 반전 (예: 결함 검출)</ko>
+        <en>Invert result (e.g., defect detection)</en>
+        <ja>結果の反転（例：欠陥検出）</ja>
+        <zh>反转结果（例如：缺陷检测）</zh>
+    </String>
+    <String key="TEMPLATE_IMAGE">
+        <ko>템플릿 이미지</ko>
+        <en>Template image</en>
+        <ja>テンプレート画像</ja>
+        <zh>模板图像</zh>
+    </String>
+    <String key="NO_IMAGE">
+        <ko>이미지 없음</ko>
+        <en>No image</en>
+        <ja>画像なし</ja>
+        <zh>无图像</zh>
+    </String>
+    <String key="IMAGE_CONVERSION_FAILED">
+        <ko>이미지 변환 실패</ko>
+        <en>Image conversion failed</en>
+        <ja>画像変換失敗</ja>
+        <zh>图像转换失败</zh>
+    </String>
+    <String key="SELECT_FILTER_TO_SHOW_PROPS">
+        <ko>필터를 선택하면 여기에 설정이 표시됩니다</ko>
+        <en>Select a filter to display settings here</en>
+        <ja>フィルターを選択して設定を表示</ja>
+        <zh>选择过滤器以在此处显示设置</zh>
+    </String>
+    <!-- 컨텍스트 메뉴 -->
+    <String key="REMOVE_FROM_GROUP">
+        <ko>그룹에서 제거</ko>
+        <en>Remove from group</en>
+        <ja>グループから削除</ja>
+        <zh>从组中删除</zh>
+    </String>
+    <String key="GROUP_PATTERNS">
+        <ko>패턴 그룹화</ko>
+        <en>Group patterns</en>
+        <ja>パターンのグループ化</ja>
+        <zh>组合模式</zh>
+    </String>
+    <String key="UNGROUP">
+        <ko>그룹 해제</ko>
+        <en>Ungroup</en>
+        <ja>グループ解除</ja>
+        <zh>取消组合</zh>
+    </String>
+    <String key="COPY_PATTERN">
+        <ko>패턴 복사</ko>
+        <en>Copy pattern</en>
+        <ja>パターンをコピー</ja>
+        <zh>复制模式</zh>
+    </String>
+    
+    <!-- 저장 및 레시피 관련 -->
+    <String key="SAVE_COMPLETE">
+        <ko>저장 완료</ko>
+        <en>Save Complete</en>
+        <ja>保存完了</ja>
+        <zh>保存完成</zh>
+    </String>
+    <String key="RECIPE_SAVE_SUCCESS">
+        <ko>레시피가 현재 폴더의 recipe.config 파일에 성공적으로 저장되었습니다.</ko>
+        <en>Recipe has been successfully saved to recipe.config file in the current folder.</en>
+        <ja>レシピが現在のフォルダのrecipe.configファイルに正常に保存されました。</ja>
+        <zh>配方已成功保存到当前文件夹中的recipe.config文件。</zh>
+    </String>
+    <String key="SAVE_ERROR">
+        <ko>저장 오류</ko>
+        <en>Save Error</en>
+        <ja>保存エラー</ja>
+        <zh>保存错误</zh>
+    </String>
+    <String key="CANNOT_SAVE_RECIPE">
+        <ko>recipe.config 파일을 저장할 수 없습니다.</ko>
+        <en>Cannot save recipe.config file.</en>
+        <ja>recipe.configファイルを保存できません。</ja>
+        <zh>无法保存recipe.config文件。</zh>
+    </String>
+    <String key="NO_CAMERA_INFO">
+        <ko>카메라 정보가 없습니다. 레시피를 저장할 수 없습니다.</ko>
+        <en>No camera information. Cannot save recipe.</en>
+        <ja>カメラ情報がありません。レシピを保存できません。</ja>
+        <zh>没有相机信息。无法保存配方。</zh>
+    </String>
+    <String key="RECIPE_DELETE_ERROR">
+        <ko>레시피 삭제 오류</ko>
+        <en>Recipe Delete Error</en>
+        <ja>レシピ削除エラー</ja>
+        <zh>配方删除错误</zh>
+    </String>
+    <String key="RECIPE_DELETE_CONFIRM">
+        <ko>현재 카메라(%1)의 모든 패턴과 레시피가 삭제됩니다.\n계속하시겠습니까?</ko>
+        <en>All patterns and recipes for the current camera (%1) will be deleted.\nDo you want to continue?</en>
+        <ja>現在のカメラ（%1）のすべてのパターンとレシピが削除されます。\n続行しますか？</ja>
+        <zh>当前相机（%1）的所有模式和配方将被删除。\n是否继续？</zh>
+    </String>
+    
+    <!-- 카메라 설정 관련 -->
+    <String key="CAMERA_SETTINGS">
+        <ko>카메라 설정</ko>
+        <en>Camera Settings</en>
+        <ja>カメラ設定</ja>
+        <zh>相机设置</zh>
+    </String>
+    
+    <!-- 검사 결과 관련 -->
+    <String key="PASS">
+        <ko>합격</ko>
+        <en>PASS</en>
+        <ja>合格</ja>
+        <zh>通过</zh>
+    </String>
+    <String key="FAIL">
+        <ko>불합격</ko>
+        <en>FAIL</en>
+        <ja>不合格</ja>
+        <zh>失败</zh>
+    </String>
+    <String key="COLOR">
+        <ko>색상</ko>
+        <en>COLOR</en>
+        <ja>カラー</ja>
+        <zh>颜色</zh>
+    </String>
+    <String key="EDGE">
+        <ko>에지</ko>
+        <en>EDGE</en>
+        <ja>エッジ</ja>
+        <zh>边缘</zh>
+    </String>
+    <String key="BINARY">
+        <ko>이진화</ko>
+        <en>BINARY</en>
+        <ja>バイナリ</ja>
+        <zh>二值化</zh>
+    </String>
+    <String key="UNKNOWN">
+        <ko>알 수 없음</ko>
+        <en>UNKNOWN</en>
+        <ja>不明</ja>
+        <zh>未知</zh>
+    </String>
+    
+    <!-- 로그 뷰어 관련 -->
+    <String key="INSPECTION_LOG">
+        <ko>검사 로그</ko>
+        <en>Inspection Log</en>
+        <ja>検査ログ</ja>
+        <zh>检查日志</zh>
+    </String>
+    <String key="CLEAR_LOG">
+        <ko>로그 지우기</ko>
+        <en>Clear Log</en>
+        <ja>ログをクリア</ja>
+        <zh>清除日志</zh>
+    </String>
+    <String key="SAVE_LOG">
+        <ko>로그 저장</ko>
+        <en>Save Log</en>
+        <ja>ログを保存</ja>
+        <zh>保存日志</zh>
+    </String>
+    <String key="INSPECTION_RESULT">
+        <ko>검사 결과</ko>
+        <en>Inspection Result</en>
+        <ja>検査結果</ja>
+        <zh>检查结果</zh>
+    </String>
+    <String key="OVERALL_INSPECTION_RESULT">
+        <ko>전체 검사 결과</ko>
+        <en>Overall Inspection Result</en>
+        <ja>全体の検査結果</ja>
+        <zh>总体检查结果</zh>
+    </String>
+    
+    <!-- 캘리브레이션 관련 -->
+    <String key="CALIBRATION_IN_PROGRESS">
+        <ko>캘리브레이션 중...</ko>
+        <en>Calibration in progress...</en>
+        <ja>キャリブレーション中...</ja>
+        <zh>校准中...</zh>
+    </String>
+    <String key="WIDTH">
+        <ko>너비</ko>
+        <en>Width</en>
+        <ja>幅</ja>
+        <zh>宽度</zh>
+    </String>
+    <String key="HEIGHT">
+        <ko>높이</ko>
+        <en>Height</en>
+        <ja>高さ</ja>
+        <zh>高度</zh>
+    </String>
+    <String key="CM">
+        <ko>cm</ko>
+        <en>cm</en>
+        <ja>cm</ja>
+        <zh>厘米</zh>
+    </String>
+    <String key="LENGTH_CALIBRATION">
+        <ko>길이 캘리브레이션</ko>
+        <en>Length Calibration</en>
+        <ja>長さキャリブレーション</ja>
+        <zh>长度校准</zh>
+    </String>
+    <String key="REAL_LENGTH_INPUT_TITLE">
+        <ko>실제 길이 입력</ko>
+        <en>Enter Real Length</en>
+        <ja>実際の長さを入力</ja>
+        <zh>输入实际长度</zh>
+    </String>
+    <String key="REAL_LENGTH_INPUT_MSG">
+        <ko>측정한 물체의 실제 길이(cm)를 입력하세요:</ko>
+        <en>Enter the real length (cm) of the measured object:</en>
+        <ja>測定対象の実際の長さ（cm）を入力してください：</ja>
+        <zh>输入测量对象的实际长度（厘米）：</zh>
+    </String>
+    <String key="CALIBRATION_INSTRUCTION">
+        <ko>카메라 뷰에 알고 있는 길이의 물체를 놓고 사각형을 그려주세요.\n그 후 실제 길이를 입력하시면 캘리브레이션이 완료됩니다.</ko>
+        <en>Place an object with known length in the camera view and draw a rectangle.\nThen enter the real length to complete the calibration.</en>
+        <ja>カメラビューに既知の長さの物体を置いて長方形を描きます。\n次に実際の長さを入力するとキャリブレーションが完了します。</ja>
+        <zh>在相机视图中放置一个已知长度的物体并绘制矩形。\n然后输入实际长度以完成校准。</zh>
+    </String>
+    <String key="CALIBRATION_COMPLETE_TITLE">
+        <ko>길이 캘리브레이션 완료</ko>
+        <en>Length Calibration Complete</en>
+        <ja>長さキャリブレーション完了</ja>
+        <zh>长度校准完成</zh>
+    </String>
+    <String key="CALIBRATION_COMPLETE_MSG">
+        <ko>캘리브레이션이 성공적으로 완료되었습니다!\n이제 그려진 사각형에 물리적 길이가 표시됩니다.\n\n캘리브레이션 비율: %1 cm/pixel\n\n※ 캘리브레이션 정보가 저장되도록 반드시 레시피 저장을 해주세요!</ko>
+        <en>Calibration completed successfully!\nPhysical length will now be displayed for drawn rectangles.\n\nCalibration ratio: %1 cm/pixel\n\nPlease save the recipe to save the calibration information!</en>
+        <ja>キャリブレーションが正常に完了しました！\n描画された長方形に物理的な長さが表示されるようになりました。\n\nキャリブレーション比率：%1 cm/pixel\n\nキャリブレーション情報を保存するためにレシピを必ず保存してください！</ja>
+        <zh>校准成功完成！\n现在将为绘制的矩形显示物理长度。\n\n校准比率：%1厘米/像素\n\n请保存配方以保存校准信息！</zh>
+    </String>
+    
+    <!-- 기타 UI 텍스트 -->
+    <String key="MASK">
+        <ko>마스크</ko>
+        <en>MASK</en>
+        <ja>マスク</ja>
+        <zh>蒙版</zh>
+    </String>
+    <String key="PATTERN_GROUP">
+        <ko>그룹</ko>
+        <en>GRP</en>
+        <ja>グループ</ja>
+        <zh>组</zh>
+    </String>
+    <String key="PATTERN_GROUP_WITH_NAME">
+        <ko>그룹: %1</ko>
+        <en>GRP: %1</en>
+        <ja>グループ：%1</ja>
+        <zh>组：%1</zh>
+    </String>
+    <String key="NO_DEVICE_ID">
+        <ko>없음</ko>
+        <en>None</en>
+        <ja>なし</ja>
+        <zh>无</zh>
+    </String>
+    <String key="LOADING_PATTERN">
+        <ko>패턴 로드 중</ko>
+        <en>Loading pattern</en>
+        <ja>パターンを読み込み中</ja>
+        <zh>加载模式</zh>
+    </String>
+    <String key="PATTERN_DETAILS">
+        <ko>패턴 상세 정보 읽는 중</ko>
+        <en>Reading pattern details</en>
+        <ja>パターンの詳細を読み込み中</ja>
+        <zh>读取模式详细信息</zh>
+    </String>
+    <String key="ELEMENT_NAME">
+        <ko>요소 이름</ko>
+        <en>Element name</en>
+        <ja>要素名</ja>
+        <zh>元素名称</zh>
+    </String>
+    <String key="FID_TEMPLATE_LOAD_SUCCESS">
+        <ko>FID 템플릿 이미지 로드 성공</ko>
+        <en>FID template image loaded successfully</en>
+        <ja>FIDテンプレート画像の読み込みに成功</ja>
+        <zh>FID模板图像加载成功</zh>
+    </String>
+    <String key="INS_TEMPLATE_LOAD_SUCCESS">
+        <ko>INS 템플릿 이미지 로드 성공</ko>
+        <en>INS template image loaded successfully</en>
+        <ja>INSテンプレート画像の読み込みに成功</ja>
+        <zh>INS模板图像加载成功</zh>
+    </String>
+    <String key="INS_PATTERN_DETAILS">
+        <ko>INS 패턴 세부 정보 로드 완료</ko>
+        <en>INS pattern details loaded</en>
+        <ja>INSパターンの詳細を読み込み完了</ja>
+        <zh>INS模式详细信息已加载</zh>
+    </String>
+    <String key="FILTER_LOAD">
+        <ko>필터 로드</ko>
+        <en>Filter loaded</en>
+        <ja>フィルターを読み込み</ja>
+        <zh>过滤器已加载</zh>
+    </String>
+    <String key="FILTER_ENABLED">
+        <ko>활성화 상태</ko>
+        <en>Enabled status</en>
+        <ja>有効状態</ja>
+        <zh>启用状态</zh>
+    </String>
+    <String key="PATTERN_LOADED">
+        <ko>패턴 로드됨</ko>
+        <en>Pattern loaded</en>
+        <ja>パターンが読み込まれました</ja>
+        <zh>模式已加载</zh>
+    </String>
+    <String key="CHILD_PATTERN_LOADED">
+        <ko>자식 패턴 로드됨</ko>
+        <en>Child pattern loaded</en>
+        <ja>子パターンが読み込まれました</ja>
+        <zh>子模式已加载</zh>
+    </String>
+    <String key="PARENT_ID">
+        <ko>부모 ID</ko>
+        <en>Parent ID</en>
+        <ja>親ID</ja>
+        <zh>父ID</zh>
+    </String>
+    <String key="UNKNOWN_PATTERN_TYPE">
+        <ko>알 수 없는 패턴 타입</ko>
+        <en>Unknown pattern type</en>
+        <ja>不明なパターンタイプ</ja>
+        <zh>未知的模式类型</zh>
+    </String>
+    <String key="DEFAULT_ROI">
+        <ko>기본값 ROI로 설정</ko>
+        <en>Set to default ROI</en>
+        <ja>デフォルトのROIに設定</ja>
+        <zh>设置为默认ROI</zh>
+    </String>
+    <String key="NO_CONNECTION">
+        <ko>연결 없음</ko>
+        <en>No connection</en>
+        <ja>接続なし</ja>
+        <zh>无连接</zh>
+    </String>
+    <String key="NO_CAMERA">
+        <ko>카메라 없음</ko>
+        <en>No camera</en>
+        <ja>カメラなし</ja>
+        <zh>无相机</zh>
+    </String>
+    
+    <!-- 언어 관리자 관련 -->
+    <String key="LANGUAGE_FILE_OPEN_ERROR">
+        <ko>언어 파일을 열 수 없습니다</ko>
+        <en>Cannot open language file</en>
+        <ja>言語ファイルを開けません</ja>
+        <zh>无法打开语言文件</zh>
+    </String>
+    <String key="LANGUAGES_ELEMENT_NOT_FOUND">
+        <ko>'Languages' 요소를 찾을 수 없습니다</ko>
+        <en>'Languages' element not found</en>
+        <ja>'Languages'要素が見つかりません</ja>
+        <zh>未找到'Languages'元素</zh>
+    </String>
+    <String key="LANGUAGE_FILE_PARSING_ERROR">
+        <ko>언어 파일 파싱 오류</ko>
+        <en>Language file parsing error</en>
+        <ja>言語ファイル解析エラー</ja>
+        <zh>语言文件解析错误</zh>
+    </String>
+    <String key="SELECT_LANGUAGE_INFO">
+        <ko>사용할 언어를 선택하세요</ko>
+        <en>Select the language to use</en>
+        <ja>使用する言語を選択してください</ja>
+        <zh>选择要使用的语言</zh>
+    </String>
+    <String key="APPLY">
+        <ko>적용</ko>
+        <en>Apply</en>
+        <ja>適用</ja>
+        <zh>应用</zh>
+    </String>
+    <String key="CANCEL">
+        <ko>취소</ko>
+        <en>Cancel</en>
+        <ja>キャンセル</ja>
+        <zh>取消</zh>
+    </String>
+    <String key="LANGUAGE_CHANGED">
+        <ko>언어 변경됨</ko>
+        <en>Language Changed</en>
+        <ja>言語が変更されました</ja>
+        <zh>语言已更改</zh>
+    </String>
+    <String key="LANGUAGE_CHANGE_RESTART_INFO">
+        <ko>언어 설정이 변경되었습니다. 일부 변경사항은 프로그램을 재시작해야 적용됩니다.</ko>
+        <en>Language settings have been changed. Some changes may require a program restart to take effect.</en>
+        <ja>言語設定が変更されました。一部の変更はプログラムを再起動する必要があります。</ja>
+        <zh>语言设置已更改。某些更改可能需要重新启动程序才能生效。</zh>
+    </String>
+
+    <!-- 카메라 관련 정보 문자열 -->
+    <String key="CAMERA_NAME_FOUND">
+        <ko>카메라 이름 찾음</ko>
+        <en>Camera name found</en>
+        <ja>カメラ名が見つかりました</ja>
+        <zh>找到相机名称</zh>
+    </String>
+    <String key="CAMERA_UNIQUE_ID_FOUND">
+        <ko>카메라 고유 ID 찾음</ko>
+        <en>Camera unique ID found</en>
+        <ja>カメラの固有IDが見つかりました</ja>
+        <zh>找到相机唯一ID</zh>
+    </String>
+    <String key="PRODUCT_ID_FOUND">
+        <ko>제품 ID 찾음</ko>
+        <en>Product ID found</en>
+        <ja>製品IDが見つかりました</ja>
+        <zh>找到产品ID</zh>
+    </String>
+    <String key="VENDOR_ID_FOUND">
+        <ko>벤더 ID 찾음</ko>
+        <en>Vendor ID found</en>
+        <ja>ベンダーIDが見つかりました</ja>
+        <zh>找到供应商ID</zh>
+    </String>
+    <String key="XML_CAMERA_NAME_FOUND">
+        <ko>XML에서 카메라 이름 찾음</ko>
+        <en>Camera name found in XML</en>
+        <ja>XMLでカメラ名が見つかりました</ja>
+        <zh>在XML中找到相机名称</zh>
+    </String>
+    <String key="XML_CAMERA_UUID_FOUND">
+        <ko>XML에서 카메라 UUID 찾음</ko>
+        <en>Camera UUID found in XML</en>
+        <ja>XMLでカメラUUIDが見つかりました</ja>
+        <zh>在XML中找到相机UUID</zh>
+    </String>
+    <String key="XML_MODEL_ID_FOUND">
+        <ko>XML에서 모델 ID 찾음</ko>
+        <en>Model ID found in XML</en>
+        <ja>XMLでモデルIDが見つかりました</ja>
+        <zh>在XML中找到型号ID</zh>
+    </String>
+    <String key="XML_DEVICE_PATH_FOUND">
+        <ko>XML에서 장치 경로 찾음</ko>
+        <en>Device path found in XML</en>
+        <ja>XMLでデバイスパスが見つかりました</ja>
+        <zh>在XML中找到设备路径</zh>
+    </String>
+    <String key="GENERATED_ID_FOR_CAMERA">
+        <ko>카메라에 대해 생성된 식별자</ko>
+        <en>Generated identifier for camera</en>
+        <ja>カメラ用に生成された識別子</ja>
+        <zh>为相机生成的标识符</zh>
+    </String>
+    <String key="SERIAL">
+        <ko>시리얼</ko>
+        <en>Serial</en>
+        <ja>シリアル</ja>
+        <zh>序列号</zh>
+    </String>
+    <String key="LOCATION">
+        <ko>위치</ko>
+        <en>Location</en>
+        <ja>位置</ja>
+        <zh>位置</zh>
+    </String>
+    <String key="EMPTY_PANEL_MESSAGE">
+        <ko>패턴을 선택하면 속성이 표시됩니다</ko>
+        <en>Select a pattern to display its properties</en>
+        <ja>パターンを選択するとプロパティが表示されます</ja>
+        <zh>选择模式以显示其属性</zh>
+    </String>
+    <String key="BASIC_INFO">
+        <ko>기본 정보</ko>
+        <en>Basic Information</en>
+        <ja>基本情報</ja>
+        <zh>基本信息</zh>
+    </String>
+    <String key="PATTERN_ID">
+        <ko>ID:</ko>
+        <en>ID:</en>
+        <ja>ID:</ja>
+        <zh>ID:</zh>
+    </String>
+    <String key="PATTERN_NAME_LABEL">
+        <ko>이름:</ko>
+        <en>Name:</en>
+        <ja>名前:</ja>
+        <zh>名称:</zh>
+    </String>
+    <String key="PATTERN_TYPE_LABEL">
+        <ko>타입:</ko>
+        <en>Type:</en>
+        <ja>タイプ:</ja>
+        <zh>类型:</zh>
+    </String>
+    <String key="PATTERN_CAMERA">
+        <ko>카메라:</ko>
+        <en>Camera:</en>
+        <ja>カメラ:</ja>
+        <zh>摄像头:</zh>
+    </String>
+    <String key="POSITION_SIZE">
+        <ko>위치 및 크기</ko>
+        <en>Position &amp; Size</en>
+        <ja>位置とサイズ</ja>
+        <zh>位置和大小</zh>
+    </String>
+    <String key="POSITION">
+        <ko>좌표:</ko>
+        <en>Position:</en>
+        <ja>座標:</ja>
+        <zh>坐标:</zh>
+    </String>
+    <String key="SIZE">
+        <ko>크기:</ko>
+        <en>Size:</en>
+        <ja>サイズ:</ja>
+        <zh>大小:</zh>
+    </String>
+    <String key="SPECIAL_PROPERTIES">
+        <ko>타입별 속성</ko>
+        <en>Type-specific Properties</en>
+        <ja>タイプ別プロパティ</ja>
+        <zh>类型特定属性</zh>
+    </String>
+    <String key="NO_IMAGE">
+        <ko>이미지 없음</ko>
+        <en>No Image</en>
+        <ja>画像なし</ja>
+        <zh>无图像</zh>
+    </String>
+    <String key="NO_CONNECTION">
+        <ko>연결 없음</ko>
+        <en>No Connection</en>
+        <ja>接続なし</ja>
+        <zh>无连接</zh>
+    </String>
+    <String key="PROCESSING_ERROR">
+        <ko>처리 오류</ko>
+        <en>Processing Error</en>
+        <ja>処理エラー</ja>
+        <zh>处理错误</zh>
+    </String>
+    <String key="NO_SIGNAL">
+        <ko>신호 없음</ko>
+        <en>No Signal</en>
+        <ja>信号なし</ja>
+        <zh>无信号</zh>
+    </String>
+    <String key="IMAGE_CONVERSION_FAILED">
+        <ko>이미지 변환 실패</ko>
+        <en>Image Conversion Failed</en>
+        <ja>画像変換失敗</ja>
+        <zh>图像转换失败</zh>
+    </String>
+    <String key="CAMERA_NO_CONNECTION">
+        <ko>카메라 %1\n연결 없음</ko>
+        <en>Camera %1\nNo Connection</en>
+        <ja>カメラ %1\n接続なし</ja>
+        <zh>摄像头 %1\n无连接</zh>
+    </String>
+    <String key="TRAINING">
+        <ko>학습</ko>
+        <en>Training</en>
+        <ja>学習</ja>
+        <zh>训练</zh>
+    </String>
+    <String key="TRAINING_IN_PROGRESS">
+        <ko>학습중...</ko>
+        <en>Training...</en>
+        <ja>学習中...</ja>
+        <zh>训练中...</zh>
+    </String>
+    <String key="SELECT_IMAGE">
+        <ko>이미지를 선택하세요</ko>
+        <en>Please select an image</en>
+        <ja>画像を選択してください</ja>
+        <zh>请选择图像</zh>
+    </String>
+    <String key="IMAGE_LOAD_FAILED">
+        <ko>이미지 로드 실패</ko>
+        <en>Image Load Failed</en>
+        <ja>画像読み込み失敗</ja>
+        <zh>图像加载失败</zh>
+    </String>
+    <String key="ERROR_CANNOT_LOAD_IMAGE">
+        <ko>오류: 이미지를 로드할 수 없습니다.</ko>
+        <en>Error: Cannot load image.</en>
+        <ja>エラー: 画像を読み込めません。</ja>
+        <zh>错误：无法加载图像。</zh>
+    </String>
+    <String key="NO_IMAGE_AVAILABLE">
+        <ko>이미지가 없습니다.</ko>
+        <en>No image available.</en>
+        <ja>画像がありません。</ja>
+        <zh>没有可用图像。</zh>
+    </String>
+    <String key="IMAGE_COUNT">
+        <ko>이미지: %1개</ko>
+        <en>Images: %1</en>
+        <ja>画像: %1枚</ja>
+        <zh>图像：%1张</zh>
+    </String>
+    <String key="RECIPE_NONE">
+        <ko>레시피: 없음</ko>
+        <en>Recipe: None</en>
+        <ja>レシピ: なし</ja>
+        <zh>配方：无</zh>
+    </String>
+    <String key="RETRAIN">
+        <ko>재학습</ko>
+        <en>Retrain</en>
+        <ja>再学習</ja>
+        <zh>重新训练</zh>
+    </String>
+    <String key="IMAGE_INFO_EMPTY">
+        <ko>이미지 정보: -</ko>
+        <en>Image Info: -</en>
+        <ja>画像情報: -</ja>
+        <zh>图像信息：-</zh>
+    </String>
+    <String key="DETECTING">
+        <ko>탐지중...</ko>
+        <en>Detecting...</en>
+        <ja>検出中...</ja>
+        <zh>检测中...</zh>
+    </String>
+    <String key="DETECT">
+        <ko>탐지</ko>
+        <en>Detect</en>
+        <ja>検出</ja>
+        <zh>检测</zh>
+    </String>
+    <String key="BUILDING">
+        <ko>빌드중</ko>
+        <en>Building</en>
+        <ja>ビルド中</ja>
+        <zh>构建中</zh>
+    </String>
+    <String key="BUILD">
+        <ko>빌드</ko>
+        <en>Build</en>
+        <ja>ビルド</ja>
+        <zh>构建</zh>
+    </String>
+    <String key="STARTING">
+        <ko>시작중</ko>
+        <en>Starting</en>
+        <ja>開始中</ja>
+        <zh>启动中</zh>
+    </String>
+    <String key="START">
+        <ko>시작</ko>
+        <en>Start</en>
+        <ja>開始</ja>
+        <zh>启动</zh>
+    </String>
+    <String key="STOPPING">
+        <ko>중지중</ko>
+        <en>Stopping</en>
+        <ja>停止中</ja>
+        <zh>停止中</zh>
+    </String>
+    <!-- 시리얼 통신 관련 번역 -->
+    <String key="SERIAL_SETTINGS">
+        <ko>시리얼 통신</ko>
+        <en>Serial Communication</en>
+        <ja>シリアル通信</ja>
+        <zh>串口通信</zh>
+    </String>
+    <String key="CONNECTION_SETTINGS">
+        <ko>연결 설정</ko>
+        <en>Connection Settings</en>
+        <ja>接続設定</ja>
+        <zh>连接设置</zh>
+    </String>
+    <String key="SERIAL_PORT">
+        <ko>시리얼 포트</ko>
+        <en>Serial Port</en>
+        <ja>シリアルポート</ja>
+        <zh>串口</zh>
+    </String>
+    <String key="BAUD_RATE">
+        <ko>보드레이트</ko>
+        <en>Baud Rate</en>
+        <ja>ボーレート</ja>
+        <zh>波特率</zh>
+    </String>
+    <String key="CONNECT">
+        <ko>연결</ko>
+        <en>Connect</en>
+        <ja>接続</ja>
+        <zh>连接</zh>
+    </String>
+    <String key="DISCONNECT">
+        <ko>연결 해제</ko>
+        <en>Disconnect</en>
+        <ja>切断</ja>
+        <zh>断开连接</zh>
+    </String>
+    <String key="REFRESH_PORTS">
+        <ko>포트 새로고침</ko>
+        <en>Refresh Ports</en>
+        <ja>ポート更新</ja>
+        <zh>刷新端口</zh>
+    </String>
+    <String key="TEST_COMMANDS">
+        <ko>테스트 명령</ko>
+        <en>Test Commands</en>
+        <ja>テストコマンド</ja>
+        <zh>测试命令</zh>
+    </String>
+    <String key="TEST_COMMAND">
+        <ko>테스트 명령</ko>
+        <en>Test Command</en>
+        <ja>テストコマンド</ja>
+        <zh>测试命令</zh>
+    </String>
+    <String key="SEND">
+        <ko>전송</ko>
+        <en>Send</en>
+        <ja>送信</ja>
+        <zh>发送</zh>
+    </String>
+    <String key="COMMUNICATION_LOG">
+        <ko>통신 로그</ko>
+        <en>Communication Log</en>
+        <ja>通信ログ</ja>
+        <zh>通信日志</zh>
+    </String>
+    <String key="CLEAR_LOG">
+        <ko>로그 지우기</ko>
+        <en>Clear Log</en>
+        <ja>ログクリア</ja>
+        <zh>清除日志</zh>
+    </String>
+    <String key="NO_PORTS_AVAILABLE">
+        <ko>사용 가능한 포트 없음</ko>
+        <en>No ports available</en>
+        <ja>利用可能なポートなし</ja>
+        <zh>没有可用端口</zh>
+    </String>
+    <String key="PLEASE_SELECT_PORT">
+        <ko>포트를 선택해주세요</ko>
+        <en>Please select a port</en>
+        <ja>ポートを選択してください</ja>
+        <zh>请选择端口</zh>
+    </String>
+    <String key="PLEASE_CONNECT_FIRST">
+        <ko>먼저 연결해주세요</ko>
+        <en>Please connect first</en>
+        <ja>まず接続してください</ja>
+        <zh>请先连接</zh>
+    </String>
+    <String key="PLEASE_ENTER_COMMAND">
+        <ko>명령을 입력해주세요</ko>
+        <en>Please enter a command</en>
+        <ja>コマンドを入力してください</ja>
+        <zh>请输入命令</zh>
+    </String>
+    <String key="NO_CONNECTION">
+        <ko>연결 없음</ko>
+        <en>No Connection</en>
+        <ja>接続なし</ja>
+        <zh>无连接</zh>
+    </String>
+    <String key="SEND_TO_REAL_SERIAL">
+        <ko>실제 시리얼로 전송</ko>
+        <en>Send to Real Serial</en>
+        <ja>実際のシリアルに送信</ja>
+        <zh>发送到真实串口</zh>
+    </String>
+    <String key="RECEIVED_DATA">
+        <ko>수신 데이터</ko>
+        <en>Received Data</en>
+        <ja>受信データ</ja>
+        <zh>接收数据</zh>
+    </String>
+    <String key="CLEAR">
+        <ko>지우기</ko>
+        <en>Clear</en>
+        <ja>クリア</ja>
+        <zh>清除</zh>
+    </String>
+    
+    <!-- 캘리브레이션 관련 -->
+    <String key="REAL_LENGTH_INPUT_TITLE">
+        <ko>실제 길이 입력</ko>
+        <en>Real Length Input</en>
+        <ja>実際の長さ入力</ja>
+        <zh>实际长度输入</zh>
+    </String>
+    <String key="REAL_LENGTH_INPUT_MSG">
+        <ko>캘리브레이션을 위한 실제 길이를 mm 단위로 입력하세요:</ko>
+        <en>Enter the real length in mm for calibration:</en>
+        <ja>キャリブレーション用の実際の長さをmm単位で入力してください:</ja>
+        <zh>请输入校准用的实际长度（毫米）:</zh>
+    </String>
+</LanguageStrings>

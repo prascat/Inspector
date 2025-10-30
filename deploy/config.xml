@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Config>
+    <Language>ko</Language>
+    <AutoSave>true</AutoSave>
+    <LastRecipePath>20250920_123143_665</LastRecipePath>
+    <SerialPort>사용 가능한 포트 없음</SerialPort>
+    <SerialBaudRate>115200</SerialBaudRate>
+    <UserSetLivePath>/Users/prascat/mv/deploy/UserSet0.dat</UserSetLivePath>
+    <UserSetInspectPath>/Users/prascat/mv/deploy/UserSet1.dat</UserSetInspectPath>
+</Config>
