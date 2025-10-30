@@ -8,9 +8,11 @@ CameraSettingsDialog::CameraSettingsDialog(QWidget* parent)
     , currentCameraIndex(-1)
     , m_configManager(ConfigManager::instance())
     , isTriggerTesting(false)
+    , liveImageThreadRunning(false)
+    , triggerTestThreadRunning(false)
+    , liveImageThread(nullptr)
+    , triggerTestThread(nullptr)
     , triggerDetectionCount(0)
-    , triggerTestTimer(nullptr)
-    , liveImageTimer(nullptr)
     , lastExposureCount(0)
 {
     setWindowTitle("카메라 UserSet 관리");
@@ -25,107 +27,163 @@ CameraSettingsDialog::~CameraSettingsDialog() {
 void CameraSettingsDialog::showEvent(QShowEvent* event) {
     QDialog::showEvent(event);
     
-    // 디버그: 다이얼로그가 표시됨을 확인
     qDebug() << "[CameraSettingsDialog] showEvent triggered";
     
-    // 다이얼로그가 표시될 때 라이브 이미지 업데이트 시작
 #ifdef USE_SPINNAKER
-    if (!liveImageTimer) {
-        liveImageTimer = new QTimer(this);
-        connect(liveImageTimer, &QTimer::timeout, this, [this]() {
-            // UserSet0이 아니거나 트리거 테스트 중이면 라이브 영상 표시 안 함
-            if (isTriggerTesting) {
-                return;  // 트리거 테스트 중이면 라이브 영상 표시 안 함
-            }
-            
-            // UserSet0 확인
-            int selectedCameraIndex = getSelectedCameraIndex();
-            if (selectedCameraIndex < 0 || selectedCameraIndex >= static_cast<int>(m_spinCameras.size())) {
-                return;
-            }
-            
+    // 현재 UserSet 상태에 맞게 버튼 업데이트
+    updateCurrentUserSetLabel();
+    
+    // 라이브 이미지 스레드 시작
+    if (!liveImageThread || !liveImageThreadRunning) {
+        liveImageThreadRunning = true;
+        if (liveImageThread) {
+            liveImageThread->join();
+            delete liveImageThread;
+        }
+        liveImageThread = new std::thread([this]() {
+            // Create and configure processor once to avoid per-frame overhead
+            Spinnaker::ImageProcessor processor;
             try {
+                processor.SetColorProcessing(Spinnaker::SPINNAKER_COLOR_PROCESSING_ALGORITHM_DIRECTIONAL_FILTER);
+            } catch (...) {
+                // ignore if processor doesn't support algorithm
+            }
+
+            while (liveImageThreadRunning) {
+                if (isTriggerTesting) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    continue;
+                }
+
+                int selectedCameraIndex = getSelectedCameraIndex();
+                if (selectedCameraIndex < 0 || selectedCameraIndex >= static_cast<int>(m_spinCameras.size())) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    continue;
+                }
+
                 Spinnaker::CameraPtr camera = m_spinCameras[selectedCameraIndex];
-                Spinnaker::GenApi::INodeMap& nodeMap = camera->GetNodeMap();
-                
-                // 현재 UserSet 확인
-                auto pUserSetSelector = nodeMap.GetNode("UserSetSelector");
-                if (!pUserSetSelector || !Spinnaker::GenApi::IsReadable(pUserSetSelector)) {
-                    return;
+                if (!camera) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    continue;
                 }
-                
-                Spinnaker::GenApi::CEnumerationPtr userSetPtr(pUserSetSelector);
-                auto entry = userSetPtr->GetCurrentEntry();
-                QString currentUserSet = QString::fromLocal8Bit(entry->GetSymbolic().c_str());
-                
-                // UserSet0이 아니면 표시 안 함
-                if (currentUserSet != "UserSet0") {
-                    triggerImageLabel->setText("트리거 대기...");
-                    return;
-                }
-                
-                // UserSet0: 라이브 이미지 표시 - GetNextImage로 직접 이미지 획득
+
+                // quick check of UserSet, but don't throw on missing node
                 try {
-                    Spinnaker::ImagePtr pImage = camera->GetNextImage(50);  // 50ms 타임아웃
-                    
-                    if (pImage && !pImage->IsIncomplete()) {
-                        // 유효한 이미지 획득
-                        Spinnaker::ImageProcessor processor;
-                        processor.SetColorProcessing(Spinnaker::SPINNAKER_COLOR_PROCESSING_ALGORITHM_DIRECTIONAL_FILTER);
-                        
-                        Spinnaker::ImagePtr convertedImage = processor.Convert(pImage, Spinnaker::PixelFormat_RGB8);
-                        
-                        if (convertedImage && !convertedImage->IsIncomplete()) {
-                            unsigned char* buffer = static_cast<unsigned char*>(convertedImage->GetData());
-                            size_t width = convertedImage->GetWidth();
-                            size_t height = convertedImage->GetHeight();
-                            
-                            cv::Mat cvImage(height, width, CV_8UC3, buffer);
-                            
-                            // 280x210 크기로 리사이즈
-                            cv::Mat resized;
-                            cv::resize(cvImage, resized, cv::Size(280, 210));
-                            
-                            // BGR to RGB 변환
-                            cv::Mat rgbImage;
-                            cv::cvtColor(resized, rgbImage, cv::COLOR_BGR2RGB);
-                            
-                            // Mat to QPixmap 변환
-                            QImage qImage(rgbImage.data, rgbImage.cols, rgbImage.rows, 
-                                          static_cast<int>(rgbImage.step), QImage::Format_RGB888);
-                            QPixmap pixmap = QPixmap::fromImage(qImage);
-                            
-                            // UI 업데이트
-                            triggerImageLabel->setPixmap(pixmap);
-                            
-                            convertedImage->Release();
-                        }
-                        
-                        pImage->Release();
+                    Spinnaker::GenApi::INodeMap& nodeMap = camera->GetNodeMap();
+                    auto pUserSetSelector = nodeMap.GetNode("UserSetSelector");
+                    if (!pUserSetSelector || !Spinnaker::GenApi::IsReadable(pUserSetSelector)) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                        continue;
+                    }
+
+                    Spinnaker::GenApi::CEnumerationPtr userSetPtr(pUserSetSelector);
+                    auto entry = userSetPtr->GetCurrentEntry();
+                    QString currentUserSet = QString::fromLocal8Bit(entry->GetSymbolic().c_str());
+                    if (currentUserSet != "UserSet0") {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                        continue;
                     }
                 } catch (...) {
-                    // 타임아웃은 무시
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    continue;
                 }
-                
-            } catch (const std::exception& e) {
-                qDebug() << "[LiveImage] Error:" << e.what();
+
+                try {
+                    // Ensure streaming
+                    try {
+                        if (!camera->IsStreaming()) {
+                            camera->BeginAcquisition();
+                        }
+                    } catch (...) {
+                        // ignore
+                    }
+
+                    // Block waiting for next image (1ms timeout for immediate response)
+                    Spinnaker::ImagePtr pImage = nullptr;
+                    try {
+                        pImage = camera->GetNextImage(1);  // 1ms timeout
+                    } catch (...) {
+                        pImage = nullptr;
+                    }
+
+                    if (!pImage) {
+                        // no frame available
+                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                        continue;
+                    }
+
+                    if (pImage->IsIncomplete()) {
+                        pImage->Release();
+                        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                        continue;
+                    }
+
+                    // Convert once using the prepared processor
+                    Spinnaker::ImagePtr convertedImage;
+                    try {
+                        convertedImage = processor.Convert(pImage, Spinnaker::PixelFormat_RGB8);
+                    } catch (...) {
+                        convertedImage = pImage; // fallback: try using original
+                    }
+
+                    if (convertedImage && !convertedImage->IsIncomplete()) {
+                        unsigned char* buffer = static_cast<unsigned char*>(convertedImage->GetData());
+                        size_t width = convertedImage->GetWidth();
+                        size_t height = convertedImage->GetHeight();
+
+                        // copy/rescale on our thread
+                        cv::Mat cvImage(height, width, CV_8UC3, buffer);
+                        cv::Mat resized;
+                        cv::resize(cvImage, resized, cv::Size(280, 210));
+                        cv::Mat rgbImage;
+                        cv::cvtColor(resized, rgbImage, cv::COLOR_BGR2RGB);
+
+                        QImage qImage(rgbImage.data, rgbImage.cols, rgbImage.rows,
+                                      static_cast<int>(rgbImage.step), QImage::Format_RGB888);
+                        QPixmap pixmap = QPixmap::fromImage(qImage);
+
+                        QMetaObject::invokeMethod(this, [this, pixmap]() {
+                            if (triggerImageLabel) triggerImageLabel->setPixmap(pixmap);
+                        }, Qt::QueuedConnection);
+                    }
+
+                    // release images
+                    try { if (convertedImage && convertedImage != pImage) convertedImage->Release(); } catch(...){}
+                    try { if (pImage) pImage->Release(); } catch(...){}
+
+                } catch (const std::exception& e) {
+                    qDebug() << "[LiveImage] Error:" << e.what();
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                }
             }
         });
     }
-    liveImageTimer->start(33);  // ~30fps
-    qDebug() << "[CameraSettingsDialog] Live image timer started";
+    
+    qDebug() << "[CameraSettingsDialog] Live image thread started";
 #endif
 }
 
 void CameraSettingsDialog::closeEvent(QCloseEvent* event) {
-    // 다이얼로그 닫힐 때 타이머 정지
-    if (liveImageTimer) {
-        liveImageTimer->stop();
+    qDebug() << "[CameraSettingsDialog] closeEvent - Stopping threads";
+    
+    // 1. 라이브 영상 스레드 정지
+    liveImageThreadRunning = false;
+    if (liveImageThread && liveImageThread->joinable()) {
+        liveImageThread->join();
+        delete liveImageThread;
+        liveImageThread = nullptr;
     }
-    if (triggerTestTimer) {
-        triggerTestTimer->stop();
-        isTriggerTesting = false;
+    
+    // 2. 트리거 테스트 스레드 정지
+    triggerTestThreadRunning = false;
+    isTriggerTesting = false;
+    if (triggerTestThread && triggerTestThread->joinable()) {
+        triggerTestThread->join();
+        delete triggerTestThread;
+        triggerTestThread = nullptr;
     }
+    
+    qDebug() << "[CameraSettingsDialog] Threads stopped";
     QDialog::closeEvent(event);
 }
 
@@ -385,10 +443,6 @@ void CameraSettingsDialog::setupTriggerTestUI() {
             onStartTriggerTest();
         }
     });
-    
-    // 타이머 설정 (500ms 주기로 상태 업데이트)
-    triggerTestTimer = new QTimer(this);
-    connect(triggerTestTimer, &QTimer::timeout, this, &CameraSettingsDialog::onTriggerTestTimeout);
 }
 
 #ifdef USE_SPINNAKER
@@ -397,6 +451,10 @@ void CameraSettingsDialog::updateCurrentUserSetLabel() {
     if (selectedCameraIndex < 0 || selectedCameraIndex >= static_cast<int>(m_spinCameras.size())) {
         currentUserSetLabel->setText("카메라 선택 필요");
         currentUserSetLabel->setStyleSheet("QLabel { font-weight: bold; color: #FF9800; }");
+        
+        // 버튼 스타일 초기화
+        loadUserSet0Btn->setStyleSheet("QPushButton { background-color: #999; color: white; font-weight: bold; padding: 10px; }");
+        loadUserSet1Btn->setStyleSheet("QPushButton { background-color: #999; color: white; font-weight: bold; padding: 10px; }");
         return;
     }
 
@@ -409,6 +467,10 @@ void CameraSettingsDialog::updateCurrentUserSetLabel() {
         if (!IsAvailable(ptrUserSetSelector) || !IsReadable(ptrUserSetSelector)) {
             currentUserSetLabel->setText("조회 불가");
             currentUserSetLabel->setStyleSheet("QLabel { font-weight: bold; color: #f44336; }");
+            
+            // 버튼 스타일 초기화
+            loadUserSet0Btn->setStyleSheet("QPushButton { background-color: #999; color: white; font-weight: bold; padding: 10px; }");
+            loadUserSet1Btn->setStyleSheet("QPushButton { background-color: #999; color: white; font-weight: bold; padding: 10px; }");
             return;
         }
         
@@ -420,21 +482,40 @@ void CameraSettingsDialog::updateCurrentUserSetLabel() {
             
             if (currentUserSet == "UserSet0") {
                 modeName = "LIVE 모드";
+                // UserSet0 적용 중 - 초록색
+                currentUserSetLabel->setText(QString("%1 (%2)").arg(currentUserSet).arg(modeName));
+                currentUserSetLabel->setStyleSheet("QLabel { font-weight: bold; color: #4CAF50; }");
+                loadUserSet0Btn->setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 10px; }");
+                loadUserSet1Btn->setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 10px; }");
             } else if (currentUserSet == "UserSet1") {
                 modeName = "TRIGGER 모드";
+                // UserSet1 적용 중 - 초록색
+                currentUserSetLabel->setText(QString("%1 (%2)").arg(currentUserSet).arg(modeName));
+                currentUserSetLabel->setStyleSheet("QLabel { font-weight: bold; color: #FF9800; }");
+                loadUserSet0Btn->setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 10px; }");
+                loadUserSet1Btn->setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 10px; }");
             } else {
                 modeName = "기타";
+                currentUserSetLabel->setText(QString("%1 (%2)").arg(currentUserSet).arg(modeName));
+                currentUserSetLabel->setStyleSheet("QLabel { font-weight: bold; color: #666; }");
+                loadUserSet0Btn->setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 10px; }");
+                loadUserSet1Btn->setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 10px; }");
             }
-            
-            currentUserSetLabel->setText(QString("%1 (%2)").arg(currentUserSet).arg(modeName));
-            currentUserSetLabel->setStyleSheet("QLabel { font-weight: bold; color: #4CAF50; }");
         } else {
             currentUserSetLabel->setText("조회 불가");
             currentUserSetLabel->setStyleSheet("QLabel { font-weight: bold; color: #f44336; }");
+            
+            // 버튼 스타일 초기화
+            loadUserSet0Btn->setStyleSheet("QPushButton { background-color: #999; color: white; font-weight: bold; padding: 10px; }");
+            loadUserSet1Btn->setStyleSheet("QPushButton { background-color: #999; color: white; font-weight: bold; padding: 10px; }");
         }
     } catch (const std::exception& e) {
         currentUserSetLabel->setText("오류");
         currentUserSetLabel->setStyleSheet("QLabel { font-weight: bold; color: #f44336; }");
+        
+        // 버튼 스타일 초기화
+        loadUserSet0Btn->setStyleSheet("QPushButton { background-color: #999; color: white; font-weight: bold; padding: 10px; }");
+        loadUserSet1Btn->setStyleSheet("QPushButton { background-color: #999; color: white; font-weight: bold; padding: 10px; }");
         qDebug() << "Error updating UserSet label:" << e.what();
     }
 }
@@ -729,6 +810,10 @@ void CameraSettingsDialog::loadUserSet(const QString& userSetName, const QString
 void CameraSettingsDialog::onLoadUserSet0() {
     loadUserSet("UserSet0", "LIVE 모드");
     
+    // 버튼 스타일 업데이트 - UserSet0 초록색, UserSet1 빨간색
+    loadUserSet0Btn->setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 10px; }");
+    loadUserSet1Btn->setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 10px; }");
+    
     // UserSet0 로드 후: 트리거 버튼 비활성화 + 라이브 영상 표시 시작
     triggerToggleBtn->setEnabled(false);
     triggerToggleBtn->setStyleSheet(
@@ -759,6 +844,10 @@ void CameraSettingsDialog::onLoadUserSet0() {
 
 void CameraSettingsDialog::onLoadUserSet1() {
     loadUserSet("UserSet1", "TRIGGER 모드");
+    
+    // 버튼 스타일 업데이트 - UserSet1 초록색, UserSet0 빨간색
+    loadUserSet0Btn->setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 10px; }");
+    loadUserSet1Btn->setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 10px; }");
     
     // UserSet1 로드 후: 트리거 버튼 활성화
     triggerToggleBtn->setEnabled(true);
@@ -942,7 +1031,18 @@ void CameraSettingsDialog::onStartTriggerTest() {
         triggerIndicatorLabel->setText("Ready!");
         triggerIndicatorLabel->setStyleSheet("QLabel { background-color: #FFC107; border: 2px solid #FFA000; border-radius: 5px; color: #333; font-weight: bold; font-size: 11px; }");
         
-        triggerTestTimer->start(500);
+        // 트리거 테스트 스레드 시작
+        triggerTestThreadRunning = true;
+        if (triggerTestThread) {
+            triggerTestThread->join();
+            delete triggerTestThread;
+        }
+        triggerTestThread = new std::thread([this]() {
+            while (liveImageThreadRunning && isTriggerTesting) {
+                updateTriggerTestStatus();
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
+        });
         
     } catch (const std::exception& e) {
         triggerStatusLabel->setText("오류 발생");
@@ -954,7 +1054,12 @@ void CameraSettingsDialog::onStartTriggerTest() {
 
 void CameraSettingsDialog::onStopTriggerTest() {
     isTriggerTesting = false;
-    triggerTestTimer->stop();
+    triggerTestThreadRunning = false;
+    if (triggerTestThread && triggerTestThread->joinable()) {
+        triggerTestThread->join();
+        delete triggerTestThread;
+        triggerTestThread = nullptr;
+    }
     
     triggerToggleBtn->setText("트리거 테스트 시작");
     triggerToggleBtn->setStyleSheet(
@@ -975,11 +1080,6 @@ void CameraSettingsDialog::onStopTriggerTest() {
     
     triggerIndicatorLabel->setText("Done!");
     triggerIndicatorLabel->setStyleSheet("QLabel { background-color: #4CAF50; border: 2px solid #388E3C; border-radius: 5px; color: white; font-weight: bold; font-size: 11px; }");
-    
-    // 라이브 영상 타이머 재시작
-    if (liveImageTimer) {
-        liveImageTimer->start(33);  // ~30fps로 라이브 영상 다시 시작
-    }
 }
 
 void CameraSettingsDialog::onTriggerTestTimeout() {
@@ -1042,9 +1142,9 @@ void CameraSettingsDialog::updateTriggerTestStatus() {
         Spinnaker::ImagePtr pImage = nullptr;
         
         try {
-            // 짧은 타임아웃 (50ms) - 빠른 응답성
+            // 짧은 타임아웃 (1ms) - 빠른 응답성과 프레임 레이그 제거
             // 실패해도 예외 아님 (타임아웃은 정상)
-            pImage = camera->GetNextImage(50);
+            pImage = camera->GetNextImage(1);
         } catch (...) {
             // 타임아웃 예외는 무시
             pImage = nullptr;
@@ -1118,14 +1218,15 @@ void CameraSettingsDialog::updateTriggerTestStatus() {
                 // 무시
             }
             
-            QTimer::singleShot(300, [this]() {
+            // 상태 업데이트 (메인 스레드에서)
+            QMetaObject::invokeMethod(this, [this]() {
                 if (isTriggerTesting) {
                     triggerStatusLabel->setText("Ready!");
                     triggerStatusLabel->setStyleSheet("QLabel { font-weight: bold; color: #2196F3; font-size: 13px; }");
                     triggerIndicatorLabel->setText("Ready!");
                     triggerIndicatorLabel->setStyleSheet("QLabel { background-color: #FFC107; border: 2px solid #FFA000; border-radius: 5px; color: #333; font-weight: bold; font-size: 11px; }");
                 }
-            });
+            }, Qt::QueuedConnection);
         } else {
             // 타임아웃 또는 불완전한 이미지 - 정상 (트리거 아직 안 받음)
             if (pImage) {

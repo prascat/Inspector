@@ -2625,13 +2625,6 @@ void CameraView::paintEvent(QPaintEvent *event) {
             if (pattern.id == selectedPatternId) {
                 QVector<QPoint> corners = getRotatedCorners();
                 if (corners.size() == 4) {
-                    // 🔥 검사 전 ROI 크기 디버그 (선택된 패턴만)
-                    if (pattern.type == PatternType::ROI) {
-                        QRect boundingRect = QPolygon(corners).boundingRect();
-                        qDebug() << "🔥 [검사 전] ROI 패턴" << pattern.name 
-                                 << "원본 rect:" << pattern.rect 
-                                 << "화면 bounding:" << boundingRect;
-                    }
                     QPolygon poly;
                     for (const QPoint& pt : corners) poly << pt;
                     

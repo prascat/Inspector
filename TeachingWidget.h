@@ -74,6 +74,7 @@ public:
     
 signals:
     void frameGrabbed(const cv::Mat& frame, int cameraIndex);  // 카메라 인덱스 추가
+    void triggerSignalReceived(const cv::Mat& frame, int cameraIndex);  // 트리거 신호 수신
     
 protected:
     void run() override;
@@ -184,8 +185,6 @@ public:
     
     // TEACH 모드 관련
     void onTeachModeToggled(bool checked);
-    void onCameraModeToggled(bool checked);
-    bool switchUserSet(bool isInspectMode);
     void setTeachingButtonsEnabled(bool enabled);
     LogViewer* getLogViewer() const { return logViewer; }
     
@@ -221,6 +220,7 @@ signals:
     void patternSelectionChanged(int patternIndex);
     
 private slots:
+    void onTriggerSignalReceived(const cv::Mat& frame, int cameraIndex);
     void updateUITexts();
     void openLanguageSettings();
     void showCameraSettings();
@@ -246,7 +246,7 @@ private slots:
     void syncPatternsFromCameraView();
     void switchToRecipeMode();
     void switchToTestMode();
-    bool runInspection(const cv::Mat& frame, int specificCameraIndex = -1);
+    bool runInspect(const cv::Mat& frame, int specificCameraIndex = -1);
     void onBackButtonClicked();
     
     // 카메라 모드 슬롯들 (camOn/camOff)
@@ -314,7 +314,6 @@ private:
     QPushButton* modeToggleButton = nullptr;
     QPushButton* teachModeButton = nullptr;  // TEACH ON/OFF 버튼 추가
     QPushButton* startCameraButton = nullptr;
-    QPushButton* cameraModeButton = nullptr;  // LIVE/INSPECT 모드 토글 버튼 추가
     QPushButton* runStopButton = nullptr;
     QPushButton* saveRecipeButton = nullptr;
     QPushButton* addPatternButton = nullptr;

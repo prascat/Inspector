@@ -608,9 +608,14 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
     }
     
     if (pattern.templateImage.isNull()) {
-        logDebug(QString("FID 패턴 '%1': 템플릿 이미지가 없음").arg(pattern.name));
+        logDebug(QString("❌ FID 패턴 '%1': 템플릿 이미지가 없음 (NULL)").arg(pattern.name));
         return false;
     }
+    
+    logDebug(QString("✅ FID 패턴 '%1': 템플릿 이미지 크기=%2x%3")
+            .arg(pattern.name)
+            .arg(pattern.templateImage.width())
+            .arg(pattern.templateImage.height()));
     
     try {
         // **수정**: 저장된 템플릿 이미지를 그대로 사용 (0도 상태의 사각형 이미지)
