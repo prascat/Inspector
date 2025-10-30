@@ -209,7 +209,7 @@ void CameraGrabberThread::run()
                         auto spinCamera = parent->m_spinCameras[m_cameraIndex];
                         if (spinCamera && spinCamera->IsInitialized()) {
                             
-                            // **트리거 모드에서 매번 acquisition 상태 확인 및 재시작**
+                            // **트리거 모드 확인**
                             try {
                                 Spinnaker::GenApi::INodeMap& nodeMap = spinCamera->GetNodeMap();
                                 Spinnaker::GenApi::CEnumerationPtr ptrTriggerMode = nodeMap.GetNode("TriggerMode");
@@ -221,35 +221,24 @@ void CameraGrabberThread::run()
                                     QString triggerModeStr = QString::fromStdString(ptrTriggerMode->GetCurrentEntry()->GetSymbolic().c_str());
                                     QString acqModeStr = QString::fromStdString(ptrAcquisitionMode->GetCurrentEntry()->GetSymbolic().c_str());
                                     
-                                    // 트리거 + SingleFrame 모드: 매번 acquisition 상태 확인
+                                    // **트리거 모드: 프레임 요청 금지, acquisition만 준비 후 대기**
                                     if (triggerModeStr == "On" && acqModeStr == "SingleFrame") {
                                         bool wasStreaming = spinCamera->IsStreaming();
                                         if (!wasStreaming) {
                                             spinCamera->BeginAcquisition();
-                                            qDebug() << "🔄 [THREAD] 트리거 모드 - acquisition 시작 (스트리밍 상태:" << wasStreaming << ")";
-                                        } else {
-                                            qDebug() << "🔍 [THREAD] 트리거 모드 - acquisition 이미 활성 (스트리밍 상태:" << wasStreaming << ")";
                                         }
+                                        // 트리거 신호 대기 - 아무것도 하지 않음
+                                        msleep(100); // CPU 점유 방지
+                                        continue; // 프레임 요청 스킵
                                     }
                                 }
                             } catch (Spinnaker::Exception& e) {
-                                qDebug() << "[CameraGrabberThread] acquisition 상태 확인 오류:" << e.what();
+                                // 무시
                             }
                             
-                            // 이미지 획득 시도
+                            // **LIVE 모드에서만 프레임 요청**
                             frame = parent->grabFrameFromSpinnakerCamera(spinCamera);
                             grabbed = !frame.empty();
-                            
-                            if (grabbed) {
-                                qDebug() << "✅ [THREAD] 이미지 획득 성공 - 프레임 크기:" << frame.cols << "x" << frame.rows;
-                            } else {
-                                // 트리거 모드에서는 타임아웃이 정상이므로 너무 자주 로그 찍지 않음
-                                static int noFrameCount = 0;
-                                noFrameCount++;
-                                if (noFrameCount % 10 == 0) { // 10번마다 한 번만 로그
-                                    qDebug() << "⏰ [THREAD] 이미지 없음 (트리거 대기 중...) - 카운트:" << noFrameCount;
-                                }
-                            }
                             
                             // CAM ON 모드에서는 연속 촬영만 수행 (자동 검사 없음)
                             // 트리거 기반 자동 검사는 별도 기능으로 분리
@@ -6365,7 +6354,54 @@ void TeachingWidget::startCamera() {
         }
     } 
     
-    // 10. 패턴 트리 업데이트 (라이브 모드 시작 시 현재 카메라 패턴 표시)
+    // 10. **Spinnaker 카메라의 실제 트리거 모드 감지 및 cameraModeButton 상태 설정**
+#ifdef USE_SPINNAKER
+    if (m_useSpinnaker && cameraIndex >= 0 && cameraIndex < static_cast<int>(m_spinCameras.size())) {
+        auto spinCamera = m_spinCameras[cameraIndex];
+        if (spinCamera && spinCamera->IsInitialized()) {
+            try {
+                Spinnaker::GenApi::INodeMap& nodeMap = spinCamera->GetNodeMap();
+                Spinnaker::GenApi::CEnumerationPtr ptrTriggerMode = nodeMap.GetNode("TriggerMode");
+                Spinnaker::GenApi::CEnumerationPtr ptrAcquisitionMode = nodeMap.GetNode("AcquisitionMode");
+                
+                if (Spinnaker::GenApi::IsReadable(ptrTriggerMode) && 
+                    Spinnaker::GenApi::IsReadable(ptrAcquisitionMode)) {
+                    
+                    QString triggerModeStr = QString::fromStdString(ptrTriggerMode->GetCurrentEntry()->GetSymbolic().c_str());
+                    QString acqModeStr = QString::fromStdString(ptrAcquisitionMode->GetCurrentEntry()->GetSymbolic().c_str());
+                    
+                    qDebug() << "[startCamera] Spinnaker 카메라 감지됨";
+                    qDebug() << "[startCamera] TriggerMode:" << triggerModeStr;
+                    qDebug() << "[startCamera] AcquisitionMode:" << acqModeStr;
+                    
+                    // 트리거 모드 + SingleFrame = INSPECT 모드 (검사 모드)
+                    // 아니면 = LIVE 모드 (연속 촬영)
+                    bool isTriggerMode = (triggerModeStr == "On" && acqModeStr == "SingleFrame");
+                    
+                    if (cameraModeButton) {
+                        cameraModeButton->blockSignals(true);
+                        cameraModeButton->setChecked(isTriggerMode);  // 트리거면 true (INSPECT), 아니면 false (LIVE)
+                        
+                        if (isTriggerMode) {
+                            cameraModeButton->setText("INSPECT");
+                            cameraModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_LIVE_COLOR, UIColors::BTN_INSPECT_COLOR, true));
+                            qDebug() << "[startCamera] ✓ 카메라 설정에 따라 INSPECT 모드로 설정됨";
+                        } else {
+                            cameraModeButton->setText("LIVE");
+                            cameraModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_LIVE_COLOR, UIColors::BTN_INSPECT_COLOR, false));
+                            qDebug() << "[startCamera] ✓ 카메라 설정에 따라 LIVE 모드로 설정됨";
+                        }
+                        cameraModeButton->blockSignals(false);
+                    }
+                }
+            } catch (Spinnaker::Exception& e) {
+                qDebug() << "[startCamera] 카메라 트리거 모드 감지 오류:" << e.what();
+            }
+        }
+    }
+#endif
+    
+    // 11. 패턴 트리 업데이트 (라이브 모드 시작 시 현재 카메라 패턴 표시)
     updatePatternTree();
     
 }
@@ -9072,25 +9108,6 @@ cv::Mat TeachingWidget::grabFrameFromSpinnakerCamera(Spinnaker::CameraPtr& camer
         
         Spinnaker::ImagePtr spinImage = camera->GetNextImage(timeout);
         
-        // 트리거 모드에서 이미지 획득 결과 로그
-        try {
-            Spinnaker::GenApi::INodeMap& nodeMap = camera->GetNodeMap();
-            Spinnaker::GenApi::CEnumerationPtr ptrTriggerMode = nodeMap.GetNode("TriggerMode");
-            
-            if (Spinnaker::GenApi::IsReadable(ptrTriggerMode)) {
-                QString triggerModeStr = QString::fromStdString(ptrTriggerMode->GetCurrentEntry()->GetSymbolic().c_str());
-                if (triggerModeStr == "On") {
-                    if (spinImage && !spinImage->IsIncomplete()) {
-                        qDebug() << "🎯 [TRIGGER] 이미지 획득 성공! 크기:" << spinImage->GetWidth() << "x" << spinImage->GetHeight();
-                    } else {
-                        qDebug() << "⏰ [TRIGGER] 트리거 대기 중... (타임아웃:" << timeout << "ms)";
-                    }
-                }
-            }
-        } catch (...) {
-            // 무시
-        }
-        
         // 완전한 이미지인지 확인
         if (!spinImage || spinImage->IsIncomplete()) {
             if (spinImage) {
@@ -9111,7 +9128,6 @@ cv::Mat TeachingWidget::grabFrameFromSpinnakerCamera(Spinnaker::CameraPtr& camer
                                     QString acqModeStr = QString::fromStdString(ptrAcquisitionMode->GetCurrentEntry()->GetSymbolic().c_str());
                                     if (acqModeStr == "SingleFrame") {
                                         camera->BeginAcquisition();
-                                        qDebug() << "[grabFrame] 🔄 트리거 모드 - acquisition 재시작 (타임아웃 후)";
                                     }
                                 }
                             }
@@ -9120,7 +9136,7 @@ cv::Mat TeachingWidget::grabFrameFromSpinnakerCamera(Spinnaker::CameraPtr& camer
                         }
                     }
                 } catch (Spinnaker::Exception& e) {
-                    qDebug() << "[grabFrame] 트리거 모드 처리 오류:" << e.what();
+                    // 무시
                 }
             }
             return cvImage;
@@ -9187,7 +9203,7 @@ cv::Mat TeachingWidget::grabFrameFromSpinnakerCamera(Spinnaker::CameraPtr& camer
                 }
             }
         } catch (Spinnaker::Exception& e) {
-            qDebug() << "❌ [TRIGGER] acquisition 재시작 오류:" << e.what();
+            // 무시
         }
         
         // ===== 라이브 영상을 카메라 설정 다이얼로그에 전달 =====
