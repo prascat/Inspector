@@ -191,6 +191,135 @@ make -j4
 - **Memory Management**: Reduced memory footprint for embedded systems
 - **Network Optimization**: Efficient data transfer for distributed systems
 
+## FLIR Camera Integration
+
+### Supported Camera
+**FLIR Blackfly S (BFS-U3-16S2C)**
+
+#### Camera Specifications
+- **Resolution**: 2048 × 2048 pixels
+- **Pixel Size**: 5.5 μm
+- **Sensor Type**: Global Shutter CMOS
+- **Max Frame Rate**: 30 FPS @ full resolution
+- **Color Output**: RGB24 (Bayer RG8 sensor with demosaicing)
+- **Interface**: USB 3.0 Super Speed
+- **Power Supply**: USB Bus Power
+- **Operating Temperature**: 0 ~ 40°C
+- **ROI (Region of Interest)**: Supported for optimized capture
+- **Trigger Modes**: Hardware trigger (Line-based) and Software trigger
+
+#### Integration Method
+- **SDK**: FLIR Spinnaker SDK 4.2.0.88+
+- **API Level**: GenICam (GenApi) with full node map access
+- **Streaming Protocol**: USB3Vision (USB3V)
+
+### UserSet Configuration System
+
+The software implements a sophisticated UserSet management system that matches FLIR SpinView functionality:
+
+#### UserSet Concepts
+
+**1. UserSetSelector** - Current Active UserSet
+```
+Currently selected UserSet for read/write operations
+- Determines which UserSet's parameters can be accessed
+- Example: UserSet0 selected → can read/write UserSet0 parameters
+- Used during: Parameter modification, UserSet loading
+```
+
+**2. UserSetDefault** - Boot-time Default UserSet
+```
+Automatically loaded when camera powers on
+- Persists across camera restart and application restart
+- Purpose: Consistent initial camera state
+- Example: Set UserSetDefault = UserSet0 → Camera always boots with LIVE mode settings
+- Configuration: Synchronized with SpinView for consistency
+```
+
+**3. FileAccessControl** - Parameter Modification Rights
+```
+Controls whether UserSet parameters can be modified
+- Read/Write: Full parameter modification capability
+- Read Only: Parameters locked (protective mode)
+- Purpose: Prevent accidental parameter changes
+- Configuration: Synchronized during UserSet load
+```
+
+#### UserSet Load Workflow
+
+```
+Application UserSet Load Process:
+1. Get NodeMap from Camera
+2. Check camera streaming state → Stop if streaming
+3. Set UserSetSelector to target UserSet (UserSet0 or UserSet1)
+4. Execute UserSetLoad command
+5. Set UserSetDefault to target UserSet (persistent)
+6. Set FileAccessControl to Read/Write (allow modifications)
+7. Refresh node cache (DeviceRegistersStreamingStart)
+8. Verify loaded parameters (TriggerMode, TriggerSource, etc.)
+9. Resume streaming if previously active
+
+Expected Output Log:
+[UserSet] UserSetDefault set to: UserSet0
+[UserSet] FileAccessControl set to Read/Write
+[UserSet] Current TriggerMode after load: On
+[UserSet] Current TriggerSource after load: Line0
+[UserSet] DeviceRegistersStreamingStart executed
+```
+
+#### Pre-configured UserSets
+
+**UserSet0 - LIVE Mode (Continuous Acquisition)**
+- **TriggerMode**: Off (free-running)
+- **AcquisitionMode**: Continuous
+- **FrameRate**: 30 FPS
+- **Purpose**: Real-time live preview and camera testing
+- **Use Case**: Pattern creation, template generation, manual inspection
+
+**UserSet1 - TRIGGER Mode (Triggered Acquisition)**
+- **TriggerMode**: On
+- **TriggerSource**: Line0 (hardware trigger input)
+- **TriggerSelector**: FrameStart
+- **AcquisitionMode**: SingleFrame
+- **Purpose**: Hardware-triggered production inspection
+- **Use Case**: Synchronized capture with external equipment, production line integration
+
+#### Camera Control Buttons
+
+**LIVE Mode (UserSet0) Load**
+- Loads continuous acquisition configuration
+- Enables real-time preview and manual inspection
+- Frame rate set to 30 FPS
+- Ideal for pattern design and camera calibration
+
+**TRIGGER Mode (UserSet1) Load**
+- Loads hardware-triggered acquisition configuration
+- Enables synchronization with external equipment (PLC, conveyor)
+- Waits for hardware trigger signal on Line0 input
+- Ideal for production line integration and automated inspection
+
+#### Hardware Trigger Connection
+
+**Blackfly S Connector Pinout (GPIO/Trigger)**
+- **Line0 Input**: Hardware trigger signal input
+- **Voltage Level**: TTL/LVCMOS compatible (0-5V logic)
+- **Signal Logic**: Rising edge trigger (default configuration)
+- **Debounce**: Built-in hardware debouncing (typically 10+ µs)
+
+#### Troubleshooting
+
+**Trigger Not Detected**
+1. Verify UserSet1 is loaded (check console: `[UserSet] Current TriggerMode after load: On`)
+2. Check hardware trigger wiring on Line0
+3. Verify trigger signal voltage (typically 0-5V logic level)
+4. Confirm trigger source configuration matches hardware connection
+
+**UserSet Load Failure**
+1. Check camera connection and power supply
+2. Verify camera is not in exclusive use by other application (SpinView)
+3. Check SDK version compatibility (Spinnaker 4.2.0.88+)
+4. Review console logs for specific error messages
+
 ---
 
 **© 2025 KM DigiTech. Machine Vision Processing Software. All rights reserved.**  

@@ -60,7 +60,7 @@
 class LogViewer;
 class SerialCommunication;
 class SerialSettingsDialog;
-class AITrainer;
+class CameraSettingsDialog;
 
 class CameraGrabberThread : public QThread {
     Q_OBJECT
@@ -582,7 +582,6 @@ private:
     // 처리기 및 로깅 관련
     InsProcessor* insProcessor;
     LogViewer* logViewer;
-    AITrainer* aiTrainer = nullptr;
     
     // 패턴 타입 선택 관련
     QWidget* patternTypeWidget;
@@ -619,6 +618,7 @@ private:
     // 시리얼 통신 관련
     SerialCommunication* serialCommunication = nullptr;
     SerialSettingsDialog* serialSettingsDialog = nullptr;
+    CameraSettingsDialog* cameraSettingsDialog = nullptr;  // 카메라 설정 다이얼로그
     
     // 패턴 백업 관련 (검사 중지 시 원래 상태로 복원용)
     QMap<QUuid, PatternInfo> originalPatternBackup; // 원본 패턴 정보 백업

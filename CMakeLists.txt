@@ -5,12 +5,32 @@ project(MV)  # 프로젝트 이름을 MV로 변경
 set(CMAKE_CXX_STANDARD 17)  # Qt6는 C++17 필요
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(CMAKE_PREFIX_PATH "/opt/homebrew/lib/cmake")  # Qt6 경로로 변경
 set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DDEBUG")
 
-# macOS에서 앱 번들이 아닌 일반 실행 파일로 빌드되도록 설정
-set(CMAKE_MACOSX_BUNDLE FALSE)
+# 플랫폼별 설정
+if(APPLE)
+    set(CMAKE_PREFIX_PATH "/opt/homebrew/lib/cmake")  # macOS Qt6 경로
+    set(CMAKE_MACOSX_BUNDLE FALSE)
+elseif(UNIX AND NOT APPLE)
+    # Ubuntu/Linux 설정 - Qt 6.9.3
+    set(CMAKE_PREFIX_PATH "/home/km/Qt/6.9.3/gcc_64;/home/km/Qt/6.9.3/gcc_64/lib/cmake")
+    set(Qt6_DIR "/home/km/Qt/6.9.3/gcc_64/lib/cmake/Qt6")
+    message(STATUS "Linux platform detected - Qt 6.9.3 at /home/km/Qt/6.9.3/gcc_64")
+endif()
+
+# 플랫폼별 추가 설정
+if(APPLE)
+    # macOS용 OpenCV 경로 설정 (필요시)
+elseif(UNIX AND NOT APPLE)
+    # Ubuntu/Linux용 OpenCV 경로 설정
+    set(OpenCV_DIR "/usr/local/lib/cmake/opencv4")
+    if(NOT EXISTS "${OpenCV_DIR}")
+        set(OpenCV_DIR "/usr/lib/cmake/opencv4")
+    endif()
+    # OpenCV 라이브러리 경로 추가
+    link_directories(/usr/local/lib)
+endif()
 
 # Qt6 Widgets 패키지 찾기
 find_package(Qt6 REQUIRED COMPONENTS Widgets Xml Network SerialPort)
@@ -19,7 +39,11 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Xml Network SerialPort)
 find_package(OpenCV REQUIRED)
 
 # 헤더 파일 경로 추가
-include_directories(${OpenCV_INCLUDE_DIRS})
+if(UNIX AND NOT APPLE)
+    include_directories(${OpenCV_INCLUDE_DIRS} /usr/local/include/opencv4)
+else()
+    include_directories(${OpenCV_INCLUDE_DIRS})
+endif()
 
 # AUTOMOC 활성화
 set(CMAKE_AUTOMOC ON)
@@ -116,6 +140,12 @@ if(USE_SPINNAKER)
                 list(APPEND EXTRA_LIBS ${SPINNAKER_C_LIBRARY})
                 message(STATUS "  Spinnaker_C Library: ${SPINNAKER_C_LIBRARY}")
             endif()
+        elseif(UNIX AND NOT APPLE)
+            # Ubuntu/Linux에서 런타임 경로 설정
+            get_filename_component(SPINNAKER_LIB_DIR ${SPINNAKER_LIBRARY} DIRECTORY)
+            set(CMAKE_INSTALL_RPATH "${SPINNAKER_LIB_DIR}")
+            set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+            set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
         endif()
         
     else()
@@ -141,7 +171,6 @@ add_executable(MV
     LanguageSettingsDialog.cpp
     SerialSettingsDialog.cpp
     RecipeManager.cpp
-    AITrainer.cpp
     ConfigManager.cpp
     SerialCommunication.cpp
 )
@@ -217,6 +246,8 @@ endif()
 # OpenCV 디버그 정보 출력 (선택 사항)
 message(STATUS "OpenCV_LIBS: ${OpenCV_LIBS}")
 message(STATUS "Deploy directory: ${DEPLOY_DIR}")
+message(STATUS "Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 # 설치 타겟 설정 (make install 명령으로 실행)
 install(TARGETS MV 

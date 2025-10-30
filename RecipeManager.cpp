@@ -158,13 +158,13 @@ bool RecipeManager::saveRecipe(const QString& fileName,
                     QXmlStreamReader existingXml(&existingFile);
                     while (!existingXml.atEnd()) {
                         existingXml.readNext();
-                        if (existingXml.isStartElement() && existingXml.name() == "Camera") {
+                        if (existingXml.isStartElement() && existingXml.name() == QLatin1String("Camera")) {
                             QString existingUuid = existingXml.attributes().value("uuid").toString();
                             if (existingUuid == currentUuid) {
                                 // 같은 UUID의 카메라를 찾았으면 시뮬레이션 데이터 읽기
-                                while (!existingXml.atEnd() && !(existingXml.isEndElement() && existingXml.name() == "Camera")) {
+                                while (!existingXml.atEnd() && !(existingXml.isEndElement() && existingXml.name() == QLatin1String("Camera"))) {
                                     existingXml.readNext();
-                                    if (existingXml.isStartElement() && existingXml.name() == "simulationData") {
+                                    if (existingXml.isStartElement() && existingXml.name() == QLatin1String("simulationData")) {
                                         QString existingSimData = existingXml.readElementText();
                                         QJsonDocument existingDoc = QJsonDocument::fromJson(existingSimData.toUtf8());
                                         if (!existingDoc.isNull() && existingDoc.isObject()) {
@@ -429,7 +429,7 @@ bool RecipeManager::loadRecipe(const QString& fileName,
         }
         
         qDebug() << QString("루트 요소 이름: %1").arg(xml.name().toString());
-        if (xml.name() != "Recipe") {
+        if (xml.name() != QLatin1String("Recipe")) {
             throw QString(QString("유효하지 않은 레시피 파일 형식입니다. 루트 요소: %1").arg(xml.name().toString()));
         }
         
@@ -453,10 +453,10 @@ bool RecipeManager::loadRecipe(const QString& fileName,
         
         // Recipe 내부에서 Cameras 태그 찾기
         while (xml.readNextStartElement()) {
-            if (xml.name() == "Cameras") {
+            if (xml.name() == QLatin1String("Cameras")) {
                 // 각 카메라별 레시피 읽기
                 while (xml.readNextStartElement()) {
-                    if (xml.name() == "Camera") {
+                    if (xml.name() == QLatin1String("Camera")) {
                         if (!readCameraSection(xml, cameraInfos, calibrationMap, cameraView, patternTree,
                                              childrenMap, itemMap, totalLoadedPatterns, loadedCameraNames, trainingImageCallback, teachingWidget)) {
                         }
@@ -973,14 +973,14 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
     
     try {
         while (xml.readNextStartElement()) {
-            if (xml.name() == "Calibration") {
+            if (xml.name() == QLatin1String("Calibration")) {
                 CalibrationInfo calibInfo = readCalibrationInfo(xml);
                 calibrationMap[cameraUuid] = calibInfo;
             }
-            else if (xml.name() == "Patterns") {
+            else if (xml.name() == QLatin1String("Patterns")) {
                 // Patterns 컨테이너 내부의 Pattern들 읽기
                 while (xml.readNextStartElement()) {
-                    if (xml.name() == "Pattern") {
+                    if (xml.name() == QLatin1String("Pattern")) {
                         // **부모 패턴 읽기**
                         PatternInfo pattern = readPattern(xml, cameraUuid);
                         
@@ -1012,7 +1012,7 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                     }
                 }
             }
-            else if (xml.name() == "simulationData") {
+            else if (xml.name() == QLatin1String("simulationData")) {
                 // 시뮬레이션 데이터에서 학습 이미지 경로 읽기
                 QString jsonData = xml.readElementText();
                 QJsonDocument jsonDoc = QJsonDocument::fromJson(jsonData.toUtf8());
@@ -1122,7 +1122,7 @@ QStringList RecipeManager::readChildPatterns(QXmlStreamReader& xml, const QStrin
     QStringList childIds;
     
     while (xml.readNextStartElement()) {
-        if (xml.name() == "Pattern") {
+        if (xml.name() == QLatin1String("Pattern")) {
             // **자식 패턴을 재귀적으로 읽기**
             PatternInfo childPattern = readPattern(xml, cameraUuid);
             
@@ -1185,32 +1185,32 @@ PatternInfo RecipeManager::readPattern(QXmlStreamReader& xml, const QString& cam
         }
         
         while (xml.readNextStartElement()) {
-            if (xml.name() == "Rect") {
+            if (xml.name() == QLatin1String("Rect")) {
                 readPatternRect(xml, pattern);
             }
-            else if (xml.name() == "Details") {
+            else if (xml.name() == QLatin1String("Details")) {
                 qDebug() << QString("Details 태그 발견: %1, 패턴타입: %2").arg(xml.name().toString()).arg(static_cast<int>(pattern.type));
                 readPatternDetails(xml, pattern);
             }
-            else if (xml.name() == "FIDDetails") {
+            else if (xml.name() == QLatin1String("FIDDetails")) {
                 qDebug() << QString("==> FIDDetails 직접 처리 시작: %1").arg(pattern.name);
                 readFIDDetails(xml, pattern);
                 qDebug() << QString("==> FIDDetails 직접 처리 완료: %1").arg(pattern.name);
             }
-            else if (xml.name() == "INSDetails") {
+            else if (xml.name() == QLatin1String("INSDetails")) {
                 qDebug() << QString("==> INSDetails 직접 처리 시작: %1").arg(pattern.name);
                 readINSDetails(xml, pattern);
                 qDebug() << QString("==> INSDetails 직접 처리 완료: %1").arg(pattern.name);
             }
-            else if (xml.name() == "ROIDetails") {
+            else if (xml.name() == QLatin1String("ROIDetails")) {
                 qDebug() << QString("==> ROIDetails 직접 처리 시작: %1").arg(pattern.name);
                 readROIDetails(xml, pattern);
                 qDebug() << QString("==> ROIDetails 직접 처리 완료: %1").arg(pattern.name);
             }
-            else if (xml.name() == "Filters") {
+            else if (xml.name() == QLatin1String("Filters")) {
                 readPatternFilters(xml, pattern);
             }
-            else if (xml.name() == "ChildPatterns" || xml.name() == "Children") {
+            else if (xml.name() == QLatin1String("ChildPatterns") || xml.name() == QLatin1String("Children")) {
                 // **자식 패턴들 읽기 - 여기가 핵심!**
                 QStringList childIdStrings = readChildPatterns(xml, cameraUuid, pattern.id);
                 for (const QString& childIdStr : childIdStrings) {
@@ -1259,15 +1259,15 @@ void RecipeManager::readPatternDetails(QXmlStreamReader& xml, PatternInfo& patte
     while (xml.readNextStartElement()) {
         qDebug() << QString("Details 내부 요소: %1 (패턴: %2)").arg(xml.name().toString()).arg(pattern.name);
         
-        if (xml.name() == "ROIDetails") {
+        if (xml.name() == QLatin1String("ROIDetails")) {
             readROIDetails(xml, pattern);
         }
-        else if (xml.name() == "FIDDetails") {
+        else if (xml.name() == QLatin1String("FIDDetails")) {
             qDebug() << QString("==> FIDDetails 처리 시작: %1").arg(pattern.name);
             readFIDDetails(xml, pattern);
             qDebug() << QString("==> FIDDetails 처리 완료: %1").arg(pattern.name);
         }
-        else if (xml.name() == "INSDetails") {
+        else if (xml.name() == QLatin1String("INSDetails")) {
             qDebug() << QString("==> INSDetails 처리 시작: %1").arg(pattern.name);
             readINSDetails(xml, pattern);
             qDebug() << QString("==> INSDetails 처리 완료: %1").arg(pattern.name);
@@ -1390,14 +1390,14 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
 
 void RecipeManager::readPatternFilters(QXmlStreamReader& xml, PatternInfo& pattern) {
     while (xml.readNextStartElement()) {
-        if (xml.name() == "Filter") {
+        if (xml.name() == QLatin1String("Filter")) {
             FilterInfo filter;
             filter.type = xml.attributes().value("type").toInt();
             filter.enabled = xml.attributes().value("enabled").toString() != "false";
             
             // 파라미터 읽기
             while (xml.readNextStartElement()) {
-                if (xml.name() == "Param") {
+                if (xml.name() == QLatin1String("Param")) {
                     QString paramName = xml.attributes().value("name").toString();
                     int paramValue = xml.attributes().value("value").toInt();
                     filter.params[paramName] = paramValue;
@@ -1417,7 +1417,7 @@ void RecipeManager::readPatternFilters(QXmlStreamReader& xml, PatternInfo& patte
 QStringList RecipeManager::readPatternChildren(QXmlStreamReader& xml) {
     QStringList children;
     while (xml.readNextStartElement()) {
-        if (xml.name() == "Child") {
+        if (xml.name() == QLatin1String("Child")) {
             QString childId = xml.attributes().value("id").toString();
             if (!childId.isEmpty()) {
                 children.append(childId);
@@ -1835,24 +1835,24 @@ bool RecipeManager::loadRecipeByName(const QString& recipeName, QVector<PatternI
     
     try {
         // XML 루트 요소 확인 - 새 구조는 Recipe
-        if (!xml.readNextStartElement() || xml.name() != "Recipe") {
+        if (!xml.readNextStartElement() || xml.name() != QLatin1String("Recipe")) {
             throw QString("유효하지 않은 레시피 파일 형식입니다.");
         }
         
         // Recipe 내부에서 Cameras 태그 찾기
         while (xml.readNextStartElement()) {
-            if (xml.name() == "Cameras") {
+            if (xml.name() == QLatin1String("Cameras")) {
                 // 각 카메라별 레시피 읽기
                 while (xml.readNextStartElement()) {
-                    if (xml.name() == "Camera") {
+                    if (xml.name() == QLatin1String("Camera")) {
                         QString cameraUuid = xml.attributes().value("uuid").toString();
                         
                         // 카메라 내부의 Patterns 태그 찾기
                         while (xml.readNextStartElement()) {
-                            if (xml.name() == "Patterns") {
+                            if (xml.name() == QLatin1String("Patterns")) {
                                 // Patterns 내부의 Pattern들 처리
                                 while (xml.readNextStartElement()) {
-                                    if (xml.name() == "Pattern") {
+                                    if (xml.name() == QLatin1String("Pattern")) {
                                         PatternInfo pattern = readPattern(xml, cameraUuid);
                                         if (!pattern.id.isNull()) {
                                             patterns.append(pattern);
@@ -1986,16 +1986,16 @@ QStringList RecipeManager::getRecipeCameraUuids(const QString& recipeName)
         xml.readNext();
         
         if (xml.isStartElement()) {
-            if (xml.name() == "Cameras") {
+            if (xml.name() == QLatin1String("Cameras")) {
                 // Cameras 섹션에서 카메라 UUID들 읽기
                 while (!xml.atEnd()) {
                     xml.readNext();
                     
-                    if (xml.isEndElement() && xml.name() == "Cameras") {
+                    if (xml.isEndElement() && xml.name() == QLatin1String("Cameras")) {
                         break;
                     }
                     
-                    if (xml.isStartElement() && xml.name() == "Camera") {
+                    if (xml.isStartElement() && xml.name() == QLatin1String("Camera")) {
                         QXmlStreamAttributes attributes = xml.attributes();
                         QString uuid = attributes.value("uuid").toString();
                         if (!uuid.isEmpty() && !cameraUuids.contains(uuid)) {

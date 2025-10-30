@@ -3,7 +3,7 @@
 #include <QDebug>
 
 FilterPropertyWidget::FilterPropertyWidget(int filterType, QWidget* parent)
-    : QWidget(parent), filterType(filterType) {
+    : QWidget(parent), filterType(filterType), adaptiveGroup(nullptr) {
     setupUI();
 }
 
@@ -92,83 +92,19 @@ QComboBox* FilterPropertyWidget::addComboBox(const QString& name, const QString&
 
 void FilterPropertyWidget::setupThresholdUI() {
     // 이진화 타입 콤보박스
-    QComboBox* threshTypeCombo = addComboBox("thresholdType", "이진화 타입");
+    addComboBox("thresholdType", "이진화 타입");
+    QComboBox* threshTypeCombo = combos["thresholdType"];
+    
+    threshTypeCombo->blockSignals(true);
     threshTypeCombo->addItem("기본 이진화", cv::THRESH_BINARY);
     threshTypeCombo->addItem("역이진화", cv::THRESH_BINARY_INV);
     threshTypeCombo->addItem("절단", cv::THRESH_TRUNC);
     threshTypeCombo->addItem("Zero", cv::THRESH_TOZERO);
     threshTypeCombo->addItem("Zero Inv", cv::THRESH_TOZERO_INV);
-    threshTypeCombo->addItem("적응형 평균", THRESH_ADAPTIVE_MEAN);
-    threshTypeCombo->addItem("적응형 가우시안", THRESH_ADAPTIVE_GAUSSIAN);
+    threshTypeCombo->blockSignals(false);
     
     // 기본 임계값 슬라이더
     addSlider("threshold", "임계값", 0, 255, 128);
-    
-    // 적응형 이진화 파라미터 그룹
-    adaptiveGroup = new QGroupBox("적응형 파라미터", this);
-    QFormLayout* adaptiveLayout = new QFormLayout(adaptiveGroup);
-    
-    // 블록 크기 슬라이더 (적응형)
-    QSlider* blockSizeSlider = new QSlider(Qt::Horizontal, adaptiveGroup);
-    blockSizeSlider->setRange(3, 51);
-    blockSizeSlider->setSingleStep(2);
-    blockSizeSlider->setValue(11);
-    blockSizeSlider->setProperty("paramName", "blockSize");
-    
-    QLabel* blockSizeValueLabel = new QLabel(QString::number(11), adaptiveGroup);
-    blockSizeValueLabel->setMinimumWidth(30);
-    blockSizeValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    
-    QHBoxLayout* blockSizeLayout = new QHBoxLayout();
-    blockSizeLayout->addWidget(blockSizeSlider);
-    blockSizeLayout->addWidget(blockSizeValueLabel);
-    
-    adaptiveLayout->addRow("블록 크기:", blockSizeLayout);
-    
-    // C 상수 슬라이더 (적응형)
-    QSlider* cSlider = new QSlider(Qt::Horizontal, adaptiveGroup);
-    cSlider->setRange(-10, 30);
-    cSlider->setSingleStep(1);
-    cSlider->setValue(2);
-    cSlider->setProperty("paramName", "C");
-    
-    QLabel* cValueLabel = new QLabel(QString::number(2), adaptiveGroup);
-    cValueLabel->setMinimumWidth(30);
-    cValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    
-    QHBoxLayout* cLayout = new QHBoxLayout();
-    cLayout->addWidget(cSlider);
-    cLayout->addWidget(cValueLabel);
-    
-    adaptiveLayout->addRow("상수 C:", cLayout);
-    
-    mainLayout->addWidget(adaptiveGroup);
-    
-    sliders["blockSize"] = blockSizeSlider;
-    valueLabels["blockSize"] = blockSizeValueLabel;
-    sliders["C"] = cSlider;
-    valueLabels["C"] = cValueLabel;
-    
-    connect(blockSizeSlider, &QSlider::valueChanged, this, &FilterPropertyWidget::handleSliderValueChanged);
-    connect(cSlider, &QSlider::valueChanged, this, &FilterPropertyWidget::handleSliderValueChanged);
-    
-    // 초기 상태 설정 (적응형 파라미터 숨김)
-    adaptiveGroup->setVisible(false);
-    
-    // 이진화 타입 변경 시 적응형 파라미터 표시/숨김
-    connect(threshTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [=](int index) {
-        int type = threshTypeCombo->itemData(index).toInt();
-        bool isAdaptive = (type == THRESH_ADAPTIVE_MEAN || type == THRESH_ADAPTIVE_GAUSSIAN);
-        
-        // 일반 임계값 활성화/비활성화
-        if (sliders.contains("threshold")) {
-            sliders["threshold"]->setEnabled(!isAdaptive);
-            valueLabels["threshold"]->setEnabled(!isAdaptive);
-        }
-        
-        // 적응형 파라미터 그룹 표시/숨김
-        adaptiveGroup->setVisible(isAdaptive);
-    });
 }
 
 void FilterPropertyWidget::setupBlurUI() {

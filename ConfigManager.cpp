@@ -57,26 +57,26 @@ bool ConfigManager::loadConfig() {
             throw QString("XML 시작 요소를 읽을 수 없습니다.");
         }
         
-        if (xml.name() != "Config") {
+        if (xml.name() != QLatin1String("Config")) {
             throw QString("'Config' 요소를 찾을 수 없습니다.");
         }
         
         // 설정 읽기
         while (xml.readNextStartElement()) {
-            if (xml.name() == "Language") {
+            if (xml.name() == QLatin1String("Language")) {
                 m_language = xml.readElementText();
                 qDebug() << "[ConfigManager] 언어 설정 로드됨:" << m_language;
-            } else if (xml.name() == "AutoSave") {
+            } else if (xml.name() == QLatin1String("AutoSave")) {
                 QString value = xml.readElementText();
                 m_autoSave = (value.toLower() == "true");
                 qDebug() << "[ConfigManager] 자동저장 설정 로드됨:" << m_autoSave;
-            } else if (xml.name() == "LastRecipePath") {
+            } else if (xml.name() == QLatin1String("LastRecipePath")) {
                 m_lastRecipePath = xml.readElementText();
                 qDebug() << "[ConfigManager] 마지막 레시피 경로 로드됨:" << m_lastRecipePath;
-            } else if (xml.name() == "SerialPort") {
+            } else if (xml.name() == QLatin1String("SerialPort")) {
                 m_serialPort = xml.readElementText();
                 qDebug() << "[ConfigManager] 시리얼 포트 로드됨:" << m_serialPort;
-            } else if (xml.name() == "SerialBaudRate") {
+            } else if (xml.name() == QLatin1String("SerialBaudRate")) {
                 m_serialBaudRate = xml.readElementText().toInt();
                 qDebug() << "[ConfigManager] 시리얼 보드레이트 로드됨:" << m_serialBaudRate;
             } else {

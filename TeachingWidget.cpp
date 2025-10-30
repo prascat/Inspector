@@ -6,7 +6,6 @@
 #include "LanguageSettingsDialog.h"
 #include "SerialSettingsDialog.h"
 #include "SerialCommunication.h"
-#include "AITrainer.h"
 #include "LanguageManager.h"
 #include "RecipeManager.h"
 #include "ConfigManager.h"
@@ -467,18 +466,20 @@ void TeachingWidget::showCameraSettings() {
         cameraIndex = 0; // 첫 번째 카메라로 초기화
     }
     
-    // 카메라 설정 다이얼로그 생성
-    CameraSettingsDialog dialog(this);
-    
-    // Spinnaker 카메라들을 다이얼로그에 설정
+    // 카메라 설정 다이얼로그 생성 (멤버 변수로 관리)
+    if (!cameraSettingsDialog) {
+        cameraSettingsDialog = new CameraSettingsDialog(this);
+        
+        // Spinnaker 카메라들을 다이얼로그에 설정
 #ifdef USE_SPINNAKER
-    if (!m_spinCameras.empty()) {
-        dialog.setSpinnakerCameras(m_spinCameras);
-    }
+        if (!m_spinCameras.empty()) {
+            cameraSettingsDialog->setSpinnakerCameras(m_spinCameras);
+        }
 #endif
+    }
     
     // 다이얼로그 실행
-    dialog.exec();
+    cameraSettingsDialog->exec();
 }
 
 void TeachingWidget::deleRecipe() {
@@ -586,9 +587,6 @@ void TeachingWidget::openRecipe(bool autoMode) {
 
 void TeachingWidget::initBasicSettings() {
     insProcessor = new InsProcessor(this);
-    
-    // AI 트레이너 초기화
-    aiTrainer = new AITrainer(this);
     
     // camOff 모드 초기 설정
     camOff = true;
@@ -5988,8 +5986,6 @@ void TeachingWidget::detectCameras() {
             
             appendCameraInfo(info);
             connectedCameras++;
-            
-                        .arg(i + 1).arg(deviceIndex).arg(i);
         } else {
             delete capture;
         }
@@ -9194,6 +9190,11 @@ cv::Mat TeachingWidget::grabFrameFromSpinnakerCamera(Spinnaker::CameraPtr& camer
             qDebug() << "❌ [TRIGGER] acquisition 재시작 오류:" << e.what();
         }
         
+        // ===== 라이브 영상을 카메라 설정 다이얼로그에 전달 =====
+        if (cameraSettingsDialog && !cvImage.empty()) {
+            cameraSettingsDialog->updateLiveImageDisplay(cvImage);
+        }
+        
         return cvImage;
     }
     catch (Spinnaker::Exception& e) {
@@ -10119,37 +10120,7 @@ void TeachingWidget::onSimulationProjectSelected(const QString& projectName) {
     updatePatternTree();
     cameraView->update();
     
-    // AI 모델 존재 여부 체크 및 미리 로딩
-    if (aiTrainer) {
-        // 현재 로딩된 레시피와 다른 경우 이전 모델 정리
-        QString currentLoadedRecipe = getCurrentRecipeName();
-        if (!currentLoadedRecipe.isEmpty() && currentLoadedRecipe != projectName) {
-            qDebug() << "[TeachingWidget] Unloading previous model for recipe:" << currentLoadedRecipe;
-            aiTrainer->unloadModel(currentLoadedRecipe);
-        }
-        
-        // 모델 파일 존재 여부 확인
-        QString appBase = QDir::cleanPath(QCoreApplication::applicationDirPath());
-        QString candidate1 = QDir::cleanPath(appBase + "/models/" + projectName + "/model.ckpt");
-        QString candidate2 = QDir::cleanPath(QDir::currentPath() + "/models/" + projectName + "/model.ckpt");
-        bool modelExists = QFile::exists(candidate1) || QFile::exists(candidate2);
-        
-        if (modelExists) {
-            qDebug() << "[TeachingWidget] AI model found for recipe:" << projectName << "- starting pre-load";
-            // 상태바나 로그에 로딩 시작 표시
-            qDebug() << "[TeachingWidget] AI 모델 로딩 시작:" << projectName;
-            
-            // 비동기로 모델 로딩 (UI 블로킹 방지)
-            QTimer::singleShot(100, [this, projectName]() {
-                bool success = aiTrainer->loadModel(projectName);
-                if (success) {
-                    qDebug() << "[TeachingWidget] AI 모델 로딩 완료:" << projectName;
-                } else {
-                    qWarning() << "[TeachingWidget] AI 모델 로딩 실패:" << projectName;
-                }
-            });
-        }
-    }
+    // AI 모델 관련 코드 제거됨 (AITrainer 사용 중단)
 }
 
 QString TeachingWidget::getCurrentRecipeName() const {

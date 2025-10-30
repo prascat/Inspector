@@ -61,13 +61,13 @@ bool LanguageManager::loadLanguage(const QString& languageFile) {
             throw QString("XML 시작 요소를 읽을 수 없습니다.");
         }
         
-        if (xml.name() != "LanguageStrings") {
+        if (xml.name() != QLatin1String("LanguageStrings")) {
             throw QString("'LanguageStrings' 요소를 찾을 수 없습니다.");
         }
 
         // 언어별 문자열 읽기
         while (xml.readNextStartElement()) {
-            if (xml.name() == "String") {
+            if (xml.name() == QLatin1String("String")) {
                 QString key = xml.attributes().value("key").toString();
                 
                 if (key.isEmpty()) {
