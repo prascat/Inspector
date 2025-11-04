@@ -10,6 +10,10 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DDEBUG")
 
 # 플랫폼별 설정
 if(APPLE)
+    # macOS 배포 타겟 설정 (라이브러리와 일치)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "26.0" CACHE STRING "OS X deployment version" FORCE)
+    set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "macOS architectures" FORCE)
+    
     set(CMAKE_PREFIX_PATH "/opt/homebrew/lib/cmake")  # macOS Qt6 경로
     set(CMAKE_MACOSX_BUNDLE FALSE)
 elseif(UNIX AND NOT APPLE)
