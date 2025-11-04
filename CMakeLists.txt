@@ -201,13 +201,6 @@ add_custom_command(TARGET deploy POST_BUILD
     COMMENT "Copying executable to deploy directory"
 )
 
-# 필요한 디렉토리들 생성
-add_custom_command(TARGET deploy POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPLOY_DIR}/models
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPLOY_DIR}/results
-    COMMENT "Creating necessary directories"
-)
-
 # lang.xml 파일이 있으면 복사
 if(EXISTS "${CMAKE_SOURCE_DIR}/deploy/lang.xml")
     add_custom_command(TARGET deploy POST_BUILD
@@ -226,23 +219,6 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/deploy/config.xml")
     )
 endif()
 
-# Docker 관련 파일들이 있다면 복사 (선택사항)
-if(EXISTS "${CMAKE_SOURCE_DIR}/Dockerfile")
-    add_custom_command(TARGET deploy POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different 
-            ${CMAKE_SOURCE_DIR}/Dockerfile ${DEPLOY_DIR}/
-        COMMENT "Copying Dockerfile"
-    )
-endif()
-
-if(EXISTS "${CMAKE_SOURCE_DIR}/requirements.txt")
-    add_custom_command(TARGET deploy POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different 
-            ${CMAKE_SOURCE_DIR}/requirements.txt ${DEPLOY_DIR}/
-        COMMENT "Copying requirements.txt"
-    )
-endif()
-
 # OpenCV 디버그 정보 출력 (선택 사항)
 message(STATUS "OpenCV_LIBS: ${OpenCV_LIBS}")
 message(STATUS "Deploy directory: ${DEPLOY_DIR}")
@@ -252,14 +228,6 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 # 설치 타겟 설정 (make install 명령으로 실행)
 install(TARGETS MV 
     DESTINATION bin
-    COMPONENT runtime
-)
-
-install(DIRECTORY DESTINATION models
-    COMPONENT runtime
-)
-
-install(DIRECTORY DESTINATION results  
     COMPONENT runtime
 )
 
