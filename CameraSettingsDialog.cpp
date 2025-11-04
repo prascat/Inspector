@@ -1,4 +1,5 @@
 #include "CameraSettingsDialog.h"
+#include "CustomMessageBox.h"
 #include <QDebug>
 #include <chrono>
 #include <thread>
@@ -640,7 +641,8 @@ void CameraSettingsDialog::loadUserSet(const QString& userSetName, const QString
                     QString currentUserSet = QString::fromLocal8Bit(currentEntry->GetSymbolic().c_str());
                     if (currentUserSet == userSetName) {
                         qDebug() << "[UserSet] " << userSetName << " 이미 로드됨 - 스킵";
-                        QMessageBox::information(this, "정보", QString("%1 (%2)은 이미 로드되어 있습니다.").arg(modeName, userSetName));
+                        CustomMessageBox(this, CustomMessageBox::Information, "정보", 
+                                       QString("%1 (%2)은 이미 로드되어 있습니다.").arg(modeName, userSetName)).exec();
                         // 라이브 스레드 복구
                         if (wasLiveThreadRunning) {
                             liveImageThreadRunning = true;

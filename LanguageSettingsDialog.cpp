@@ -1,6 +1,7 @@
 #include "LanguageSettingsDialog.h"
 #include "LanguageManager.h"
 #include "ConfigManager.h"
+#include "CustomMessageBox.h"
 #include <QMessageBox>
 #include <QHBoxLayout>
 #include <QDebug>
@@ -122,7 +123,11 @@ void LanguageSettingsDialog::onApplyClicked() {
         }
         
         // 메시지 박스 표시
-        QMessageBox::information(this, TR("LANGUAGE_CHANGED"),
-                                TR("LANGUAGE_CHANGE_RESTART_INFO"));
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Information);
+        msgBox.setTitle(TR("LANGUAGE_CHANGED"));
+        msgBox.setMessage(TR("LANGUAGE_CHANGE_RESTART_INFO"));
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
     }
 }

@@ -1,6 +1,7 @@
 #include "SerialSettingsDialog.h"
 #include "SerialCommunication.h"
 #include "ConfigManager.h"
+#include "CustomMessageBox.h"
 #include <QMessageBox>
 #include <QDateTime>
 #include <QGroupBox>
@@ -219,7 +220,12 @@ void SerialSettingsDialog::connectToPort()
     int baudRate = baudRateSpinBox->value();
     
     if (selectedPortDisplay.isEmpty() || selectedPortDisplay == TR("NO_PORTS_AVAILABLE")) {
-        QMessageBox::warning(this, TR("WARNING"), TR("PLEASE_SELECT_PORT"));
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Warning);
+        msgBox.setTitle(TR("WARNING"));
+        msgBox.setMessage(TR("PLEASE_SELECT_PORT"));
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
         return;
     }
     
@@ -296,13 +302,23 @@ void SerialSettingsDialog::onErrorOccurred(const QString& error)
 void SerialSettingsDialog::sendTestCommand()
 {
     if (!serialComm || !serialComm->isConnected()) {
-        QMessageBox::warning(this, TR("WARNING"), TR("PLEASE_CONNECT_FIRST"));
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Warning);
+        msgBox.setTitle(TR("WARNING"));
+        msgBox.setMessage(TR("PLEASE_CONNECT_FIRST"));
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
         return;
     }
     
     QString command = testCommandLineEdit->text().trimmed();
     if (command.isEmpty()) {
-        QMessageBox::warning(this, TR("WARNING"), TR("PLEASE_ENTER_COMMAND"));
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Warning);
+        msgBox.setTitle(TR("WARNING"));
+        msgBox.setMessage(TR("PLEASE_ENTER_COMMAND"));
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
         return;
     }
     

@@ -10,17 +10,30 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DDEBUG")
 
 # 플랫폼별 설정
 if(APPLE)
+    # ===== macOS (Apple Silicon) 설정 =====
     # macOS 배포 타겟 설정 (라이브러리와 일치)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "26.0" CACHE STRING "OS X deployment version" FORCE)
     set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "macOS architectures" FORCE)
     
-    set(CMAKE_PREFIX_PATH "/opt/homebrew/lib/cmake")  # macOS Qt6 경로
-    set(CMAKE_MACOSX_BUNDLE FALSE)
+    # Qt6 경로 (Homebrew)
+    set(CMAKE_PREFIX_PATH "/opt/homebrew/lib/cmake")
+    set(CMAKE_MACOSX_BUNDLE TRUE)  # macOS GUI 앱 번들
+    
+    message(STATUS "macOS Build Configuration:")
+    message(STATUS "  Deployment Target: 26.0")
+    message(STATUS "  Architecture: arm64")
+    message(STATUS "  Qt6 Path: /opt/homebrew/lib/cmake")
+    message(STATUS "  Bundle: YES (GUI App)")
+    
 elseif(UNIX AND NOT APPLE)
-    # Ubuntu/Linux 설정 - Qt 6.9.3
+    # ===== Linux (Ubuntu) 설정 =====
+    # Qt 6.9.3 경로 (custom installation)
     set(CMAKE_PREFIX_PATH "/home/km/Qt/6.9.3/gcc_64;/home/km/Qt/6.9.3/gcc_64/lib/cmake")
     set(Qt6_DIR "/home/km/Qt/6.9.3/gcc_64/lib/cmake/Qt6")
-    message(STATUS "Linux platform detected - Qt 6.9.3 at /home/km/Qt/6.9.3/gcc_64")
+    
+    message(STATUS "Linux Build Configuration:")
+    message(STATUS "  Qt6 Path: /home/km/Qt/6.9.3/gcc_64")
+    message(STATUS "  Linux platform detected - Qt 6.9.3 at /home/km/Qt/6.9.3/gcc_64")
 endif()
 
 # 플랫폼별 추가 설정
@@ -28,7 +41,8 @@ if(APPLE)
     # macOS용 OpenCV 경로 설정 (Homebrew)
     set(OpenCV_DIR "/opt/homebrew/opt/opencv/lib/cmake/opencv4")
     set(OpenCV_INCLUDE_DIRS "/opt/homebrew/opt/opencv/include/opencv4")
-    # 라이브러리 경로 추가
+    
+    # OpenCV 라이브러리 경로 추가
     link_directories(/opt/homebrew/opt/opencv/lib)
 elseif(UNIX AND NOT APPLE)
     # Ubuntu/Linux용 OpenCV 경로 설정
@@ -177,10 +191,12 @@ add_executable(MV
     RecipeManager.cpp
     ConfigManager.cpp
     SerialCommunication.cpp
+    CustomMessageBox.cpp
 )
 
 # Qt6, OpenCV 및 추가 라이브러리 연결
 target_link_libraries(MV 
+    PRIVATE
     Qt6::Widgets 
     Qt6::Xml
     Qt6::Network

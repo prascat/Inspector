@@ -759,10 +759,12 @@ void CameraView::showContextMenu(const QPoint& pos) {
         else if (selectedAction == ungroupAction) {
             if (pattern->type == PatternType::FID && !pattern->childIds.isEmpty()) {
                 // 그룹 해제 확인
-                QMessageBox::StandardButton reply = UIColors::showQuestion(this, "그룹 해제 확인", 
-                                                                  QString("'%1' 그룹을 해제하시겠습니까?\n그룹 내 모든 패턴이 독립적으로 변경됩니다.").arg(pattern->name),
-                                                                  QMessageBox::Yes | QMessageBox::No,
-                                                                  QMessageBox::No);
+                CustomMessageBox msgBox(this);
+                msgBox.setIcon(CustomMessageBox::Question);
+                msgBox.setTitle("그룹 해제 확인");
+                msgBox.setMessage(QString("'%1' 그룹을 해제하시겠습니까?\n그룹 내 모든 패턴이 독립적으로 변경됩니다.").arg(pattern->name));
+                msgBox.setButtons(QMessageBox::Yes | QMessageBox::No);
+                QMessageBox::StandardButton reply = static_cast<QMessageBox::StandardButton>(msgBox.exec());
                 
                 if (reply == QMessageBox::Yes) {
                     QList<QUuid> childIds = pattern->childIds;
@@ -1077,25 +1079,37 @@ void CameraView::groupPatternsInSelection(const QList<QUuid>& patternIds) {
     if (!roiPatternId.isNull()) {
         // ROI가 1개보다 많으면 그룹화 불가
         if (roiCount > 1) {
-            UIColors::showWarning(this, "그룹화 실패", 
-                              "선택 영역 내에 ROI 패턴이 여러 개 있습니다.\n"
+            CustomMessageBox msgBox(this);
+            msgBox.setIcon(CustomMessageBox::Warning);
+            msgBox.setTitle("그룹화 실패");
+            msgBox.setMessage("선택 영역 내에 ROI 패턴이 여러 개 있습니다.\n"
                               "그룹화를 위해서는 정확히 하나의 ROI 패턴만 선택해야 합니다.");
+            msgBox.setButtons(QMessageBox::Ok);
+            msgBox.exec();
             return;
         }
         
         // FID가 없으면 그룹화 불가
         if (fidPatternId.isNull()) {
-            UIColors::showWarning(this, "그룹화 실패", 
-                              "ROI 기반 그룹화를 위해서는 FID 패턴이 필요합니다.\n"
+            CustomMessageBox msgBox(this);
+            msgBox.setIcon(CustomMessageBox::Warning);
+            msgBox.setTitle("그룹화 실패");
+            msgBox.setMessage("ROI 기반 그룹화를 위해서는 FID 패턴이 필요합니다.\n"
                               "선택 영역에 FID 패턴을 포함시켜 주세요.");
+            msgBox.setButtons(QMessageBox::Ok);
+            msgBox.exec();
             return;
         }
         
         // FID가 1개보다 많으면 그룹화 불가
         if (fidCount > 1) {
-            UIColors::showWarning(this, "그룹화 실패", 
-                              "선택 영역 내에 FID 패턴이 여러 개 있습니다.\n"
+            CustomMessageBox msgBox(this);
+            msgBox.setIcon(CustomMessageBox::Warning);
+            msgBox.setTitle("그룹화 실패");
+            msgBox.setMessage("선택 영역 내에 FID 패턴이 여러 개 있습니다.\n"
                               "ROI 기반 그룹화를 위해서는 정확히 하나의 FID 패턴만 선택해야 합니다.");
+            msgBox.setButtons(QMessageBox::Ok);
+            msgBox.exec();
             return;
         }
         
@@ -1146,30 +1160,47 @@ void CameraView::groupPatternsInSelection(const QList<QUuid>& patternIds) {
         // 그룹화 완료 알림 (ROI 기반)
         QString message = QString("ROI 기반 그룹화 완료:\n- ROI: 1개\n- FID: 1개\n- INS: %1개")
                                 .arg(insPatternIds.size());
-        UIColors::showInformation(this, "그룹화 완료", message);
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Information);
+        msgBox.setTitle("그룹화 완료");
+        msgBox.setMessage(message);
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
     }
     // ROI가 없는 경우: 기존 FID->INS 구조 유지
     else {
         // FID 패턴이 없으면 그룹화 불가
         if (fidPatternId.isNull()) {
-            QMessageBox::warning(this, "그룹화 실패", 
-                              "선택 영역 내에 FID 패턴이 없습니다.\n"
+            CustomMessageBox msgBox(this);
+            msgBox.setIcon(CustomMessageBox::Warning);
+            msgBox.setTitle("그룹화 실패");
+            msgBox.setMessage("선택 영역 내에 FID 패턴이 없습니다.\n"
                               "그룹화를 위해서는 하나의 FID 패턴이 필요합니다.");
+            msgBox.setButtons(QMessageBox::Ok);
+            msgBox.exec();
             return;
         }
         
         // FID 패턴이 1개보다 많으면 그룹화 불가
         if (fidCount > 1) {
-            QMessageBox::warning(this, "그룹화 실패", 
-                              "선택 영역 내에 FID 패턴이 여러 개 있습니다.\n"
+            CustomMessageBox msgBox(this);
+            msgBox.setIcon(CustomMessageBox::Warning);
+            msgBox.setTitle("그룹화 실패");
+            msgBox.setMessage("선택 영역 내에 FID 패턴이 여러 개 있습니다.\n"
                               "그룹화를 위해서는 정확히 하나의 FID 패턴만 선택해야 합니다.");
+            msgBox.setButtons(QMessageBox::Ok);
+            msgBox.exec();
             return;
         }
         
         // INS 패턴이 없으면 경고
         if (insPatternIds.isEmpty()) {
-            QMessageBox::information(this, "그룹화 완료", 
-                                  "FID 패턴이 그룹 헤더로 설정되었지만 추가된 INS 패턴이 없습니다.");
+            CustomMessageBox msgBox(this);
+            msgBox.setIcon(CustomMessageBox::Information);
+            msgBox.setTitle("그룹화 완료");
+            msgBox.setMessage("FID 패턴이 그룹 헤더로 설정되었지만 추가된 INS 패턴이 없습니다.");
+            msgBox.setButtons(QMessageBox::Ok);
+            msgBox.exec();
         }
         
         // 기존 FID->INS 그룹화 수행
@@ -1198,9 +1229,13 @@ void CameraView::groupPatternsInSelection(const QList<QUuid>& patternIds) {
         
         // 그룹화 완료 알림 (FID 기반)
         if (!insPatternIds.isEmpty()) {
-            QMessageBox::information(this, "그룹화 완료", 
-                                  QString("FID 기반 그룹화 완료: FID 패턴과 %1개의 INS 패턴이 그룹화되었습니다.")
+            CustomMessageBox msgBox(this);
+            msgBox.setIcon(CustomMessageBox::Information);
+            msgBox.setTitle("그룹화 완료");
+            msgBox.setMessage(QString("FID 기반 그룹화 완료: FID 패턴과 %1개의 INS 패턴이 그룹화되었습니다.")
                                   .arg(insPatternIds.size()));
+            msgBox.setButtons(QMessageBox::Ok);
+            msgBox.exec();
         }
     }
     
@@ -1304,7 +1339,12 @@ void CameraView::ungroupPatternsInSelection(const QList<QUuid>& patternIds) {
     
     // 그룹 해제할 패턴이 없으면 종료
     if (totalGroupsCount == 0) {
-         UIColors::showInformation(this, "그룹 해제 실패", "선택 영역 내에 그룹화된 패턴이 없습니다.");
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Information);
+        msgBox.setTitle("그룹 해제 실패");
+        msgBox.setMessage("선택 영역 내에 그룹화된 패턴이 없습니다.");
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
         return;
     }
     
@@ -1330,7 +1370,12 @@ void CameraView::ungroupPatternsInSelection(const QList<QUuid>& patternIds) {
                           .arg(totalChildrenCount);
     }
     
-    UIColors::showInformation(this, "그룹 해제 완료", message);
+    CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Information);
+    msgBox.setTitle("그룹 해제 완료");
+    msgBox.setMessage(message);
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
     
     // 패턴 테이블 갱신을 위한 시그널 발생
     emit patternsGrouped();

@@ -9,6 +9,7 @@
 #include "LanguageManager.h"
 #include "RecipeManager.h"
 #include "ConfigManager.h"
+#include "CustomMessageBox.h"
 #include <QTimer>
 #include <QProgressDialog>
 #include <QJsonObject>
@@ -408,8 +409,12 @@ void TeachingWidget::initializeLanguageSystem() {
 void TeachingWidget::showCameraSettings() {
     // 카메라 스레드가 실행 중인지 확인
     if (!cameraThreads.isEmpty()) {
-        UIColors::showWarning(this, "카메라 설정", 
-            "카메라가 실행 중입니다.\n카메라를 중지한 후 다시 시도해주세요.");
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Warning);
+        msgBox.setTitle("카메라 설정");
+        msgBox.setMessage("카메라가 실행 중입니다.\n카메라를 중지한 후 다시 시도해주세요.");
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
         return;
     }
     
@@ -418,7 +423,12 @@ void TeachingWidget::showCameraSettings() {
     
     // 카메라가 없으면 경고
     if (cameraInfos.isEmpty()) {
-        UIColors::showWarning(this, "카메라 설정", "연결된 카메라가 없습니다.");
+        CustomMessageBox msgBoxWarn(this);
+        msgBoxWarn.setIcon(CustomMessageBox::Warning);
+        msgBoxWarn.setTitle("카메라 설정");
+        msgBoxWarn.setMessage("연결된 카메라가 없습니다.");
+        msgBoxWarn.setButtons(QMessageBox::Ok);
+        msgBoxWarn.exec();
         return;
     }
     
@@ -441,7 +451,12 @@ void TeachingWidget::showCameraSettings() {
     
     // 카메라가 동작 중이면 차단
     if (!camOff) {
-        QMessageBox::warning(this, "경고", "카메라가 동작 중입니다.\n카메라를 OFF한 후 시도하세요.");
+        CustomMessageBox msgBoxWarn(this);
+        msgBoxWarn.setIcon(CustomMessageBox::Warning);
+        msgBoxWarn.setTitle("경고");
+        msgBoxWarn.setMessage("카메라가 동작 중입니다.\n카메라를 OFF한 후 시도하세요.");
+        msgBoxWarn.setButtons(QMessageBox::Ok);
+        msgBoxWarn.exec();
         return;
     }
     
@@ -452,7 +467,12 @@ void TeachingWidget::showCameraSettings() {
 void TeachingWidget::deleRecipe() {
    // 현재 카메라 정보 확인
     if (cameraInfos.isEmpty() || cameraIndex < 0 || cameraIndex >= cameraInfos.size()) {
-        UIColors::showWarning(this, "레시피 삭제 오류", "연결된 카메라가 없습니다.");
+        CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Warning);
+    msgBox.setTitle("레시피 삭제 오류");
+    msgBox.setMessage("연결된 카메라가 없습니다.");
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
         return;
     }
 
@@ -460,10 +480,12 @@ void TeachingWidget::deleRecipe() {
     QString cameraName = cameraInfos[cameraIndex].name;
     QString message = QString("현재 카메라(%1)의 모든 패턴과 레시피가 삭제됩니다.\n계속하시겠습니까?").arg(cameraName);
     
-    QMessageBox::StandardButton reply = UIColors::showQuestion(this, "레시피 삭제 확인", 
-                                                              message,
-                                                              QMessageBox::Yes | QMessageBox::No,
-                                                              QMessageBox::No);
+    CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Question);
+    msgBox.setTitle("레시피 삭제 확인");
+    msgBox.setMessage(message);
+    msgBox.setButtons(QMessageBox::Yes | QMessageBox::No);
+    QMessageBox::StandardButton reply = static_cast<QMessageBox::StandardButton>(msgBox.exec());
     
     if (reply != QMessageBox::Yes) {
         return;  // 사용자가 취소함
@@ -505,8 +527,12 @@ void TeachingWidget::deleRecipe() {
     saveRecipe();
     
     // 삭제 완료 메시지
-    UIColors::showInformation(this, "레시피 삭제 완료", 
-                           QString("현재 카메라(%1)의 모든 패턴이 삭제되었습니다.\n레시피 파일이 업데이트되었습니다.").arg(cameraName));
+    CustomMessageBox msgBoxInfo(this);
+    msgBoxInfo.setIcon(CustomMessageBox::Information);
+    msgBoxInfo.setTitle("레시피 삭제 완료");
+    msgBoxInfo.setMessage(QString("현재 카메라(%1)의 모든 패턴이 삭제되었습니다.\n레시피 파일이 업데이트되었습니다.").arg(cameraName));
+    msgBoxInfo.setButtons(QMessageBox::Ok);
+    msgBoxInfo.exec();
     
     // 카메라 뷰 업데이트
     cameraView->update();
@@ -517,7 +543,12 @@ void TeachingWidget::openRecipe(bool autoMode) {
     
     if (availableRecipes.isEmpty()) {
         if (!autoMode) {
-            UIColors::showInformation(this, "레시피 없음", "사용 가능한 레시피가 없습니다.");
+            CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Information);
+    msgBox.setTitle("레시피 없음");
+    msgBox.setMessage("사용 가능한 레시피가 없습니다.");
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
         } else {
             qDebug() << "사용 가능한 레시피가 없습니다.";
         }
@@ -881,7 +912,12 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                     btn->blockSignals(true);
                     btn->setChecked(false);
                     btn->blockSignals(false);
-                    UIColors::showWarning(this, "오류", "시스템이 초기화되지 않았습니다.");
+                    CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Warning);
+    msgBox.setTitle("오류");
+    msgBox.setMessage("시스템이 초기화되지 않았습니다.");
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
                     return;
                 }
                 
@@ -911,7 +947,12 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                         btn->blockSignals(true);
                         btn->setChecked(false);
                         btn->blockSignals(false);
-                        UIColors::showWarning(this, "검사 실패", "카메라 영상이 없습니다. 카메라를 시작해주세요.");
+                        CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Warning);
+    msgBox.setTitle("검사 실패");
+    msgBox.setMessage("카메라 영상이 없습니다. 카메라를 시작해주세요.");
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
                         return;
                     }
                 }
@@ -937,7 +978,12 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                     btn->blockSignals(true);
                     btn->setChecked(false);
                     btn->blockSignals(false);
-                    UIColors::showWarning(this, "검사 실패", "활성화된 패턴이 없습니다. 패턴을 추가하고 활성화하세요.");
+                    CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Warning);
+    msgBox.setTitle("검사 실패");
+    msgBox.setMessage("활성화된 패턴이 없습니다. 패턴을 추가하고 활성화하세요.");
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
                     return;
                 }
                 
@@ -1039,7 +1085,12 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                     btn->blockSignals(true);
                     btn->setChecked(false);
                     btn->blockSignals(false);
-                    UIColors::showCritical(this, "검사 오류", "검사 실행 중 알 수 없는 오류가 발생했습니다.");
+                    CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Critical);
+    msgBox.setTitle("검사 오류");
+    msgBox.setMessage("검사 실행 중 알 수 없는 오류가 발생했습니다.");
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
                     return;
                 }
                 
@@ -6272,7 +6323,12 @@ void TeachingWidget::startCamera() {
 
 
     if (cameraInfos.isEmpty()) {
-        UIColors::showWarning(this, "카메라 오류", "연결된 카메라가 없습니다.");
+        CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Warning);
+    msgBox.setTitle("카메라 오류");
+    msgBox.setMessage("연결된 카메라가 없습니다.");
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
         updateCameraButtonState(false);  // 버튼 상태 업데이트
         return;
     }
@@ -6765,7 +6821,12 @@ void TeachingWidget::setSerialCommunication(SerialCommunication* serialComm) {
 void TeachingWidget::showSerialSettings() {
     // 시리얼 통신 객체가 없으면 에러
     if (!serialCommunication) {
-        QMessageBox::warning(this, TR("WARNING"), "시리얼 통신이 초기화되지 않았습니다.");
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Warning);
+        msgBox.setTitle(TR("WARNING"));
+        msgBox.setMessage("시리얼 통신이 초기화되지 않았습니다.");
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
         return;
     }
     
@@ -8310,8 +8371,12 @@ void TeachingWidget::switchToRecipeMode() {
 void TeachingWidget::finishCalibration(const QRect& calibRect, double realLength) {
     // 현재 카메라 UUID 확인
     if (cameraIndex < 0 || cameraIndex >= cameraInfos.size()) {
-        UIColors::showWarning(this, TR("CALIBRATION_ERROR"), 
-                             TR("INVALID_CAMERA_INDEX"));
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Warning);
+        msgBox.setTitle(TR("CALIBRATION_ERROR"));
+        msgBox.setMessage(TR("INVALID_CAMERA_INDEX"));
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
         cameraView->setCalibrationMode(false);
         return;
     }
@@ -8338,9 +8403,10 @@ void TeachingWidget::finishCalibration(const QRect& calibRect, double realLength
     cameraView->setCalibrationMode(false);
     
     // 사용자에게 완료 메시지 표시 (mm 단위 표시)
-    UIColors::showInformation(this, 
-                             TR("CALIBRATION_COMPLETE_TITLE"), 
-                             QString("%1\n%2: %3\n%4: %5 mm = %6 px\n%7: %8 mm/px")
+    CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Information);
+    msgBox.setTitle(TR("CALIBRATION_COMPLETE_TITLE"));
+    msgBox.setMessage(QString("%1\n%2: %3\n%4: %5 mm = %6 px\n%7: %8 mm/px")
                                  .arg(TR("CALIBRATION_COMPLETE_MSG"))
                                  .arg(TR("CAMERA"))
                                  .arg(cameraInfos[cameraIndex].name)
@@ -8349,6 +8415,8 @@ void TeachingWidget::finishCalibration(const QRect& calibRect, double realLength
                                  .arg(pixelLength, 0, 'f', 1)
                                  .arg(TR("RATIO"))
                                  .arg(calibInfo.pixelToMmRatio, 0, 'f', 6));
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
 }
 
 void TeachingWidget::updateAllPatternTemplateImages() {
@@ -8569,12 +8637,11 @@ void TeachingWidget::saveRecipe() {
     if (currentRecipeName.isEmpty()) {
     
         // 사용자에게 새 레시피 생성 여부 묻기
-        QMessageBox msgBox;
-        msgBox.setWindowTitle("새 레시피 생성");
-        msgBox.setText("현재 열린 레시피가 없습니다.");
-        msgBox.setInformativeText("새로운 레시피를 생성하시겠습니까?");
-        msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
-        msgBox.setDefaultButton(QMessageBox::Yes);
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Question);
+        msgBox.setTitle("새 레시피 생성");
+        msgBox.setMessage("현재 열린 레시피가 없습니다.\n새로운 레시피를 생성하시겠습니까?");
+        msgBox.setButtons(QMessageBox::Yes | QMessageBox::No);
         
         if (msgBox.exec() == QMessageBox::Yes) {
             // 자동으로 타임스탬프 이름 생성
@@ -8607,11 +8674,19 @@ void TeachingWidget::saveRecipe() {
         ConfigManager::instance()->setLastRecipePath(currentRecipeName);
         ConfigManager::instance()->saveConfig();
         
-        UIColors::showInformation(this, "레시피 저장", 
-            QString("'%1' 레시피가 성공적으로 저장되었습니다.").arg(currentRecipeName));
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Information);
+        msgBox.setTitle("레시피 저장");
+        msgBox.setMessage(QString("'%1' 레시피가 성공적으로 저장되었습니다.").arg(currentRecipeName));
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
     } else {
-        QMessageBox::critical(this, "레시피 저장 실패", 
-            QString("레시피 저장에 실패했습니다:\n%1").arg(manager.getLastError()));
+        CustomMessageBox msgBoxCritical(this);
+        msgBoxCritical.setIcon(CustomMessageBox::Critical);
+        msgBoxCritical.setTitle("레시피 저장 실패");
+        msgBoxCritical.setMessage(QString("레시피 저장에 실패했습니다:\n%1").arg(manager.getLastError()));
+        msgBoxCritical.setButtons(QMessageBox::Ok);
+        msgBoxCritical.exec();
     }
     
     // 저장 전 모드 복원
@@ -9287,7 +9362,12 @@ QColor TeachingWidget::getNextColor() {
 void TeachingWidget::addFilter() {
     QTreeWidgetItem* selectedItem = patternTree->currentItem();
     if (!selectedItem) {
-        UIColors::showWarning(this, "패턴 미선택", "필터를 추가할 패턴을 먼저 선택해주세요.");
+        CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Warning);
+    msgBox.setTitle("패턴 미선택");
+    msgBox.setMessage("필터를 추가할 패턴을 먼저 선택해주세요.");
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
         return;
     }
     
@@ -9302,7 +9382,12 @@ void TeachingWidget::addFilter() {
     QString idStr = selectedItem->data(0, Qt::UserRole).toString();
     QUuid patternId = QUuid(idStr);
     if (patternId.isNull()) {
-        QMessageBox::warning(this, "패턴 정보 오류", "패턴 정보가 유효하지 않습니다.");
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Warning);
+        msgBox.setTitle("패턴 정보 오류");
+        msgBox.setMessage("패턴 정보가 유효하지 않습니다.");
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
         return;
     }
     
@@ -9363,12 +9448,14 @@ void TeachingWidget::addPattern() {
     // 그려진 사각형이 있으면 무조건 새 패턴 생성 (필터 추가 방지)
     if (hasDrawnRect) {
         // 패턴 이름 입력 받기
-        bool ok;
-        QString patternName = QInputDialog::getText(this, "패턴 이름", 
-                                            "패턴 이름을 입력하세요 (비우면 자동 생성):", 
-                                            QLineEdit::Normal, "", &ok);
+        CustomMessageBox msgBox(this);
+        msgBox.setTitle("패턴 이름");
+        msgBox.setMessage("패턴 이름을 입력하세요 (비우면 자동 생성):");
+        msgBox.setInputField(true, "");
+        msgBox.setButtons(QMessageBox::Ok | QMessageBox::Cancel);
         
-        if (!ok) return; // 취소 버튼 누름
+        if (msgBox.exec() != QMessageBox::Ok) return; // 취소 버튼 누름
+        QString patternName = msgBox.getInputText();
         
         // 이름이 비었으면 자동 생성
         if (patternName.isEmpty()) {
@@ -9506,7 +9593,12 @@ void TeachingWidget::addPattern() {
         QString idStr = selectedItem->data(0, Qt::UserRole).toString();
         QUuid patternId = QUuid(idStr);
         if (patternId.isNull()) {
-           UIColors::showWarning(this, "패턴 정보 오류", "패턴 정보가 유효하지 않습니다.");
+           CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Warning);
+    msgBox.setTitle("패턴 정보 오류");
+    msgBox.setMessage("패턴 정보가 유효하지 않습니다.");
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
             return;
         }
         
@@ -9531,7 +9623,12 @@ void TeachingWidget::addPattern() {
     } else {
         // 선택된 아이템도 없고 그려진 사각형도 없으면 안내 메시지
         if (!selectedItem && !hasDrawnRect) {
-            UIColors::showWarning(this, "패턴 없음", "먼저 카메라 화면에 사각형 패턴을 그리거나 패턴을 선택해주세요.");
+            CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Warning);
+    msgBox.setTitle("패턴 없음");
+    msgBox.setMessage("먼저 카메라 화면에 사각형 패턴을 그리거나 패턴을 선택해주세요.");
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
         }
     }
 }
@@ -9539,7 +9636,12 @@ void TeachingWidget::addPattern() {
 void TeachingWidget::removePattern() {
     QTreeWidgetItem* selectedItem = patternTree->currentItem();
     if (!selectedItem) {
-        UIColors::showInformation(this, "선택 필요", "삭제할 항목을 먼저 목록에서 선택하세요.");
+        CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Information);
+    msgBox.setTitle("선택 필요");
+    msgBox.setMessage("삭제할 항목을 먼저 목록에서 선택하세요.");
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
         return;
     }
     
@@ -9551,10 +9653,12 @@ void TeachingWidget::removePattern() {
         QUuid patternId = QUuid(idStr);
         int filterIndex = filterIndexVar.toInt();
         
-        QMessageBox::StandardButton reply = UIColors::showQuestion(this, "패턴 삭제",
-                "선택한 패턴을 삭제하시겠습니까?", 
-                QMessageBox::Yes | QMessageBox::No,
-                QMessageBox::No);
+        CustomMessageBox msgBoxQuestion(this);
+        msgBoxQuestion.setIcon(CustomMessageBox::Question);
+        msgBoxQuestion.setTitle("패턴 삭제");
+        msgBoxQuestion.setMessage("선택한 패턴을 삭제하시겠습니까?");
+        msgBoxQuestion.setButtons(QMessageBox::Yes | QMessageBox::No);
+        QMessageBox::StandardButton reply = static_cast<QMessageBox::StandardButton>(msgBoxQuestion.exec());
             
         if (reply == QMessageBox::Yes) {
             cameraView->removePatternFilter(patternId, filterIndex);
@@ -9572,10 +9676,12 @@ void TeachingWidget::removePattern() {
         // 패턴 삭제 로직
         QUuid patternId = getPatternIdFromItem(selectedItem);
         if (!patternId.isNull()) {
-            QMessageBox::StandardButton reply = UIColors::showQuestion(this, "패턴 삭제",
-                "선택한 패턴을 삭제하시겠습니까?", 
-                QMessageBox::Yes | QMessageBox::No,
-                QMessageBox::No);
+            CustomMessageBox msgBoxQuestion2(this);
+            msgBoxQuestion2.setIcon(CustomMessageBox::Question);
+            msgBoxQuestion2.setTitle("패턴 삭제");
+            msgBoxQuestion2.setMessage("선택한 패턴을 삭제하시겠습니까?");
+            msgBoxQuestion2.setButtons(QMessageBox::Yes | QMessageBox::No);
+            QMessageBox::StandardButton reply = static_cast<QMessageBox::StandardButton>(msgBoxQuestion2.exec());
                 
             if (reply == QMessageBox::Yes) {
                 cameraView->removePattern(patternId);
@@ -9733,8 +9839,12 @@ void TeachingWidget::setupCalibrationTools() {
 void TeachingWidget::startCalibration() {
     // 카메라가 연결되었는지 확인
     if (cameraIndex < 0 || cameraIndex >= getCameraInfosCount() || !getCameraInfo(cameraIndex).isConnected) {
-        UIColors::showWarning(this, TR("LENGTH_CALIBRATION"), 
-                             TR("NO_CAMERA_CONNECTED"));
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Warning);
+        msgBox.setTitle(TR("LENGTH_CALIBRATION"));
+        msgBox.setMessage(TR("NO_CAMERA_CONNECTED"));
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
         return;
     }
     
@@ -9746,13 +9856,17 @@ void TeachingWidget::startCalibration() {
     QString currentCameraUuid = getCameraInfo(cameraIndex).uniqueId;
     
     // 사용자에게 안내 메시지 표시
-    UIColors::showInformation(this, TR("LENGTH_CALIBRATION"),
-        QString("%1\n\n%2: %3\n%4: %5")
+    CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Information);
+    msgBox.setTitle(TR("LENGTH_CALIBRATION"));
+    msgBox.setMessage(QString("%1\n\n%2: %3\n%4: %5")
             .arg(TR("CALIBRATION_INSTRUCTION"))
             .arg(TR("CURRENT_CAMERA"))
             .arg(currentCameraName)
             .arg(TR("CAMERA_ID"))
             .arg(currentCameraUuid));
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
     
     // 캘리브레이션 모드로 전환
     cameraView->setCalibrationMode(true);
@@ -10384,17 +10498,16 @@ void TeachingWidget::newRecipe() {
     }
     
     // 새 레시피 이름 입력받기
-    bool ok;
-    QString recipeName = QInputDialog::getText(this,
-        "새 레시피 생성",
-        "레시피 이름을 입력하세요:\n(비어있으면 자동으로 생성됩니다)",
-        QLineEdit::Normal,
-        "",
-        &ok);
+    CustomMessageBox msgBox(this);
+    msgBox.setTitle("새 레시피 생성");
+    msgBox.setMessage("레시피 이름을 입력하세요:\n(비어있으면 자동으로 생성됩니다)");
+    msgBox.setInputField(true, "");
+    msgBox.setButtons(QMessageBox::Ok | QMessageBox::Cancel);
     
-    if (!ok) {
+    if (msgBox.exec() != QMessageBox::Ok) {
         return; // 사용자가 취소
     }
+    QString recipeName = msgBox.getInputText();
     
     // 이름이 비어있으면 자동 생성 (년월일시간초밀리초)
     if (recipeName.trimmed().isEmpty()) {
@@ -10492,9 +10605,9 @@ void TeachingWidget::newRecipe() {
                 }
             } else {
                 // 이미지 선택을 취소한 경우
-                QMessageBox::information(this, "알림",
+                CustomMessageBox(this, CustomMessageBox::Information, "알림",
                     "티칭용 이미지가 없으면 패턴을 생성할 수 없습니다.\n"
-                    "나중에 카메라를 연결하거나 이미지를 로드해주세요.");
+                    "나중에 카메라를 연결하거나 이미지를 로드해주세요.").exec();
             }
         }
     }
@@ -10522,25 +10635,36 @@ void TeachingWidget::newRecipe() {
         // 새 레시피 생성 시 패턴 트리 업데이트
         updatePatternTree();
         
-        UIColors::showInformation(this, "새 레시피", 
-            QString("새 레시피 '%1'가 생성되었습니다.").arg(recipeName));
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Information);
+        msgBox.setTitle("새 레시피");
+        msgBox.setMessage(QString("새 레시피 '%1'가 생성되었습니다.").arg(recipeName));
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
     } else {
-        QMessageBox::warning(this, "저장 실패", 
-            QString("새 레시피 파일 생성에 실패했습니다:\n%1").arg(recipeManager->getLastError()));
+        CustomMessageBox msgBoxWarning(this);
+        msgBoxWarning.setIcon(CustomMessageBox::Warning);
+        msgBoxWarning.setTitle("저장 실패");
+        msgBoxWarning.setMessage(QString("새 레시피 파일 생성에 실패했습니다:\n%1").arg(recipeManager->getLastError()));
+        msgBoxWarning.setButtons(QMessageBox::Ok);
+        msgBoxWarning.exec();
         return; // 저장 실패 시 성공 메시지 표시하지 않고 종료
     }
 }
 
 void TeachingWidget::saveRecipeAs() {
-    bool ok;
-    QString recipeName = QInputDialog::getText(this,
-        "레시피 저장",
-        "레시피 이름을 입력하세요:",
-        QLineEdit::Normal,
-        currentRecipeName,
-        &ok);
+    CustomMessageBox msgBox(this);
+    msgBox.setTitle("레시피 저장");
+    msgBox.setMessage("레시피 이름을 입력하세요:");
+    msgBox.setInputField(true, currentRecipeName);
+    msgBox.setButtons(QMessageBox::Ok | QMessageBox::Cancel);
     
-    if (ok && !recipeName.isEmpty()) {
+    if (msgBox.exec() != QMessageBox::Ok) {
+        return;
+    }
+    QString recipeName = msgBox.getInputText();
+    
+    if (!recipeName.isEmpty()) {
         RecipeManager manager;
         
         // 같은 이름의 레시피가 있는지 확인
@@ -10567,8 +10691,8 @@ void TeachingWidget::saveRecipeAs() {
             // 티칭 이미지는 XML에 base64로 저장됨
             qDebug() << "레시피 저장: 티칭 이미지는 XML에 base64로 저장됨";
             
-            QMessageBox::information(this, "레시피 저장", 
-                QString("'%1' 레시피가 성공적으로 저장되었습니다.").arg(recipeName));
+            CustomMessageBox(this, CustomMessageBox::Information, "레시피 저장",
+                QString("'%1' 레시피가 성공적으로 저장되었습니다.").arg(recipeName)).exec();
         } else {
             QMessageBox::critical(this, "레시피 저장 실패", 
                 QString("레시피 저장에 실패했습니다:\n%1").arg(manager.getLastError()));
@@ -10657,11 +10781,11 @@ void TeachingWidget::manageRecipes() {
                         currentRecipeName.clear();
                     }
                     
-                    QMessageBox::information(&dialog, "레시피 삭제", 
-                        QString("'%1' 레시피가 삭제되었습니다.").arg(recipeName));
+                    CustomMessageBox(&dialog, CustomMessageBox::Information, "레시피 삭제",
+                        QString("'%1' 레시피가 삭제되었습니다.").arg(recipeName)).exec();
                 } else {
-                    QMessageBox::critical(&dialog, "레시피 삭제 실패", 
-                        QString("레시피 삭제에 실패했습니다:\n%1").arg(manager.getLastError()));
+                    CustomMessageBox(&dialog, CustomMessageBox::Critical, "레시피 삭제 실패",
+                        QString("레시피 삭제에 실패했습니다:\n%1").arg(manager.getLastError())).exec();
                 }
             }
         }
@@ -10671,28 +10795,29 @@ void TeachingWidget::manageRecipes() {
         QListWidgetItem* item = recipeList->currentItem();
         if (item) {
             QString oldName = item->text();
-            bool ok;
-            QString newName = QInputDialog::getText(&dialog,
-                "레시피 이름 변경",
-                "새 레시피 이름을 입력하세요:",
-                QLineEdit::Normal,
-                oldName,
-                &ok);
+            CustomMessageBox msgBox(&dialog);
+            msgBox.setTitle("레시피 이름 변경");
+            msgBox.setMessage("새 레시피 이름을 입력하세요:");
+            msgBox.setInputField(true, oldName);
+            msgBox.setButtons(QMessageBox::Ok | QMessageBox::Cancel);
             
-            if (ok && !newName.isEmpty() && newName != oldName) {
-                if (manager.renameRecipe(oldName, newName)) {
-                    item->setText(newName);
-                    
-                    // 현재 로드된 레시피가 변경된 레시피라면 이름 업데이트
-                    if (currentRecipeName == oldName) {
-                        currentRecipeName = newName;
+            if (msgBox.exec() == QMessageBox::Ok) {
+                QString newName = msgBox.getInputText();
+                if (!newName.isEmpty() && newName != oldName) {
+                    if (manager.renameRecipe(oldName, newName)) {
+                        item->setText(newName);
+                        
+                        // 현재 로드된 레시피가 변경된 레시피라면 이름 업데이트
+                        if (currentRecipeName == oldName) {
+                            currentRecipeName = newName;
+                        }
+                        
+                        CustomMessageBox(&dialog, CustomMessageBox::Information, "레시피 이름 변경",
+                            QString("'%1'에서 '%2'로 이름이 변경되었습니다.").arg(oldName, newName)).exec();
+                    } else {
+                        CustomMessageBox(&dialog, CustomMessageBox::Critical, "레시피 이름 변경 실패",
+                            QString("레시피 이름 변경에 실패했습니다:\n%1").arg(manager.getLastError())).exec();
                     }
-                    
-                    QMessageBox::information(&dialog, "레시피 이름 변경", 
-                        QString("'%1'에서 '%2'로 이름이 변경되었습니다.").arg(oldName, newName));
-                } else {
-                    QMessageBox::critical(&dialog, "레시피 이름 변경 실패", 
-                        QString("레시피 이름 변경에 실패했습니다:\n%1").arg(manager.getLastError()));
                 }
             }
         }
@@ -10706,10 +10831,13 @@ void TeachingWidget::manageRecipes() {
 void TeachingWidget::onRecipeSelected(const QString& recipeName) {
     // 저장되지 않은 변경사항 확인
     if (hasUnsavedChanges) {
-        QMessageBox::StandardButton reply = QMessageBox::question(this,
-            "레시피 불러오기",
-            "저장되지 않은 변경사항이 있습니다. 레시피를 불러오시겠습니까?",
-            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Question);
+        msgBox.setTitle("레시피 불러오기");
+        msgBox.setMessage("저장되지 않은 변경사항이 있습니다. 레시피를 불러오시겠습니까?");
+        msgBox.setButtons(QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+        
+        QMessageBox::StandardButton reply = static_cast<QMessageBox::StandardButton>(msgBox.exec());
         
         if (reply == QMessageBox::Cancel) {
             return;
@@ -10961,11 +11089,21 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
             qDebug() << QString("camOff 상태: %1").arg(camOff ? "true" : "false");
             qDebug() << QString("=== cameraInfos 정보 끝 ===");
 
-            QMessageBox::information(this, "레시피 불러오기", 
-                QString("'%1' 레시피가 성공적으로 불러와졌습니다.\n카메라: %2개").arg(recipeName).arg(cameraInfos.size()));
+            // 카메라 상태 확인
+            QString modeText;
+            if (camOff) {
+                modeText = QString("'%1' 레시피가 성공적으로 불러와졌습니다.\n"
+                                 "카메라: %2개 (시뮬레이션 모드)")
+                          .arg(recipeName).arg(cameraInfos.size());
+            } else {
+                modeText = QString("'%1' 레시피가 성공적으로 불러와졌습니다.\n"
+                                 "카메라: %2개")
+                          .arg(recipeName).arg(cameraInfos.size());
+            }
+            CustomMessageBox(this, CustomMessageBox::Information, "레시피 불러오기", modeText).exec();
     } else {
-        QMessageBox::critical(this, "레시피 불러오기 실패", 
-            QString("레시피 불러오기에 실패했습니다:\n%1").arg(manager.getLastError()));
+        CustomMessageBox(this, CustomMessageBox::Critical, "레시피 불러오기 실패",
+            QString("레시피 불러오기에 실패했습니다:\n%1").arg(manager.getLastError())).exec();
     }
 }
 

@@ -3,7 +3,6 @@
 
 #include <QUuid>
 #include <QString>
-#include <QMessageBox>
 #include <QRect>
 #include <QColor>
 #include <QImage>
@@ -11,6 +10,8 @@
 #include <QList>
 #include <opencv2/opencv.hpp>
 #include "LanguageManager.h"
+#include "CustomMessageBox.h"
+#include "CustomMessageBox.h"
 
 // TR 매크로 정의
 #ifndef TR
@@ -538,50 +539,6 @@ namespace UIColors {
         .arg(checkedColor.darker(120).name());
     
         return style;
-    }
-
-    // QMessageBox 유틸리티 함수들
-    inline void showWarning(QWidget* parent, const QString& title, const QString& text) {
-        QMessageBox msgBox(parent);
-        msgBox.setStyleSheet(messageBoxStyle());
-        msgBox.setIcon(QMessageBox::Warning);
-        msgBox.setWindowTitle(title);
-        msgBox.setText(text);
-        msgBox.setStandardButtons(QMessageBox::Ok);
-        msgBox.exec();
-    }
-    
-    inline void showInformation(QWidget* parent, const QString& title, const QString& text) {
-        QMessageBox msgBox(parent);
-        msgBox.setStyleSheet(messageBoxStyle());
-        msgBox.setIcon(QMessageBox::Information);
-        msgBox.setWindowTitle(title);
-        msgBox.setText(text);
-        msgBox.setStandardButtons(QMessageBox::Ok);
-        msgBox.exec();
-    }
-    
-    inline void showCritical(QWidget* parent, const QString& title, const QString& text) {
-        QMessageBox msgBox(parent);
-        msgBox.setStyleSheet(messageBoxStyle());
-        msgBox.setIcon(QMessageBox::Critical);
-        msgBox.setWindowTitle(title);
-        msgBox.setText(text);
-        msgBox.setStandardButtons(QMessageBox::Ok);
-        msgBox.exec();
-    }
-    
-    inline QMessageBox::StandardButton showQuestion(QWidget* parent, const QString& title, const QString& text, 
-                                                    QMessageBox::StandardButtons buttons = QMessageBox::Yes | QMessageBox::No,
-                                                    QMessageBox::StandardButton defaultButton = QMessageBox::No) {
-        QMessageBox msgBox(parent);
-        msgBox.setStyleSheet(messageBoxStyle());
-        msgBox.setIcon(QMessageBox::Question);
-        msgBox.setWindowTitle(title);
-        msgBox.setText(text);
-        msgBox.setStandardButtons(buttons);
-        msgBox.setDefaultButton(defaultButton);
-        return static_cast<QMessageBox::StandardButton>(msgBox.exec());
     }
 }
 
