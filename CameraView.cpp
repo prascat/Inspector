@@ -2600,6 +2600,9 @@ void CameraView::paintEvent(QPaintEvent *event) {
         for (int i = 0; i < patterns.size(); ++i) {
             const PatternInfo& pattern = patterns[i];
             
+            // 선택된 패턴은 루프에서 건너뛰고 마지막에 그림 (최상위에 표시)
+            if (pattern.id == selectedPatternId) continue;
+            
             // 시뮬레이션 모드에서는 시뮬레이션 카메라 이름과 비교, 일반 모드에서는 currentCameraUuid와 비교
             bool patternVisible = false;
             if (!currentCameraUuid.isEmpty()) {
@@ -2622,7 +2625,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
             
 
 
-            if (pattern.id == selectedPatternId) {
+            if (false) {  // 선택된 패턴은 루프 후에 그림
                 QVector<QPoint> corners = getRotatedCorners();
                 if (corners.size() == 4) {
                     QPolygon poly;
@@ -3119,68 +3122,123 @@ void CameraView::paintEvent(QPaintEvent *event) {
         }
     }
 
-        // 현재 그리고 있는 사각형 (검사 모드가 아니고 캘리브레이션 모드가 아닐 때만)
-        if (!isInspectionMode && !currentRect.isNull() && !isDrawing && !m_calibrationMode) {
-            QPoint topLeft = originalToDisplay(QPoint(currentRect.x(), currentRect.y()));
-            QPoint bottomRight = originalToDisplay(QPoint(currentRect.x() + currentRect.width(), 
-                                                currentRect.y() + currentRect.height()));
-            QRect displayRect(topLeft, bottomRight);
-
-            painter.setPen(QPen(currentDrawColor, 2, Qt::DashLine));
-            painter.setBrush(Qt::NoBrush);
-            painter.drawRect(displayRect);
-        }
-
-        // 선택된 패턴의 리사이즈/회전 핸들 (티칭 모드에서만)
-        if (!isInspectionMode && !selectedPatternId.isNull()) {
-            PatternInfo* pattern = getPatternById(selectedPatternId);
-            if (pattern && pattern->enabled) {
-                // 시뮬레이션 모드에서는 currentCameraUuid과 비교, 일반 모드에서는 currentCameraUuid와 비교
-                bool patternVisible = false;
-                if (!currentCameraUuid.isEmpty()) {
-                    // 시뮬레이션 모드: currentCameraUuid (CAM(...)) 형태와 비교
-                    patternVisible = (pattern->cameraUuid == currentCameraUuid);
-                } else {
-                    // 일반 모드: currentCameraUuid와 비교
-                    patternVisible = (currentCameraUuid.isEmpty() || pattern->cameraUuid == currentCameraUuid);
-                }
+    // 선택된 패턴을 마지막에 그림 (최상위에 표시)
+    if (!isInspectionMode && !selectedPatternId.isNull()) {
+        PatternInfo* selectedPattern = getPatternById(selectedPatternId);
+        if (selectedPattern && selectedPattern->enabled) {
+            bool patternVisible = (selectedPattern->cameraUuid == currentCameraUuid || 
+                                  selectedPattern->cameraUuid.isEmpty() ||
+                                  currentCameraUuid.isEmpty());
+            if (patternVisible) {
+                const PatternInfo& pattern = *selectedPattern;
+                QColor color = UIColors::getPatternColor(pattern.type);
                 
-                if (patternVisible) {
-                    // FID 패턴이고 그룹화된 경우 그룹 전체 바운딩 박스 사용
-                    QRectF handleRect;
-                    if (pattern->type == PatternType::FID) {
-                        // 그룹화된 모든 패턴들 (FID + INS) 찾기
-                        QList<PatternInfo*> groupPatterns;
-                        groupPatterns.append(pattern); // FID 패턴 추가
-                        
-                        for (int i = 0; i < patterns.size(); i++) {
-                            PatternInfo& insPattern = patterns[i];
-                            if (insPattern.parentId == selectedPatternId && insPattern.type == PatternType::INS) {
-                                groupPatterns.append(&insPattern);
-                            }
+                QVector<QPoint> corners = getRotatedCorners();
+                if (corners.size() == 4) {
+                    QPolygon poly;
+                    for (const QPoint& pt : corners) poly << pt;
+                    
+                    painter.setPen(QPen(color, 3));
+                    QColor fillColor = color; fillColor.setAlpha(40);
+                    painter.setBrush(QBrush(fillColor));
+                    painter.drawPolygon(poly);
+                    
+                    // 패턴 이름 표시
+                    QFont font = painter.font();
+                    font.setBold(true);
+                    font.setPointSize(10);
+                    painter.setFont(font);
+                    
+                    QFontMetrics fm(font);
+                    int textWidth = fm.horizontalAdvance(pattern.name);
+                    int textHeight = fm.height();
+                    
+                    QPointF patternCenter = QPointF((corners[0] + corners[2]) / 2);
+                    double patternAngle = pattern.angle;
+                    
+                    painter.save();
+                    painter.translate(patternCenter);
+                    painter.rotate(patternAngle);
+                    
+                    int displayPatternWidth = qRound(pattern.rect.width() * zoomFactor);
+                    int displayPatternHeight = qRound(pattern.rect.height() * zoomFactor);
+                    
+                    QRect textRect(-displayPatternWidth/2, -displayPatternHeight/2 - textHeight - 2, textWidth + 6, textHeight);
+                    QColor bgColor = color;
+                    bgColor.setAlpha(180);
+                    painter.fillRect(textRect, bgColor);
+                    
+                    painter.setPen(Qt::black);
+                    painter.drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, pattern.name);
+                    
+                    painter.restore();
+                }
+            }
+        }
+    }
+
+    // 현재 그리고 있는 사각형 (검사 모드가 아니고 캘리브레이션 모드가 아닐 때만)
+    if (!isInspectionMode && !currentRect.isNull() && !isDrawing && !m_calibrationMode) {
+        QPoint topLeft = originalToDisplay(QPoint(currentRect.x(), currentRect.y()));
+        QPoint bottomRight = originalToDisplay(QPoint(currentRect.x() + currentRect.width(), 
+                                            currentRect.y() + currentRect.height()));
+        QRect displayRect(topLeft, bottomRight);
+
+        painter.setPen(QPen(currentDrawColor, 2, Qt::DashLine));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(displayRect);
+    }
+
+    // 선택된 패턴의 리사이즈/회전 핸들 (티칭 모드에서만)
+    if (!isInspectionMode && !selectedPatternId.isNull()) {
+        PatternInfo* pattern = getPatternById(selectedPatternId);
+        if (pattern && pattern->enabled) {
+            // 시뮬레이션 모드에서는 currentCameraUuid과 비교, 일반 모드에서는 currentCameraUuid와 비교
+            bool patternVisible = false;
+            if (!currentCameraUuid.isEmpty()) {
+                // 시뮬레이션 모드: currentCameraUuid (CAM(...)) 형태와 비교
+                patternVisible = (pattern->cameraUuid == currentCameraUuid);
+            } else {
+                // 일반 모드: currentCameraUuid와 비교
+                patternVisible = (currentCameraUuid.isEmpty() || pattern->cameraUuid == currentCameraUuid);
+            }
+            
+            if (patternVisible) {
+                // FID 패턴이고 그룹화된 경우 그룹 전체 바운딩 박스 사용
+                QRectF handleRect;
+                if (pattern->type == PatternType::FID) {
+                    // 그룹화된 모든 패턴들 (FID + INS) 찾기
+                    QList<PatternInfo*> groupPatterns;
+                    groupPatterns.append(pattern); // FID 패턴 추가
+                    
+                    for (int i = 0; i < patterns.size(); i++) {
+                        PatternInfo& insPattern = patterns[i];
+                        if (insPattern.parentId == selectedPatternId && insPattern.type == PatternType::INS) {
+                            groupPatterns.append(&insPattern);
                         }
-                        
-                        // 그룹화된 패턴이 있으면 그룹 전체 바운딩 박스 사용
-                        if (groupPatterns.size() > 1) {
-                            handleRect = groupPatterns[0]->rect;
-                            for (int i = 1; i < groupPatterns.size(); i++) {
-                                handleRect = handleRect.united(groupPatterns[i]->rect);
-                            }
-                        } else {
-                            handleRect = pattern->rect;
+                    }
+                    
+                    // 그룹화된 패턴이 있으면 그룹 전체 바운딩 박스 사용
+                    if (groupPatterns.size() > 1) {
+                        handleRect = groupPatterns[0]->rect;
+                        for (int i = 1; i < groupPatterns.size(); i++) {
+                            handleRect = handleRect.united(groupPatterns[i]->rect);
                         }
                     } else {
                         handleRect = pattern->rect;
                     }
-                    
-                    QPoint topLeft = originalToDisplay(QPoint(qRound(handleRect.left()), qRound(handleRect.top())));
-                    QPoint bottomRight = originalToDisplay(QPoint(qRound(handleRect.right()), qRound(handleRect.bottom())));
-                    QRect displayRect(topLeft, bottomRight);
-
-                    drawResizeHandles(painter, displayRect);
+                } else {
+                    handleRect = pattern->rect;
                 }
+                
+                QPoint topLeft = originalToDisplay(QPoint(qRound(handleRect.left()), qRound(handleRect.top())));
+                QPoint bottomRight = originalToDisplay(QPoint(qRound(handleRect.right()), qRound(handleRect.bottom())));
+                QRect displayRect(topLeft, bottomRight);
+
+                drawResizeHandles(painter, displayRect);
             }
         }
+    }
 
     // 캘리브레이션 모드일 때 안내 텍스트 표시
     if (m_calibrationMode) {
@@ -3874,6 +3932,26 @@ QUuid CameraView::hitTest(const QPoint& pos) {
     
     QUuid result;
     int minDistSq = std::numeric_limits<int>::max();
+    
+    // 0. 선택된 패턴 먼저 확인 (최상위에 그려졌으므로 우선 선택)
+    if (!selectedPatternId.isNull()) {
+        PatternInfo* selectedPattern = getPatternById(selectedPatternId);
+        if (selectedPattern && selectedPattern->enabled) {
+            bool patternVisible = false;
+            if (!currentCameraUuid.isEmpty()) {
+                patternVisible = (selectedPattern->cameraUuid == currentCameraUuid);
+            } else {
+                patternVisible = (currentCameraUuid.isEmpty() || selectedPattern->cameraUuid == currentCameraUuid);
+            }
+            
+            if (patternVisible) {
+                QRectF rect = selectedPattern->rect;
+                if (rect.contains(originalPos)) {
+                    return selectedPattern->id;  // 선택된 패턴이 클릭되면 바로 반환
+                }
+            }
+        }
+    }
     
     // 1. 자식 패턴 먼저 검사 (자식 패턴이 부모 위에 그려지기 때문)
     for (int i = 0; i < patterns.size(); ++i) {
