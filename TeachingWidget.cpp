@@ -439,6 +439,12 @@ void TeachingWidget::showCameraSettings() {
 #endif
     }
     
+    // 카메라가 동작 중이면 차단
+    if (!camOff) {
+        QMessageBox::warning(this, "경고", "카메라가 동작 중입니다.\n카메라를 OFF한 후 시도하세요.");
+        return;
+    }
+    
     // 다이얼로그 실행
     cameraSettingsDialog->exec();
 }
@@ -960,6 +966,7 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                     int inspectionCameraIndex;
                     
                     if (camOff) {                
+                        // 시뮬레이션 모드: 저장된 레시피 이미지 사용
                         if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
                             cameraFrames[cameraIndex].empty()) {
                             btn->blockSignals(true);
@@ -971,9 +978,42 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                         inspectionFrame = cameraFrames[cameraIndex].clone();
                         inspectionCameraIndex = cameraIndex;
                     } else {
-                        // 실제 카메라 모드: 현재 프레임 사용
-                        inspectionFrame = cameraFrames[cameraIndex].clone();
-                        inspectionCameraIndex = cameraIndex;
+                        // **실제 카메라 모드: 트리거로 저장된 프레임 또는 실시간 획득**
+                        // 1. 먼저 cameraFrames에 저장된 프레임이 있는지 확인 (트리거 신호로 저장된 프레임)
+                        if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
+                            !cameraFrames[cameraIndex].empty()) {
+                            inspectionFrame = cameraFrames[cameraIndex].clone();
+                            inspectionCameraIndex = cameraIndex;
+                            qDebug() << QString("[검사] 카메라 ON - 트리거 저장된 프레임 사용: %1x%2")
+                                        .arg(inspectionFrame.cols).arg(inspectionFrame.rows);
+                        } 
+                        // 2. 저장된 프레임이 없으면 Spinnaker에서 직접 획득 시도
+                        else if (m_useSpinnaker && cameraIndex >= 0 && cameraIndex < static_cast<int>(m_spinCameras.size())) {
+                            inspectionFrame = grabFrameFromSpinnakerCamera(m_spinCameras[cameraIndex]);
+                            
+                            if (inspectionFrame.empty()) {
+                                btn->blockSignals(true);
+                                btn->setChecked(false);
+                                btn->blockSignals(false);
+                                qDebug() << "⏭️ [검사 패스] 카메라에서 프레임 획득 실패";
+                                return;
+                            }
+                            
+                            // BGR 형식으로 저장
+                            if (inspectionFrame.channels() == 3) {
+                                cv::cvtColor(inspectionFrame, inspectionFrame, cv::COLOR_RGB2BGR);
+                            }
+                            
+                            inspectionCameraIndex = cameraIndex;
+                            qDebug() << QString("[검사] 카메라 ON - Spinnaker에서 실시간 프레임 획득: %1x%2")
+                                        .arg(inspectionFrame.cols).arg(inspectionFrame.rows);
+                        } else {
+                            btn->blockSignals(true);
+                            btn->setChecked(false);
+                            btn->blockSignals(false);
+                            qDebug() << "⏭️ [검사 패스] 프레임 없음 (트리거 대기 중이거나 카메라 오류)";
+                            return;
+                        }
                     }
                     
                     bool passed = runInspect(inspectionFrame, inspectionCameraIndex);
@@ -2728,7 +2768,8 @@ void TeachingWidget::createPropertyPanels() {
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::EDGE));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::BINARY));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::STRIP));
-    insMethodCombo->setCurrentIndex(0);  // 기본값을 COLOR로 설정
+    insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::CRIMP));
+    insMethodCombo->setCurrentIndex(3);  // 기본값을 COLOR로 설정
     basicInspectionLayout->addRow(insMethodLabel, insMethodCombo);
 
     // 합격 임계값
@@ -3251,21 +3292,43 @@ void TeachingWidget::createPropertyPanels() {
 
     insMainLayout->addWidget(insStripPanel);
 
+    // === CRIMP 검사 파라미터 그룹 ===
+    insCrimpPanel = new QGroupBox("CRIMP 검사 파라미터", insPropWidget);
+    insCrimpPanel->setStyleSheet(
+        "QGroupBox { font-weight: bold; color: white; }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
+    );
+    QFormLayout* insCrimpLayout = new QFormLayout(insCrimpPanel);
+    insCrimpLayout->setVerticalSpacing(5);
+    insCrimpLayout->setContentsMargins(10, 15, 10, 10);
+
+    // 템플릿 이미지만 표시 (STRIP과 동일)
+    QLabel* crimpTemplateLabel = new QLabel("템플릿 이미지:", insCrimpPanel);
+    insCrimpLayout->addRow(crimpTemplateLabel);
+
+    insMainLayout->addWidget(insCrimpPanel);
+
     // 여백 추가
     insMainLayout->addStretch();
 
     // 패널 초기 설정 - 검사 방법에 따라 표시
     insBinaryPanel->setVisible(false);  // 처음에는 숨김
     insStripPanel->setVisible(false);   // STRIP 패널도 처음에는 숨김
+    insCrimpPanel->setVisible(false);   // CRIMP 패널도 처음에는 숨김
 
     // 검사 방법에 따른 패널 표시 설정
     connect(insMethodCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), 
         [this](int index) {
             insBinaryPanel->setVisible(index == InspectionMethod::BINARY);  // 이진화
             insStripPanel->setVisible(index == InspectionMethod::STRIP);    // STRIP
-            // 결과 반전 옵션 표시 (필요시)
+            insCrimpPanel->setVisible(index == InspectionMethod::CRIMP);    // CRIMP
+            // 결과 반전 옵션은 BINARY, STRIP, CRIMP에서만 표시 (안함)
             if (insInvertCheck) {
-                insInvertCheck->setVisible(true);
+                insInvertCheck->setVisible(false);
+            }
+            // 합격임계값도 표시 안함
+            if (insPassThreshSpin) {
+                insPassThreshSpin->setVisible(false);
             }
     });
 
@@ -10665,6 +10728,23 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
     QStringList recipeCameraUuids = manager.getRecipeCameraUuids(recipeName);
     qDebug() << QString("레시피 '%1'의 카메라 목록: %2").arg(recipeName).arg(recipeCameraUuids.join(", "));
     
+    // **★★★ 중요: 콜백 정의 전에 먼저 카메라 연결 상태 확인하여 camOff 설정 ★★★**
+    bool hasConnectedCamera = false;
+    for (const auto& info : cameraInfos) {
+        if (info.isConnected) {
+            hasConnectedCamera = true;
+            break;
+        }
+    }
+    
+    if (hasConnectedCamera && camOff) {
+        qDebug() << QString("🎥 [레시피 로드 시작] 실제 카메라 연결됨 → CAM ON 모드로 전환 (콜백 실행 전)");
+        camOff = false;
+    } else if (!hasConnectedCamera && !camOff) {
+        qDebug() << QString("🎯 [레시피 로드 시작] 카메라 연결 안됨 → 시뮬레이션 모드로 전환");
+        camOff = true;
+    }
+    
     // camOff 모드에서는 cameraInfos를 비워서 레시피에서 새로 생성하도록 함
     if (camOff) {
         cameraInfos.clear();
@@ -10674,8 +10754,18 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
     auto teachingImageCallback = [this](const QStringList& imagePaths) {
         qDebug() << QString("=== teachingImageCallback 호출 시작 ===");
         qDebug() << QString("전달받은 이미지 경로 개수: %1").arg(imagePaths.size());
+        qDebug() << QString("camOff 상태: %1 (true=카메라OFF, false=카메라ON)").arg(camOff);
+        
         for (int i = 0; i < imagePaths.size(); i++) {
             qDebug() << QString("이미지 경로[%1]: %2").arg(i).arg(imagePaths[i]);
+        }
+        
+        // **카메라 ON 상태에서는 저장된 이미지를 로드하지 않음 (티칭만 로드)**
+        if (!camOff) {
+            qDebug() << QString("[카메라 ON] 저장된 이미지 로드 스킵 - 실시간 카메라 프레임 사용");
+            qDebug() << QString("=== teachingImageCallback 완료: 카메라ON 모드 ===");
+            updatePreviewFrames();  // 프리뷰는 업데이트
+            return;
         }
         
         int imageIndex = 0;
@@ -10729,9 +10819,12 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
             qDebug() << QString("  - cameraFrames[%1].empty(): %2").arg(cameraIndex).arg(cameraFrames[cameraIndex].empty());
         }
         
-        if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
+        // **카메라 ON 상태에서는 updateCameraFrame() 호출 금지**
+        if (!camOff) {
+            qDebug() << QString("[teachingImageCallback] ⚠️ 카메라 ON 상태 - updateCameraFrame() 스킵");
+        } else if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
             !cameraFrames[cameraIndex].empty()) {
-            qDebug() << QString("[teachingImageCallback] ✅ updateCameraFrame() 호출");
+            qDebug() << QString("[teachingImageCallback] ✅ updateCameraFrame() 호출 (카메라 OFF 모드)");
             updateCameraFrame();
         } else {
             qDebug() << QString("[teachingImageCallback] ❌ updateCameraFrame() 호출 조건 불만족");

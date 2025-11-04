@@ -390,6 +390,9 @@ private:
     QLabel* insStripLengthMaxLabel = nullptr;
     QSpinBox* insStripLengthMaxSpin = nullptr;
     
+    // CRIMP 검사 패널 관련 위젯
+    QGroupBox* insCrimpPanel = nullptr;
+    
     // STRIP 두께 측정 관련 컨트롤
     // FRONT 두께 측정 관련 위젯들
     QCheckBox* insStripFrontEnabledCheck = nullptr;

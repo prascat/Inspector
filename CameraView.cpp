@@ -275,13 +275,18 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
         // MOVE 모드에서 빈 공간 클릭: 패턴 선택 해제 및 검사 결과 필터 해제
         if (m_editMode == EditMode::Move && hitPatternId.isNull()) {
             selectedPatternId = QUuid();
-            selectedInspectionPatternId = QUuid();  // 검사 결과 필터 해제
+            
+            // 검사 결과 필터 해제 - 모든 패턴 검사 결과 표시
+            if (!selectedInspectionPatternId.isNull()) {
+                selectedInspectionPatternId = QUuid();
+                emit selectedInspectionPatternCleared();  // TeachingWidget의 패턴 트리 선택 해제
+            }
+            
             isDragging = false;
             isResizing = false;
             isRotating = false;
             activeHandle = ResizeHandle::None;
             update();
-            emit selectedInspectionPatternCleared();  // TeachingWidget에 알림
             return;
         }
         
@@ -2621,18 +2626,12 @@ void CameraView::paintEvent(QPaintEvent *event) {
 
             QColor color = UIColors::getPatternColor(pattern.type);
             
-
-            
-
-
             if (false) {  // 선택된 패턴은 루프 후에 그림
                 QVector<QPoint> corners = getRotatedCorners();
                 if (corners.size() == 4) {
                     QPolygon poly;
                     for (const QPoint& pt : corners) poly << pt;
-                    
-
-                    
+                             
                     painter.setPen(QPen(color, 3));
                     QColor fillColor = color; fillColor.setAlpha(40);
                     painter.setBrush(QBrush(fillColor));

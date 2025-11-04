@@ -14,10 +14,7 @@
 
 // TR 매크로 정의
 #ifndef TR
-#define TR(key) Languag            case BINARY:
-                return "이진화 검사";
-            case STRIP:
-                return "STRIP 검사";er::instance()->getText(key)
+#define TR(key) LanguageManager::instance()->getText(key)
 #endif
 
 #define SIMPLE_MOVE_PIXELS      1
@@ -297,7 +294,8 @@ namespace InspectionMethod {
     const int COLOR = 0;        // 색상 검사
     const int EDGE = 1;         // 엣지 검사
     const int BINARY = 2;       // 이진화 검사
-    const int STRIP = 3;        // STRIP 검사
+    const int STRIP = 3;        // STRIP 검사 
+    const int CRIMP = 4;        // CRIMP 검사
     
     // 검사 방법 이름 반환 함수
     inline QString getName(int method) {
@@ -310,13 +308,15 @@ namespace InspectionMethod {
                 return "BINARY";
             case STRIP:
                 return "STRIP";
+            case CRIMP:
+                return "CRIMP";
             default:
                 return "UNKNOWN";
         }
     }
     
     // 검사 방법 개수
-    const int COUNT = 4;
+    const int COUNT = 5;
 }
 
 namespace UIColors {
