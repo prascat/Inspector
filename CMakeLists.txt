@@ -21,7 +21,11 @@ endif()
 
 # 플랫폼별 추가 설정
 if(APPLE)
-    # macOS용 OpenCV 경로 설정 (필요시)
+    # macOS용 OpenCV 경로 설정 (Homebrew)
+    set(OpenCV_DIR "/opt/homebrew/opt/opencv/lib/cmake/opencv4")
+    set(OpenCV_INCLUDE_DIRS "/opt/homebrew/opt/opencv/include/opencv4")
+    # 라이브러리 경로 추가
+    link_directories(/opt/homebrew/opt/opencv/lib)
 elseif(UNIX AND NOT APPLE)
     # Ubuntu/Linux용 OpenCV 경로 설정
     set(OpenCV_DIR "/usr/local/lib/cmake/opencv4")
@@ -39,11 +43,7 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Xml Network SerialPort)
 find_package(OpenCV REQUIRED)
 
 # 헤더 파일 경로 추가
-if(UNIX AND NOT APPLE)
-    include_directories(${OpenCV_INCLUDE_DIRS} /usr/local/include/opencv4)
-else()
-    include_directories(${OpenCV_INCLUDE_DIRS})
-endif()
+include_directories(${OpenCV_INCLUDE_DIRS})
 
 # AUTOMOC 활성화
 set(CMAKE_AUTOMOC ON)
