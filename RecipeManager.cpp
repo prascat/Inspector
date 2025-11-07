@@ -696,10 +696,10 @@ void RecipeManager::writePatternHeader(QXmlStreamWriter& xml, const PatternInfo&
 void RecipeManager::writePatternRect(QXmlStreamWriter& xml, const PatternInfo& pattern) {
     
     xml.writeStartElement("Rect");
-    xml.writeAttribute("x", QString::number(pattern.rect.x()));
-    xml.writeAttribute("y", QString::number(pattern.rect.y()));
-    xml.writeAttribute("width", QString::number(pattern.rect.width()));
-    xml.writeAttribute("height", QString::number(pattern.rect.height()));
+    xml.writeAttribute("x", QString::number(pattern.rect.x(), 'f', 2));
+    xml.writeAttribute("y", QString::number(pattern.rect.y(), 'f', 2));
+    xml.writeAttribute("width", QString::number(pattern.rect.width(), 'f', 2));
+    xml.writeAttribute("height", QString::number(pattern.rect.height(), 'f', 2));
     xml.writeAttribute("angle", QString::number(pattern.angle, 'f', 2));
     
     
@@ -730,7 +730,8 @@ void RecipeManager::writeFIDDetails(QXmlStreamWriter& xml, const PatternInfo& pa
         QByteArray ba;
         QBuffer buffer(&ba);
         buffer.open(QIODevice::WriteOnly);
-        pattern.templateImage.save(&buffer, "PNG");
+        // BMP 포맷 사용 (손실 없음, PNG보다 빠름)
+        pattern.templateImage.save(&buffer, "BMP");
         xml.writeAttribute("templateImage", ba.toBase64());
         qDebug() << QString("FID 패턴 '%1' 템플릿 이미지 저장: 크기=%2x%3, base64 길이=%4")
                     .arg(pattern.name)
@@ -773,7 +774,8 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
         QByteArray ba;
         QBuffer buffer(&ba);
         buffer.open(QIODevice::WriteOnly);
-        pattern.templateImage.save(&buffer, "PNG");
+        // BMP 포맷 사용 (손실 없음, PNG보다 빠름)
+        pattern.templateImage.save(&buffer, "BMP");
         xml.writeAttribute("templateImage", ba.toBase64());
         qDebug() << QString("INS 패턴 '%1' 템플릿 이미지 저장: 크기=%2x%3, base64 길이=%4")
                     .arg(pattern.name)
@@ -1234,11 +1236,11 @@ PatternInfo RecipeManager::readPattern(QXmlStreamReader& xml, const QString& cam
 }
 
 void RecipeManager::readPatternRect(QXmlStreamReader& xml, PatternInfo& pattern) {
-    int x = xml.attributes().value("x").toInt();
-    int y = xml.attributes().value("y").toInt();
-    int width = xml.attributes().value("width").toInt();
-    int height = xml.attributes().value("height").toInt();
-    pattern.rect = QRect(x, y, width, height);
+    double x = xml.attributes().value("x").toDouble();
+    double y = xml.attributes().value("y").toDouble();
+    double width = xml.attributes().value("width").toDouble();
+    double height = xml.attributes().value("height").toDouble();
+    pattern.rect = QRectF(x, y, width, height);
     
     // 각도값 읽기 (기본값 0.0) - 기존 레시피 호환성 위해 속성 존재 여부 확인
     QString angleStr = xml.attributes().value("angle").toString();
@@ -1304,7 +1306,7 @@ void RecipeManager::readFIDDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     
     if (!imageStr.isEmpty()) {
         QByteArray imageData = QByteArray::fromBase64(imageStr.toLatin1());
-        bool loadSuccess = pattern.templateImage.loadFromData(imageData, "PNG");
+        bool loadSuccess = pattern.templateImage.loadFromData(imageData);  // 포맷 자동 감지
         qDebug() << QString("FID 패턴 '%1' 템플릿 이미지 로드: base64 길이=%2, 이미지 크기=%3x%4, null=%5, 로드성공=%6")
                     .arg(pattern.name)
                     .arg(imageData.size())
@@ -1373,7 +1375,7 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     
     if (!imageStr.isEmpty()) {
         QByteArray imageData = QByteArray::fromBase64(imageStr.toLatin1());
-        bool loadSuccess = pattern.templateImage.loadFromData(imageData, "PNG");
+        bool loadSuccess = pattern.templateImage.loadFromData(imageData);  // 포맷 자동 감지
         qDebug() << QString("INS 패턴 '%1' 템플릿 이미지 로드: base64 길이=%2, 이미지 크기=%3x%4, null=%5, 로드성공=%6")
                     .arg(pattern.name)
                     .arg(imageData.size())
@@ -2014,4 +2016,125 @@ QStringList RecipeManager::getRecipeCameraUuids(const QString& recipeName)
     
     file.close();
     return cameraUuids;
+}
+
+// 기존 레시피에서 메인 카메라 티칭 이미지 불러오기
+bool RecipeManager::loadMainCameraImage(const QString& recipeName, cv::Mat& outImage, QString& outCameraName) {
+    QString recipePath = QDir(getRecipesDirectory()).absoluteFilePath(recipeName + "/" + recipeName + ".xml");
+    QFile file(recipePath);
+    
+    if (!file.exists()) {
+        setError(QString("레시피 파일을 찾을 수 없음: %1").arg(recipePath));
+        return false;
+    }
+    
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        setError(QString("레시피 파일을 열 수 없음: %1").arg(recipePath));
+        return false;
+    }
+    
+    QXmlStreamReader xml(&file);
+    bool found = false;
+    
+    try {
+        while (!xml.atEnd() && !found) {
+            xml.readNext();
+            
+            if (xml.isStartElement()) {
+                // 첫 번째 Camera 섹션 찾기
+                if (xml.name() == QLatin1String("Camera")) {
+                    QXmlStreamAttributes attributes = xml.attributes();
+                    outCameraName = attributes.value("name").toString();
+                    
+                    // teachingImage 속성에서 base64 데이터 읽기
+                    QString base64Data = attributes.value("teachingImage").toString();
+                    
+                    qDebug() << "[RecipeManager] 카메라 찾음:" << outCameraName;
+                    qDebug() << "[RecipeManager] teachingImage 속성 길이:" << base64Data.length();
+                    
+                    if (!base64Data.isEmpty()) {
+                        // base64 디코딩
+                        QByteArray imageData = QByteArray::fromBase64(base64Data.toLatin1());
+                        
+                        if (!imageData.isEmpty()) {
+                            qDebug() << "[RecipeManager] base64 디코딩 완료, 크기:" << imageData.size();
+                            
+                            // QImage로 로드
+                            QImage qImage;
+                            if (qImage.loadFromData(imageData)) {
+                                qDebug() << "[RecipeManager] 이미지 로드 성공:" << qImage.width() << "x" << qImage.height();
+                                
+                                // cv::Mat으로 변환
+                                QImage rgbImage = qImage.convertToFormat(QImage::Format_RGB888);
+                                outImage = cv::Mat(rgbImage.height(), rgbImage.width(), CV_8UC3,
+                                                  (void*)rgbImage.constBits(), rgbImage.bytesPerLine()).clone();
+                                cv::cvtColor(outImage, outImage, cv::COLOR_RGB2BGR);
+                                
+                                found = true;
+                                qDebug() << "[RecipeManager] cv::Mat 변환 완료:" << outImage.cols << "x" << outImage.rows;
+                            } else {
+                                qDebug() << "[RecipeManager] QImage 로드 실패";
+                            }
+                        } else {
+                            qDebug() << "[RecipeManager] base64 디코딩 실패 - 데이터가 비었음";
+                        }
+                    } else {
+                        qDebug() << "[RecipeManager] teachingImage 속성이 비어있음";
+                        // TeachingImage 요소 찾기 (속성이 아닌 경우)
+                        while (!xml.atEnd()) {
+                            xml.readNext();
+                            
+                            if (xml.isEndElement() && xml.name() == QLatin1String("Camera")) {
+                                break;
+                            }
+                            
+                            if (xml.isStartElement() && xml.name() == QLatin1String("TeachingImage")) {
+                                base64Data = xml.readElementText();
+                                
+                                if (!base64Data.isEmpty()) {
+                                    qDebug() << "[RecipeManager] TeachingImage 요소에서 base64 데이터 길이:" << base64Data.length();
+                                    
+                                    QByteArray imageData = QByteArray::fromBase64(base64Data.toLatin1());
+                                    
+                                    if (!imageData.isEmpty()) {
+                                        QImage qImage;
+                                        if (qImage.loadFromData(imageData)) {
+                                            qDebug() << "[RecipeManager] 이미지 로드 성공:" << qImage.width() << "x" << qImage.height();
+                                            
+                                            QImage rgbImage = qImage.convertToFormat(QImage::Format_RGB888);
+                                            outImage = cv::Mat(rgbImage.height(), rgbImage.width(), CV_8UC3,
+                                                              (void*)rgbImage.constBits(), rgbImage.bytesPerLine()).clone();
+                                            cv::cvtColor(outImage, outImage, cv::COLOR_RGB2BGR);
+                                            
+                                            found = true;
+                                            qDebug() << "[RecipeManager] cv::Mat 변환 완료:" << outImage.cols << "x" << outImage.rows;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        file.close();
+        setError(QString("예외 발생: %1").arg(e.what()));
+        return false;
+    }
+    
+    if (xml.hasError()) {
+        file.close();
+        setError(QString("XML 파싱 오류: %1").arg(xml.errorString()));
+        return false;
+    }
+    
+    file.close();
+    
+    if (!found) {
+        setError("레시피에서 TeachingImage를 찾을 수 없음");
+        return false;
+    }
+    
+    return true;
 }

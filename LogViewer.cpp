@@ -9,48 +9,59 @@
 #include <QTextCharFormat>
 #include <QScrollBar>
 
-LogViewer::LogViewer(QWidget *parent) : QDialog(parent) {
+LogViewer::LogViewer(QWidget *parent) : QWidget(parent) {
     setWindowTitle(TR("INSPECTION_LOG"));
-    resize(800, 600);
     
     QVBoxLayout *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    
+    // 헤더: 접기/펼치기 버튼
+    QHBoxLayout *headerLayout = new QHBoxLayout();
+    headerLayout->setContentsMargins(5, 5, 5, 5);
+    
+    collapseButton = new QPushButton("▶ INSPECTION LOG", this);
+    collapseButton->setFlat(true);
+    collapseButton->setStyleSheet(
+        "QPushButton {"
+        "  text-align: left;"
+        "  padding: 5px;"
+        "  background-color: #1E1E1E;"
+        "  color: #FFFFFF;"
+        "  border: none;"
+        "  font-weight: bold;"
+        "}"
+        "QPushButton:hover {"
+        "  background-color: #2B2B2B;"
+        "}"
+    );
+    connect(collapseButton, &QPushButton::clicked, this, &LogViewer::toggleCollapse);
+    
+    headerLayout->addWidget(collapseButton);
+    headerLayout->addStretch();
+    
+    layout->addLayout(headerLayout);
     
     logTextEdit = new QTextEdit(this);
     logTextEdit->setReadOnly(true);
     logTextEdit->setLineWrapMode(QTextEdit::NoWrap);
-    logTextEdit->setFont(QFont("Courier New", 14));
+    logTextEdit->setFont(QFont("Courier New", 12));
+    logTextEdit->setVisible(false);  // 초기에는 숨김
     
     // 어두운 배경색으로 설정하여 색상 텍스트가 잘 보이도록
     logTextEdit->setStyleSheet(
         "QTextEdit {"
         "  background-color: #2B2B2B;"  // 어두운 회색 배경
         "  color: #FFFFFF;"             // 기본 흰색 텍스트
-        "  border: 1px solid #555555;"
+        "  border: none;"
         "}"
     );
     layout->addWidget(logTextEdit);
     
-    // 하단 버튼 영역
-    QHBoxLayout *btnLayout = new QHBoxLayout();
-    
-    // clearButton을 멤버 변수로 사용
-    clearButton = new QPushButton(TR("CLEAR_LOG"), this);
-    connect(clearButton, &QPushButton::clicked, [this]() {
-        logTextEdit->clear();
-        currentLineCount = 0;  // **라인 카운터 리셋**
-    });
-    
-    // saveButton을 멤버 변수로 사용
-    saveButton = new QPushButton(TR("SAVE_LOG"), this);
-    connect(saveButton, &QPushButton::clicked, this, &LogViewer::saveLog);
-    
-    btnLayout->addWidget(clearButton);
-    btnLayout->addWidget(saveButton);
-    btnLayout->addStretch(1);
-    
-    layout->addLayout(btnLayout);
-
-    connect(LanguageManager::instance(), &LanguageManager::languageChanged, this, &LogViewer::updateUITexts);
+    // 초기 상태: 접혀있음
+    setMaximumHeight(COLLAPSED_HEIGHT);
+    setMinimumHeight(COLLAPSED_HEIGHT);
+    m_isCollapsed = true;
 }
 
 void LogViewer::appendLog(const QString& text) {
@@ -216,26 +227,34 @@ void LogViewer::receiveLogMessage(const QString& message) {
     appendLog(message);
 }
 
-void LogViewer::saveLog() {
-    QString fileName = QFileDialog::getSaveFileName(
-        this, 
-        TR("SAVE_LOG"), 
-        QString(), 
-        TR("TEXT_FILES") + " (*.txt)"
-    );
-    
-    if (!fileName.isEmpty()) {
-        QFile file(fileName);
-        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QTextStream out(&file);
-            out << logTextEdit->toPlainText(); // 색상 정보 없이 평문으로 저장
-            file.close();
-        }
-    }
+void LogViewer::toggleCollapse() {
+    setCollapsed(!m_isCollapsed);
 }
 
-void LogViewer::updateUITexts() {
-    setWindowTitle(TR("INSPECTION_LOG"));
-    clearButton->setText(TR("CLEAR_LOG"));
-    saveButton->setText(TR("SAVE_LOG"));
+void LogViewer::setCollapsed(bool collapsed) {
+    m_isCollapsed = collapsed;
+    logTextEdit->setVisible(!collapsed);
+    
+    if (collapsed) {
+        // 접힐 때: 높이를 최소로
+        setMaximumHeight(COLLAPSED_HEIGHT);
+        setMinimumHeight(COLLAPSED_HEIGHT);
+    } else {
+        // 펼칠 때: 높이를 원래대로
+        setMaximumHeight(QWIDGETSIZE_MAX);
+        setMinimumHeight(EXPANDED_HEIGHT);
+    }
+    
+    updateCollapseButton();
+    
+    // 부모 윈도우 크기 조정 신호 발출
+    emit collapseStateChanged(collapsed);
+}
+
+void LogViewer::updateCollapseButton() {
+    if (m_isCollapsed) {
+        collapseButton->setText("▶ INSPECTION LOG");
+    } else {
+        collapseButton->setText("▼ INSPECTION LOG");
+    }
 }

@@ -10,6 +10,7 @@
 #include <QXmlStreamReader>
 #include <QTreeWidgetItem>
 #include <functional>
+#include <opencv2/opencv.hpp>
 #include "CommonDefs.h"
 
 class CameraView;
@@ -65,6 +66,9 @@ public:
     
     // 레시피에서 카메라 정보 읽기 (시뮬레이션용)
     QStringList getRecipeCameraUuids(const QString& recipeName);
+    
+    // 기존 레시피에서 메인 카메라 티칭 이미지 불러오기
+    bool loadMainCameraImage(const QString& recipeName, cv::Mat& outImage, QString& outCameraName);
     
 private:
     // 헬퍼 함수들

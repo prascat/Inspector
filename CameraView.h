@@ -1,7 +1,9 @@
 #ifndef CAMERAVIEW_H
 #define CAMERAVIEW_H
 
-#include <QLabel>
+#include <QGraphicsView>
+#include <QGraphicsScene>
+#include <QGraphicsPixmapItem>
 #include <QMouseEvent>
 #include <QList>
 #include <QRect>
@@ -23,8 +25,8 @@
 #define TR(key) LanguageManager::instance()->getText(key)
 #endif
 
-// QLabel을 상속받는 CameraView 클래스
-class CameraView : public QLabel {
+// QGraphicsView를 상속받는 CameraView 클래스
+class CameraView : public QGraphicsView {
     Q_OBJECT
     
 public slots:
@@ -34,7 +36,7 @@ public:
     void setInspectionMode(bool enabled) {
         isInspectionMode = enabled;
         if (!enabled) hasInspectionResult = false;
-        QWidget::update();
+        viewport()->update();
     }
     
     void updateInspectionResult(bool passed, const InspectionResult& result);
@@ -48,7 +50,7 @@ public:
     
     void clearSelectedInspectionPattern() {
         selectedInspectionPatternId = QUuid();
-        QWidget::update();
+        viewport()->update();
     }
     
     QUuid getSelectedInspectionPatternId() const {
@@ -75,14 +77,14 @@ public:
     
     void setCalibrationInfo(const CalibrationInfo& info) { 
         m_calibrationInfo = info; 
-        update(); 
+        viewport()->update(); 
     }
     
     const CalibrationInfo& getCalibrationInfo() const { return m_calibrationInfo; }
     
     void setMeasurementInfo(const QString& text) {
         m_measurementText = text;
-        update();
+        viewport()->update();
     }
     
     // 물리적 길이 계산 함수 (mm 단위)
@@ -108,7 +110,7 @@ public:
             
             // 커서 설정
             setCursor(m_editMode == EditMode::Draw ? Qt::CrossCursor : Qt::ArrowCursor);
-            update();
+            viewport()->update();
         }
     }
 
@@ -126,7 +128,7 @@ public:
     
     QList<PatternInfo>& getPatterns() { return patterns; }
     CameraView(QWidget *parent = nullptr);
-    void setStatusInfo(const QString& info) { statusInfo = info; update(); }
+    void setStatusInfo(const QString& info) { statusInfo = info; viewport()->update(); }
     void setCurrentDrawColor(const QColor& color) { currentDrawColor = color; }
     bool hasValidScaling() const { return scaleX != 0.0 && scaleY != 0.0; }
     bool isSameScaling(double newScaleX, double newScaleY) const {
@@ -139,7 +141,7 @@ public:
 
     void setCurrentCameraUuid(const QString& uuid) {
         currentCameraUuid = uuid;
-        update(); // UI 갱신
+        viewport()->update(); // UI 갱신
     }
     QString getCurrentCameraUuid() const {
         return currentCameraUuid;
@@ -147,7 +149,7 @@ public:
     
     void setCurrentCameraName(const QString& name) {
         currentCameraName = name;
-        update(); // UI 갱신
+        viewport()->update(); // UI 갱신
     }
     QString getCurrentCameraName() const {
         return currentCameraName;
@@ -161,7 +163,7 @@ public:
                 // 레시피 로드 후 모든 패턴을 활성화
                 pattern.enabled = true;
             }
-            update();
+            viewport()->update();
         }
     }
     
@@ -199,13 +201,13 @@ public:
     QPixmap getBackgroundImage() const { return backgroundPixmap; }
     QPoint getPanOffset() const { return panOffset; }
     double getZoomFactor() const { return zoomFactor; }
-    void setPanOffset(const QPoint& offset) { panOffset = offset; update(); }
-    void setZoomFactor(double factor) { zoomFactor = factor; update(); }
+    void setPanOffset(const QPoint& offset) { panOffset = offset; viewport()->update(); }
+    void setZoomFactor(double factor) { zoomFactor = factor; viewport()->update(); }
     
     // 사각형 그리기 함수
-    void setCurrentRect(const QRect& rect) { currentRect = rect; update(); }
+    void setCurrentRect(const QRect& rect) { currentRect = rect; viewport()->update(); }
     QRect getCurrentRect() const { return currentRect; }
-    void clearCurrentRect() { currentRect = QRect(); update(); }
+    void clearCurrentRect() { currentRect = QRect(); viewport()->update(); }
     
     // 리사이즈 핸들 관련 함수 선언 추가
     QVector<QPoint> getRotatedCorners() const;
@@ -215,9 +217,12 @@ public:
 
     // 스케일링 관련 메서드
     void setScalingInfo(const QSize& origSize, const QSize& displaySize);
-    QPoint displayToOriginal(const QPoint& displayPos);
-    QPoint originalToDisplay(const QPoint& originalPos);
+    
+    // 좌표 변환 함수 (내부적으로 QGraphicsView의 mapToScene/mapFromScene 사용)
+    QPoint displayToOriginal(const QPoint& displayPos) const;
     QPoint originalToDisplay(const QPoint& originalPos) const;
+    QRect originalRectToDisplay(const QRect& origRect) const;
+    
     QPoint getRotatedCenter() const;
     int getRotateHandleAt(const QPoint& pos) const;
     
@@ -338,6 +343,10 @@ private:
     QPixmap backgroundPixmap;
     bool m_inspectionMode = false;
     QVector<bool> m_patternResults;
+    
+    // QGraphicsView 관련 멤버
+    QGraphicsScene *scene = nullptr;
+    QGraphicsPixmapItem *bgPixmapItem = nullptr;
 
     void drawInspectionResults(QPainter& painter, const InspectionResult& result);
     

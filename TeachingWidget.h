@@ -202,7 +202,7 @@ public:
     
     void saveRecipe();
     void deleRecipe();
-    bool loadRecipe(const QString &fileName = QString());
+    bool loadRecipe(const QString &fileName = QString(), bool showMessageBox = true);
     
     // 레시피 로드 상태 확인
     bool hasLoadedRecipe() const;

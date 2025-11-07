@@ -320,11 +320,6 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     // 레시피 관리자 초기화
     recipeManager = new RecipeManager();
     
-    // 로그 뷰어 초기화
-    logViewer = new LogViewer(this);
-    logViewer->setWindowFlag(Qt::Window); 
-    connect(insProcessor, &InsProcessor::logMessage, logViewer, &LogViewer::receiveLogMessage);
-    
     // 레이아웃 구성
     QVBoxLayout *mainLayout = createMainLayout();
     QHBoxLayout *contentLayout = createContentLayout();
@@ -337,6 +332,10 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     // 오른쪽 패널 (패턴 및 필터 컨트롤) 설정
     rightPanelLayout = createRightPanel();
     contentLayout->addLayout(rightPanelLayout, 1);
+    
+    // 로그 뷰어 생성 및 추가 (맨 아래)
+    logViewer = new LogViewer(this);
+    mainLayout->addWidget(logViewer);   // 메인 레이아웃의 맨 아래에 추가
     
     // 패턴 테이블 설정
     setupPatternTree();
@@ -352,6 +351,24 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     
     // 이벤트 연결
     connectEvents();
+    
+    // 로그 뷰어 신호 연결
+    if (logViewer) {
+        connect(insProcessor, &InsProcessor::logMessage, logViewer, &LogViewer::receiveLogMessage);
+        
+        // 로그 뷰어 접기/펼치기 신호 -> 윈도우 크기 조정
+        connect(logViewer, &LogViewer::collapseStateChanged, this, [this](bool collapsed) {
+            QSize currentSize = this->size();
+            int heightDiff = 150 - 35;  // EXPANDED_HEIGHT - COLLAPSED_HEIGHT
+            if (collapsed) {
+                // 로그 접을 때: 높이를 줄임
+                this->resize(currentSize.width(), std::max(400, currentSize.height() - heightDiff));
+            } else {
+                // 로그 펼칠 때: 높이를 늘림
+                this->resize(currentSize.width(), currentSize.height() + heightDiff);
+            }
+        });
+    }
 
     // 캘리브레이션 도구 설정
     setupCalibrationTools();
@@ -365,10 +382,24 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     // 언어 변경 시그널 연결 (즉시 처리)
     connect(LanguageManager::instance(), &LanguageManager::languageChanged, 
             this, &TeachingWidget::updateUITexts, Qt::DirectConnection);
+    
+    // 프로그램 시작 시 최근 레시피 자동 로드
+    QString lastRecipePath = ConfigManager::instance()->getLastRecipePath();
+    if (!lastRecipePath.isEmpty()) {
+        // UI가 완전히 준비된 후에 자동 로드 (QTimer 사용)
+        QTimer::singleShot(500, this, [this, lastRecipePath]() {
+            // 레시피 경로에서 레시피 이름 추출
+            QString recipeName = QFileInfo(lastRecipePath).baseName();
+            qDebug() << "[TeachingWidget] 마지막 레시피 자동 로드:" << recipeName;
+            // 레시피 선택 (메시지박스 없이)
+            onRecipeSelected(recipeName);
+        });
+    }
      
     // UI 텍스트 초기 갱신
     QTimer::singleShot(100, this, &TeachingWidget::updateUITexts);
 }
+
 
 void TeachingWidget::initializeLanguageSystem() {
     // ConfigManager에서 설정 로드
@@ -837,6 +868,8 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     // 구분선 아래 여백 추가
     layout->addSpacing(10);
     
+    // contentLayout 추가 (이 부분은 나중에 외부에서 처리)
+    // 임시로 반환
     return layout;
 }
 
@@ -852,7 +885,7 @@ QVBoxLayout* TeachingWidget::createCameraLayout() {
     
     // 1. 카메라 뷰 초기화 및 추가
     cameraView = new CameraView(this);
-    cameraLayout->addWidget(cameraView);
+    cameraLayout->addWidget(cameraView); // 카메라 뷰 추가
     
     // 2. 패턴 타입 버튼 추가
     setupPatternTypeButtons(cameraLayout);
@@ -924,14 +957,6 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                 // 2. 카메라 및 프레임 확인 (시뮬레이션 모드 고려)
                 if (camOff) {
                     // 시뮬레이션 모드: 현재 카메라 프레임이 있는지 확인
-
-                    if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
-                        qDebug() << QString("cameraFrames[%1] 상태: empty=%2, size=%3x%4")
-                                    .arg(cameraIndex)
-                                    .arg(cameraFrames[cameraIndex].empty())
-                                    .arg(cameraFrames[cameraIndex].cols)
-                                    .arg(cameraFrames[cameraIndex].rows);
-                    }
                     
                     if (!cameraView || cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
                         cameraFrames[cameraIndex].empty()) {
@@ -8032,7 +8057,7 @@ bool TeachingWidget::runInspect(const cv::Mat& frame, int specificCameraIndex) {
         return false;
     }
     
-    qDebug() << QString("✅ [검사 시작] 프레임 크기: %1x%2").arg(frame.cols).arg(frame.rows);
+    // qDebug() << QString("✅ [검사 시작] 프레임 크기: %1x%2").arg(frame.cols).arg(frame.rows);  // 로그 제거
     
     if (!cameraView || !insProcessor) {
         return false;
@@ -8704,12 +8729,15 @@ void TeachingWidget::saveRecipe() {
 }
 
 
-bool TeachingWidget::loadRecipe(const QString &fileName) {
+bool TeachingWidget::loadRecipe(const QString &fileName, bool showMessageBox) {
     if (fileName.isEmpty()) {
         // 파일명이 없으면 사용 가능한 첫 번째 레시피 로드
         RecipeManager recipeManager;
         QStringList availableRecipes = recipeManager.getAvailableRecipes();
         if (availableRecipes.isEmpty()) {
+            if (showMessageBox) {
+                QMessageBox::warning(this, tr("Warning"), tr("No recipes available"));
+            }
             return false;
         }
         onRecipeSelected(availableRecipes.first());
@@ -8717,9 +8745,12 @@ bool TeachingWidget::loadRecipe(const QString &fileName) {
     }
     
     // 더 이상 직접 파일 로드를 지원하지 않음 - 개별 레시피 시스템만 사용
-    qWarning() << "직접 파일 로드는 지원되지 않습니다. 레시피 관리 시스템을 사용하세요.";
+    if (showMessageBox) {
+        qWarning() << "직접 파일 로드는 지원되지 않습니다. 레시피 관리 시스템을 사용하세요.";
+    }
     return false;
 }
+
 
 bool TeachingWidget::hasLoadedRecipe() const {
     // 레시피가 로드된 경우 패턴이 하나 이상 있어야 함
@@ -10223,8 +10254,6 @@ void TeachingWidget::onSimulationProjectNameChanged(const QString& projectName) 
             
             // 카메라 뷰 이미지 초기화 (연결 없음 상태로)
             cameraView->setBackgroundPixmap(QPixmap());
-            cameraView->clear(); // QLabel의 텍스트/이미지 지우기
-            cameraView->setText(TR("NO_CONNECTION")); // 기본 텍스트 설정
             
             // 패턴들 모두 제거 (CameraView에서 관리)
             cameraView->clearPatterns();
@@ -10497,17 +10526,17 @@ void TeachingWidget::newRecipe() {
         }
     }
     
-    // 새 레시피 이름 입력받기
-    CustomMessageBox msgBox(this);
-    msgBox.setTitle("새 레시피 생성");
-    msgBox.setMessage("레시피 이름을 입력하세요:\n(비어있으면 자동으로 생성됩니다)");
-    msgBox.setInputField(true, "");
-    msgBox.setButtons(QMessageBox::Ok | QMessageBox::Cancel);
+    // **첫 번째: 새 레시피 이름 입력받기**
+    CustomMessageBox nameBox(this);
+    nameBox.setTitle("새 레시피 생성");
+    nameBox.setMessage("레시피 이름을 입력하세요:\n(비어있으면 자동으로 생성됩니다)");
+    nameBox.setInputField(true, "");
+    nameBox.setButtons(QMessageBox::Ok | QMessageBox::Cancel);
     
-    if (msgBox.exec() != QMessageBox::Ok) {
+    if (nameBox.exec() != QMessageBox::Ok) {
         return; // 사용자가 취소
     }
-    QString recipeName = msgBox.getInputText();
+    QString recipeName = nameBox.getInputText();
     
     // 이름이 비어있으면 자동 생성 (년월일시간초밀리초)
     if (recipeName.trimmed().isEmpty()) {
@@ -10530,86 +10559,172 @@ void TeachingWidget::newRecipe() {
         }
     }
     
-    // 카메라 연결 상태 확인 후 티칭 이미지 선택
-    bool hasCamera = false;
-    if (cameraView) {
-        // 현재 카메라 연결 상태 확인 (카메라뷰에 이미지가 있는지 체크)
-        hasCamera = !cameraView->getBackgroundImage().isNull();
+    // **두 번째 선택: "이미지 찾기" vs "레시피로 읽기"**
+    QMessageBox msgBox(this);
+    msgBox.setWindowTitle("새 레시피 생성");
+    msgBox.setText("영상을 어디서 가져오시겠습니까?");
+    QPushButton* imageButton = msgBox.addButton("이미지 찾기", QMessageBox::ActionRole);
+    QPushButton* recipeButton = msgBox.addButton("레시피로 읽기", QMessageBox::ActionRole);
+    QPushButton* cancelButton = msgBox.addButton("취소", QMessageBox::RejectRole);
+    
+    msgBox.exec();
+    
+    bool useImage = false;
+    bool useRecipe = false;
+    
+    if (msgBox.clickedButton() == imageButton) {
+        useImage = true;
+    } else if (msgBox.clickedButton() == recipeButton) {
+        useRecipe = true;
+    } else {
+        return; // 취소
     }
     
-    if (!hasCamera) {
-        // 카메라가 연결되지 않은 경우 티칭용 이미지 선택
-        QMessageBox::StandardButton reply = QMessageBox::question(this,
-            "티칭 이미지 선택",
-            "카메라가 연결되지 않았습니다.\n티칭용 이미지를 선택하시겠습니까?",
-            QMessageBox::Yes | QMessageBox::No);
+    // **세 번째: 이미지 찾기 또는 레시피로 읽기**
+    if (useImage) {
+        // 이미지 파일 선택
+        QString imageFile = QFileDialog::getOpenFileName(this,
+            "티칭용 이미지 선택",
+            "",
+            "이미지 파일 (*.jpg *.jpeg *.png *.bmp *.tiff *.tif)");
         
-        if (reply == QMessageBox::Yes) {
-            QString imageFile = QFileDialog::getOpenFileName(this,
-                "티칭용 이미지 선택",
-                "",
-                "이미지 파일 (*.jpg *.jpeg *.png *.bmp *.tiff *.tif)");
+        if (imageFile.isEmpty()) {
+            CustomMessageBox(this, CustomMessageBox::Information, "알림",
+                "이미지가 선택되지 않았습니다.").exec();
+            return;
+        }
+        
+        // 선택한 이미지를 카메라뷰에 로드
+        QPixmap pixmap(imageFile);
+        if (pixmap.isNull() || !cameraView) {
+            QMessageBox::warning(this, "이미지 로드 실패",
+                "선택한 이미지를 로드할 수 없습니다.");
+            return;
+        }
+        
+        cameraView->setBackgroundImage(pixmap);
+        
+        // cameraFrames에도 이미지 설정 (티칭 시 템플릿 추출을 위해 필요)
+        cv::Mat loadedImage;
+        QImage qImage = pixmap.toImage();
+        if (qImage.format() != QImage::Format_RGB888) {
+            qImage = qImage.convertToFormat(QImage::Format_RGB888);
+        }
+        loadedImage = cv::Mat(qImage.height(), qImage.width(), CV_8UC3, 
+                            (void*)qImage.constBits(), qImage.bytesPerLine()).clone();
+        cv::cvtColor(loadedImage, loadedImage, cv::COLOR_RGB2BGR);
+        
+        // cameraFrames[cameraIndex]에 저장
+        if (cameraFrames.size() <= static_cast<size_t>(cameraIndex)) {
+            cameraFrames.resize(cameraIndex + 1);
+        }
+        cameraFrames[cameraIndex] = loadedImage.clone();
+        
+        // 이미지 파일명(확장자 제외)을 카메라 이름으로 설정
+        QFileInfo fileInfo(imageFile);
+        QString imageName = fileInfo.baseName(); // 확장자 제외한 파일명
+        cameraView->setCurrentCameraName(imageName);
+        cameraView->setCurrentCameraUuid(imageName); // UUID도 같은 이름으로 설정
+        
+        // 가상 카메라 정보 생성 (레시피 저장을 위해 필요)
+        if (cameraInfos.empty() || cameraIndex >= cameraInfos.size()) {
+            CameraInfo virtualCamera;
+            virtualCamera.name = imageName;
+            virtualCamera.uniqueId = imageName; // 이미지 이름을 유니크 ID로 사용
+            virtualCamera.index = 0;
+            virtualCamera.isConnected = false;
             
-            if (!imageFile.isEmpty()) {
-                // 선택한 이미지를 카메라뷰에 로드
-                QPixmap pixmap(imageFile);
-                if (!pixmap.isNull() && cameraView) {
-                    cameraView->setBackgroundImage(pixmap);
-                    
-                    // cameraFrames에도 이미지 설정 (티칭 시 템플릿 추출을 위해 필요)
-                    cv::Mat loadedImage;
-                    QImage qImage = pixmap.toImage();
-                    if (qImage.format() != QImage::Format_RGB888) {
-                        qImage = qImage.convertToFormat(QImage::Format_RGB888);
-                    }
-                    loadedImage = cv::Mat(qImage.height(), qImage.width(), CV_8UC3, 
-                                        (void*)qImage.constBits(), qImage.bytesPerLine()).clone();
-                    cv::cvtColor(loadedImage, loadedImage, cv::COLOR_RGB2BGR);
-                    
-                    // cameraFrames[cameraIndex]에 저장
-                    if (cameraFrames.size() <= static_cast<size_t>(cameraIndex)) {
-                        cameraFrames.resize(cameraIndex + 1);
-                    }
-                    cameraFrames[cameraIndex] = loadedImage.clone();
-                    
-                    // 이미지 파일명(확장자 제외)을 카메라 이름으로 설정
-                    QFileInfo fileInfo(imageFile);
-                    QString imageName = fileInfo.baseName(); // 확장자 제외한 파일명
-                    cameraView->setCurrentCameraName(imageName);
-                    cameraView->setCurrentCameraUuid(imageName); // UUID도 같은 이름으로 설정
-                    
-                    // 가상 카메라 정보 생성 (레시피 저장을 위해 필요)
-                    if (cameraInfos.empty() || cameraIndex >= cameraInfos.size()) {
-                        CameraInfo virtualCamera;
-                        virtualCamera.name = imageName;
-                        virtualCamera.uniqueId = imageName; // 이미지 이름을 유니크 ID로 사용
-                        virtualCamera.index = 0;
-                        virtualCamera.isConnected = false;
-                        
-                        if (cameraInfos.empty()) {
-                            cameraInfos.append(virtualCamera);
-                        } else {
-                            cameraInfos[cameraIndex] = virtualCamera;
-                        }
-                        
-                        qDebug() << "가상 카메라 정보 생성 완료 - 이름:" << imageName << ", UUID:" << imageName;
-                    }
-                    
-                    qDebug() << "티칭용 이미지 로드 성공:" << imageFile;
-                    qDebug() << "카메라 이름 설정:" << imageName;
-                    qDebug() << "cameraFrames[" << cameraIndex << "]에 이미지 설정 완료 - 크기:" << loadedImage.cols << "x" << loadedImage.rows;
-                } else {
-                    QMessageBox::warning(this, "이미지 로드 실패",
-                        "선택한 이미지를 로드할 수 없습니다.");
-                    return;
-                }
+            if (cameraInfos.empty()) {
+                cameraInfos.append(virtualCamera);
             } else {
-                // 이미지 선택을 취소한 경우
-                CustomMessageBox(this, CustomMessageBox::Information, "알림",
-                    "티칭용 이미지가 없으면 패턴을 생성할 수 없습니다.\n"
-                    "나중에 카메라를 연결하거나 이미지를 로드해주세요.").exec();
+                cameraInfos[cameraIndex] = virtualCamera;
+            }
+            
+            qDebug() << "가상 카메라 정보 생성 완료 - 이름:" << imageName << ", UUID:" << imageName;
+        }
+        
+        qDebug() << "티칭용 이미지 로드 성공:" << imageFile;
+        qDebug() << "카메라 이름 설정:" << imageName;
+        qDebug() << "cameraFrames[" << cameraIndex << "]에 이미지 설정 완료 - 크기:" << loadedImage.cols << "x" << loadedImage.rows;
+        
+    } else if (useRecipe) {
+        // 기존 레시피 목록 표시
+        QStringList availableRecipes = recipeManager->getAvailableRecipes();
+        
+        if (availableRecipes.isEmpty()) {
+            QMessageBox::information(this, "레시피 없음", "사용 가능한 레시피가 없습니다.");
+            return;
+        }
+        
+        // 레시피 선택 대화상자
+        bool ok = false;
+        QString selectedRecipe = QInputDialog::getItem(this,
+            "기존 레시피 선택",
+            "영상을 불러올 레시피를 선택하세요:",
+            availableRecipes,
+            0,
+            false,
+            &ok);
+        
+        if (!ok || selectedRecipe.isEmpty()) {
+            return; // 사용자가 취소
+        }
+        
+        // 선택한 레시피에서 메인 카메라 이미지 로드
+        cv::Mat mainCameraImage;
+        QString cameraName;
+        if (!recipeManager->loadMainCameraImage(selectedRecipe, mainCameraImage, cameraName)) {
+            QMessageBox::warning(this, "이미지 로드 실패",
+                QString("레시피 '%1'에서 이미지를 불러올 수 없습니다.\n오류: %2")
+                    .arg(selectedRecipe).arg(recipeManager->getLastError()));
+            return;
+        }
+        
+        if (mainCameraImage.empty()) {
+            QMessageBox::warning(this, "이미지 없음",
+                QString("레시피 '%1'에서 이미지를 찾을 수 없습니다.").arg(selectedRecipe));
+            return;
+        }
+        
+        // cv::Mat을 QPixmap으로 변환해서 표시
+        cv::Mat displayImage;
+        cv::cvtColor(mainCameraImage, displayImage, cv::COLOR_BGR2RGB);
+        QImage qImage(displayImage.data, displayImage.cols, displayImage.rows,
+                     displayImage.step, QImage::Format_RGB888);
+        QPixmap pixmap = QPixmap::fromImage(qImage);
+        
+        if (cameraView) {
+            cameraView->setBackgroundImage(pixmap);
+        }
+        
+        // cameraFrames에 설정
+        if (cameraFrames.size() <= static_cast<size_t>(cameraIndex)) {
+            cameraFrames.resize(cameraIndex + 1);
+        }
+        cameraFrames[cameraIndex] = mainCameraImage.clone();
+        
+        // 카메라 정보 설정
+        if (cameraView) {
+            cameraView->setCurrentCameraName(cameraName);
+            cameraView->setCurrentCameraUuid(cameraName);
+        }
+        
+        // 가상 카메라 정보 생성
+        if (cameraInfos.empty() || cameraIndex >= cameraInfos.size()) {
+            CameraInfo virtualCamera;
+            virtualCamera.name = cameraName;
+            virtualCamera.uniqueId = cameraName;
+            virtualCamera.index = 0;
+            virtualCamera.isConnected = false;
+            
+            if (cameraInfos.empty()) {
+                cameraInfos.append(virtualCamera);
+            } else {
+                cameraInfos[cameraIndex] = virtualCamera;
             }
         }
+        
+        qDebug() << "레시피에서 이미지 로드 완료:" << cameraName;
     }
 
     // 기존 패턴들 클리어
@@ -10622,34 +10737,9 @@ void TeachingWidget::newRecipe() {
     
     // 새 레시피 상태로 설정
     currentRecipeName = recipeName;
-    hasUnsavedChanges = false;
+    hasUnsavedChanges = true;  // 사용자가 명시적으로 저장할 때까지 대기
     
-    // 새 레시피 파일 즉시 저장 (빈 상태로라도 파일이 있어야 목록에 표시됨) - 기존 saveRecipe 함수 사용
-    QString recipeFileName = QString("recipes/%1/%1.xml").arg(recipeName);
-    QMap<QString, CalibrationInfo> calibrationMap;
-    QStringList simulationImagePaths;
-    if (recipeManager->saveRecipe(recipeFileName, cameraInfos, cameraIndex, calibrationMap, cameraView, simulationImagePaths, 0, QStringList(), this)) {
-        // 저장 성공 - 티칭 이미지는 XML에 base64로 저장됨
-        qDebug() << "레시피 저장 성공: 티칭 이미지는 XML에 base64로 저장됨";
-        
-        // 새 레시피 생성 시 패턴 트리 업데이트
-        updatePatternTree();
-        
-        CustomMessageBox msgBox(this);
-        msgBox.setIcon(CustomMessageBox::Information);
-        msgBox.setTitle("새 레시피");
-        msgBox.setMessage(QString("새 레시피 '%1'가 생성되었습니다.").arg(recipeName));
-        msgBox.setButtons(QMessageBox::Ok);
-        msgBox.exec();
-    } else {
-        CustomMessageBox msgBoxWarning(this);
-        msgBoxWarning.setIcon(CustomMessageBox::Warning);
-        msgBoxWarning.setTitle("저장 실패");
-        msgBoxWarning.setMessage(QString("새 레시피 파일 생성에 실패했습니다:\n%1").arg(recipeManager->getLastError()));
-        msgBoxWarning.setButtons(QMessageBox::Ok);
-        msgBoxWarning.exec();
-        return; // 저장 실패 시 성공 메시지 표시하지 않고 종료
-    }
+    qDebug() << QString("새 레시피 '%1' 준비 완료 (저장 대기)").arg(recipeName);
 }
 
 void TeachingWidget::saveRecipeAs() {
@@ -10971,6 +11061,26 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
         ConfigManager::instance()->saveConfig();
         qDebug() << QString("레시피 로드 완료: %1").arg(recipeName);
         
+        // **기존 레시피에서 메인 카메라 이미지 로드**
+        if (camOff) {  // 시뮬레이션 모드일 때만
+            cv::Mat mainCameraImage;
+            QString cameraName;
+            if (manager.loadMainCameraImage(recipeName, mainCameraImage, cameraName)) {
+                if (!mainCameraImage.empty()) {
+                    // cameraFrames에 첫 번째 이미지로 설정
+                    if (cameraFrames.empty()) {
+                        cameraFrames.push_back(mainCameraImage);
+                    } else {
+                        cameraFrames[0] = mainCameraImage;
+                    }
+                    qDebug() << QString("기존 레시피에서 메인 카메라 이미지 로드 완료: %1 (%2x%3)")
+                                .arg(cameraName).arg(mainCameraImage.cols).arg(mainCameraImage.rows);
+                }
+            } else {
+                qDebug() << QString("기존 레시피에서 메인 카메라 이미지 로드 실패: %1").arg(manager.getLastError());
+            }
+        }
+        
         // TODO: 현재 연결된 카메라의 패턴만 필터링하는 기능 추가 예정
         
         // 패턴 동기화 및 트리 업데이트
@@ -11089,18 +11199,6 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
             qDebug() << QString("camOff 상태: %1").arg(camOff ? "true" : "false");
             qDebug() << QString("=== cameraInfos 정보 끝 ===");
 
-            // 카메라 상태 확인
-            QString modeText;
-            if (camOff) {
-                modeText = QString("'%1' 레시피가 성공적으로 불러와졌습니다.\n"
-                                 "카메라: %2개 (시뮬레이션 모드)")
-                          .arg(recipeName).arg(cameraInfos.size());
-            } else {
-                modeText = QString("'%1' 레시피가 성공적으로 불러와졌습니다.\n"
-                                 "카메라: %2개")
-                          .arg(recipeName).arg(cameraInfos.size());
-            }
-            CustomMessageBox(this, CustomMessageBox::Information, "레시피 불러오기", modeText).exec();
     } else {
         CustomMessageBox(this, CustomMessageBox::Critical, "레시피 불러오기 실패",
             QString("레시피 불러오기에 실패했습니다:\n%1").arg(manager.getLastError())).exec();

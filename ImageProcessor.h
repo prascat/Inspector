@@ -76,7 +76,9 @@ public:
                                      cv::Point& maxGradientPoint, std::vector<cv::Point>& gradientPoints,
                                      cv::Mat& resultImage, std::vector<cv::Point>* edgePoints = nullptr,
                                      bool* stripLengthPassed = nullptr, double* stripMeasuredLength = nullptr, 
-                                     cv::Point* stripLengthStartPoint = nullptr, cv::Point* stripLengthEndPoint = nullptr);
+                                     cv::Point* stripLengthStartPoint = nullptr, cv::Point* stripLengthEndPoint = nullptr,
+                                     std::vector<cv::Point>* frontThicknessPoints = nullptr,
+                                     std::vector<cv::Point>* rearThicknessPoints = nullptr);
 };
 
 #endif // IMAGEPROCESSOR_H

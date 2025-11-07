@@ -8,9 +8,11 @@
 #include <QImage>
 #include <QMap>
 #include <QList>
+#include <QPainter>
+#include <QFont>
+#include <QFontMetrics>
 #include <opencv2/opencv.hpp>
 #include "LanguageManager.h"
-#include "CustomMessageBox.h"
 #include "CustomMessageBox.h"
 
 // TR 매크로 정의
@@ -74,6 +76,27 @@ struct InspectionResult {
     QMap<QUuid, QSizeF> stripFrontBoxSize;          // FRONT 박스 크기 (width, height)
     QMap<QUuid, QPointF> stripRearBoxCenter;        // REAR 박스 중심 상대좌표 (패턴 중심 기준)
     QMap<QUuid, QSizeF> stripRearBoxSize;           // REAR 박스 크기 (width, height)
+    
+    // STRIP 두께 측정 포인트들 (절대좌표 - 렌더링용)
+    // FRONT: [좌측상, 좌측하, 우측상, 우측하], REAR: [좌측상, 좌측하, 우측상, 우측하]
+    QMap<QUuid, QList<QPoint>> stripFrontThicknessPoints;  // FRONT 두께 측정 포인트들 (절대좌표)
+    QMap<QUuid, QList<QPoint>> stripRearThicknessPoints;   // REAR 두께 측정 포인트들 (절대좌표)
+    QMap<QUuid, QPointF> stripScanDirection;        // 스캔 방향 벡터 (정규화됨) - 점 표시 방향용
+    
+    // STRIP 스캔 라인 시작-끝점 쌍 (각 수직 스캔 라인의 상단-하단)
+    QMap<QUuid, QList<QPair<QPoint, QPoint>>> stripFrontScanLines;  // FRONT 스캔 라인 시작-끝점 쌍
+    QMap<QUuid, QList<QPair<QPoint, QPoint>>> stripRearScanLines;   // REAR 스캔 라인 시작-끝점 쌍
+    
+    // STRIP 두께 측정 포인트들 (라인별로 그룹화됨 - 렌더링용)
+    // 각 라인마다 [점1, 점2, ...] 형태로 저장 (한 스캔 라인의 모든 검사 점)
+    QMap<QUuid, QList<QList<QPoint>>> stripFrontThicknessPointsByLine;  // FRONT 두께 측정 포인트들 (라인별 그룹화, 상대좌표)
+    QMap<QUuid, QList<QList<QPoint>>> stripRearThicknessPointsByLine;   // REAR 두께 측정 포인트들 (라인별 그룹화, 상대좌표)
+    
+    // STRIP 실제 측정 지점 (절대좌표 - 검사 로그의 실제 검출된 위치)
+    QMap<QUuid, QPoint> stripStartPoint;            // STRIP 측정 시작점 (절대좌표)
+    QMap<QUuid, QPoint> stripMaxGradientPoint;      // STRIP 최대 Gradient 지점 (절대좌표)
+    QMap<QUuid, int> stripMeasuredThicknessLeft;   // 측정된 좌측 두께 (픽셀)
+    QMap<QUuid, int> stripMeasuredThicknessRight;  // 측정된 우측 두께 (픽셀)
     
     // EDGE 검사 결과 (심선 끝 절단면 품질)
     QMap<QUuid, bool> edgeResults;                  // EDGE 검사 통과 여부 (패턴 ID -> 통과 여부)

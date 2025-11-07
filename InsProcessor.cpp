@@ -232,6 +232,16 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                     .arg(matchLoc.x)
                     .arg(matchLoc.y)
                     .arg(result.angles[pattern.id], 0, 'f', 2));
+            
+            // 박스 크기 및 좌표 출력
+            int rectX = static_cast<int>(pattern.rect.x());
+            int rectY = static_cast<int>(pattern.rect.y());
+            int rectW = static_cast<int>(pattern.rect.width());
+            int rectH = static_cast<int>(pattern.rect.height());
+            logDebug(QString("[FID검사전] 패턴 '%1': 박스=(%2,%3) 크기=%4x%5")
+                    .arg(pattern.name).arg(rectX).arg(rectY).arg(rectW).arg(rectH));
+            logDebug(QString("[FID검사후] 패턴 '%1': 매칭위치=(%2,%3) (좌상단 좌표)")
+                    .arg(pattern.name).arg(matchLoc.x).arg(matchLoc.y));
         }
     }
     
@@ -583,6 +593,20 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                     .arg(pattern.name)
                     .arg(inspPassed ? "합격" : "불합격")
                     .arg(inspScore, 0, 'f', 2));
+            
+            // 박스 크기 및 좌표 출력
+            logDebug(QString("[INS검사전] 패턴 '%1': 원본박스=(%2,%3) 크기=%4x%5")
+                    .arg(pattern.name)
+                    .arg(static_cast<int>(pattern.rect.x()))
+                    .arg(static_cast<int>(pattern.rect.y()))
+                    .arg(static_cast<int>(pattern.rect.width()))
+                    .arg(static_cast<int>(pattern.rect.height())));
+            logDebug(QString("[INS검사후] 패턴 '%1': 조정박스=(%2,%3) 크기=%4x%5")
+                    .arg(pattern.name)
+                    .arg(adjustedRect.x())
+                    .arg(adjustedRect.y())
+                    .arg(adjustedRect.width())
+                    .arg(adjustedRect.height()));
         }
     }
     
@@ -654,18 +678,18 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
         cv::Rect searchRoi;
         bool roiDefined = false;
         
+        // ★★★ 수정: 패턴 중심 기반으로 검색 영역 결정 (항상 패턴 주변 영역 사용) ★★★
         // 모든 ROI 패턴 검색
         for (const PatternInfo& roi : allPatterns) {
             // ROI 패턴인지 확인하고 활성화된 상태인지 확인
             if (roi.type == PatternType::ROI && roi.enabled) {
                 // "전체 카메라 영역 포함" 체크 여부 확인
                 if (roi.includeAllCamera) {
-                    // 전체 이미지 영역 사용
-                    searchRoi = cv::Rect(0, 0, image.cols, image.rows);
+                    // 전체 이미지 영역 사용 (하지만 패턴 주변 검색 영역으로 제한)
                     roiDefined = true;
-                    logDebug(QString("ROI 패턴 '%1': 전체 카메라 영역 포함 옵션 활성화됨")
+                    logDebug(QString("ROI 패턴 '%1': 전체 카메라 영역 포함 옵션 활성화됨 (패턴 주변 검색)")
                             .arg(roi.name));
-                    break; // 전체 영역 사용하는 ROI가 있으면 더 이상 검색하지 않음
+                    break;
                 } else {
                     // FID 패턴이 이 ROI 내부에 있는지 확인 (중심점 기준)
                     QPoint fidCenter = QPoint(
@@ -673,15 +697,8 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
                         static_cast<int>(pattern.rect.center().y())
                     );
                     if (roi.rect.contains(fidCenter)) {
-                        // 해당 ROI 영역 내에서만 검색
-                        searchRoi = cv::Rect(
-                            roi.rect.x(),
-                            roi.rect.y(),
-                            roi.rect.width(),
-                            roi.rect.height()
-                        );
                         roiDefined = true;
-                        logDebug(QString("FID 패턴 '%1'이(가) ROI 패턴 '%2' 내에 있음")
+                        logDebug(QString("FID 패턴 '%1'이(가) ROI 패턴 '%2' 내에 있음 (패턴 주변 검색)")
                                 .arg(pattern.name).arg(roi.name));
                         break; // 첫 번째로 찾은 포함하는 ROI 사용
                     }
@@ -689,20 +706,25 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
             }
         }
         
-        // 유효한 ROI가 없는 경우 FID 패턴 주변 영역 사용
-        if (!roiDefined) {
-            logDebug(QString("FID 패턴 '%1': 적절한 ROI를 찾지 못함, 패턴 주변 영역 사용")
-                    .arg(pattern.name));
-                    
-            // 패턴 주변으로 검색 영역 확장 (패턴 크기의 2배 정도)
-            int margin = std::max(static_cast<int>(pattern.rect.width()), static_cast<int>(pattern.rect.height()));
-            searchRoi = cv::Rect(
-                std::max(0, static_cast<int>(pattern.rect.x()) - margin),
-                std::max(0, static_cast<int>(pattern.rect.y()) - margin),
-                std::min(image.cols - static_cast<int>(pattern.rect.x()) + margin, static_cast<int>(pattern.rect.width()) + 2 * margin),
-                std::min(image.rows - static_cast<int>(pattern.rect.y()) + margin, static_cast<int>(pattern.rect.height()) + 2 * margin)
-            );
-        }
+        // ★★★ 항상 패턴 주변 영역을 검색 영역으로 사용 ★★★
+        logDebug(QString("FID 패턴 '%1': 패턴 주변 영역을 검색 영역으로 사용 (패턴 기반 검색)")
+                .arg(pattern.name));
+        
+        // 패턴 중심 기반으로 검색 영역 결정 (패턴 크기의 2배 정도 마진)
+        int margin = std::max(static_cast<int>(pattern.rect.width()), static_cast<int>(pattern.rect.height()));
+        searchRoi = cv::Rect(
+            std::max(0, static_cast<int>(pattern.rect.x()) - margin),
+            std::max(0, static_cast<int>(pattern.rect.y()) - margin),
+            std::min(image.cols - std::max(0, static_cast<int>(pattern.rect.x()) - margin), 
+                    static_cast<int>(pattern.rect.width()) + 2 * margin),
+            std::min(image.rows - std::max(0, static_cast<int>(pattern.rect.y()) - margin), 
+                    static_cast<int>(pattern.rect.height()) + 2 * margin)
+        );
+        
+        logDebug(QString("FID 패턴 '%1': 최종 검색 영역 설정 (x:%2 y:%3 w:%4 h:%5) - 패턴 기준")
+                .arg(pattern.name)
+                .arg(searchRoi.x).arg(searchRoi.y)
+                .arg(searchRoi.width).arg(searchRoi.height));
         
         // 검색 영역 유효성 확인 및 로그
         if (searchRoi.width <= 0 || searchRoi.height <= 0 || 
@@ -824,6 +846,18 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
             // 회전 매칭이 활성화된 경우 검출된 각도를 사용
             matchAngle = tempAngle;
             
+            // ★★★ 검색 영역 디버그 로그 ★★★
+            qDebug() << QString("[FID MATCH DEBUG] Pattern: %1").arg(pattern.name);
+            qDebug() << QString("  Pattern Rect Original: x:%1 y:%2 w:%3 h:%4")
+                        .arg(pattern.rect.x(), 0, 'f', 1)
+                        .arg(pattern.rect.y(), 0, 'f', 1)
+                        .arg(pattern.rect.width(), 0, 'f', 1)
+                        .arg(pattern.rect.height(), 0, 'f', 1);
+            qDebug() << QString("  SearchROI: x:%1 y:%2 w:%3 h:%4").arg(searchRoi.x).arg(searchRoi.y)
+                        .arg(searchRoi.width).arg(searchRoi.height);
+            qDebug() << QString("  Local Match (ROI내): x:%1 y:%2").arg(localMatchLoc.x).arg(localMatchLoc.y);
+            qDebug() << QString("  Final Match Loc: x:%1 y:%2").arg(matchLoc.x).arg(matchLoc.y);
+            
             logDebug(QString("매칭 위치: ROI 내 (%1,%2) -> 전체 이미지 (%3,%4)")
                     .arg(localMatchLoc.x)
                     .arg(localMatchLoc.y)
@@ -886,21 +920,26 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
         cv::Mat templateForMatching = templGray.clone();
         cv::Mat templateMask;
         
-        // 검은색 패턴 부분만 매칭에 사용하는 마스크 생성
-        cv::threshold(templGray, templateMask, 127, 255, cv::THRESH_BINARY_INV); // 검은색 부분만 255
-        
         cv::Mat result;
-        cv::matchTemplate(imageGray, templateForMatching, result, cv::TM_CCOEFF_NORMED, templateMask);
+        cv::matchTemplate(imageGray, templateForMatching, result, cv::TM_CCOEFF_NORMED);
         
         double minVal, maxVal;
         cv::Point minLoc, maxLoc;
         cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
         
         // 템플릿 매칭은 왼쪽 상단 좌표를 반환하므로, 중심점을 계산
+        // ★★★ 중요: matchLoc은 roi(검색 이미지) 내에서의 상대 좌표여야 함 ★★★
         matchLoc.x = static_cast<int>(maxLoc.x + templateForMatching.cols / 2.0 + 0.5);
         matchLoc.y = static_cast<int>(maxLoc.y + templateForMatching.rows / 2.0 + 0.5);
         score = maxVal;
         angle = pattern.angle; // 패턴에 저장된 각도 그대로 반환
+        
+        qDebug() << QString("[TEMPLATE MATCH DEBUG] Pattern: %1").arg(pattern.name);
+        qDebug() << QString("  useRotation: false");
+        qDebug() << QString("  maxLoc (top-left): x:%1 y:%2").arg(maxLoc.x).arg(maxLoc.y);
+        qDebug() << QString("  templateSize: w:%1 h:%2").arg(templateForMatching.cols).arg(templateForMatching.rows);
+        qDebug() << QString("  matchLoc (center): x:%1 y:%2").arg(matchLoc.x).arg(matchLoc.y);
+        qDebug() << QString("  score: %1, angle: %2°").arg(score, 0, 'f', 4).arg(angle);
         
         logDebug(QString("원본 템플릿 매칭 완료: 점수=%1, 각도=%2°, 위치=(%3,%4)")
                 .arg(score, 0, 'f', 4).arg(angle).arg(matchLoc.x).arg(matchLoc.y));
@@ -940,12 +979,6 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
     // 각도 범위 내에서 최적 매칭 검색
     logDebug(QString("회전 템플릿 매칭 시작: 각도 범위=%1° ~ %2°, 스텝=%3°")
             .arg(adjustedMinAngle).arg(adjustedMaxAngle).arg(angleStep));
-            
-    // 원본 템플릿에서 검은색 패턴 부분만 매칭에 사용하는 마스크 생성
-    cv::Mat originalMask = cv::Mat::zeros(diagonal, diagonal, CV_8U);
-    cv::Mat templMask;
-    cv::threshold(templGray, templMask, 127, 255, cv::THRESH_BINARY_INV); // 검은색 부분만 255
-    templMask.copyTo(originalMask(roi));
             
     // 각도 리스트 생성: 2단계 적응적 검색 + 조기 종료
     std::vector<double> angleList;
@@ -999,13 +1032,12 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
         bool isTeachingAngle = (std::abs(currentAngle - pattern.angle) < 0.01);
         
         // 템플릿 회전
-        cv::Mat templateForMatching, rotatedMask;
+        cv::Mat templateForMatching;
         
         if (isTeachingAngle) {
             // 티칭 각도인 경우: 원본 템플릿 그대로 사용
             logDebug(QString("티칭 각도 %1°: 원본 템플릿 사용").arg(currentAngle));
             templateForMatching = templGray.clone();
-            cv::threshold(templGray, rotatedMask, 127, 255, cv::THRESH_BINARY_INV);
         } else {
             // 다른 각도인 경우: 패딩된 템플릿을 회전
             logDebug(QString("각도 %1°: 템플릿 회전 (상대각도: %2°)")
@@ -1018,11 +1050,6 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
             cv::Mat rotatedTempl;
             cv::warpAffine(paddedTempl, rotatedTempl, rotMatrix, paddedTempl.size(), 
                          cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0));
-            cv::warpAffine(originalMask, rotatedMask, rotMatrix, originalMask.size(), 
-                         cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0));
-            
-            // 마스크 이진화 (회전으로 인한 보간 오류 제거)
-            cv::threshold(rotatedMask, rotatedMask, 128, 255, cv::THRESH_BINARY);
             
             // 회전된 템플릿을 그레이스케일로 변환
             if (rotatedTempl.channels() == 3) {
@@ -1034,7 +1061,6 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
         
         // 타입을 CV_8U로 통일
         templateForMatching.convertTo(templateForMatching, CV_8U);
-        rotatedMask.convertTo(rotatedMask, CV_8U);
         
         // 템플릿 크기와 이미지 크기 검증
         if (templateForMatching.empty() || imageGray.empty()) {
@@ -1050,19 +1076,10 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
             continue;
         }
         
-        // 마스크 영역이 너무 작으면 스킬
-        int maskArea = cv::countNonZero(rotatedMask);
-        int originalArea = originalWidth * originalHeight;
-        if (maskArea < originalArea * 0.2) { // 원본의 20% 미만이면 스킵
-            logDebug(QString("각도 %1°: 마스크 영역이 너무 작음 (%2/%3, %4%)")
-                    .arg(currentAngle).arg(maskArea).arg(originalArea)
-                    .arg(maskArea * 100.0 / originalArea, 0, 'f', 1));
-            continue;
-        }
-        
         cv::Mat result;
         try {
-            cv::matchTemplate(imageGray, templateForMatching, result, cv::TM_CCOEFF_NORMED, rotatedMask);
+            // FID 패턴 매칭은 마스크 없이 수행
+            cv::matchTemplate(imageGray, templateForMatching, result, cv::TM_CCOEFF_NORMED);
         } catch (const cv::Exception& e) {
             logDebug(QString("각도 %1°: 템플릿 매칭 오류 - %2").arg(currentAngle).arg(e.what()));
             continue;
@@ -1078,12 +1095,10 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
         cv::Point minLoc, maxLoc;
         cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
         
-        logDebug(QString("1단계 - 각도 %1°%2: 매칭 점수=%3, 마스크 영역=%4/%5 (%6%), 위치=(%7,%8)")
+        logDebug(QString("1단계 - 각도 %1°%2: 매칭 점수=%3, 위치=(%4,%5)")
                 .arg(currentAngle, 0, 'f', 0)
                 .arg(isTeachingAngle ? " (티칭)" : "")
                 .arg(maxVal, 0, 'f', 4)
-                .arg(maskArea).arg(originalArea)
-                .arg(maskArea * 100.0 / originalArea, 0, 'f', 1)
                 .arg(maxLoc.x).arg(maxLoc.y));
         
         // 1단계 최고 점수 업데이트
@@ -1116,7 +1131,6 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
             bestLocation.x = static_cast<int>(maxLoc.x + templateForMatching.cols / 2.0 + 0.5);
             bestLocation.y = static_cast<int>(maxLoc.y + templateForMatching.rows / 2.0 + 0.5);
             bestTemplate = templateForMatching.clone();
-            bestMask = rotatedMask.clone();
         }
     }
     
@@ -1157,12 +1171,11 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
         bool isTeachingAngle = (std::abs(currentAngle - pattern.angle) < 0.01);
         
         // 템플릿 회전
-        cv::Mat templateForMatching, rotatedMask;
+        cv::Mat templateForMatching;
         
         if (isTeachingAngle) {
             // 티칭 각도인 경우: 원본 템플릿 그대로 사용
             templateForMatching = templGray.clone();
-            cv::threshold(templGray, rotatedMask, 127, 255, cv::THRESH_BINARY_INV);
         } else {
             // 다른 각도인 경우: 패딩된 템플릿을 회전
             cv::Mat rotMatrix = cv::getRotationMatrix2D(
@@ -1172,11 +1185,6 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
             cv::Mat rotatedTempl;
             cv::warpAffine(paddedTempl, rotatedTempl, rotMatrix, paddedTempl.size(), 
                          cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0));
-            cv::warpAffine(originalMask, rotatedMask, rotMatrix, originalMask.size(), 
-                         cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0));
-            
-            // 마스크 이진화 (회전으로 인한 보간 오류 제거)
-            cv::threshold(rotatedMask, rotatedMask, 128, 255, cv::THRESH_BINARY);
             
             // 회전된 템플릿을 그레이스케일로 변환
             if (rotatedTempl.channels() == 3) {
@@ -1188,7 +1196,6 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
         
         // 타입을 CV_8U로 통일
         templateForMatching.convertTo(templateForMatching, CV_8U);
-        rotatedMask.convertTo(rotatedMask, CV_8U);
         
         // 템플릿 크기와 이미지 크기 검증
         if (templateForMatching.empty() || imageGray.empty()) {
@@ -1199,16 +1206,10 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
             continue;
         }
         
-        // 마스크 영역이 너무 작으면 스킬
-        int maskArea = cv::countNonZero(rotatedMask);
-        int originalArea = originalWidth * originalHeight;
-        if (maskArea < originalArea * 0.2) {
-            continue;
-        }
-        
         cv::Mat result;
         try {
-            cv::matchTemplate(imageGray, templateForMatching, result, cv::TM_CCOEFF_NORMED, rotatedMask);
+            // FID 패턴 매칭은 마스크 없이 수행
+            cv::matchTemplate(imageGray, templateForMatching, result, cv::TM_CCOEFF_NORMED);
         } catch (const cv::Exception& e) {
             continue;
         }
@@ -1234,7 +1235,6 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
             bestLocation.x = static_cast<int>(maxLoc.x + templateForMatching.cols / 2.0 + 0.5);
             bestLocation.y = static_cast<int>(maxLoc.y + templateForMatching.rows / 2.0 + 0.5);
             bestTemplate = templateForMatching.clone();
-            bestMask = rotatedMask.clone();
             logDebug(QString("2단계 새로운 최고! 각도 %1°: %2 -> 중심점(%3,%4)")
                     .arg(currentAngle, 0, 'f', 0)
                     .arg(maxVal, 0, 'f', 4)
@@ -2188,8 +2188,8 @@ cv::Mat InsProcessor::extractROI(const cv::Mat& image, const QRectF& rect, doubl
         // 정사각형 ROI 영역 계산 (중심점 기준)
         int halfSize = maxSize / 2;
         cv::Rect squareRoi(
-            static_cast<int>(center.x) - halfSize,
-            static_cast<int>(center.y) - halfSize,
+            static_cast<int>(std::round(center.x)) - halfSize,  // 반올림 사용
+            static_cast<int>(std::round(center.y)) - halfSize,  // 반올림 사용
             maxSize,
             maxSize
         );
@@ -2228,18 +2228,18 @@ cv::Mat InsProcessor::extractROI(const cv::Mat& image, const QRectF& rect, doubl
                 
                 std::vector<cv::Point> points;
                 for (int i = 0; i < 4; i++) {
-                    points.push_back(cv::Point(static_cast<int>(vertices[i].x), 
-                                             static_cast<int>(vertices[i].y)));
+                    points.push_back(cv::Point(static_cast<int>(std::round(vertices[i].x)), 
+                                             static_cast<int>(std::round(vertices[i].y))));  // 반올림 사용
                 }
                 
                 cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{points}, cv::Scalar(255));
             } else {
                 // 회전 없는 경우: 일반 사각형 마스크
                 cv::Rect patternRect(
-                    static_cast<int>(patternCenter.x - patternSize.width / 2),
-                    static_cast<int>(patternCenter.y - patternSize.height / 2),
-                    static_cast<int>(patternSize.width),
-                    static_cast<int>(patternSize.height)
+                    static_cast<int>(std::round(patternCenter.x - patternSize.width / 2)),
+                    static_cast<int>(std::round(patternCenter.y - patternSize.height / 2)),
+                    static_cast<int>(std::round(patternSize.width)),
+                    static_cast<int>(std::round(patternSize.height))
                 );
                 cv::rectangle(mask, patternRect, cv::Scalar(255), -1);
             }
@@ -2318,7 +2318,10 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             templateImage = cv::Mat(qImg.height(), qImg.width(), CV_8UC3, (void*)qImg.constBits(), qImg.bytesPerLine());
             templateImage = templateImage.clone(); // 데이터 복사
             cv::cvtColor(templateImage, templateImage, cv::COLOR_RGB2BGR);
+            qDebug() << "[checkStrip] 템플릿이미지 로드 성공:" << templateImage.cols << "x" << templateImage.rows 
+                     << "채널:" << templateImage.channels();
         } else {
+            qDebug() << "[checkStrip] 템플릿이미지 없음!";
             logDebug(QString("STRIP 길이 검사 실패: 템플릿 이미지 없음 - %1").arg(pattern.name));
             score = 0.0;
             result.insMethodTypes[pattern.id] = InspectionMethod::STRIP;
@@ -2333,6 +2336,9 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         
         // 두께 측정 상세 좌표를 저장할 변수들 (전체 함수 scope에서 사용)
         cv::Point leftTopPoint, leftBottomPoint, rightTopPoint, rightBottomPoint;
+        
+        // 포인트 저장 변수들
+        std::vector<cv::Point> frontThicknessPoints, rearThicknessPoints;
         
         // 디버그: STRIP 검사 임계값 확인
         logDebug(QString("=== STRIP 검사 임계값: pattern.passThreshold = %1 ===")
@@ -2361,7 +2367,8 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     bool isPassed = ImageProcessor::performStripInspection(roiImage, templateImage,
                                   pattern,
                                   score, startPoint, maxGradientPoint, gradientPoints, resultImage, &edgePoints,
-                                  &stripLengthPassed, &stripMeasuredLength, &stripLengthStartPoint, &stripLengthEndPoint);
+                                  &stripLengthPassed, &stripMeasuredLength, &stripLengthStartPoint, &stripLengthEndPoint,
+                                  &frontThicknessPoints, &rearThicknessPoints);
     
     // ROI 좌표를 원본 이미지 좌표로 변환 (extractROI와 정확히 동일한 방식으로 계산)
     cv::Point2f patternCenter(pattern.rect.x() + pattern.rect.width()/2.0f, 
@@ -2391,9 +2398,123 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     
     cv::Point2f offset(squareRoi.x, squareRoi.y);
     
-
+    // FRONT/REAR 포인트: 패턴 상대좌표로 변환하여 저장 (각도 적용)
+    // 패턴 중심점 (절대좌표)
+    QPointF patternCenterAbs(pattern.rect.x() + pattern.rect.width()/2.0f,
+                            pattern.rect.y() + pattern.rect.height()/2.0f);
     
-
+    // FRONT 포인트들을 패턴 상대좌표로 변환하고 라인별로 그룹화
+    QList<QList<QPoint>> frontPointsByLine;  // 라인별 그룹화된 포인트
+    QList<QPoint> currentLine;
+    
+    // angleRad는 이미 위에서 정의됨 (line 2378)
+    double cosA = cos(angleRad);
+    double sinA = sin(angleRad);
+    
+    for (int idx = 0; idx < frontThicknessPoints.size(); idx += 2) {
+        // 한 라인의 시작-끝점 (2개씩 묶임)
+        if (idx + 1 < frontThicknessPoints.size()) {
+            QList<QPoint> linePoints;
+            
+            for (int ptIdx = idx; ptIdx <= idx + 1; ptIdx++) {
+                const cv::Point& pt = frontThicknessPoints[ptIdx];
+                // pt는 ROI 이미지 내 좌표
+                // ROI 좌표 -> 절대좌표
+                QPointF ptAbs(pt.x + offset.x, pt.y + offset.y);
+                
+                // 절대좌표 -> 패턴 상대좌표 (회전 고려)
+                QPointF ptRel = ptAbs - patternCenterAbs;
+                
+                // 역회전: 패턴 각도를 제거
+                QPointF ptRotated;
+                ptRotated.setX(ptRel.x() * cosA + ptRel.y() * sinA);
+                ptRotated.setY(-ptRel.x() * sinA + ptRel.y() * cosA);
+                
+                linePoints.append(QPoint(static_cast<int>(ptRotated.x()), 
+                                        static_cast<int>(ptRotated.y())));
+            }
+            
+            frontPointsByLine.append(linePoints);
+        }
+    }
+    
+    // REAR 포인트들을 패턴 상대좌표로 변환하고 라인별로 그룹화
+    QList<QList<QPoint>> rearPointsByLine;
+    
+    for (int idx = 0; idx < rearThicknessPoints.size(); idx += 2) {
+        // 한 라인의 시작-끝점 (2개씩 묶임)
+        if (idx + 1 < rearThicknessPoints.size()) {
+            QList<QPoint> linePoints;
+            
+            for (int ptIdx = idx; ptIdx <= idx + 1; ptIdx++) {
+                const cv::Point& pt = rearThicknessPoints[ptIdx];
+                // pt는 ROI 이미지 내 좌표
+                // ROI 좌표 -> 절대좌표
+                QPointF ptAbs(pt.x + offset.x, pt.y + offset.y);
+                
+                // 절대좌표 -> 패턴 상대좌표 (회전 고려)
+                QPointF ptRel = ptAbs - patternCenterAbs;
+                
+                // 역회전
+                QPointF ptRotated;
+                ptRotated.setX(ptRel.x() * cosA + ptRel.y() * sinA);
+                ptRotated.setY(-ptRel.x() * sinA + ptRel.y() * cosA);
+                
+                linePoints.append(QPoint(static_cast<int>(ptRotated.x()), 
+                                        static_cast<int>(ptRotated.y())));
+            }
+            
+            rearPointsByLine.append(linePoints);
+        }
+    }
+    
+    // 라인별 그룹화된 포인트 저장
+    result.stripFrontThicknessPointsByLine[pattern.id] = frontPointsByLine;
+    result.stripRearThicknessPointsByLine[pattern.id] = rearPointsByLine;
+    
+    // 스캔 라인 시작-끝점 쌍 저장 (2개씩 쌍을 이룸)
+    QList<QPair<QPoint, QPoint>> frontScanLines, rearScanLines;
+    
+    // FRONT: 라인별로 시작-끝점 저장
+    for (const QList<QPoint>& linePoints : frontPointsByLine) {
+        if (linePoints.size() >= 2) {
+            frontScanLines.append(qMakePair(linePoints[0], linePoints[1]));
+        }
+    }
+    
+    // REAR: 라인별로 시작-끝점 저장
+    for (const QList<QPoint>& linePoints : rearPointsByLine) {
+        if (linePoints.size() >= 2) {
+            rearScanLines.append(qMakePair(linePoints[0], linePoints[1]));
+        }
+    }
+    
+    result.stripFrontScanLines[pattern.id] = frontScanLines;
+    result.stripRearScanLines[pattern.id] = rearScanLines;
+    
+    // 스캔 방향 벡터 저장 (정규화된 방향 - 수직 스캔)
+    // angleRad는 이미 위에서 정의됨 (line 2378)
+    // 각도를 적용한 수직 방향 계산 (pattern.angle 적용)
+    double scanAngleRad = pattern.angle * M_PI / 180.0;
+    double scanDirX = sin(scanAngleRad);     // 수직 방향 X 성분
+    double scanDirY = cos(scanAngleRad);     // 수직 방향 Y 성분
+    result.stripScanDirection[pattern.id] = QPointF(scanDirX, scanDirY);
+    
+    if (!rearPointsByLine.isEmpty()) {
+        int minX = INT_MAX, maxX = INT_MIN, minY = INT_MAX, maxY = INT_MIN;
+        for (const QList<QPoint>& linePoints : rearPointsByLine) {
+            for (const QPoint& pt : linePoints) {
+                minX = qMin(minX, pt.x());
+                maxX = qMax(maxX, pt.x());
+                minY = qMin(minY, pt.y());
+                maxY = qMax(maxY, pt.y());
+            }
+        }
+        qDebug() << "[REAR 포인트 상대좌표 범위]";
+        qDebug() << "  라인 개수:" << rearPointsByLine.size();
+        qDebug() << "  X 범위:" << minX << "~" << maxX << "너비:" << (maxX - minX);
+        qDebug() << "  Y 범위:" << minY << "~" << maxY << "높이:" << (maxY - minY);
+    }
     
     // OpenCV에서 검출된 gradientPoints를 사용 (4개 포인트)
     QPoint absPoint1, absPoint2, absPoint3, absPoint4;
@@ -2452,19 +2573,9 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     result.stripLengthStartPoint[pattern.id] = absStripLengthStart;
     result.stripLengthEndPoint[pattern.id] = absStripLengthEnd;
     
-
-
-
-
-    // padding 제거됨
-
-
-
-    
-
-    
     if (isPassed) {
         // 좌표 변환 적용
+        
         startPoint.x += static_cast<int>(offset.x);
         startPoint.y += static_cast<int>(offset.y);
         maxGradientPoint.x += static_cast<int>(offset.x);
@@ -2474,8 +2585,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             point.x += static_cast<int>(offset.x);
             point.y += static_cast<int>(offset.y);
         }
-    }
-                                                              
+        
         // 측정된 두께를 검사 결과에 저장 (FRONT + REAR)
         result.stripMeasuredThicknessMin[pattern.id] = measuredMinThickness;
         result.stripMeasuredThicknessMax[pattern.id] = measuredMaxThickness;
@@ -2487,19 +2597,40 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         result.stripRearMeasuredThicknessAvg[pattern.id] = rearMeasuredAvgThickness;
         result.stripRearThicknessMeasured[pattern.id] = (rearMeasuredAvgThickness > 0);
         
+        // 실제 측정 지점들을 저장 (절대좌표)
+        result.stripStartPoint[pattern.id] = QPoint(startPoint.x, startPoint.y);
+        result.stripMaxGradientPoint[pattern.id] = QPoint(maxGradientPoint.x, maxGradientPoint.y);
+        result.stripMeasuredThicknessLeft[pattern.id] = leftThickness;  // 좌측 두께
+        result.stripMeasuredThicknessRight[pattern.id] = rightThickness; // 우측 두께
+    } else {
+        // isPassed가 false인 경우에도 데이터 저장 (0으로 초기화)
+        result.stripMeasuredThicknessMin[pattern.id] = 0;
+        result.stripMeasuredThicknessMax[pattern.id] = 0;
+        result.stripMeasuredThicknessAvg[pattern.id] = 0;
+        result.stripThicknessMeasured[pattern.id] = false;
+        
+        result.stripRearMeasuredThicknessMin[pattern.id] = 0;
+        result.stripRearMeasuredThicknessMax[pattern.id] = 0;
+        result.stripRearMeasuredThicknessAvg[pattern.id] = 0;
+        result.stripRearThicknessMeasured[pattern.id] = false;
+        
+        result.stripStartPoint[pattern.id] = QPoint(0, 0);
+        result.stripMaxGradientPoint[pattern.id] = QPoint(0, 0);
+        result.stripMeasuredThicknessLeft[pattern.id] = 0;
+        result.stripMeasuredThicknessRight[pattern.id] = 0;
+    }
+        
         // 박스 위치를 패턴 중심 기준 상대좌표로 저장
         QPointF patternCenterForBox = pattern.rect.center();
         
-        // FRONT 박스 상대좌표 계산 (패턴 왼쪽 끝에서부터의 퍼센트 위치)
-        float startPercent = pattern.stripGradientStartPercent / 100.0f;
-        float frontBoxOffsetX = (startPercent - 0.5f) * pattern.rect.width(); // 왼쪽 끝에서의 위치를 중심 기준으로 변환
+        // FRONT 박스 상대좌표 저장
+        float frontBoxOffsetX = (-pattern.rect.width()/2.0f) + pattern.stripThicknessBoxWidth/2.0f;
         QPointF frontBoxRelativeCenter(frontBoxOffsetX, 0); // Y는 패턴 중심과 동일
         result.stripFrontBoxCenter[pattern.id] = frontBoxRelativeCenter;
         result.stripFrontBoxSize[pattern.id] = QSizeF(pattern.stripThicknessBoxWidth, pattern.stripThicknessBoxHeight);
         
-        // REAR 박스 상대좌표 계산 (패턴 왼쪽 끝에서부터의 퍼센트 위치)
-        float endPercent = pattern.stripGradientEndPercent / 100.0f;
-        float rearBoxOffsetX = (endPercent - 0.5f) * pattern.rect.width(); // 왼쪽 끝에서의 위치를 중심 기준으로 변환
+        // REAR 박스 상대좌표 저장
+        float rearBoxOffsetX = (pattern.rect.width()/2.0f) - pattern.stripRearThicknessBoxWidth/2.0f;
         QPointF rearBoxRelativeCenter(rearBoxOffsetX, 0); // Y는 패턴 중심과 동일
         result.stripRearBoxCenter[pattern.id] = rearBoxRelativeCenter;
         result.stripRearBoxSize[pattern.id] = QSizeF(pattern.stripRearThicknessBoxWidth, pattern.stripRearThicknessBoxHeight);
@@ -3084,14 +3215,14 @@ QList<QPoint> InsProcessor::transformPatternPoints(const std::vector<cv::Point>&
     // ROI 중심점
     cv::Point2f roiCenter(roiSize.width / 2.0f, roiSize.height / 2.0f);
     
-    // 역회전각 (라디안)
-    double reverseAngle = -patternAngle * CV_PI / 180.0;
+    // 회전각 (라디안) - 양수로 적용 (역회전이 아님)
+    double rotationAngle = patternAngle * CV_PI / 180.0;
     
     // 회전 변환 함수
     auto rotatePoint = [&](cv::Point p) -> cv::Point {
         cv::Point2f pt(p.x - roiCenter.x, p.y - roiCenter.y);  // 중심 기준으로 이동
-        float cos_a = cos(reverseAngle);
-        float sin_a = sin(reverseAngle);
+        float cos_a = cos(rotationAngle);
+        float sin_a = sin(rotationAngle);
         cv::Point2f rotated;
         rotated.x = pt.x * cos_a - pt.y * sin_a;
         rotated.y = pt.x * sin_a + pt.y * cos_a;
