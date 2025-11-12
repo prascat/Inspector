@@ -2208,17 +2208,14 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     // 박스 좌상단 좌표 저장 (Qt 텍스트 표시용)
                     if (edgeBoxTopLeft) *edgeBoxTopLeft = cv::Point(static_cast<int>(corners[0].x), static_cast<int>(corners[0].y));
                     
-                    // 그레이스케일 변환
-                    cv::Mat grayImageForEdge;
-                    if (roiImage.channels() == 3) {
-                        cv::cvtColor(roiImage, grayImageForEdge, cv::COLOR_BGR2GRAY);
-                    } else {
-                        grayImageForEdge = roiImage.clone();
-                    }
-                    
-                    // 이진화로 검은색 영역 추출
+                    // roiImage가 이미 필터링된 이진 영상이므로 그대로 사용
                     cv::Mat binaryImageForEdge;
-                    cv::threshold(grayImageForEdge, binaryImageForEdge, 128, 255, cv::THRESH_BINARY_INV);
+                    if (roiImage.channels() == 3) {
+                        // 3채널이면 그레이스케일로 변환 (이진화된 경우 모든 채널 동일)
+                        cv::cvtColor(roiImage, binaryImageForEdge, cv::COLOR_BGR2GRAY);
+                    } else {
+                        binaryImageForEdge = roiImage.clone();
+                    }
                     
                     // EDGE 검사 영역에서 절단면 분석 (Y별 수평 스캔)
                     // 퍼센트를 고려해서 스캔 범위 조정
@@ -2266,7 +2263,8 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                             if (px >= 0 && px < binaryImageForEdge.cols && 
                                 py >= 0 && py < binaryImageForEdge.rows) {
                                 
-                                bool isBlack = binaryImageForEdge.at<uchar>(py, px) > 128;
+                                // 이진화된 영상: 0=검은색, 255=흰색 (127 기준)
+                                bool isBlack = (binaryImageForEdge.at<uchar>(py, px) < 127);
                                 
                                 if (isBlack) {
                                     // 검사박스 안에서 첫 번째 검은색 픽셀 발견 (절단면의 시작점)

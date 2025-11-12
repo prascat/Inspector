@@ -101,7 +101,10 @@ struct InspectionResult {
     QMap<QUuid, QSizeF> edgeBoxSize;                // EDGE 박스 크기 (width, height)
     QMap<QUuid, bool> edgeMeasured;                 // EDGE 측정 완료 여부 (패턴 ID -> 측정 여부)
     QMap<QUuid, QList<QPoint>> edgeAbsolutePoints; // EDGE 절대좌표 포인트들 (패턴 ID -> Qt 포인트 배열)
+    QMap<QUuid, QList<double>> edgePointDistances; // EDGE 각 포인트의 거리 mm (패턴 ID -> 거리 배열)
     QMap<QUuid, int> edgeAverageX;                  // 절단면 평균 X 위치 (패턴 ID -> X 좌표)
+    QMap<QUuid, double> edgeRegressionSlope;        // EDGE 선형 회귀 기울기 m (패턴 ID -> 기울기)
+    QMap<QUuid, double> edgeRegressionIntercept;    // EDGE 선형 회귀 절편 b (패턴 ID -> 절편)
     
     // STRIP 4개 컨투어 포인트 (절대좌표)
     QMap<QUuid, QPoint> stripPoint1;               // STRIP Point 1 (패턴 ID -> 절대좌표)

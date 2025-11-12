@@ -2888,6 +2888,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             
             double minDistancePx = std::numeric_limits<double>::max();
             double sumDistancePx = 0.0;
+            QList<double> pointDistancesMm;  // 각 포인트별 거리 mm 저장
             
             for (int i = 0; i < absoluteEdgePoints.size(); i++) {
                 const QPoint& pt = absoluteEdgePoints[i];
@@ -2904,8 +2905,11 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                 minDistancePx = std::min(minDistancePx, distancePx);
                 sumDistancePx += distancePx;
                 
-                // mm로 변환하여 최대 허용 거리와 비교
+                // mm로 변환하여 저장
                 double distanceMm = distancePx * pixelToMm;
+                pointDistancesMm.append(distanceMm);
+                
+                // 최대 허용 거리와 비교
                 if (distanceMm > pattern.edgeDistanceMax) {
                     edgeOutlierCount++;
                 }
@@ -2914,8 +2918,13 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             // 편차를 mm로 변환
             double avgDistancePx = sumDistancePx / absoluteEdgePoints.size();
             edgeMaxDeviationMm = maxDistancePx * pixelToMm;
-            double edgeMinDeviationMm = minDistancePx * pixelToMm;
-            double edgeAvgDeviationMm = avgDistancePx * pixelToMm;
+            edgeMinDeviationMm = minDistancePx * pixelToMm;
+            edgeAvgDeviationMm = avgDistancePx * pixelToMm;
+            
+            // 각 포인트별 거리와 선형 회귀 정보 저장
+            result.edgePointDistances[pattern.id] = pointDistancesMm;
+            result.edgeRegressionSlope[pattern.id] = m;
+            result.edgeRegressionIntercept[pattern.id] = b;
             
             qDebug() << "[InsProcessor] EDGE 통계 (절대좌표):"
                      << "포인트수=" << absoluteEdgePoints.size()

@@ -1767,11 +1767,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             continue;
         }
         
-        printf("[CameraView] INS 패턴 그리기: %s, passed=%d, hasSelected=%d, isSelected=%d\n", 
-               patternInfo->name.toStdString().c_str(), passed, hasSelectedPattern, 
-               (patternId == selectedInspectionPatternId));
-        fflush(stdout);
-        
         bool patternVisible = (patternInfo->cameraUuid == currentCameraUuid || patternInfo->cameraUuid.isEmpty());
         if (!patternVisible) continue;
         
@@ -2325,10 +2320,21 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 double edgeAvgDev = result.edgeAvgDeviation.value(patternId, 0.0);
                 bool edgePassed = result.edgeResults.value(patternId, false);
                 
-                QString edgeLabel = QString("EDGE 최소:%1 최대:%2 평균:%3 mm")
-                    .arg(edgeMinDev, 0, 'f', 2)
-                    .arg(edgeMaxDev, 0, 'f', 2)
-                    .arg(edgeAvgDev, 0, 'f', 2);
+                qDebug() << "[CameraView] EDGE 라벨:" 
+                         << "patternId=" << patternId
+                         << "edgeMaxDev=" << edgeMaxDev
+                         << "edgeAvgDev=" << edgeAvgDev
+                         << "result.edgeAvgDeviation.size()=" << result.edgeAvgDeviation.size();
+                
+                // QMap의 실제 키 확인
+                qDebug() << "[CameraView] edgeAvgDeviation 키 목록:";
+                for (auto it = result.edgeAvgDeviation.begin(); it != result.edgeAvgDeviation.end(); ++it) {
+                    qDebug() << "  키=" << it.key() << "값=" << it.value();
+                }
+                
+                QString edgeLabel = QString("EDGE 최대:%1 평균:%2 mm")
+                    .arg(edgeMaxDev, 0, 'f', 4)
+                    .arg(edgeAvgDev, 0, 'f', 4);
                 
                 QFont boxFont("Arial", 9, QFont::Bold);
                 painter.setFont(boxFont);
@@ -2372,32 +2378,24 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 }
                 
                 if (patternFound && !edgePoints.isEmpty()) {
-                    // mm 변환을 위한 캘리브레이션 확인
-                    double pixelToMm = 0.0;
-                    if (currentPattern.stripLengthCalibrationPx > 0 && currentPattern.stripLengthConversionMm > 0) {
-                        pixelToMm = currentPattern.stripLengthConversionMm / currentPattern.stripLengthCalibrationPx;
-                    }
-                    
-                    // InsProcessor에서 계산한 평균 X 값 사용 (절대 좌표)
-                    double avgX = 0.0;
-                    if (result.edgeAverageX.contains(patternId)) {
-                        avgX = result.edgeAverageX[patternId];
-                    } else {
-                        // 만약 저장된 평균이 없으면 현재 포인트들로 계산
-                        double sumX = 0.0;
-                        for (const QPoint& pt : edgePoints) {
-                            sumX += pt.x();
-                        }
-                        avgX = sumX / edgePoints.size();
+                    // 각 포인트별 거리 정보 가져오기 (InsProcessor에서 계산한 값)
+                    QList<double> pointDistances;
+                    if (result.edgePointDistances.contains(patternId)) {
+                        pointDistances = result.edgePointDistances[patternId];
                     }
                     
                     // 각 포인트를 그리면서 Y 범위 추적
                     int firstDrawnY = -1;
                     int lastDrawnY = -1;
                     
-                    for (const QPoint& pt : edgePoints) {
-                        double distancePx = std::abs(pt.x() - avgX);
-                        double distanceMm = distancePx * pixelToMm;
+                    for (int i = 0; i < edgePoints.size(); i++) {
+                        const QPoint& pt = edgePoints[i];
+                        
+                        // InsProcessor에서 계산한 거리 사용
+                        double distanceMm = 0.0;
+                        if (i < pointDistances.size()) {
+                            distanceMm = pointDistances[i];
+                        }
                         
                         // 거리에 따른 색상 결정 (mm 기준으로 최대값 체크)
                         QColor pointColor;
@@ -2427,29 +2425,36 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         lastDrawnY = pt.y();
                     }
                     
-                    // 평균선 그리기 (실제 그려진 점들의 Y 범위)
+                    // 선형 회귀 직선 그리기 (y = mx + b)
                     QPointF avgLineCenter;  // STRIP 길이 측정용으로 저장
                     bool hasAvgLineCenter = false;
                     
-                    if (firstDrawnY != -1 && lastDrawnY != -1) {
-                        QPointF avgLineTop(avgX, firstDrawnY);
-                        QPointF avgLineBottom(avgX, lastDrawnY);
+                    if (firstDrawnY != -1 && lastDrawnY != -1 && 
+                        result.edgeRegressionSlope.contains(patternId) && 
+                        result.edgeRegressionIntercept.contains(patternId)) {
+                        
+                        double m = result.edgeRegressionSlope[patternId];
+                        double b = result.edgeRegressionIntercept[patternId];
+                        
+                        // Y 범위에 대응하는 X 계산 (y = mx + b => x = (y - b) / m)
+                        double x1 = (m != 0) ? (firstDrawnY - b) / m : result.edgeAverageX.value(patternId, 0);
+                        double x2 = (m != 0) ? (lastDrawnY - b) / m : result.edgeAverageX.value(patternId, 0);
+                        
+                        QPointF lineTop(x1, firstDrawnY);
+                        QPointF lineBottom(x2, lastDrawnY);
                         
                         // Scene 좌표로 변환
-                        QPointF avgLineTopVP = mapFromScene(avgLineTop);
-                        QPointF avgLineBottomVP = mapFromScene(avgLineBottom);
+                        QPointF lineTopVP = mapFromScene(lineTop);
+                        QPointF lineBottomVP = mapFromScene(lineBottom);
                         
-                        // 평균선의 중간점을 기준으로 회전
-                        avgLineCenter = (avgLineTopVP + avgLineBottomVP) / 2.0;
+                        // 평균선의 중간점
+                        avgLineCenter = (lineTopVP + lineBottomVP) / 2.0;
                         hasAvgLineCenter = true;
-                        
-                        QPointF rotatedTop = rotatePoint(avgLineTopVP, avgLineCenter);
-                        QPointF rotatedBottom = rotatePoint(avgLineBottomVP, avgLineCenter);
                         
                         QPen avgLinePen(QColor(255, 255, 0), 2);  // 노란색, 2px
                         avgLinePen.setStyle(Qt::DashLine);
                         painter.setPen(avgLinePen);
-                        painter.drawLine(rotatedTop, rotatedBottom);
+                        painter.drawLine(lineTopVP, lineBottomVP);
                         
                         // ========== STRIP 탈피 길이 측정 선 ==========
                         // EDGE 평균선 중심점을 시작점으로 사용
