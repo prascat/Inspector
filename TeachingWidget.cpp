@@ -25,6 +25,7 @@
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QLabel>
+#include <QLocale>
 #include <chrono>
 #include <thread>
 
@@ -53,8 +54,103 @@ cv::Mat TeachingWidget::getCurrentFilteredFrame() const {
     }
     
     if (!sourceFrame.empty()) {
-        // 필터 적용 (cameraView의 applyFiltersToImage 함수 사용)
-        cameraView->applyFiltersToImage(sourceFrame);
+        // 선택된 필터가 있는 경우에만 적용
+        if (!selectedPatternId.isNull() && selectedFilterIndex >= 0) {
+            // 패턴 찾기
+            QList<PatternInfo> allPatterns = cameraView->getPatterns();
+            
+            for (const auto& pattern : allPatterns) {
+                if (pattern.id == selectedPatternId && selectedFilterIndex < pattern.filters.size()) {
+                    const FilterInfo& filter = pattern.filters[selectedFilterIndex];
+                    
+                    printf("[getCurrentFilteredFrame] 필터 적용: type=%d, enabled=%d, angle=%.1f\n", 
+                           filter.type, filter.enabled, pattern.angle);
+                    
+                    // 회전이 있는 경우: 회전된 사각형 영역에만 필터 적용
+                    if (std::abs(pattern.angle) > 0.1) {
+                        cv::Point2f center(pattern.rect.x() + pattern.rect.width()/2.0f, 
+                                         pattern.rect.y() + pattern.rect.height()/2.0f);
+                        
+                        // 1. 회전된 사각형 마스크 생성
+                        cv::Mat mask = cv::Mat::zeros(sourceFrame.size(), CV_8UC1);
+                        cv::Size2f patternSize(pattern.rect.width(), pattern.rect.height());
+                        
+                        cv::Point2f vertices[4];
+                        cv::RotatedRect rotatedRect(center, patternSize, pattern.angle);
+                        rotatedRect.points(vertices);
+                        
+                        std::vector<cv::Point> points;
+                        for (int i = 0; i < 4; i++) {
+                            points.push_back(cv::Point(static_cast<int>(std::round(vertices[i].x)), 
+                                                     static_cast<int>(std::round(vertices[i].y))));
+                        }
+                        cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{points}, cv::Scalar(255));
+                        
+                        // 2. 마스크 영역만 복사
+                        cv::Mat maskedImage = cv::Mat::zeros(sourceFrame.size(), sourceFrame.type());
+                        sourceFrame.copyTo(maskedImage, mask);
+                        
+                        // 3. 확장된 ROI 계산
+                        double angleRad = std::abs(pattern.angle) * M_PI / 180.0;
+                        double width = pattern.rect.width();
+                        double height = pattern.rect.height();
+                        
+                        double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
+                        double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
+                        
+                        int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
+                        int halfSize = maxSize / 2;
+                        
+                        cv::Rect expandedRoi(
+                            qBound(0, static_cast<int>(center.x) - halfSize, sourceFrame.cols - 1),
+                            qBound(0, static_cast<int>(center.y) - halfSize, sourceFrame.rows - 1),
+                            qBound(1, maxSize, sourceFrame.cols - (static_cast<int>(center.x) - halfSize)),
+                            qBound(1, maxSize, sourceFrame.rows - (static_cast<int>(center.y) - halfSize))
+                        );
+                        
+                        // 4. 확장된 영역에 필터 적용
+                        if (expandedRoi.width > 0 && expandedRoi.height > 0 && 
+                            expandedRoi.x + expandedRoi.width <= maskedImage.cols && 
+                            expandedRoi.y + expandedRoi.height <= maskedImage.rows) {
+                            
+                            cv::Mat roiMat = maskedImage(expandedRoi);
+                            ImageProcessor processor;
+                            cv::Mat filteredRoi;
+                            processor.applyFilter(roiMat, filteredRoi, filter);
+                            if (!filteredRoi.empty()) {
+                                filteredRoi.copyTo(roiMat);
+                            }
+                        }
+                        
+                        // 5. 마스크 영역만 필터 적용된 결과로 교체 (나머지는 원본 유지)
+                        maskedImage.copyTo(sourceFrame, mask);
+                        
+                    } else {
+                        // 회전 없는 경우: rect 영역만 필터 적용
+                        cv::Rect roi(
+                            qBound(0, static_cast<int>(pattern.rect.x()), sourceFrame.cols - 1),
+                            qBound(0, static_cast<int>(pattern.rect.y()), sourceFrame.rows - 1),
+                            qBound(1, static_cast<int>(pattern.rect.width()), sourceFrame.cols - static_cast<int>(pattern.rect.x())),
+                            qBound(1, static_cast<int>(pattern.rect.height()), sourceFrame.rows - static_cast<int>(pattern.rect.y()))
+                        );
+                        
+                        if (roi.width > 0 && roi.height > 0 && 
+                            roi.x + roi.width <= sourceFrame.cols && roi.y + roi.height <= sourceFrame.rows) {
+                            
+                            cv::Mat roiMat = sourceFrame(roi);
+                            ImageProcessor processor;
+                            cv::Mat filteredRoi;
+                            processor.applyFilter(roiMat, filteredRoi, filter);
+                            if (!filteredRoi.empty()) {
+                                filteredRoi.copyTo(roiMat);
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        
         return sourceFrame;
     }
     
@@ -370,9 +466,6 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
         });
     }
 
-    // 캘리브레이션 도구 설정
-    setupCalibrationTools();
-
     uiUpdateThread = new UIUpdateThread(this);
     
     // UI 업데이트 이벤트 연결
@@ -549,10 +642,6 @@ void TeachingWidget::deleRecipe() {
         propertyStackWidget->setCurrentIndex(0);
     }
     
-    // 캘리브레이션 정보도 초기화
-    CalibrationInfo emptyCalib;
-    cameraView->setCalibrationInfo(emptyCalib);
-    
     // **현재 카메라의 패턴만 삭제했으므로 레시피 파일 전체를 삭제하지 않음**
     // 대신 수정된 레시피를 다시 저장
     saveRecipe();
@@ -671,9 +760,6 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
 
     // 도구 메뉴
     toolsMenu = menuBar->addMenu(TR("TOOLS_MENU"));
-
-    // 캘리브레이션 도구 액션 추가
-    calibrateAction = toolsMenu->addAction(TR("LENGTH_CALIBRATION"));
     
     // 시리얼 설정 액션 추가
     serialSettingsAction = toolsMenu->addAction(TR("SERIAL_SETTINGS"));
@@ -1483,19 +1569,6 @@ void TeachingWidget::connectEvents() {
         }
     });
     connect(cameraView, &CameraView::enterKeyPressed, this, &TeachingWidget::addPattern);
-    connect(cameraView, &CameraView::rectDrawn, this, [this](const QRect& rect) {
-        const CalibrationInfo& calibInfo = cameraView->getCalibrationInfo();
-        if (calibInfo.isCalibrated) {
-            // 물리적 길이 계산 및 표시
-            double widthMm = cameraView->calculatePhysicalLength(rect.width());
-            double heightMm = cameraView->calculatePhysicalLength(rect.height());
-            
-            // 측정 정보 표시
-            cameraView->setMeasurementInfo(QString("%1 × %2 mm")
-                                        .arg(widthMm, 0, 'f', 1)
-                                        .arg(heightMm, 0, 'f', 1));
-        }
-    });
     
     connect(cameraView, &CameraView::patternSelected, this, [this](const QUuid& id) {
         // ID가 빈 값이면 선택 취소
@@ -2462,6 +2535,9 @@ void TeachingWidget::onPatternSelected(QTreeWidgetItem* current, QTreeWidgetItem
         if (cameraView) {
             cameraView->clearSelectedInspectionPattern();
         }
+        // 선택된 필터 정보 초기화
+        selectedPatternId = QUuid();
+        selectedFilterIndex = -1;
         return;
     }
     
@@ -2488,6 +2564,10 @@ void TeachingWidget::onPatternSelected(QTreeWidgetItem* current, QTreeWidgetItem
             QString parentIdStr = parentItem->data(0, Qt::UserRole).toString();
             QUuid parentId = QUuid(parentIdStr);
             PatternInfo* parentPattern = cameraView->getPatternById(parentId);
+            
+            // 선택된 필터 정보 저장
+            selectedPatternId = parentId;
+            selectedFilterIndex = filterIndex;
             
             if (parentPattern && filterIndex >= 0 && filterIndex < parentPattern->filters.size()) {
                 
@@ -2546,6 +2626,10 @@ void TeachingWidget::onPatternSelected(QTreeWidgetItem* current, QTreeWidgetItem
     // 일반 패턴 아이템이 선택된 경우 (기존 코드 유지)
     PatternInfo* pattern = cameraView->getPatternById(patternId);
     updatePropertyPanel(pattern, nullptr, QUuid(), -1);
+    
+    // 선택된 필터 정보 초기화 (패턴만 선택된 경우)
+    selectedPatternId = QUuid();
+    selectedFilterIndex = -1;
     
     if (pattern) {
         cameraView->setSelectedPatternId(pattern->id);
@@ -3059,17 +3143,17 @@ void TeachingWidget::createPropertyPanels() {
     insStripLayout->addRow("", insStripLengthEnabledCheck);
     
     // STRIP 길이검사 범위 설정
-    insStripLengthMinLabel = new QLabel("최소 길이 (mm):", insStripPanel);
-    insStripLengthMinSpin = new QSpinBox(insStripPanel);
-    insStripLengthMinSpin->setRange(10, 9999);
-    insStripLengthMinSpin->setValue(100);
-    insStripLayout->addRow(insStripLengthMinLabel, insStripLengthMinSpin);
+    insStripLengthMinLabel = new QLabel("최소 길이:", insStripPanel);
+    insStripLengthMinEdit = new QLineEdit(insStripPanel);
+    insStripLengthMinEdit->setText("100");
+    insStripLengthMinEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insStripLengthMinEdit));
+    insStripLayout->addRow(insStripLengthMinLabel, insStripLengthMinEdit);
     
-    insStripLengthMaxLabel = new QLabel("최대 길이 (mm):", insStripPanel);
-    insStripLengthMaxSpin = new QSpinBox(insStripPanel);
-    insStripLengthMaxSpin->setRange(10, 9999);
-    insStripLengthMaxSpin->setValue(500);
-    insStripLayout->addRow(insStripLengthMaxLabel, insStripLengthMaxSpin);
+    insStripLengthMaxLabel = new QLabel("최대 길이:", insStripPanel);
+    insStripLengthMaxEdit = new QLineEdit(insStripPanel);
+    insStripLengthMaxEdit->setText("500");
+    insStripLengthMaxEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insStripLengthMaxEdit));
+    insStripLayout->addRow(insStripLengthMaxLabel, insStripLengthMaxEdit);
     
     // STRIP 길이 수치 변환 설정 (스핀박스 + 갱신 버튼)
     insStripLengthConversionLabel = new QLabel("수치 변환 (mm):", insStripPanel);
@@ -3151,18 +3235,16 @@ void TeachingWidget::createPropertyPanels() {
     thicknessHeightLayout->addWidget(insStripThicknessHeightSlider);
     thicknessHeightLayout->addWidget(insStripThicknessHeightValueLabel);
     
-    // 최소/최대 두께 SpinBox
+    // 최소/최대 두께 LineEdit
     insStripThicknessMinLabel = new QLabel("최소 두께:", insStripPanel);
-    insStripThicknessMinSpin = new QSpinBox(insStripPanel);
-    insStripThicknessMinSpin->setRange(5, 500);
-    insStripThicknessMinSpin->setValue(10);
-    insStripThicknessMinSpin->setSuffix(" mm");
+    insStripThicknessMinEdit = new QLineEdit(insStripPanel);
+    insStripThicknessMinEdit->setText("10");
+    insStripThicknessMinEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insStripThicknessMinEdit));
     
     insStripThicknessMaxLabel = new QLabel("최대 두께:", insStripPanel);
-    insStripThicknessMaxSpin = new QSpinBox(insStripPanel);
-    insStripThicknessMaxSpin->setRange(10, 500);
-    insStripThicknessMaxSpin->setValue(100);
-    insStripThicknessMaxSpin->setSuffix(" mm");
+    insStripThicknessMaxEdit = new QLineEdit(insStripPanel);
+    insStripThicknessMaxEdit->setText("100");
+    insStripThicknessMaxEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insStripThicknessMaxEdit));
     
     // REAR 두께 검사 체크박스
     insStripRearEnabledCheck = new QCheckBox("REAR 두께 검사 활성화", insStripPanel);
@@ -3210,16 +3292,14 @@ void TeachingWidget::createPropertyPanels() {
     
     // REAR 최소/최대 두께 SpinBox
     insStripRearThicknessMinLabel = new QLabel("REAR 최소 두께:", insStripPanel);
-    insStripRearThicknessMinSpin = new QSpinBox(insStripPanel);
-    insStripRearThicknessMinSpin->setRange(5, 500);
-    insStripRearThicknessMinSpin->setValue(10);
-    insStripRearThicknessMinSpin->setSuffix(" mm");
+    insStripRearThicknessMinEdit = new QLineEdit(insStripPanel);
+    insStripRearThicknessMinEdit->setText("10");
+    insStripRearThicknessMinEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insStripRearThicknessMinEdit));
     
     insStripRearThicknessMaxLabel = new QLabel("REAR 최대 두께:", insStripPanel);
-    insStripRearThicknessMaxSpin = new QSpinBox(insStripPanel);
-    insStripRearThicknessMaxSpin->setRange(10, 500);
-    insStripRearThicknessMaxSpin->setValue(100);
-    insStripRearThicknessMaxSpin->setSuffix(" mm");
+    insStripRearThicknessMaxEdit = new QLineEdit(insStripPanel);
+    insStripRearThicknessMaxEdit->setText("100");
+    insStripRearThicknessMaxEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insStripRearThicknessMaxEdit));
     
     // 두께 범위 위젯을 레이아웃에 추가
     QWidget* thicknessRangeWidget = new QWidget(insStripPanel);
@@ -3240,8 +3320,8 @@ void TeachingWidget::createPropertyPanels() {
     rearThicknessRangeLayout->addWidget(rearThicknessHeightWidget);
     
     insStripLayout->addRow("FRONT 두께 범위:", thicknessRangeWidget);
-    insStripLayout->addRow(insStripThicknessMinLabel, insStripThicknessMinSpin);
-    insStripLayout->addRow(insStripThicknessMaxLabel, insStripThicknessMaxSpin);
+    insStripLayout->addRow(insStripThicknessMinLabel, insStripThicknessMinEdit);
+    insStripLayout->addRow(insStripThicknessMaxLabel, insStripThicknessMaxEdit);
     
     // REAR 두께 검사 구분선
     QFrame* rearSeparator = new QFrame(insStripPanel);
@@ -3251,8 +3331,8 @@ void TeachingWidget::createPropertyPanels() {
     
     insStripLayout->addRow("", insStripRearEnabledCheck);
     insStripLayout->addRow("REAR 두께 범위:", rearThicknessRangeWidget);
-    insStripLayout->addRow(insStripRearThicknessMinLabel, insStripRearThicknessMinSpin);
-    insStripLayout->addRow(insStripRearThicknessMaxLabel, insStripRearThicknessMaxSpin);
+    insStripLayout->addRow(insStripRearThicknessMinLabel, insStripRearThicknessMinEdit);
+    insStripLayout->addRow(insStripRearThicknessMaxLabel, insStripRearThicknessMaxEdit);
 
     // EDGE 검사 구분선
     QFrame* edgeSeparator = new QFrame(insStripPanel);
@@ -3321,17 +3401,10 @@ void TeachingWidget::createPropertyPanels() {
     insEdgeMaxIrregularitiesSpin->setValue(5);
     insEdgeMaxIrregularitiesSpin->setSuffix(" 개");
     
-    insEdgeDistanceMinLabel = new QLabel("평균선 최소 거리:", insStripPanel);
-    insEdgeDistanceMinSpin = new QSpinBox(insStripPanel);
-    insEdgeDistanceMinSpin->setRange(0, 100);
-    insEdgeDistanceMinSpin->setValue(1);
-    insEdgeDistanceMinSpin->setSuffix(" mm");
-    
     insEdgeDistanceMaxLabel = new QLabel("평균선 최대 거리:", insStripPanel);
-    insEdgeDistanceMaxSpin = new QSpinBox(insStripPanel);
-    insEdgeDistanceMaxSpin->setRange(1, 200);
-    insEdgeDistanceMaxSpin->setValue(10);
-    insEdgeDistanceMaxSpin->setSuffix(" mm");
+    insEdgeDistanceMaxEdit = new QLineEdit(insStripPanel);
+    insEdgeDistanceMaxEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insEdgeDistanceMaxEdit));
+    insEdgeDistanceMaxEdit->setText("10.00");
     
     insEdgeStartPercentLabel = new QLabel("시작 제외 비율:", insStripPanel);
     insEdgeStartPercentSpin = new QSpinBox(insStripPanel);
@@ -3358,8 +3431,7 @@ void TeachingWidget::createPropertyPanels() {
     insStripLayout->addRow(insEdgeOffsetXLabel, edgeOffsetWidget);
     insStripLayout->addRow("EDGE 박스 크기:", edgeRangeWidget);
     insStripLayout->addRow(insEdgeMaxIrregularitiesLabel, insEdgeMaxIrregularitiesSpin);
-    insStripLayout->addRow(insEdgeDistanceMinLabel, insEdgeDistanceMinSpin);
-    insStripLayout->addRow(insEdgeDistanceMaxLabel, insEdgeDistanceMaxSpin);
+    insStripLayout->addRow(insEdgeDistanceMaxLabel, insEdgeDistanceMaxEdit);
     insStripLayout->addRow(insEdgeStartPercentLabel, insEdgeStartPercentSpin);
     insStripLayout->addRow(insEdgeEndPercentLabel, insEdgeEndPercentSpin);
 
@@ -4822,18 +4894,22 @@ void TeachingWidget::connectPropertyPanelEvents() {
     }
     
     // 최소 두께
-    if (insStripThicknessMinSpin) {
-        connect(insStripThicknessMinSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
-                [this](int value) {
+    if (insStripThicknessMinEdit) {
+        connect(insStripThicknessMinEdit, &QLineEdit::textChanged, 
+                [this](const QString& text) {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->stripThicknessMin = value;
-                        cameraView->updatePatternById(patternId, *pattern);
-                        cameraView->update();
+                        bool ok;
+                        double value = text.toDouble(&ok);
+                        if (ok) {
+                            pattern->stripThicknessMin = value;
+                            cameraView->updatePatternById(patternId, *pattern);
+                            cameraView->update();
+                        }
                     }
                 }
             }
@@ -4841,18 +4917,22 @@ void TeachingWidget::connectPropertyPanelEvents() {
     }
     
     // 최대 두께
-    if (insStripThicknessMaxSpin) {
-        connect(insStripThicknessMaxSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
-                [this](int value) {
+    if (insStripThicknessMaxEdit) {
+        connect(insStripThicknessMaxEdit, &QLineEdit::textChanged, 
+                [this](const QString& text) {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->stripThicknessMax = value;
-                        cameraView->updatePatternById(patternId, *pattern);
-                        cameraView->update();
+                        bool ok;
+                        double value = text.toDouble(&ok);
+                        if (ok) {
+                            pattern->stripThicknessMax = value;
+                            cameraView->updatePatternById(patternId, *pattern);
+                            cameraView->update();
+                        }
                     }
                 }
             }
@@ -4908,18 +4988,22 @@ void TeachingWidget::connectPropertyPanelEvents() {
     }
     
     // REAR 최소 두께
-    if (insStripRearThicknessMinSpin) {
-        connect(insStripRearThicknessMinSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
-                [this](int value) {
+    if (insStripRearThicknessMinEdit) {
+        connect(insStripRearThicknessMinEdit, &QLineEdit::textChanged, 
+                [this](const QString& text) {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->stripRearThicknessMin = value;
-                        cameraView->updatePatternById(patternId, *pattern);
-                        cameraView->update();
+                        bool ok;
+                        double value = text.toDouble(&ok);
+                        if (ok) {
+                            pattern->stripRearThicknessMin = value;
+                            cameraView->updatePatternById(patternId, *pattern);
+                            cameraView->update();
+                        }
                     }
                 }
             }
@@ -4927,18 +5011,22 @@ void TeachingWidget::connectPropertyPanelEvents() {
     }
     
     // REAR 최대 두께
-    if (insStripRearThicknessMaxSpin) {
-        connect(insStripRearThicknessMaxSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
-                [this](int value) {
+    if (insStripRearThicknessMaxEdit) {
+        connect(insStripRearThicknessMaxEdit, &QLineEdit::textChanged, 
+                [this](const QString& text) {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->stripRearThicknessMax = value;
-                        cameraView->updatePatternById(patternId, *pattern);
-                        cameraView->update();
+                        bool ok;
+                        double value = text.toDouble(&ok);
+                        if (ok) {
+                            pattern->stripRearThicknessMax = value;
+                            cameraView->updatePatternById(patternId, *pattern);
+                            cameraView->update();
+                        }
                     }
                 }
             }
@@ -4957,8 +5045,8 @@ void TeachingWidget::connectPropertyPanelEvents() {
                         pattern->stripLengthEnabled = enabled;
                         
                         // 길이검사 관련 위젯들 활성화/비활성화
-                        if (insStripLengthMinSpin) insStripLengthMinSpin->setEnabled(enabled);
-                        if (insStripLengthMaxSpin) insStripLengthMaxSpin->setEnabled(enabled);
+                        if (insStripLengthMinEdit) insStripLengthMinEdit->setEnabled(enabled);
+                        if (insStripLengthMaxEdit) insStripLengthMaxEdit->setEnabled(enabled);
                         if (insStripLengthConversionSpin) insStripLengthConversionSpin->setEnabled(enabled);
                         
                         cameraView->updatePatternById(patternId, *pattern);
@@ -4969,30 +5057,38 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
         
         // 길이검사 최소값 변경 이벤트
-        connect(insStripLengthMinSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int value) {
+        connect(insStripLengthMinEdit, &QLineEdit::textChanged, [this](const QString& text) {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->stripLengthMin = value;
-                        cameraView->updatePatternById(patternId, *pattern);
+                        bool ok;
+                        double value = text.toDouble(&ok);
+                        if (ok) {
+                            pattern->stripLengthMin = value;
+                            cameraView->updatePatternById(patternId, *pattern);
+                        }
                     }
                 }
             }
         });
         
         // 길이검사 최대값 변경 이벤트
-        connect(insStripLengthMaxSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int value) {
+        connect(insStripLengthMaxEdit, &QLineEdit::textChanged, [this](const QString& text) {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->stripLengthMax = value;
-                        cameraView->updatePatternById(patternId, *pattern);
+                        bool ok;
+                        double value = text.toDouble(&ok);
+                        if (ok) {
+                            pattern->stripLengthMax = value;
+                            cameraView->updatePatternById(patternId, *pattern);
+                        }
                     }
                 }
             }
@@ -5041,6 +5137,14 @@ void TeachingWidget::connectPropertyPanelEvents() {
                                 );
                             }
                             
+                            // 갱신 버튼 색상 변경 (캘리브레이션 완료)
+                            if (insStripLengthRefreshButton) {
+                                insStripLengthRefreshButton->setStyleSheet(
+                                    "QPushButton { background-color: #4CAF50; color: white; font-weight: bold; }"
+                                    "QPushButton:hover { background-color: #45a049; }"
+                                );
+                            }
+                            
                             qDebug() << "STRIP 길이 캘리브레이션:" 
                                     << "측정 픽셀=" << pixelLength 
                                     << "실제 mm=" << mmLength
@@ -5070,8 +5174,8 @@ void TeachingWidget::connectPropertyPanelEvents() {
                         // FRONT 관련 위젯들 활성화/비활성화
                         if (insStripThicknessWidthSlider) insStripThicknessWidthSlider->setEnabled(enabled);
                         if (insStripThicknessHeightSlider) insStripThicknessHeightSlider->setEnabled(enabled);
-                        if (insStripThicknessMinSpin) insStripThicknessMinSpin->setEnabled(enabled);
-                        if (insStripThicknessMaxSpin) insStripThicknessMaxSpin->setEnabled(enabled);
+                        if (insStripThicknessMinEdit) insStripThicknessMinEdit->setEnabled(enabled);
+                        if (insStripThicknessMaxEdit) insStripThicknessMaxEdit->setEnabled(enabled);
                         
                         cameraView->updatePatternById(patternId, *pattern);
                         cameraView->update();
@@ -5095,8 +5199,8 @@ void TeachingWidget::connectPropertyPanelEvents() {
                         // REAR 관련 위젯들 활성화/비활성화
                         if (insStripRearThicknessWidthSlider) insStripRearThicknessWidthSlider->setEnabled(enabled);
                         if (insStripRearThicknessHeightSlider) insStripRearThicknessHeightSlider->setEnabled(enabled);
-                        if (insStripRearThicknessMinSpin) insStripRearThicknessMinSpin->setEnabled(enabled);
-                        if (insStripRearThicknessMaxSpin) insStripRearThicknessMaxSpin->setEnabled(enabled);
+                        if (insStripRearThicknessMinEdit) insStripRearThicknessMinEdit->setEnabled(enabled);
+                        if (insStripRearThicknessMaxEdit) insStripRearThicknessMaxEdit->setEnabled(enabled);
                         
                         cameraView->updatePatternById(patternId, *pattern);
                         cameraView->update();
@@ -5217,38 +5321,27 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
     }
     
-    // EDGE 평균선 최소 거리
-    if (insEdgeDistanceMinSpin) {
-        connect(insEdgeDistanceMinSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
-                [this](int value) {
-            QTreeWidgetItem* selectedItem = patternTree->currentItem();
-            if (selectedItem) {
-                QUuid patternId = getPatternIdFromItem(selectedItem);
-                if (!patternId.isNull()) {
-                    PatternInfo* pattern = cameraView->getPatternById(patternId);
-                    if (pattern && pattern->type == PatternType::INS) {
-                        pattern->edgeDistanceMin = value;
-                        cameraView->updatePatternById(patternId, *pattern);
-                        cameraView->update();
-                    }
-                }
-            }
-        });
-    }
-    
     // EDGE 평균선 최대 거리
-    if (insEdgeDistanceMaxSpin) {
-        connect(insEdgeDistanceMaxSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
-                [this](int value) {
+    if (insEdgeDistanceMaxEdit) {
+        connect(insEdgeDistanceMaxEdit, &QLineEdit::textChanged, 
+                [this](const QString& text) {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->edgeDistanceMax = value;
-                        cameraView->updatePatternById(patternId, *pattern);
-                        cameraView->update();
+                        bool ok;
+                        double value = QLocale::c().toDouble(text, &ok);
+                        qDebug() << "[변환 직후] text:" << text << "ok:" << ok << "value:" << value;
+                        if (ok) {
+                            pattern->edgeDistanceMax = value;
+                            qDebug() << "[할당 직후] pattern->edgeDistanceMax =" << pattern->edgeDistanceMax;
+                            cameraView->updatePatternById(patternId, *pattern);
+                            cameraView->update();
+                        } else {
+                            qDebug() << "[UI 업데이트 실패] toDouble() 변환 실패:" << text;
+                        }
                     }
                 }
             }
@@ -5710,16 +5803,16 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         }
                     }
                     
-                    if (insStripThicknessMinSpin) {
-                        insStripThicknessMinSpin->blockSignals(true);
-                        insStripThicknessMinSpin->setValue(pattern->stripThicknessMin);
-                        insStripThicknessMinSpin->blockSignals(false);
+                    if (insStripThicknessMinEdit) {
+                        insStripThicknessMinEdit->blockSignals(true);
+                        insStripThicknessMinEdit->setText(QString::number(pattern->stripThicknessMin, 'f', 2));
+                        insStripThicknessMinEdit->blockSignals(false);
                     }
                     
-                    if (insStripThicknessMaxSpin) {
-                        insStripThicknessMaxSpin->blockSignals(true);
-                        insStripThicknessMaxSpin->setValue(pattern->stripThicknessMax);
-                        insStripThicknessMaxSpin->blockSignals(false);
+                    if (insStripThicknessMaxEdit) {
+                        insStripThicknessMaxEdit->blockSignals(true);
+                        insStripThicknessMaxEdit->setText(QString::number(pattern->stripThicknessMax, 'f', 2));
+                        insStripThicknessMaxEdit->blockSignals(false);
                     }
                     
                     // REAR 두께 측정 위젯들 업데이트
@@ -5753,16 +5846,16 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         }
                     }
                     
-                    if (insStripRearThicknessMinSpin) {
-                        insStripRearThicknessMinSpin->blockSignals(true);
-                        insStripRearThicknessMinSpin->setValue(pattern->stripRearThicknessMin);
-                        insStripRearThicknessMinSpin->blockSignals(false);
+                    if (insStripRearThicknessMinEdit) {
+                        insStripRearThicknessMinEdit->blockSignals(true);
+                        insStripRearThicknessMinEdit->setText(QString::number(pattern->stripRearThicknessMin, 'f', 2));
+                        insStripRearThicknessMinEdit->blockSignals(false);
                     }
                     
-                    if (insStripRearThicknessMaxSpin) {
-                        insStripRearThicknessMaxSpin->blockSignals(true);
-                        insStripRearThicknessMaxSpin->setValue(pattern->stripRearThicknessMax);
-                        insStripRearThicknessMaxSpin->blockSignals(false);
+                    if (insStripRearThicknessMaxEdit) {
+                        insStripRearThicknessMaxEdit->blockSignals(true);
+                        insStripRearThicknessMaxEdit->setText(QString::number(pattern->stripRearThicknessMax, 'f', 2));
+                        insStripRearThicknessMaxEdit->blockSignals(false);
                     }
                     
                     // STRIP 길이검사 활성화 상태 업데이트
@@ -5772,27 +5865,55 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripLengthEnabledCheck->blockSignals(false);
                         
                         // 길이검사 관련 위젯들 활성화/비활성화
-                        if (insStripLengthMinSpin) insStripLengthMinSpin->setEnabled(pattern->stripLengthEnabled);
-                        if (insStripLengthMaxSpin) insStripLengthMaxSpin->setEnabled(pattern->stripLengthEnabled);
+                        if (insStripLengthMinEdit) insStripLengthMinEdit->setEnabled(pattern->stripLengthEnabled);
+                        if (insStripLengthMaxEdit) insStripLengthMaxEdit->setEnabled(pattern->stripLengthEnabled);
                     }
                     
                     // 길이검사 범위 값들 업데이트
-                    if (insStripLengthMinSpin) {
-                        insStripLengthMinSpin->blockSignals(true);
-                        insStripLengthMinSpin->setValue(pattern->stripLengthMin);
-                        insStripLengthMinSpin->blockSignals(false);
+                    if (insStripLengthMinEdit) {
+                        insStripLengthMinEdit->blockSignals(true);
+                        insStripLengthMinEdit->setText(QString::number(pattern->stripLengthMin, 'f', 1));
+                        insStripLengthMinEdit->blockSignals(false);
                     }
                     
-                    if (insStripLengthMaxSpin) {
-                        insStripLengthMaxSpin->blockSignals(true);
-                        insStripLengthMaxSpin->setValue(pattern->stripLengthMax);
-                        insStripLengthMaxSpin->blockSignals(false);
+                    if (insStripLengthMaxEdit) {
+                        insStripLengthMaxEdit->blockSignals(true);
+                        insStripLengthMaxEdit->setText(QString::number(pattern->stripLengthMax, 'f', 1));
+                        insStripLengthMaxEdit->blockSignals(false);
                     }
                     
                     if (insStripLengthConversionSpin) {
                         insStripLengthConversionSpin->blockSignals(true);
                         insStripLengthConversionSpin->setValue(pattern->stripLengthConversionMm);
                         insStripLengthConversionSpin->blockSignals(false);
+                    }
+                    
+                    // 캘리브레이션 정보 표시
+                    if (insStripLengthMeasuredLabel) {
+                        if (pattern->stripLengthCalibrated && pattern->stripLengthCalibrationPx > 0) {
+                            double conversionRatio = pattern->stripLengthCalibrationPx / pattern->stripLengthConversionMm;
+                            insStripLengthMeasuredLabel->setText(
+                                QString("측정값: %1 px (%2 px/mm)")
+                                    .arg(pattern->stripLengthCalibrationPx, 0, 'f', 1)
+                                    .arg(conversionRatio, 0, 'f', 2)
+                            );
+                        } else {
+                            insStripLengthMeasuredLabel->setText("측정값: - mm");
+                        }
+                    }
+                    
+                    // 캘리브레이션 완료 여부에 따라 갱신 버튼 색상 변경
+                    if (insStripLengthRefreshButton) {
+                        if (pattern->stripLengthCalibrated && pattern->stripLengthCalibrationPx > 0) {
+                            // 캘리브레이션 완료: 녹색
+                            insStripLengthRefreshButton->setStyleSheet(
+                                "QPushButton { background-color: #4CAF50; color: white; font-weight: bold; }"
+                                "QPushButton:hover { background-color: #45a049; }"
+                            );
+                        } else {
+                            // 캘리브레이션 미완료: 기본 색상
+                            insStripLengthRefreshButton->setStyleSheet("");
+                        }
                     }
                     
                     // FRONT 두께 검사 활성화 상태 업데이트
@@ -5804,8 +5925,8 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         // FRONT 관련 위젯들 활성화/비활성화
                         if (insStripThicknessWidthSlider) insStripThicknessWidthSlider->setEnabled(pattern->stripFrontEnabled);
                         if (insStripThicknessHeightSlider) insStripThicknessHeightSlider->setEnabled(pattern->stripFrontEnabled);
-                        if (insStripThicknessMinSpin) insStripThicknessMinSpin->setEnabled(pattern->stripFrontEnabled);
-                        if (insStripThicknessMaxSpin) insStripThicknessMaxSpin->setEnabled(pattern->stripFrontEnabled);
+                        if (insStripThicknessMinEdit) insStripThicknessMinEdit->setEnabled(pattern->stripFrontEnabled);
+                        if (insStripThicknessMaxEdit) insStripThicknessMaxEdit->setEnabled(pattern->stripFrontEnabled);
                     }
                     
                     // REAR 두께 검사 활성화 상태 업데이트
@@ -5817,8 +5938,8 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         // REAR 관련 위젯들 활성화/비활성화
                         if (insStripRearThicknessWidthSlider) insStripRearThicknessWidthSlider->setEnabled(pattern->stripRearEnabled);
                         if (insStripRearThicknessHeightSlider) insStripRearThicknessHeightSlider->setEnabled(pattern->stripRearEnabled);
-                        if (insStripRearThicknessMinSpin) insStripRearThicknessMinSpin->setEnabled(pattern->stripRearEnabled);
-                        if (insStripRearThicknessMaxSpin) insStripRearThicknessMaxSpin->setEnabled(pattern->stripRearEnabled);
+                        if (insStripRearThicknessMinEdit) insStripRearThicknessMinEdit->setEnabled(pattern->stripRearEnabled);
+                        if (insStripRearThicknessMaxEdit) insStripRearThicknessMaxEdit->setEnabled(pattern->stripRearEnabled);
                     }
                     
                     // EDGE 검사 UI 업데이트
@@ -5857,16 +5978,10 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insEdgeMaxIrregularitiesSpin->blockSignals(false);
                     }
                     
-                    if (insEdgeDistanceMinSpin) {
-                        insEdgeDistanceMinSpin->blockSignals(true);
-                        insEdgeDistanceMinSpin->setValue(pattern->edgeDistanceMin);
-                        insEdgeDistanceMinSpin->blockSignals(false);
-                    }
-                    
-                    if (insEdgeDistanceMaxSpin) {
-                        insEdgeDistanceMaxSpin->blockSignals(true);
-                        insEdgeDistanceMaxSpin->setValue(pattern->edgeDistanceMax);
-                        insEdgeDistanceMaxSpin->blockSignals(false);
+                    if (insEdgeDistanceMaxEdit) {
+                        insEdgeDistanceMaxEdit->blockSignals(true);
+                        insEdgeDistanceMaxEdit->setText(QString::number(pattern->edgeDistanceMax, 'f', 2));
+                        insEdgeDistanceMaxEdit->blockSignals(false);
                     }
                     
                     if (insEdgeStartPercentSpin) {
@@ -6785,10 +6900,6 @@ void TeachingWidget::updateUITexts() {
         languageSettingsAction->setText(TR("LANGUAGE_SETTINGS"));
         languageSettingsAction->setEnabled(true);  // 활성화 상태 유지
     }
-    if (calibrateAction) {
-        calibrateAction->setText(TR("LENGTH_CALIBRATION"));
-        calibrateAction->setEnabled(true);  // 활성화 상태 유지
-    }
     if (aboutAction) {
         aboutAction->setText(TR("ABOUT"));
         aboutAction->setEnabled(true);  // 활성화 상태 유지
@@ -7018,9 +7129,13 @@ void TeachingWidget::updateCameraFrame() {
         
         cv::Mat currentFrame = cameraFrames[cameraIndex];
         
-        // 시뮬레이션 이미지에 필터 적용
-        cv::Mat filteredFrame = cameraFrames[cameraIndex].clone();
-        cameraView->applyFiltersToImage(filteredFrame);
+        // 선택된 필터만 적용 (getCurrentFilteredFrame 사용)
+        cv::Mat filteredFrame = getCurrentFilteredFrame();
+        
+        // 필터링된 프레임이 없으면 원본 사용
+        if (filteredFrame.empty()) {
+            filteredFrame = cameraFrames[cameraIndex].clone();
+        }
         
         // RGB 변환 및 UI 업데이트
         cv::Mat displayFrame;
@@ -7033,10 +7148,10 @@ void TeachingWidget::updateCameraFrame() {
         QImage image;
         if (displayFrame.channels() == 3) {
             image = QImage(displayFrame.data, displayFrame.cols, displayFrame.rows, 
-                          displayFrame.step, QImage::Format_RGB888);
+                          displayFrame.step, QImage::Format_RGB888).copy();
         } else {
             image = QImage(displayFrame.data, displayFrame.cols, displayFrame.rows, 
-                          displayFrame.step, QImage::Format_Grayscale8);
+                          displayFrame.step, QImage::Format_Grayscale8).copy();
         }
         
         QPixmap pixmap = QPixmap::fromImage(image);
@@ -7074,9 +7189,13 @@ void TeachingWidget::updateCameraFrame() {
                 cv::cvtColor(frame, bgrFrame, cv::COLOR_RGB2BGR);
                 cameraFrames[cameraIndex] = bgrFrame.clone();
                 
-                // 필터 적용된 프레임 생성
-                cv::Mat filteredFrame = cameraFrames[cameraIndex].clone();
-                cameraView->applyFiltersToImage(filteredFrame);
+                // 선택된 필터만 적용 (getCurrentFilteredFrame 사용)
+                cv::Mat filteredFrame = getCurrentFilteredFrame();
+                
+                // 필터링된 프레임이 없으면 원본 사용
+                if (filteredFrame.empty()) {
+                    filteredFrame = cameraFrames[cameraIndex].clone();
+                }
                 
                 // RGB 변환 및 UI 업데이트
                 cv::Mat displayFrame;
@@ -7105,9 +7224,13 @@ void TeachingWidget::updateCameraFrame() {
                 
                 cameraFrames[cameraIndex] = frame.clone();
                 
-                // 필터 적용된 프레임 생성
-                cv::Mat filteredFrame = cameraFrames[cameraIndex].clone();
-                cameraView->applyFiltersToImage(filteredFrame);
+                // 선택된 필터만 적용 (getCurrentFilteredFrame 사용)
+                cv::Mat filteredFrame = getCurrentFilteredFrame();
+                
+                // 필터링된 프레임이 없으면 원본 사용
+                if (filteredFrame.empty()) {
+                    filteredFrame = cameraFrames[cameraIndex].clone();
+                }
                 
                 // RGB 변환 및 UI 업데이트
                 cv::Mat displayFrame;
@@ -7195,7 +7318,6 @@ void TeachingWidget::switchToCamera(const QString& cameraUuid) {
     // **검사 결과 및 UI 상태 정리**
     if (cameraView) {
         cameraView->setInspectionMode(false);
-        cameraView->setCalibrationMode(false);
         cameraView->clearCurrentRect();
     }
     
@@ -7226,15 +7348,6 @@ void TeachingWidget::switchToCamera(const QString& cameraUuid) {
     
     // 새로운 메인 카메라 인덱스로 업데이트
     cameraIndex = newCameraIndex;
- 
-    // 현재 카메라에 맞는 캘리브레이션 정보 적용
-    if (cameraCalibrationMap.contains(cameraUuid)) {
-        CalibrationInfo calibInfo = cameraCalibrationMap[cameraUuid];
-        cameraView->setCalibrationInfo(calibInfo);
-    } else {
-        CalibrationInfo emptyCalib;
-        cameraView->setCalibrationInfo(emptyCalib);
-    }
 
     // CameraView에 현재 카메라 UUID 설정
     if (cameraView) {
@@ -8483,57 +8596,6 @@ void TeachingWidget::switchToRecipeMode() {
     }
 }
 
-void TeachingWidget::finishCalibration(const QRect& calibRect, double realLength) {
-    // 현재 카메라 UUID 확인
-    if (cameraIndex < 0 || cameraIndex >= cameraInfos.size()) {
-        CustomMessageBox msgBox(this);
-        msgBox.setIcon(CustomMessageBox::Warning);
-        msgBox.setTitle(TR("CALIBRATION_ERROR"));
-        msgBox.setMessage(TR("INVALID_CAMERA_INDEX"));
-        msgBox.setButtons(QMessageBox::Ok);
-        msgBox.exec();
-        cameraView->setCalibrationMode(false);
-        return;
-    }
-    
-    QString currentCameraUuid = cameraInfos[cameraIndex].uniqueId;
-    
-    // 캘리브레이션 정보 계산 및 저장
-    CalibrationInfo calibInfo;
-    calibInfo.isCalibrated = true;
-    calibInfo.calibrationRect = calibRect;
-    calibInfo.realWorldLength = realLength;
-    
-    // 픽셀당 밀리미터 비율 계산
-    double pixelLength = sqrt(calibRect.width() * calibRect.width() + calibRect.height() * calibRect.height());
-    calibInfo.pixelToMmRatio = realLength / pixelLength;
-    
-    // 카메라별 캘리브레이션 맵에 저장
-    cameraCalibrationMap[currentCameraUuid] = calibInfo;
-    
-    // 캘리브레이션 정보 설정 (현재 활성 카메라에만 적용)
-    cameraView->setCalibrationInfo(calibInfo);
-    
-    // 캘리브레이션 모드 종료
-    cameraView->setCalibrationMode(false);
-    
-    // 사용자에게 완료 메시지 표시 (mm 단위 표시)
-    CustomMessageBox msgBox(this);
-    msgBox.setIcon(CustomMessageBox::Information);
-    msgBox.setTitle(TR("CALIBRATION_COMPLETE_TITLE"));
-    msgBox.setMessage(QString("%1\n%2: %3\n%4: %5 mm = %6 px\n%7: %8 mm/px")
-                                 .arg(TR("CALIBRATION_COMPLETE_MSG"))
-                                 .arg(TR("CAMERA"))
-                                 .arg(cameraInfos[cameraIndex].name)
-                                 .arg(TR("LENGTH"))
-                                 .arg(realLength, 0, 'f', 1)
-                                 .arg(pixelLength, 0, 'f', 1)
-                                 .arg(TR("RATIO"))
-                                 .arg(calibInfo.pixelToMmRatio, 0, 'f', 6));
-    msgBox.setButtons(QMessageBox::Ok);
-    msgBox.exec();
-}
-
 void TeachingWidget::updateAllPatternTemplateImages() {
     if (!cameraView) {
         return;
@@ -9668,7 +9730,6 @@ void TeachingWidget::addPattern() {
             pattern.edgeBoxWidth = 150;
             pattern.edgeBoxHeight = 150;
             pattern.edgeMaxOutliers = 5;
-            pattern.edgeDistanceMin = 1;
             pattern.edgeDistanceMax = 10;
             pattern.edgeStartPercent = 10;
             pattern.edgeEndPercent = 10;
@@ -9915,82 +9976,6 @@ void TeachingWidget::updateUIElements() {
     
     // 미리보기 UI 업데이트
     updatePreviewUI();
-}
-
-void TeachingWidget::setupCalibrationTools() {
-    // 기존에 생성된 액션에 시그널-슬롯 연결만 수행
-    if (calibrateAction) {
-        // 기존 연결 제거 (중복 연결 방지)
-        disconnect(calibrateAction, &QAction::triggered, this, &TeachingWidget::startCalibration);
-        // 새로 연결
-        connect(calibrateAction, &QAction::triggered, this, &TeachingWidget::startCalibration);
-    } else {
-    }
-
-    // CameraView에서 캘리브레이션 관련 시그널 연결
-    connect(cameraView, &CameraView::calibrationRectDrawn, this, [this](const QRect& rect) {
-        // 사용자에게 실제 길이 입력 요청
-        bool ok;
-        double realLength = QInputDialog::getDouble(this, TR("REAL_LENGTH_INPUT_TITLE"),
-            TR("REAL_LENGTH_INPUT_MSG"), 500.0, 1.0, 100000.0, 1, &ok); 
-
-        if (ok) {
-            finishCalibration(rect, realLength);
-        } else {
-            // 취소 시 캘리브레이션 모드 종료
-            cameraView->setCalibrationMode(false);
-        }
-    });
-    
-    // 일반 사각형 그리기 이벤트에 물리적 길이 표시 추가
-    connect(cameraView, &CameraView::rectDrawn, this, [this](const QRect& rect) {
-        const CalibrationInfo& calibInfo = cameraView->getCalibrationInfo();
-        if (calibInfo.isCalibrated) {
-            // 물리적 길이 계산 및 표시
-            double widthMm = cameraView->calculatePhysicalLength(rect.width());
-            double heightMm = cameraView->calculatePhysicalLength(rect.height());
-            
-            cameraView->setMeasurementInfo(QString("%1 × %2 mm")
-                                         .arg(widthMm, 0, 'f', 1)
-                                         .arg(heightMm, 0, 'f', 1));
-        }
-    });
-}
-
-void TeachingWidget::startCalibration() {
-    // 카메라가 연결되었는지 확인
-    if (cameraIndex < 0 || cameraIndex >= getCameraInfosCount() || !getCameraInfo(cameraIndex).isConnected) {
-        CustomMessageBox msgBox(this);
-        msgBox.setIcon(CustomMessageBox::Warning);
-        msgBox.setTitle(TR("LENGTH_CALIBRATION"));
-        msgBox.setMessage(TR("NO_CAMERA_CONNECTED"));
-        msgBox.setButtons(QMessageBox::Ok);
-        msgBox.exec();
-        return;
-    }
-    
-    // 현재 모드 저장
-    CameraView::EditMode savedMode = cameraView->getEditMode();
-    
-    // 현재 카메라 정보 표시
-    QString currentCameraName = getCameraInfo(cameraIndex).name;
-    QString currentCameraUuid = getCameraInfo(cameraIndex).uniqueId;
-    
-    // 사용자에게 안내 메시지 표시
-    CustomMessageBox msgBox(this);
-    msgBox.setIcon(CustomMessageBox::Information);
-    msgBox.setTitle(TR("LENGTH_CALIBRATION"));
-    msgBox.setMessage(QString("%1\n\n%2: %3\n%4: %5")
-            .arg(TR("CALIBRATION_INSTRUCTION"))
-            .arg(TR("CURRENT_CAMERA"))
-            .arg(currentCameraName)
-            .arg(TR("CAMERA_ID"))
-            .arg(currentCameraUuid));
-    msgBox.setButtons(QMessageBox::Ok);
-    msgBox.exec();
-    
-    // 캘리브레이션 모드로 전환
-    cameraView->setCalibrationMode(true);
 }
 
 InspectionResult TeachingWidget::runSingleInspection(int specificCameraIndex) {
@@ -10457,7 +10442,6 @@ void TeachingWidget::enablePatternEditingFeatures() {
     // 시뮬레이션 모드에서는 모든 메뉴도 활성화
     if (cameraSettingsAction) cameraSettingsAction->setEnabled(true);
     if (languageSettingsAction) languageSettingsAction->setEnabled(true);
-    if (calibrateAction) calibrateAction->setEnabled(true);
     
     // CameraView 활성화 및 패턴 그리기 모드 설정
     if (cameraView) {

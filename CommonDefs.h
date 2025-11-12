@@ -94,7 +94,9 @@ struct InspectionResult {
     // EDGE 검사 결과 (심선 끝 절단면 품질)
     QMap<QUuid, bool> edgeResults;                  // EDGE 검사 통과 여부 (패턴 ID -> 통과 여부)
     QMap<QUuid, int> edgeIrregularityCount;         // 불규칙성 개수 (패턴 ID -> 개수)
-    QMap<QUuid, double> edgeMaxDeviation;           // 최대 편차 (패턴 ID -> 편차)
+    QMap<QUuid, double> edgeMaxDeviation;           // 최대 편차 mm (패턴 ID -> 편차)
+    QMap<QUuid, double> edgeMinDeviation;           // 최소 편차 mm (패턴 ID -> 편차)
+    QMap<QUuid, double> edgeAvgDeviation;           // 평균 편차 mm (패턴 ID -> 편차)
     QMap<QUuid, QPointF> edgeBoxCenter;             // EDGE 박스 중심 상대좌표 (패턴 중심 기준)
     QMap<QUuid, QSizeF> edgeBoxSize;                // EDGE 박스 크기 (width, height)
     QMap<QUuid, bool> edgeMeasured;                 // EDGE 측정 완료 여부 (패턴 ID -> 측정 여부)
@@ -209,8 +211,7 @@ struct PatternInfo {
     int edgeEndPercent = 3;                  // EDGE 끝 제외 퍼센트 (1-50%)
     
     // EDGE 평균선 거리 검사 파라미터
-    int edgeDistanceMin = 1;                 // 평균선에서 최소 허용 거리 (픽셀)
-    int edgeDistanceMax = 10;                // 평균선에서 최대 허용 거리 (픽셀)
+    double edgeDistanceMax = 0.5;           // 평균선에서 최대 허용 거리 (mm)
 
     // SLOPE 검사 관련 파라미터 (STRIP 4점 기울기 검사)
     bool slopeEnabled = true;                // SLOPE 검사 활성화 여부

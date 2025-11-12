@@ -264,12 +264,9 @@ private:
                                  QMap<QString, QTreeWidgetItem*>& itemMap, 
                                  int& patternCount);
     void showImageViewerDialog(const QImage& image, const QString& title);
-    void setupCalibrationTools();
-    void startCalibration();
     
     // 각도 정규화 함수 (-180° ~ +180° 범위로 변환)
     static double normalizeAngle(double angle);
-    void finishCalibration(const QRect& calibRect, double realLength);
     double calculatePhysicalLength(int pixelLength) const;
     void updateCameraInfoForSimulation(const QString& imagePath);
     void updateCameraInfoForDisconnected();
@@ -285,8 +282,9 @@ private:
     // 패턴 업데이트 중 UI 업데이트 방지 플래그
     bool isUpdatingPattern = false;
     
-    // 카메라 UUID별 캘리브레이션 정보 맵
-    QMap<QString, CalibrationInfo> cameraCalibrationMap;
+    // 선택된 필터 정보 (티칭 모드 필터 표시용)
+    QUuid selectedPatternId;
+    int selectedFilterIndex = -1;
 
     // 레시피 관리자
     RecipeManager* recipeManager;
@@ -307,7 +305,6 @@ private:
     QAction* settingsAction = nullptr;
     QAction* loadRecipeAction = nullptr;
     QAction* aboutAction = nullptr;
-    QAction* calibrateAction = nullptr;
     QAction* serialSettingsAction = nullptr;
     
     // 버튼 멤버 변수들
@@ -386,9 +383,9 @@ private:
     // STRIP 길이검사 관련 위젯들
     QCheckBox* insStripLengthEnabledCheck = nullptr;
     QLabel* insStripLengthMinLabel = nullptr;
-    QSpinBox* insStripLengthMinSpin = nullptr;
+    QLineEdit* insStripLengthMinEdit = nullptr;
     QLabel* insStripLengthMaxLabel = nullptr;
-    QSpinBox* insStripLengthMaxSpin = nullptr;
+    QLineEdit* insStripLengthMaxEdit = nullptr;
     QLabel* insStripLengthConversionLabel = nullptr;
     QDoubleSpinBox* insStripLengthConversionSpin = nullptr;
     QLabel* insStripLengthMeasuredLabel = nullptr;
@@ -407,9 +404,9 @@ private:
     QSlider* insStripThicknessHeightSlider = nullptr;
     QLabel* insStripThicknessHeightValueLabel = nullptr;
     QLabel* insStripThicknessMinLabel = nullptr;
-    QSpinBox* insStripThicknessMinSpin = nullptr;
+    QLineEdit* insStripThicknessMinEdit = nullptr;
     QLabel* insStripThicknessMaxLabel = nullptr;
-    QSpinBox* insStripThicknessMaxSpin = nullptr;
+    QLineEdit* insStripThicknessMaxEdit = nullptr;
 
     // REAR 두께 측정 관련 위젯들
     QCheckBox* insStripRearEnabledCheck = nullptr;
@@ -420,9 +417,9 @@ private:
     QSlider* insStripRearThicknessHeightSlider = nullptr;
     QLabel* insStripRearThicknessHeightValueLabel = nullptr;
     QLabel* insStripRearThicknessMinLabel = nullptr;
-    QSpinBox* insStripRearThicknessMinSpin = nullptr;
+    QLineEdit* insStripRearThicknessMinEdit = nullptr;
     QLabel* insStripRearThicknessMaxLabel = nullptr;
-    QSpinBox* insStripRearThicknessMaxSpin = nullptr;
+    QLineEdit* insStripRearThicknessMaxEdit = nullptr;
 
     // EDGE 검사 관련 위젯들
     QCheckBox* insEdgeEnabledCheck = nullptr;
@@ -438,10 +435,8 @@ private:
 
     QLabel* insEdgeMaxIrregularitiesLabel = nullptr;
     QSpinBox* insEdgeMaxIrregularitiesSpin = nullptr;
-    QLabel* insEdgeDistanceMinLabel = nullptr;
-    QSpinBox* insEdgeDistanceMinSpin = nullptr;
     QLabel* insEdgeDistanceMaxLabel = nullptr;
-    QSpinBox* insEdgeDistanceMaxSpin = nullptr;
+    QLineEdit* insEdgeDistanceMaxEdit = nullptr;
     QLabel* insEdgeStartPercentLabel = nullptr;
     QSpinBox* insEdgeStartPercentSpin = nullptr;
     QLabel* insEdgeEndPercentLabel = nullptr;

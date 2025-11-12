@@ -1930,17 +1930,53 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
         cv::Mat processedRoi = roi.clone();
         
         // ROI에 패턴에 적용된 필터 적용
-        if (!pattern.filters.isEmpty()) {
-            logDebug(QString("ROI에 %1개 필터 적용").arg(pattern.filters.size()));
+        if (!pattern.filters.isEmpty() && std::abs(pattern.angle) > 0.1) {
+            logDebug(QString("ROI에 %1개 필터 적용 (회전 마스크 사용)").arg(pattern.filters.size()));
             
-            // 필터 순차 적용
+            // 회전된 사각형 마스크 생성
+            cv::Mat mask = cv::Mat::zeros(roi.size(), CV_8UC1);
+            cv::Point2f center(roi.cols / 2.0f, roi.rows / 2.0f);
+            cv::Size2f patternSize(pattern.rect.width(), pattern.rect.height());
+            
+            cv::Point2f vertices[4];
+            cv::RotatedRect rotatedRect(center, patternSize, pattern.angle);
+            rotatedRect.points(vertices);
+            
+            std::vector<cv::Point> points;
+            for (int i = 0; i < 4; i++) {
+                points.push_back(cv::Point(static_cast<int>(std::round(vertices[i].x)), 
+                                         static_cast<int>(std::round(vertices[i].y))));
+            }
+            cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{points}, cv::Scalar(255));
+            
+            // 필터를 전체 ROI에 적용
+            cv::Mat filteredRoi = roi.clone();
             ImageProcessor processor;
             for (const FilterInfo& filter : pattern.filters) {
                 if (filter.enabled) {
-                    cv::Mat filteredRoi;
-                    processor.applyFilter(processedRoi, filteredRoi, filter);
-                    if (!filteredRoi.empty()) {
-                        processedRoi = filteredRoi.clone();
+                    cv::Mat tempFiltered;
+                    processor.applyFilter(filteredRoi, tempFiltered, filter);
+                    if (!tempFiltered.empty()) {
+                        filteredRoi = tempFiltered.clone();
+                        logDebug(QString("필터 %1 적용 완료").arg(filter.type));
+                    }
+                }
+            }
+            
+            // 마스크 영역만 필터 적용된 결과 사용, 나머지는 원본 유지
+            filteredRoi.copyTo(processedRoi, mask);
+            
+        } else if (!pattern.filters.isEmpty()) {
+            // 회전 없는 경우: 일반 필터 적용
+            logDebug(QString("ROI에 %1개 필터 적용").arg(pattern.filters.size()));
+            
+            ImageProcessor processor;
+            for (const FilterInfo& filter : pattern.filters) {
+                if (filter.enabled) {
+                    cv::Mat tempFiltered;
+                    processor.applyFilter(processedRoi, tempFiltered, filter);
+                    if (!tempFiltered.empty()) {
+                        processedRoi = tempFiltered.clone();
                         logDebug(QString("필터 %1 적용 완료").arg(filter.type));
                     }
                 }
@@ -2244,12 +2280,11 @@ cv::Mat InsProcessor::extractROI(const cv::Mat& image, const QRectF& rect, doubl
                 cv::rectangle(mask, patternRect, cv::Scalar(255), -1);
             }
             
-            // 마스크 반전: 패턴 영역 외부를 검은색으로 설정
-            cv::Mat invertedMask;
-            cv::bitwise_not(mask, invertedMask);
-            
-            // 패턴 영역 외부를 검은색으로 마스킹 (티칭과 동일)
-            roiMat.setTo(cv::Scalar(0, 0, 0), invertedMask);
+            // 마스크 반전: 패턴 영역 외부를 흰색으로 설정 (STRIP 검사를 위해)
+            // 주석 처리: 화면 표시 시 원본이 보이도록
+            // cv::Mat invertedMask;
+            // cv::bitwise_not(mask, invertedMask);
+            // roiMat.setTo(cv::Scalar(255, 255, 255), invertedMask);
             
             return roiMat;
         }
@@ -2301,8 +2336,106 @@ QImage InsProcessor::matToQImage(const cv::Mat& mat) {
 
 bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result) {
     try {
-        // ROI 영역 추출
-        cv::Mat roiImage = extractROI(image, pattern.rect, pattern.angle);
+        // 필터 적용된 원본 이미지 준비
+        cv::Mat filteredImage = image.clone();
+        
+        // 필터가 있고 회전이 있는 경우
+        if (!pattern.filters.isEmpty() && std::abs(pattern.angle) > 0.1) {
+            logDebug(QString("회전된 패턴에 %1개 필터 적용").arg(pattern.filters.size()));
+            
+            cv::Point2f center(pattern.rect.x() + pattern.rect.width()/2.0f, 
+                             pattern.rect.y() + pattern.rect.height()/2.0f);
+            
+            // 1. 회전된 사각형 마스크 생성
+            cv::Mat mask = cv::Mat::zeros(image.size(), CV_8UC1);
+            cv::Size2f patternSize(pattern.rect.width(), pattern.rect.height());
+            
+            cv::Point2f vertices[4];
+            cv::RotatedRect rotatedRect(center, patternSize, pattern.angle);
+            rotatedRect.points(vertices);
+            
+            std::vector<cv::Point> points;
+            for (int i = 0; i < 4; i++) {
+                points.push_back(cv::Point(static_cast<int>(std::round(vertices[i].x)), 
+                                         static_cast<int>(std::round(vertices[i].y))));
+            }
+            cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{points}, cv::Scalar(255));
+            
+            // 2. 마스크 영역만 복사한 이미지 생성 (필터 적용용)
+            cv::Mat maskedImage = cv::Mat::zeros(image.size(), image.type());
+            image.copyTo(maskedImage, mask);
+            
+            // 3. 회전된 사각형을 감싸는 최대 사각형 계산
+            double angleRad = std::abs(pattern.angle) * M_PI / 180.0;
+            double width = pattern.rect.width();
+            double height = pattern.rect.height();
+            
+            double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
+            double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
+            
+            int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
+            int halfSize = maxSize / 2;
+            
+            cv::Rect expandedRoi(
+                qBound(0, static_cast<int>(center.x) - halfSize, image.cols - 1),
+                qBound(0, static_cast<int>(center.y) - halfSize, image.rows - 1),
+                qBound(1, maxSize, image.cols - (static_cast<int>(center.x) - halfSize)),
+                qBound(1, maxSize, image.rows - (static_cast<int>(center.y) - halfSize))
+            );
+            
+            // 4. 확장된 영역에 필터 적용
+            if (expandedRoi.width > 0 && expandedRoi.height > 0 && 
+                expandedRoi.x + expandedRoi.width <= maskedImage.cols && 
+                expandedRoi.y + expandedRoi.height <= maskedImage.rows) {
+                
+                cv::Mat roiMat = maskedImage(expandedRoi);
+                ImageProcessor processor;
+                for (const FilterInfo& filter : pattern.filters) {
+                    if (filter.enabled) {
+                        cv::Mat nextFiltered;
+                        processor.applyFilter(roiMat, nextFiltered, filter);
+                        if (!nextFiltered.empty()) {
+                            nextFiltered.copyTo(roiMat);
+                            logDebug(QString("필터 %1 적용 완료").arg(filter.type));
+                        }
+                    }
+                }
+            }
+            
+            // 5. 마스크 영역만 필터 적용된 결과로 교체, 나머지는 원본 유지
+            maskedImage.copyTo(filteredImage, mask);
+            
+        } else if (!pattern.filters.isEmpty()) {
+            // 회전 없는 경우: rect 영역에만 필터 적용
+            logDebug(QString("원본 이미지의 사각형 영역에 %1개 필터 적용").arg(pattern.filters.size()));
+            
+            cv::Rect roi(
+                qBound(0, static_cast<int>(pattern.rect.x()), image.cols - 1),
+                qBound(0, static_cast<int>(pattern.rect.y()), image.rows - 1),
+                qBound(1, static_cast<int>(pattern.rect.width()), image.cols - static_cast<int>(pattern.rect.x())),
+                qBound(1, static_cast<int>(pattern.rect.height()), image.rows - static_cast<int>(pattern.rect.y()))
+            );
+            
+            if (roi.width > 0 && roi.height > 0 && 
+                roi.x + roi.width <= image.cols && roi.y + roi.height <= image.rows) {
+                
+                cv::Mat roiMat = filteredImage(roi);
+                ImageProcessor processor;
+                for (const FilterInfo& filter : pattern.filters) {
+                    if (filter.enabled) {
+                        cv::Mat nextFiltered;
+                        processor.applyFilter(roiMat, nextFiltered, filter);
+                        if (!nextFiltered.empty()) {
+                            nextFiltered.copyTo(roiMat);
+                            logDebug(QString("필터 %1 적용 완료").arg(filter.type));
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 필터 적용된 이미지에서 ROI 영역 추출
+        cv::Mat roiImage = extractROI(filteredImage, pattern.rect, pattern.angle);
         if (roiImage.empty()) {
             logDebug(QString("STRIP 길이 검사 실패: ROI 추출 실패 - %1").arg(pattern.name));
             score = 0.0;
@@ -2318,10 +2451,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             templateImage = cv::Mat(qImg.height(), qImg.width(), CV_8UC3, (void*)qImg.constBits(), qImg.bytesPerLine());
             templateImage = templateImage.clone(); // 데이터 복사
             cv::cvtColor(templateImage, templateImage, cv::COLOR_RGB2BGR);
-            qDebug() << "[checkStrip] 템플릿이미지 로드 성공:" << templateImage.cols << "x" << templateImage.rows 
-                     << "채널:" << templateImage.channels();
         } else {
-            qDebug() << "[checkStrip] 템플릿이미지 없음!";
             logDebug(QString("STRIP 길이 검사 실패: 템플릿 이미지 없음 - %1").arg(pattern.name));
             score = 0.0;
             result.insMethodTypes[pattern.id] = InspectionMethod::STRIP;
@@ -2372,6 +2502,54 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                                   &stripLengthPassed, &stripMeasuredLength, &stripLengthStartPoint, &stripLengthEndPoint,
                                   &frontThicknessPoints, &rearThicknessPoints,
                                   &frontBlackRegionPoints, &rearBlackRegionPoints);
+    
+    // FRONT 두께 통계 계산 (ImageProcessor에서 받은 픽셀 데이터로부터)
+    if (!frontThicknessPoints.empty()) {
+        std::vector<int> thicknesses;
+        for (const cv::Point& pt : frontThicknessPoints) {
+            thicknesses.push_back(pt.y);  // y값이 두께 (픽셀)
+        }
+        
+        measuredMinThickness = *std::min_element(thicknesses.begin(), thicknesses.end());
+        measuredMaxThickness = *std::max_element(thicknesses.begin(), thicknesses.end());
+        
+        int sum = std::accumulate(thicknesses.begin(), thicknesses.end(), 0);
+        measuredAvgThickness = sum / static_cast<int>(thicknesses.size());
+        
+        std::cout << "[InsProcessor] FRONT 두께 통계: Min=" << measuredMinThickness 
+                  << "px, Max=" << measuredMaxThickness 
+                  << "px, Avg=" << measuredAvgThickness << "px (샘플수: " 
+                  << thicknesses.size() << ")" << std::endl;
+    }
+    
+    // REAR 두께 통계 계산 (ImageProcessor에서 받은 픽셀 데이터로부터)
+    if (!rearThicknessPoints.empty()) {
+        std::vector<int> thicknesses;
+        for (const cv::Point& pt : rearThicknessPoints) {
+            thicknesses.push_back(pt.y);  // y값이 두께 (픽셀)
+        }
+        
+        rearMeasuredMinThickness = *std::min_element(thicknesses.begin(), thicknesses.end());
+        rearMeasuredMaxThickness = *std::max_element(thicknesses.begin(), thicknesses.end());
+        
+        int sum = std::accumulate(thicknesses.begin(), thicknesses.end(), 0);
+        rearMeasuredAvgThickness = sum / static_cast<int>(thicknesses.size());
+        
+        std::cout << "[InsProcessor] REAR 두께 통계: Min=" << rearMeasuredMinThickness 
+                  << "px, Max=" << rearMeasuredMaxThickness 
+                  << "px, Avg=" << rearMeasuredAvgThickness << "px (샘플수: " 
+                  << thicknesses.size() << ")" << std::endl;
+    }
+    
+    // 픽셀을 mm로 변환 (두께 전용 calibration 필요)
+    // 실제 두께를 버니어 캘리퍼스로 측정한 값과 픽셀값을 비교하여 calibration
+    // 예: 실제 1.38mm = 55px → 1px = 1.38/55 = 0.0251mm
+    // 우선은 strip length calibration을 임시로 사용 (나중에 별도 calibration 추가 필요)
+    double thicknessPixelToMm = pattern.stripLengthConversionMm / pattern.stripLengthCalibrationPx;
+    
+    std::cout << "[두께 변환] stripLengthConversionMm=" << pattern.stripLengthConversionMm 
+              << "mm, stripLengthCalibrationPx=" << pattern.stripLengthCalibrationPx 
+              << "px → 1px = " << thicknessPixelToMm << "mm" << std::endl;
     
     // ROI 좌표를 원본 이미지 좌표로 변환 (extractROI와 정확히 동일한 방식으로 계산)
     cv::Point2f patternCenter(pattern.rect.x() + pattern.rect.width()/2.0f, 
@@ -2453,29 +2631,8 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     result.stripFrontBlackRegionPoints[pattern.id] = frontBlackPointsConverted;
     result.stripRearBlackRegionPoints[pattern.id] = rearBlackPointsConverted;
     
-    // FRONT 두께 계산 (Y좌표 범위)
-    if (!frontThicknessPoints.empty()) {
-        int minY = INT_MAX, maxY = INT_MIN;
-        for (const cv::Point& pt : frontThicknessPoints) {
-            minY = std::min(minY, pt.y);
-            maxY = std::max(maxY, pt.y);
-        }
-        measuredMinThickness = minY;
-        measuredMaxThickness = maxY;
-        measuredAvgThickness = (minY + maxY) / 2;
-    }
-    
-    // REAR 두께 계산 (Y좌표 범위)
-    if (!rearThicknessPoints.empty()) {
-        int minY = INT_MAX, maxY = INT_MIN;
-        for (const cv::Point& pt : rearThicknessPoints) {
-            minY = std::min(minY, pt.y);
-            maxY = std::max(maxY, pt.y);
-        }
-        rearMeasuredMinThickness = minY;
-        rearMeasuredMaxThickness = maxY;
-        rearMeasuredAvgThickness = (minY + maxY) / 2;
-    }
+    // ImageProcessor에서 이미 계산된 두께 값을 그대로 사용
+    // (잘못된 Y좌표 범위 계산 제거됨)
     
     // FRONT 포인트 디버그 정보
     if (!frontPointsConverted.isEmpty()) {
@@ -2599,6 +2756,17 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     result.stripLengthStartPoint[pattern.id] = absStripLengthStart;
     result.stripLengthEndPoint[pattern.id] = absStripLengthEnd;
     
+    // 측정된 두께를 검사 결과에 저장 (측정값이 있으면 항상 저장)
+    result.stripMeasuredThicknessMin[pattern.id] = measuredMinThickness;
+    result.stripMeasuredThicknessMax[pattern.id] = measuredMaxThickness;
+    result.stripMeasuredThicknessAvg[pattern.id] = measuredAvgThickness;
+    result.stripThicknessMeasured[pattern.id] = (measuredAvgThickness > 0);
+    
+    result.stripRearMeasuredThicknessMin[pattern.id] = rearMeasuredMinThickness;
+    result.stripRearMeasuredThicknessMax[pattern.id] = rearMeasuredMaxThickness;
+    result.stripRearMeasuredThicknessAvg[pattern.id] = rearMeasuredAvgThickness;
+    result.stripRearThicknessMeasured[pattern.id] = (rearMeasuredAvgThickness > 0);
+    
     if (isPassed) {
         // 좌표 변환 적용
         
@@ -2612,41 +2780,20 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             point.y += static_cast<int>(offset.y);
         }
         
-        // 측정된 두께를 검사 결과에 저장 (FRONT + REAR)
-        result.stripMeasuredThicknessMin[pattern.id] = measuredMinThickness;
-        result.stripMeasuredThicknessMax[pattern.id] = measuredMaxThickness;
-        result.stripMeasuredThicknessAvg[pattern.id] = measuredAvgThickness;
-        result.stripThicknessMeasured[pattern.id] = (measuredAvgThickness > 0);
-        
-        result.stripRearMeasuredThicknessMin[pattern.id] = rearMeasuredMinThickness;
-        result.stripRearMeasuredThicknessMax[pattern.id] = rearMeasuredMaxThickness;
-        result.stripRearMeasuredThicknessAvg[pattern.id] = rearMeasuredAvgThickness;
-        result.stripRearThicknessMeasured[pattern.id] = (rearMeasuredAvgThickness > 0);
-        
         // 실제 측정 지점들을 저장 (절대좌표)
         result.stripStartPoint[pattern.id] = QPoint(startPoint.x, startPoint.y);
         result.stripMaxGradientPoint[pattern.id] = QPoint(maxGradientPoint.x, maxGradientPoint.y);
         result.stripMeasuredThicknessLeft[pattern.id] = leftThickness;  // 좌측 두께
         result.stripMeasuredThicknessRight[pattern.id] = rightThickness; // 우측 두께
     } else {
-        // isPassed가 false인 경우에도 데이터 저장 (0으로 초기화)
-        result.stripMeasuredThicknessMin[pattern.id] = 0;
-        result.stripMeasuredThicknessMax[pattern.id] = 0;
-        result.stripMeasuredThicknessAvg[pattern.id] = 0;
-        result.stripThicknessMeasured[pattern.id] = false;
-        
-        result.stripRearMeasuredThicknessMin[pattern.id] = 0;
-        result.stripRearMeasuredThicknessMax[pattern.id] = 0;
-        result.stripRearMeasuredThicknessAvg[pattern.id] = 0;
-        result.stripRearThicknessMeasured[pattern.id] = false;
-        
+        // isPassed가 false인 경우 측정 지점만 0으로 초기화
         result.stripStartPoint[pattern.id] = QPoint(0, 0);
         result.stripMaxGradientPoint[pattern.id] = QPoint(0, 0);
         result.stripMeasuredThicknessLeft[pattern.id] = 0;
         result.stripMeasuredThicknessRight[pattern.id] = 0;
     }
         
-        // 박스 위치를 패턴 중심 기준 상대좌표로 저장
+    // 박스 위치를 패턴 중심 기준 상대좌표로 저장
         QPointF patternCenterForBox = pattern.rect.center();
         
         // FRONT 박스 상대좌표 저장
@@ -2661,28 +2808,19 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         result.stripRearBoxCenter[pattern.id] = rearBoxRelativeCenter;
         result.stripRearBoxSize[pattern.id] = QSizeF(pattern.stripRearThicknessBoxWidth, pattern.stripRearThicknessBoxHeight);
         
-        // EDGE 검사 결과 저장
-        result.edgeResults[pattern.id] = edgePassed;
-        result.edgeIrregularityCount[pattern.id] = edgeIrregularityCount;
-        result.edgeMaxDeviation[pattern.id] = edgeMaxDeviation;
-        
         // EDGE 박스 상대좌표 계산 (패턴 왼쪽에서 edgeOffsetX만큼 떨어진 위치)
         float edgeOffsetX = (-pattern.rect.width()/2.0f) + pattern.edgeOffsetX; // 중심 기준 오프셋
         QPointF edgeBoxRelativeCenter(edgeOffsetX, 0); // Y는 패턴 중심과 동일
         result.edgeBoxCenter[pattern.id] = edgeBoxRelativeCenter;
         result.edgeBoxSize[pattern.id] = QSizeF(pattern.edgeBoxWidth, pattern.edgeBoxHeight);
         
-        result.edgeMeasured[pattern.id] = pattern.edgeEnabled;
-        result.edgeAverageX[pattern.id] = edgeAverageX;
-        
         // EDGE 포인트들을 절대좌표로 변환 (회전 없이 오프셋만 적용)
+        QList<QPoint> absoluteEdgePoints;
         if (!edgePoints.empty()) {
             // EDGE 포인트 필터링: 시작/끝 퍼센트만큼 제외
             int totalPoints = edgePoints.size();
             int startSkip = (totalPoints * pattern.edgeStartPercent) / 100;
             int endSkip = (totalPoints * pattern.edgeEndPercent) / 100;
-            
-
             
             // 유효한 범위 확인
             int validStart = startSkip;
@@ -2693,7 +2831,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                 validEnd = totalPoints;
             }
             
-            QList<QPoint> absoluteEdgePoints;
             for (int i = validStart; i < validEnd; i++) {
                 const cv::Point& point = edgePoints[i];
                 // EDGE는 수직 절단면이므로 회전 적용하지 않고 오프셋만 적용
@@ -2702,9 +2839,105 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                 absoluteEdgePoints.append(absolutePoint);
             }
             result.edgeAbsolutePoints[pattern.id] = absoluteEdgePoints;
-            
-
         }
+        
+        // EDGE 포인트 통계 계산 (절대 좌표 기준으로 mm 변환)
+        double edgeAvgX = 0.0;
+        double edgeMaxDeviationMm = 0.0;
+        double edgeMinDeviationMm = 0.0;
+        double edgeAvgDeviationMm = 0.0;
+        int edgeOutlierCount = 0;
+        
+        if (!absoluteEdgePoints.empty()) {
+            // 1. 평균 X 좌표 계산 (절대 좌표의 픽셀값)
+            double sumX = 0.0;
+            for (const QPoint& pt : absoluteEdgePoints) {
+                sumX += pt.x();
+            }
+            edgeAvgX = sumX / absoluteEdgePoints.size();
+            
+            // 2. mm 변환을 위한 캘리브레이션 확인
+            double pixelToMm = 0.0;
+            if (pattern.stripLengthCalibrationPx > 0 && pattern.stripLengthConversionMm > 0) {
+                pixelToMm = pattern.stripLengthConversionMm / pattern.stripLengthCalibrationPx;
+            }
+            
+            // 3. 각 포인트와 평균선 사이의 거리 계산 (mm 변환)
+            double maxDistancePx = 0.0;
+            double minX = absoluteEdgePoints[0].x();
+            double maxX = absoluteEdgePoints[0].x();
+            
+            // 선형 회귀로 평균선 구하기 (y = mx + b)
+            double sumY = 0.0;
+            for (const QPoint& pt : absoluteEdgePoints) {
+                sumY += pt.y();
+            }
+            double avgY = sumY / absoluteEdgePoints.size();
+            
+            double sumXY = 0.0, sumXX = 0.0;
+            for (const QPoint& pt : absoluteEdgePoints) {
+                double dx = pt.x() - edgeAvgX;
+                double dy = pt.y() - avgY;
+                sumXY += dx * dy;
+                sumXX += dx * dx;
+            }
+            
+            // 기울기 m 계산
+            double m = (sumXX > 0) ? (sumXY / sumXX) : 0.0;
+            double b = avgY - m * edgeAvgX;
+            
+            double minDistancePx = std::numeric_limits<double>::max();
+            double sumDistancePx = 0.0;
+            
+            for (int i = 0; i < absoluteEdgePoints.size(); i++) {
+                const QPoint& pt = absoluteEdgePoints[i];
+                minX = std::min(minX, static_cast<double>(pt.x()));
+                maxX = std::max(maxX, static_cast<double>(pt.x()));
+                
+                // 점 (px, py)와 직선 mx - y + b = 0 사이의 거리
+                // 거리 = |m*px - py + b| / sqrt(m^2 + 1)
+                double numerator = std::abs(m * pt.x() - pt.y() + b);
+                double denominator = std::sqrt(m * m + 1.0);
+                double distancePx = numerator / denominator;
+                
+                maxDistancePx = std::max(maxDistancePx, distancePx);
+                minDistancePx = std::min(minDistancePx, distancePx);
+                sumDistancePx += distancePx;
+                
+                // mm로 변환하여 최대 허용 거리와 비교
+                double distanceMm = distancePx * pixelToMm;
+                if (distanceMm > pattern.edgeDistanceMax) {
+                    edgeOutlierCount++;
+                }
+            }
+            
+            // 편차를 mm로 변환
+            double avgDistancePx = sumDistancePx / absoluteEdgePoints.size();
+            edgeMaxDeviationMm = maxDistancePx * pixelToMm;
+            double edgeMinDeviationMm = minDistancePx * pixelToMm;
+            double edgeAvgDeviationMm = avgDistancePx * pixelToMm;
+            
+            qDebug() << "[InsProcessor] EDGE 통계 (절대좌표):"
+                     << "포인트수=" << absoluteEdgePoints.size()
+                     << ", X범위=" << minX << "~" << maxX << "px"
+                     << ", 평균X=" << edgeAvgX << "px"
+                     << ", 최소편차=" << edgeMinDeviationMm << "mm"
+                     << ", 최대편차=" << edgeMaxDeviationMm << "mm"
+                     << ", 평균편차=" << edgeAvgDeviationMm << "mm"
+                     << ", 불량수=" << edgeOutlierCount << "/" << absoluteEdgePoints.size()
+                     << ", 허용거리=" << pattern.edgeDistanceMax << "mm"
+                     << ", 변환=" << pixelToMm << "mm/px";
+        }
+        
+        // EDGE 검사 결과 저장 (불량수와 편차는 mm 기준)
+        result.edgeResults[pattern.id] = edgePassed;
+        result.edgeIrregularityCount[pattern.id] = edgeOutlierCount;
+        result.edgeMaxDeviation[pattern.id] = edgeMaxDeviationMm;
+        result.edgeMinDeviation[pattern.id] = edgeMinDeviationMm;
+        result.edgeAvgDeviation[pattern.id] = edgeAvgDeviationMm;
+        
+        result.edgeMeasured[pattern.id] = pattern.edgeEnabled;
+        result.edgeAverageX[pattern.id] = edgeAvgX;  // 절대 좌표 평균
         
         // Qt로 시각화 추가 (시작점, 끝점, Local Max Gradient 지점들)
         if (!resultImage.empty()) {

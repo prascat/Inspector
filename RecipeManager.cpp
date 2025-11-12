@@ -769,6 +769,12 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("edgeBoxWidth", QString::number(pattern.edgeBoxWidth));
     xml.writeAttribute("edgeBoxHeight", QString::number(pattern.edgeBoxHeight));
     xml.writeAttribute("edgeMaxOutliers", QString::number(pattern.edgeMaxOutliers));
+    xml.writeAttribute("edgeDistanceMax", QString::number(pattern.edgeDistanceMax, 'f', 2));
+    
+    // STRIP 길이 캘리브레이션 관련 속성 저장
+    xml.writeAttribute("stripLengthConversionMm", QString::number(pattern.stripLengthConversionMm, 'f', 3));
+    xml.writeAttribute("stripLengthCalibrationPx", QString::number(pattern.stripLengthCalibrationPx, 'f', 2));
+    xml.writeAttribute("stripLengthCalibrated", pattern.stripLengthCalibrated ? "true" : "false");
     
     if (!pattern.templateImage.isNull()) {
         QByteArray ba;
@@ -1369,6 +1375,27 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     if (!edgeMaxOutliersStr.isEmpty()) {
         pattern.edgeMaxOutliers = edgeMaxOutliersStr.toInt();
     } // 비어있으면 CommonDefs.h의 기본값(5) 사용
+    
+    QString edgeDistanceMaxStr = xml.attributes().value("edgeDistanceMax").toString();
+    if (!edgeDistanceMaxStr.isEmpty()) {
+        pattern.edgeDistanceMax = edgeDistanceMaxStr.toDouble();
+    } // 비어있으면 CommonDefs.h의 기본값(10.0) 사용
+    
+    // STRIP 길이 캘리브레이션 관련 속성 읽기
+    QString stripLengthConversionMmStr = xml.attributes().value("stripLengthConversionMm").toString();
+    if (!stripLengthConversionMmStr.isEmpty()) {
+        pattern.stripLengthConversionMm = stripLengthConversionMmStr.toDouble();
+    } // 비어있으면 CommonDefs.h의 기본값(6.0) 사용
+    
+    QString stripLengthCalibrationPxStr = xml.attributes().value("stripLengthCalibrationPx").toString();
+    if (!stripLengthCalibrationPxStr.isEmpty()) {
+        pattern.stripLengthCalibrationPx = stripLengthCalibrationPxStr.toDouble();
+    } // 비어있으면 CommonDefs.h의 기본값(0.0) 사용
+    
+    QString stripLengthCalibratedStr = xml.attributes().value("stripLengthCalibrated").toString();
+    if (!stripLengthCalibratedStr.isEmpty()) {
+        pattern.stripLengthCalibrated = (stripLengthCalibratedStr == "true");
+    } // 비어있으면 CommonDefs.h의 기본값(false) 사용
     
     QString imageStr = xml.attributes().value("templateImage").toString();
     qDebug() << QString("INS 패턴 '%1' templateImage 속성 길이: %2").arg(pattern.name).arg(imageStr.length());

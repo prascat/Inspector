@@ -60,40 +60,6 @@ public:
     enum EditMode {View, Move, Draw, Edit};
 
     void setPatternContours(const QUuid& patternId, const QList<QVector<QPoint>>& contours);
-    
-    // 캘리브레이션 관련 함수들 추가
-    void setCalibrationMode(bool enabled) {
-        m_calibrationMode = enabled;
-        if (enabled) {
-            m_prevEditMode = m_editMode;
-            setEditMode(EditMode::Draw);
-            setCursor(Qt::CrossCursor);
-        } else {
-            setEditMode(m_prevEditMode);
-        }
-    }
-    
-    bool isCalibrationMode() const { return m_calibrationMode; }
-    
-    void setCalibrationInfo(const CalibrationInfo& info) { 
-        m_calibrationInfo = info; 
-        viewport()->update(); 
-    }
-    
-    const CalibrationInfo& getCalibrationInfo() const { return m_calibrationInfo; }
-    
-    void setMeasurementInfo(const QString& text) {
-        m_measurementText = text;
-        viewport()->update();
-    }
-    
-    // 물리적 길이 계산 함수 (mm 단위)
-    double calculatePhysicalLength(int pixelLength) const {
-        if (m_calibrationInfo.isCalibrated && m_calibrationInfo.pixelToMmRatio > 0.0) {
-            return pixelLength * m_calibrationInfo.pixelToMmRatio;
-        }
-        return 0.0;
-    }
 
     void setEditMode(EditMode mode) { 
         // 모드가 실제로 변경될 때만 상태 초기화
@@ -273,7 +239,6 @@ signals:
     void patternEnableStateChanged(const QUuid& patternId, bool enabled);
     void fidTemplateUpdateRequired(const QUuid& patternId);
     void insTemplateUpdateRequired(const QUuid& patternId);
-    void calibrationRectDrawn(const QRect& rect);
     void selectedInspectionPatternCleared(); // 검사 결과 필터 해제 시그널
 
 protected:
@@ -293,6 +258,11 @@ private:
     InspectionResult lastInspectionResult;
     QUuid selectedInspectionPatternId; // 선택된 검사 결과 패턴 필터링
 
+    // 거리 측정 관련 변수
+    bool isMeasuring = false;
+    QPoint measureStartPoint;
+    QPoint measureEndPoint;
+
     // 리사이즈/회전 관련 변수
     bool isResizing = false;
     bool isRotating = false;
@@ -303,18 +273,11 @@ private:
     double initialAngle = 0.0;
 
     // 언어 지원을 위한 텍스트 요소들
-    QString m_calibrationText;             // 캘리브레이션 텍스트
     QString m_statusText;                  // 상태 텍스트
     QMap<QUuid, QString> groupNames;       // 그룹 이름 맵핑
 
     // 패턴별 윤곽선 저장
     QMap<QUuid, QList<QVector<QPoint>>> patternContours;
-
-    // 캘리브레이션 관련 변수
-    bool m_calibrationMode = false;
-    EditMode m_prevEditMode = EditMode::Move;
-    CalibrationInfo m_calibrationInfo;
-    QString m_measurementText;
 
     QString statusInfo;
     EditMode m_editMode = EditMode::Move; // 기본값은 이동 모드

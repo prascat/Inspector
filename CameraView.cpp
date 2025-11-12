@@ -47,9 +47,6 @@ CameraView::CameraView(QWidget *parent) : QGraphicsView(parent) {
 
 void CameraView::updateUITexts() {
     // CameraView에 표시되는 텍스트 요소 업데이트
-    if (m_calibrationMode) {
-        m_calibrationText = TR("CALIBRATION_IN_PROGRESS");
-    }
 
     // 그룹 이름 업데이트
     for (auto it = groupNames.begin(); it != groupNames.end(); ++it) {
@@ -68,10 +65,6 @@ void CameraView::updateUITexts() {
     // 상태 정보 업데이트
     if (m_statusText.contains("CAM")) {
         // CAM 텍스트는 그대로 유지
-    } else {
-        // 다른 상태 메시지는 번역
-        m_statusText = TR("CALIBRATION_IN_PROGRESS");
-        // 필요한 다른 상태 메시지 번역 추가
     }
 
     // 위젯 다시 그리기
@@ -190,6 +183,16 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
         panStartOffset = panOffset;
         setCursor(Qt::ClosedHandCursor);
         qDebug() << "패닝 시작! (모든 모드)";
+        return;
+    }
+    
+    // 검사 결과 모드: 거리 측정 (왼쪽 클릭 드래그)
+    if (event->button() == Qt::LeftButton && isInspectionMode) {
+        QPoint originalPos = displayToOriginal(event->pos());
+        isMeasuring = true;
+        measureStartPoint = originalPos;
+        measureEndPoint = originalPos;
+        viewport()->update();
         return;
     }
     
@@ -409,6 +412,14 @@ void CameraView::mouseMoveEvent(QMouseEvent* event) {
         return;
     }
 
+    // 거리 측정 모드일 때 처리
+    if (isMeasuring) {
+        QPoint originalPos = displayToOriginal(event->pos());
+        measureEndPoint = originalPos;
+        viewport()->update();
+        return;
+    }
+
     // View 모드에서는 패닝만 허용하고 다른 모든 편집 기능 차단
     if (m_editMode == EditMode::View) {
         setCursor(Qt::ArrowCursor);
@@ -606,6 +617,15 @@ void CameraView::mouseReleaseEvent(QMouseEvent* event) {
         return;
     }
 
+    // 거리 측정 모드 해제
+    if (isMeasuring && event->button() == Qt::LeftButton) {
+        isMeasuring = false;
+        measureStartPoint = QPoint();
+        measureEndPoint = QPoint();
+        viewport()->update();
+        return;
+    }
+
     // View 모드에서는 패닝 해제만 허용하고 다른 모든 편집 기능 차단
     if (m_editMode == EditMode::View) {
         QGraphicsView::mouseReleaseEvent(event);
@@ -631,11 +651,7 @@ void CameraView::mouseReleaseEvent(QMouseEvent* event) {
             return;
         }
         currentRect = rect;
-        if (m_calibrationMode) {
-            emit calibrationRectDrawn(rect);
-        } else {
-            emit rectDrawn(rect);
-        }
+        emit rectDrawn(rect);
         update();
         return;
     }
@@ -1738,7 +1754,23 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             }
         }
         
-        if (!patternInfo || patternInfo->type != PatternType::INS) continue;
+        if (!patternInfo) {
+            printf("[CameraView] INS 패턴 정보를 찾을 수 없음: %s\n", patternId.toString().toStdString().c_str());
+            fflush(stdout);
+            continue;
+        }
+        
+        if (patternInfo->type != PatternType::INS) {
+            printf("[CameraView] 패턴 타입이 INS가 아님: %s (type=%d)\n", 
+                   patternInfo->name.toStdString().c_str(), static_cast<int>(patternInfo->type));
+            fflush(stdout);
+            continue;
+        }
+        
+        printf("[CameraView] INS 패턴 그리기: %s, passed=%d, hasSelected=%d, isSelected=%d\n", 
+               patternInfo->name.toStdString().c_str(), passed, hasSelectedPattern, 
+               (patternId == selectedInspectionPatternId));
+        fflush(stdout);
         
         bool patternVisible = (patternInfo->cameraUuid == currentCameraUuid || patternInfo->cameraUuid.isEmpty());
         if (!patternVisible) continue;
@@ -1966,27 +1998,28 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     painter.setBrush(Qt::NoBrush);
                     painter.drawRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
                     
-                    // REAR 라벨에 최소/최대 값 표시
+                    // REAR 라벨에 최소/최대/평균 값 표시
                     int rearMeasuredMin = result.stripRearMeasuredThicknessMin.value(patternId, 0);
                     int rearMeasuredMax = result.stripRearMeasuredThicknessMax.value(patternId, 0);
-                    
-                    qDebug() << "REAR 측정값:" << "최소=" << rearMeasuredMin << "최대=" << rearMeasuredMax;
-                    qDebug() << "캘리브레이션:" << "완료=" << patternInfo->stripLengthCalibrated 
-                             << "기준픽셀=" << patternInfo->stripLengthCalibrationPx 
-                             << "기준mm=" << patternInfo->stripLengthConversionMm;
+                    int rearMeasuredAvg = result.stripRearMeasuredThicknessAvg.value(patternId, 0);
                     
                     QString rearLabel;
-                    if (patternInfo->stripLengthCalibrated && patternInfo->stripLengthCalibrationPx > 0) {
-                        // 캘리브레이션 완료: mm로 변환
-                        double minMm = rearMeasuredMin * (patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx);
-                        double maxMm = rearMeasuredMax * (patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx);
-                        qDebug() << "REAR mm 변환:" << "최소=" << minMm << "최대=" << maxMm;
-                        rearLabel = QString("REAR 최소:%1mm 최대:%2mm")
-                            .arg(minMm, 0, 'f', 3)
-                            .arg(maxMm, 0, 'f', 3);
+                    // 픽셀을 mm로 변환하여 표시
+                    if (patternInfo->stripLengthCalibrationPx > 0) {
+                        double pixelToMm = patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx;
+                        double minMm = rearMeasuredMin * pixelToMm;
+                        double maxMm = rearMeasuredMax * pixelToMm;
+                        double avgMm = rearMeasuredAvg * pixelToMm;
+                        rearLabel = QString("REAR Min:%1 Max:%2 Avg:%3mm")
+                            .arg(minMm, 0, 'f', 2)
+                            .arg(maxMm, 0, 'f', 2)
+                            .arg(avgMm, 0, 'f', 2);
                     } else {
-                        // 캘리브레이션 미완료: 픽셀만 표시
-                        rearLabel = QString("REAR 최소:%1 최대:%2").arg(rearMeasuredMin).arg(rearMeasuredMax);
+                        // calibration 없으면 픽셀값 표시
+                        rearLabel = QString("REAR Min:%1 Max:%2 Avg:%3px")
+                            .arg(rearMeasuredMin)
+                            .arg(rearMeasuredMax)
+                            .arg(rearMeasuredAvg);
                     }
                     
                     QFont boxFont("Arial", 8, QFont::Bold);
@@ -2074,21 +2107,28 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     painter.setBrush(Qt::NoBrush);
                     painter.drawRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
                     
-                    // FRONT 라벨에 최소/최대 값 표시
+                    // FRONT 라벨에 최소/최대/평균 값 표시
                     int frontMeasuredMin = result.stripMeasuredThicknessMin.value(patternId, 0);
                     int frontMeasuredMax = result.stripMeasuredThicknessMax.value(patternId, 0);
+                    int frontMeasuredAvg = result.stripMeasuredThicknessAvg.value(patternId, 0);
                     
                     QString frontLabel;
-                    if (patternInfo->stripLengthCalibrated && patternInfo->stripLengthCalibrationPx > 0) {
-                        // 캘리브레이션 완료: mm로 변환
-                        double minMm = frontMeasuredMin * (patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx);
-                        double maxMm = frontMeasuredMax * (patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx);
-                        frontLabel = QString("FRONT 최소:%1mm 최대:%2mm")
-                            .arg(minMm, 0, 'f', 3)
-                            .arg(maxMm, 0, 'f', 3);
+                    // 픽셀을 mm로 변환하여 표시
+                    if (patternInfo->stripLengthCalibrationPx > 0) {
+                        double pixelToMm = patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx;
+                        double minMm = frontMeasuredMin * pixelToMm;
+                        double maxMm = frontMeasuredMax * pixelToMm;
+                        double avgMm = frontMeasuredAvg * pixelToMm;
+                        frontLabel = QString("FRONT Min:%1 Max:%2 Avg:%3mm")
+                            .arg(minMm, 0, 'f', 2)
+                            .arg(maxMm, 0, 'f', 2)
+                            .arg(avgMm, 0, 'f', 2);
                     } else {
-                        // 캘리브레이션 미완료: 픽셀만 표시
-                        frontLabel = QString("FRONT 최소:%1 최대:%2").arg(frontMeasuredMin).arg(frontMeasuredMax);
+                        // calibration 없으면 픽셀값 표시
+                        frontLabel = QString("FRONT Min:%1 Max:%2 Avg:%3px")
+                            .arg(frontMeasuredMin)
+                            .arg(frontMeasuredMax)
+                            .arg(frontMeasuredAvg);
                     }
                     
                     QFont boxFont("Arial", 8, QFont::Bold);
@@ -2279,9 +2319,16 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                        edgeRotatedCenter.y() - edgeBoxHeight/2,
                                        edgeBoxWidth, edgeBoxHeight));
                 
+                int edgeOutlierCount = result.edgeIrregularityCount.value(patternId, 0);
                 double edgeMaxDev = result.edgeMaxDeviation.value(patternId, 0.0);
+                double edgeMinDev = result.edgeMinDeviation.value(patternId, 0.0);
+                double edgeAvgDev = result.edgeAvgDeviation.value(patternId, 0.0);
                 bool edgePassed = result.edgeResults.value(patternId, false);
-                QString edgeLabel = QString("EDGE:%1").arg(edgeMaxDev, 0, 'f', 1);
+                
+                QString edgeLabel = QString("EDGE 최소:%1 최대:%2 평균:%3 mm")
+                    .arg(edgeMinDev, 0, 'f', 2)
+                    .arg(edgeMaxDev, 0, 'f', 2)
+                    .arg(edgeAvgDev, 0, 'f', 2);
                 
                 QFont boxFont("Arial", 9, QFont::Bold);
                 painter.setFont(boxFont);
@@ -2294,7 +2341,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                     edgeRotatedCenter.y() - edgeBoxHeight/2 - edgeTextH - 5,
                                     edgeTextW + 6, edgeTextH);
                 painter.fillRect(edgeLabelRect, QBrush(QColor(0, 0, 0, 180)));
-                QColor edgeLabelColor = QColor(255, 128, 0);  // 항상 orange
+                QColor edgeLabelColor = edgePassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
                 painter.setPen(edgeLabelColor);
                 painter.drawText(edgeLabelRect, Qt::AlignCenter, edgeLabel);
                 
@@ -2325,28 +2372,23 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 }
                 
                 if (patternFound && !edgePoints.isEmpty()) {
-                    // 1단계: 원본 좌표계에서 평균 X 계산
-                    double sumX = 0.0;
-                    for (const QPoint& pt : edgePoints) {
-                        sumX += pt.x();
+                    // mm 변환을 위한 캘리브레이션 확인
+                    double pixelToMm = 0.0;
+                    if (currentPattern.stripLengthCalibrationPx > 0 && currentPattern.stripLengthConversionMm > 0) {
+                        pixelToMm = currentPattern.stripLengthConversionMm / currentPattern.stripLengthCalibrationPx;
                     }
-                    double avgX = sumX / edgePoints.size();
                     
-                    // 2단계: 허용 범위 내 포인트만으로 다시 평균 계산
-                    QList<QPoint> validPoints;
-                    sumX = 0.0;
-                    for (const QPoint& pt : edgePoints) {
-                        double distance = std::abs(pt.x() - avgX);
-                        if (distance >= currentPattern.edgeDistanceMin && 
-                            distance <= currentPattern.edgeDistanceMax) {
-                            validPoints.append(pt);
+                    // InsProcessor에서 계산한 평균 X 값 사용 (절대 좌표)
+                    double avgX = 0.0;
+                    if (result.edgeAverageX.contains(patternId)) {
+                        avgX = result.edgeAverageX[patternId];
+                    } else {
+                        // 만약 저장된 평균이 없으면 현재 포인트들로 계산
+                        double sumX = 0.0;
+                        for (const QPoint& pt : edgePoints) {
                             sumX += pt.x();
                         }
-                    }
-                    
-                    // 유효한 포인트가 있으면 재계산된 평균 사용
-                    if (!validPoints.isEmpty()) {
-                        avgX = sumX / validPoints.size();
+                        avgX = sumX / edgePoints.size();
                     }
                     
                     // 각 포인트를 그리면서 Y 범위 추적
@@ -2354,14 +2396,15 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     int lastDrawnY = -1;
                     
                     for (const QPoint& pt : edgePoints) {
-                        double distance = std::abs(pt.x() - avgX);
+                        double distancePx = std::abs(pt.x() - avgX);
+                        double distanceMm = distancePx * pixelToMm;
                         
-                        // 거리에 따른 색상 결정 (최대값만 체크)
+                        // 거리에 따른 색상 결정 (mm 기준으로 최대값 체크)
                         QColor pointColor;
-                        if (distance > currentPattern.edgeDistanceMax) {
+                        if (distanceMm > currentPattern.edgeDistanceMax) {
                             // 최대 거리 초과 - 빨간색 (불량)
                             pointColor = QColor(255, 0, 0);
-                        } else if (distance > currentPattern.edgeDistanceMax * 0.7) {
+                        } else if (distanceMm > currentPattern.edgeDistanceMax * 0.7) {
                             // 최대 거리의 70% 이상 - 주황색 (주의)
                             pointColor = QColor(255, 165, 0);
                         } else {
@@ -2453,24 +2496,43 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                     lengthText = QString("%1 px").arg(lengthPx, 0, 'f', 1);
                                 }
                                 
-                                // 선의 중간 지점에 텍스트 표시
+                                // 선의 중간 지점에 텍스트 표시 (INS 각도 적용)
                                 QPointF midPoint = (avgLineCenter + endVP) / 2.0;
                                 
-                                QFont lengthFont("Arial", 10, QFont::Bold);
-                                painter.setFont(lengthFont);
-                                QFontMetrics fm(lengthFont);
-                                QRect textBounds = fm.boundingRect(lengthText);
+                                // INS 각도 적용 (패턴 정보에서)
+                                const PatternInfo* patternInfo = nullptr;
+                                for (const PatternInfo& p : patterns) {
+                                    if (p.id == patternId) {
+                                        patternInfo = &p;
+                                        break;
+                                    }
+                                }
                                 
-                                // 텍스트 배경 (반투명 검은색)
-                                QRect textRect(midPoint.x() - textBounds.width()/2 - 5,
-                                              midPoint.y() - textBounds.height()/2 - 3,
-                                              textBounds.width() + 10,
-                                              textBounds.height() + 6);
-                                painter.fillRect(textRect, QColor(0, 0, 0, 180));
-                                
-                                // 텍스트
-                                painter.setPen(QColor(255, 0, 255));
-                                painter.drawText(textRect, Qt::AlignCenter, lengthText);
+                                if (patternInfo) {
+                                    painter.save();
+                                    
+                                    // midPoint를 중심으로 회전
+                                    painter.translate(midPoint);
+                                    painter.rotate(patternInfo->angle);
+                                    
+                                    QFont lengthFont("Arial", 10, QFont::Bold);
+                                    painter.setFont(lengthFont);
+                                    QFontMetrics fm(lengthFont);
+                                    QRect textBounds = fm.boundingRect(lengthText);
+                                    
+                                    // 텍스트 배경 (반투명 검은색) - 중심 기준
+                                    QRect textRect(-textBounds.width()/2 - 5,
+                                                  -textBounds.height()/2 - 3,
+                                                  textBounds.width() + 10,
+                                                  textBounds.height() + 6);
+                                    painter.fillRect(textRect, QColor(0, 0, 0, 180));
+                                    
+                                    // 텍스트
+                                    painter.setPen(QColor(255, 0, 255));
+                                    painter.drawText(textRect, Qt::AlignCenter, lengthText);
+                                    
+                                    painter.restore();
+                                }
                             }
                         }
                     }
@@ -2968,6 +3030,64 @@ void CameraView::paintEvent(QPaintEvent *event) {
     // 검사 모드
     if (isInspectionMode && hasInspectionResult) {
         drawInspectionResults(painter, lastInspectionResult);
+    }
+    
+    // 거리 측정 선 그리기
+    if (isMeasuring && !measureStartPoint.isNull() && !measureEndPoint.isNull()) {
+        QPointF startDisplay = mapFromScene(measureStartPoint);
+        QPointF endDisplay = mapFromScene(measureEndPoint);
+        
+        // 선 그리기
+        painter.setPen(QPen(Qt::yellow, 2));
+        painter.drawLine(startDisplay, endDisplay);
+        
+        // 거리 계산 (픽셀)
+        double dx = measureEndPoint.x() - measureStartPoint.x();
+        double dy = measureEndPoint.y() - measureStartPoint.y();
+        double distancePx = std::sqrt(dx * dx + dy * dy);
+        
+        // mm로 변환 (calibration 정보가 있는 경우)
+        QString distanceText;
+        bool hasCalibration = false;
+        
+        // STRIP 검사 패턴에서 calibration 정보 가져오기
+        for (const PatternInfo& pattern : patterns) {
+            if (pattern.type == PatternType::INS && 
+                pattern.inspectionMethod == InspectionMethod::STRIP &&
+                pattern.stripLengthCalibrationPx > 0.0 &&
+                pattern.stripLengthConversionMm > 0.0) {
+                
+                double pixelToMm = pattern.stripLengthConversionMm / pattern.stripLengthCalibrationPx;
+                double distanceMm = distancePx * pixelToMm;
+                distanceText = QString("%1 mm (%2 px)").arg(distanceMm, 0, 'f', 2).arg(distancePx, 0, 'f', 1);
+                hasCalibration = true;
+                break;
+            }
+        }
+        
+        if (!hasCalibration) {
+            distanceText = QString("%1 px").arg(distancePx, 0, 'f', 1);
+        }
+        
+        // 텍스트 위치 (선의 중간)
+        QPointF midPoint = (startDisplay + endDisplay) / 2.0;
+        
+        // 텍스트 배경 그리기
+        QFont distFont("Arial", 12, QFont::Bold);
+        painter.setFont(distFont);
+        QFontMetrics distFm(distFont);
+        int textWidth = distFm.horizontalAdvance(distanceText);
+        int textHeight = distFm.height();
+        
+        QRectF textRect(midPoint.x() - textWidth/2 - 4, midPoint.y() - textHeight/2 - 2, textWidth + 8, textHeight + 4);
+        painter.fillRect(textRect, QColor(0, 0, 0, 200));
+        painter.setPen(Qt::yellow);
+        painter.drawText(textRect, Qt::AlignCenter, distanceText);
+        
+        // 시작점과 끝점에 원 그리기
+        painter.setBrush(Qt::yellow);
+        painter.drawEllipse(startDisplay, 4, 4);
+        painter.drawEllipse(endDisplay, 4, 4);
     }
     
     // 현재 그리는 사각형
@@ -3563,11 +3683,8 @@ int CameraView::getSelectedPatternIndex() const {
 }
 
 void CameraView::setSelectedPatternId(const QUuid& id) {
-    qDebug() << "[setSelectedPatternId] 호출, id=" << (id.isNull() ? "NULL" : id.toString()) << "이전 id=" << (selectedPatternId.isNull() ? "NULL" : selectedPatternId.toString());
-    
     // 이미 선택된 ID와 같으면 변경 없음
     if (selectedPatternId == id) {
-        qDebug() << "[setSelectedPatternId] 이미 선택된 ID, 변경 없음";
         return;
     }
 
@@ -3582,15 +3699,12 @@ void CameraView::setSelectedPatternId(const QUuid& id) {
 
     // 유효한 ID이거나 빈 ID(선택 해제)인 경우 적용
     bool validId = (index >= 0) || id.isNull();
-    qDebug() << "[setSelectedPatternId] validId=" << validId << "index=" << index;
     
     if (validId) {
         // 선택 시 각도 등 패턴 속성은 절대 건드리지 않음
         selectedPatternId = id;
-        qDebug() << "[setSelectedPatternId] selectedPatternId 업데이트됨:" << (selectedPatternId.isNull() ? "NULL" : selectedPatternId.toString());
         emit patternSelected(id);
         update();
-        qDebug() << "[setSelectedPatternId] update() 호출";
     }
 }
 
@@ -3767,45 +3881,97 @@ void CameraView::applyFiltersToImage(cv::Mat& image) {
         // 필터가 없으면 건너뜀
         if (pattern.filters.isEmpty()) continue;
         
-        printf("[CameraView] 필터 적용 중 - 패턴: %s, 필터 수: %lld\n", 
-               pattern.name.toStdString().c_str(), (long long)pattern.filters.size());
+        printf("[CameraView] 필터 적용 중 - 패턴: %s, 필터 수: %lld, 각도: %.1f\n", 
+               pattern.name.toStdString().c_str(), (long long)pattern.filters.size(), pattern.angle);
         fflush(stdout);
         
-        // 패턴의 rect는 이미 원본 이미지 좌표계에 있음
-        QRectF rect = pattern.rect;
-        
-        // 유효한 이미지 좌표 범위로 제한
-        int x = qBound(0, qRound(rect.x()), image.cols - 2);
-        int y = qBound(0, qRound(rect.y()), image.rows - 2);
-        int width = qBound(1, qRound(rect.width()), image.cols - x);
-        int height = qBound(1, qRound(rect.height()), image.rows - y);
-        
-        // 유효하지 않은 크기면 건너뜀
-        if (width <= 0 || height <= 0) continue;
-        
-        // OpenCV ROI 생성
-        cv::Rect roi(x, y, width, height);
-        
-        try {
-            // ROI가 이미지 범위 안에 있는지 최종 확인
-            if (roi.x >= 0 && roi.y >= 0 && 
-                roi.x + roi.width <= image.cols && 
-                roi.y + roi.height <= image.rows &&
-                roi.width > 0 && roi.height > 0) {
-                
-                printf("[CameraView] ImageProcessor::applyFilters 호출 - ROI: %d,%d,%d,%d\n", 
-                       roi.x, roi.y, roi.width, roi.height);
-                fflush(stdout);
-                ImageProcessor::applyFilters(image, pattern.filters, roi);
-                printf("[CameraView] 필터 적용 완료\n");
-                fflush(stdout);
-            } else {
-                printf("[CameraView] ROI 범위 오류 - 이미지 크기: %dx%d, ROI: %d,%d,%d,%d\n", 
-                       image.cols, image.rows, roi.x, roi.y, roi.width, roi.height);
-                fflush(stdout);
+        // 회전이 있는 경우: 회전된 사각형 영역에만 필터 적용
+        if (std::abs(pattern.angle) > 0.1) {
+            cv::Point2f center(pattern.rect.x() + pattern.rect.width()/2.0f, 
+                             pattern.rect.y() + pattern.rect.height()/2.0f);
+            
+            // 1. 회전된 사각형 마스크 생성
+            cv::Mat mask = cv::Mat::zeros(image.size(), CV_8UC1);
+            cv::Size2f patternSize(pattern.rect.width(), pattern.rect.height());
+            
+            cv::Point2f vertices[4];
+            cv::RotatedRect rotatedRect(center, patternSize, pattern.angle);
+            rotatedRect.points(vertices);
+            
+            std::vector<cv::Point> points;
+            for (int i = 0; i < 4; i++) {
+                points.push_back(cv::Point(static_cast<int>(std::round(vertices[i].x)), 
+                                         static_cast<int>(std::round(vertices[i].y))));
             }
-        } catch (const std::exception& e) {
-        } catch (...) {
+            cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{points}, cv::Scalar(255));
+            
+            // 2. 마스크 영역만 복사한 이미지 생성
+            cv::Mat maskedImage = cv::Mat::zeros(image.size(), image.type());
+            image.copyTo(maskedImage, mask);
+            
+            // 3. 확장된 ROI 계산
+            double angleRad = std::abs(pattern.angle) * M_PI / 180.0;
+            double width = pattern.rect.width();
+            double height = pattern.rect.height();
+            
+            double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
+            double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
+            
+            int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
+            int halfSize = maxSize / 2;
+            
+            cv::Rect expandedRoi(
+                qBound(0, static_cast<int>(center.x) - halfSize, image.cols - 1),
+                qBound(0, static_cast<int>(center.y) - halfSize, image.rows - 1),
+                qBound(1, maxSize, image.cols - (static_cast<int>(center.x) - halfSize)),
+                qBound(1, maxSize, image.rows - (static_cast<int>(center.y) - halfSize))
+            );
+            
+            // 4. 확장된 영역에 필터 적용
+            if (expandedRoi.width > 0 && expandedRoi.height > 0 && 
+                expandedRoi.x + expandedRoi.width <= maskedImage.cols && 
+                expandedRoi.y + expandedRoi.height <= maskedImage.rows) {
+                
+                cv::Mat roiMat = maskedImage(expandedRoi);
+                ImageProcessor processor;
+                for (const FilterInfo& filter : pattern.filters) {
+                    if (filter.enabled) {
+                        cv::Mat nextFiltered;
+                        processor.applyFilter(roiMat, nextFiltered, filter);
+                        if (!nextFiltered.empty()) {
+                            nextFiltered.copyTo(roiMat);
+                        }
+                    }
+                }
+            }
+            
+            // 5. 마스크 영역만 필터 적용된 결과로 교체
+            maskedImage.copyTo(image, mask);
+            
+        } else {
+            // 회전 없는 경우: rect 영역에만 필터 적용
+            QRectF rect = pattern.rect;
+            
+            int x = qBound(0, qRound(rect.x()), image.cols - 2);
+            int y = qBound(0, qRound(rect.y()), image.rows - 2);
+            int width = qBound(1, qRound(rect.width()), image.cols - x);
+            int height = qBound(1, qRound(rect.height()), image.rows - y);
+            
+            if (width <= 0 || height <= 0) continue;
+            
+            cv::Rect roi(x, y, width, height);
+            
+            try {
+                if (roi.x >= 0 && roi.y >= 0 && 
+                    roi.x + roi.width <= image.cols && 
+                    roi.y + roi.height <= image.rows &&
+                    roi.width > 0 && roi.height > 0) {
+                    
+                    ImageProcessor::applyFilters(image, pattern.filters, roi);
+                }
+            } catch (const std::exception& e) {
+            } catch (...) {
+            }
         }
     }
 }
