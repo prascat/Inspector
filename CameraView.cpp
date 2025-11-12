@@ -2336,21 +2336,11 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     }
                 }
                 
-                QString edgeLabel;
-                // 1mm 이하는 μm 단위로 표시
-                if (edgeMaxDev < 1.0 && edgeAvgDev < 1.0) {
-                    edgeLabel = QString("EDGE 최대:%1 평균:%2μm 불량:%3/%4")
-                        .arg(edgeMaxDev * 1000, 0, 'f', 0)
-                        .arg(edgeAvgDev * 1000, 0, 'f', 0)
-                        .arg(edgeOutlierCount)
-                        .arg(maxOutliers);
-                } else {
-                    edgeLabel = QString("EDGE 최대:%1 평균:%2mm 불량:%3/%4")
-                        .arg(edgeMaxDev, 0, 'f', 4)
-                        .arg(edgeAvgDev, 0, 'f', 4)
-                        .arg(edgeOutlierCount)
-                        .arg(maxOutliers);
-                }
+                QString edgeLabel = QString("EDGE: Max:%1 Avg:%2mm [%3/%4]")
+                    .arg(edgeMaxDev, 0, 'f', 2)
+                    .arg(edgeAvgDev, 0, 'f', 2)
+                    .arg(edgeOutlierCount)
+                    .arg(maxOutliers);
                 
                 QFont boxFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
                 painter.setFont(boxFont);

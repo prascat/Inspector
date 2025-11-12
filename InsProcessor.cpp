@@ -3308,8 +3308,11 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         
         // EDGE 검사 결과
         QString edgeResult = edgeTestPassed ? "PASS" : "NG";
-        QString edgeDetail = QString("[%1/%2]").arg(QString::number(edgeOutlierCount))
-                                                .arg(QString::number(pattern.edgeMaxOutliers));
+        QString edgeDetail = QString("Max:%1 Avg:%2 [%3/%4]")
+                                .arg(QString::number(edgeMaxDeviationMm, 'f', 2))
+                                .arg(QString::number(edgeAvgDeviationMm, 'f', 2))
+                                .arg(QString::number(edgeOutlierCount))
+                                .arg(QString::number(pattern.edgeMaxOutliers));
         
         // FRONT 두께 검사 결과
         QString frontResult = frontThicknessPassed ? "PASS" : "NG";
