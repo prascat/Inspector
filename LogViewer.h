@@ -4,6 +4,8 @@
 #include <QWidget>
 #include <QTextEdit>
 #include <QPushButton>
+#include <QFile>
+#include <QTextStream>
 #include "LanguageManager.h"
 
 class LogViewer : public QWidget
@@ -28,10 +30,17 @@ private slots:
 private:
     void trimLogIfNeeded();
     void updateCollapseButton();
+    void writeToLogFile(const QString& message);
+    void openLogFile();
     
     QTextEdit *logTextEdit;
     QPushButton *collapseButton;
     bool m_isCollapsed = false;
+    
+    // 로그 파일 관련
+    QFile *logFile = nullptr;
+    QTextStream *logStream = nullptr;
+    QString currentLogFilePath;
     
     // 높이 설정 상수
     static const int COLLAPSED_HEIGHT = 35;      // 접혔을 때 높이 (버튼만)

@@ -657,8 +657,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                                            std::vector<cv::Point>* rearThicknessPoints,
                                            std::vector<cv::Point>* frontBlackRegionPoints,
                                            std::vector<cv::Point>* rearBlackRegionPoints) {
-    std::cout << "[performStripInspection 시작] roiImage:" << roiImage.cols << "x" << roiImage.rows 
-              << " templateImage:" << templateImage.cols << "x" << templateImage.rows << std::endl;
     
     // 결과 이미지용으로 원본의 깨끗한 복사본 생성 (마스킹 제거)
     cv::Mat cleanOriginal;
@@ -1266,7 +1264,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     }
                 }
                 
-                std::cout << "두께 측정 영역 사각형 그리기 완료 (각도: " << angle << "도)" << std::endl;
             }
             
             // 측정 지점들을 결과 이미지에 표시
@@ -1324,7 +1321,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     point1 = topPositions[i];
                     hasPoint1 = true;
                     gradientPoints.push_back(point1);
-                    std::cout << "찾은 Point1 (상단 첫번째): idx=" << i << ", gradient=" << topGradients[i] << std::endl;
                     break;
                 }
             }
@@ -1335,7 +1331,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     point3 = topPositions[i-1];
                     hasPoint3 = true;
                     gradientPoints.push_back(point3);
-                    std::cout << "찾은 Point3 (상단 두번째): idx=" << (i-1) << ", gradient=" << topGradients[i-1] << std::endl;
                     break;
                 }
             }
@@ -1346,7 +1341,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             size_t startIdx = bottomPositions.size() * 10 / 100; // 10%
             size_t endIdx = bottomPositions.size() * 90 / 100;   // 90%
             
-            std::cout << "하단 탐색 구간: " << startIdx << " ~ " << endIdx << " (총 " << bottomPositions.size() << "개)" << std::endl;
             
             // 세 번째 급격한 변화 지점 (앞쪽에서)
             for (size_t i = startIdx; i < endIdx; i++) {
@@ -1354,7 +1348,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     point2 = bottomPositions[i];
                     hasPoint2 = true;
                     gradientPoints.push_back(point2);
-                    std::cout << "찾은 Point2 (하단 첫번째): idx=" << i << ", gradient=" << bottomGradients[i] << std::endl;
                     break;
                 }
             }
@@ -1365,30 +1358,22 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     point4 = bottomPositions[i-1];
                     hasPoint4 = true;
                     gradientPoints.push_back(point4);
-                    std::cout << "찾은 Point4 (하단 두번째): idx=" << (i-1) << ", gradient=" << bottomGradients[i-1] << std::endl;
                     break;
                 }
             }
         }
         
-        std::cout << "STRIP 검사 - 급격한 두께 변화 지점 4개:" << std::endl;
-        if (hasPoint1) std::cout << "1. 상단 첫번째 변화점: (" << point1.x << "," << point1.y << ") gradient=" << topGradients[std::distance(topPositions.begin(), std::find(topPositions.begin(), topPositions.end(), point1))] << std::endl;
-        if (hasPoint2) std::cout << "2. 하단 첫번째 변화점: (" << point2.x << "," << point2.y << ") gradient=" << bottomGradients[std::distance(bottomPositions.begin(), std::find(bottomPositions.begin(), bottomPositions.end(), point2))] << std::endl;
-        if (hasPoint3) std::cout << "3. 상단 두번째 변화점: (" << point3.x << "," << point3.y << ") gradient=" << topGradients[std::distance(topPositions.begin(), std::find(topPositions.begin(), topPositions.end(), point3))] << std::endl;
-        if (hasPoint4) std::cout << "4. 하단 두번째 변화점: (" << point4.x << "," << point4.y << ") gradient=" << bottomGradients[std::distance(bottomPositions.begin(), std::find(bottomPositions.begin(), bottomPositions.end(), point4))] << std::endl;
+        if (hasPoint1) // removed debug log
+        if (hasPoint2) // removed debug log
+        if (hasPoint3) // removed debug log
+        if (hasPoint4) // removed debug log
         
-        std::cout << "STRIP 검사 결과:" << std::endl;
-        std::cout << "- 선택된 컨투어: " << (useTopContour ? "상단" : "하단") 
-                  << ", 스캔 방향: " << (useReverse ? "역방향" : "정방향") << std::endl;
-        std::cout << "- 상단 정방향: " << topMaxGrad << ", 역방향: " << topMaxGradReverse << std::endl;
-        std::cout << "- 하단 정방향: " << bottomMaxGrad << ", 역방향: " << bottomMaxGradReverse << std::endl;
+        // removed debug logs
         
         if (!selectedPositions.empty()) {
-            std::cout << "- 시작점: (" << startPoint.x << "," << startPoint.y << 
-                        "), 최대 gradient점: (" << maxGradientPoint.x << "," << maxGradientPoint.y << ")" << std::endl;
+            // removed debug log
         }
         
-        std::cout << "총 시각화 포인트: " << gradientPoints.size() << "개" << std::endl;
         
         if (positions.empty()) {
             score = 0.0;
@@ -1406,7 +1391,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         if (absGradients.size() > 0) {
             float maxGrad = *std::max_element(absGradients.begin(), absGradients.end());
             float avgGrad = std::accumulate(absGradients.begin(), absGradients.end(), 0.0f) / absGradients.size();
-            std::cout << "Gradient 분석: 최대값=" << maxGrad << ", 평균값=" << avgGrad << ", 총개수=" << absGradients.size() << std::endl;
         }
         
         // 4. Peak Detection Algorithm (Python 코드와 동일한 local maxima 탐지)
@@ -1524,12 +1508,10 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 maxGradientIdx = positions.size() - 1;
             }
             
-            std::cout << "Max Gradient 탐지 결과: idx=" << maxGradientIdx << ", value=" << maxGradientValue 
-                     << ", position=(" << maxGradientPoint.x << "," << maxGradientPoint.y << ")" << std::endl;
+            // removed debug log
         } else {
             maxGradientPoint = positions.back(); // fallback: 가장 오른쪽
             maxGradientIdx = positions.size() - 1;
-            std::cout << "Gradient가 없어 fallback 사용: (" << maxGradientPoint.x << "," << maxGradientPoint.y << ")" << std::endl;
         }
         
         // Max gradient 위치에서 좌우 두께 측정
@@ -1596,12 +1578,8 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         
         // NOTE: roiImage가 회전되지 않았으므로 추가 회전 불필요
         // 스캔 라인에서 각도가 이미 적용되므로, 여기서 포인트 회전 제거
-        std::cout << "STRIP 각도 정보: " << angle << "도 (스캔 라인에서 적용됨)" << std::endl;
-        std::cout << "시작점: (" << startPoint.x << ", " << startPoint.y << ")" << std::endl;
-        std::cout << "maxGradient점: (" << maxGradientPoint.x << ", " << maxGradientPoint.y << ")" << std::endl;
         
         // 디버그: 두께 측정 결과
-        std::cout << "두께 측정 결과: 좌측=" << leftThick << "px, 우측=" << rightThick << "px" << std::endl;
         
         // 원본 이미지 복사 (컨투어 선 제거, 연결선과 원만 표시) - 보정된 이미지 사용
         cleanOriginal.copyTo(resultImage);
@@ -1661,12 +1639,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             
             int boxCenterX = roiPatternCenter.x + static_cast<int>(localX * cos(angleRad) - localY * sin(angleRad));
             int boxCenterY = roiPatternCenter.y + static_cast<int>(localX * sin(angleRad) + localY * cos(angleRad));
-            
-            std::cout << "[FRONT 검사 위치] roiPatternCenter=(" << roiPatternCenter.x << "," << roiPatternCenter.y 
-                      << ") patternWidth=" << patternWidth << " startPercent=" << startPercent
-                      << " boxCenterX=" << boxCenterX << " boxCenterY=" << boxCenterY
-                      << " thicknessBoxWidth=" << thicknessBoxWidth << " thicknessBoxHeight=" << thicknessBoxHeight << std::endl;
-
             
             std::vector<int> thicknesses;
             std::vector<cv::Point> measurementLines; // 측정 라인 저장
@@ -1781,11 +1753,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     bool isBlack = (pixelValue < 127);
                     if (isBlack) blackCount++;
                     
-                    if (i == 0 && dx % 10 == 2) {  // 샘플링해서 출력
-                        std::cout << "[FRONT 두께 디버그] dx=" << dx << " 첫 픽셀값=" << (int)pixelValue 
-                                  << " channels=" << processed.channels() << std::endl;
-                    }
-                    
                     if (isBlack && !inBlackRegion) {
                         // 검은색 구간 시작
                         regionStart = i;
@@ -1834,10 +1801,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     blackRegionPoints.push_back(linePoints[lastBlackIdx]);
                 }
                 
-                if (dx == firstDx) {  // 첫 라인만 출력
-                    std::cout << "[FRONT 두께 디버그] 첫 라인 검은색 픽셀 수=" << blackCount 
-                              << " / " << it.count << " maxThickness=" << maxThicknessInLine << std::endl;
-                }
                 // 이 라인의 최대 두께를 thicknesses에 추가 (라인당 1개만)
                 if (maxThicknessInLine > 0) {
                     thicknesses.push_back(maxThicknessInLine);
@@ -1854,7 +1817,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             if (!thicknesses.empty()) {
                 // 각 라인별 두께를 frontThicknessPoints에 저장 (InsProcessor에서 통계 계산)
                 // cv::Point의 y값에 두께(픽셀)을 저장
-                std::cout << "=== FRONT 두께 측정 완료: 총 " << thicknesses.size() << "개 라인 ===" << std::endl;
                 for (size_t i = 0; i < thicknesses.size(); i++) {
                     if (frontThicknessPoints) {
                         frontThicknessPoints->push_back(cv::Point(i, thicknesses[i]));
@@ -1867,8 +1829,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 }
                 
             } else {
-                std::cout << "=== STRIP 두께 측정 검사 ===" << std::endl;
-                std::cout << "검은색 픽셀을 찾을 수 없어서 두께 측정 실패" << std::endl;
                 isPassed = false;
             }
         }
@@ -1893,10 +1853,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         int boxCenterX_rear = roiPatternCenter_rear.x + static_cast<int>(localX_rear * cos(angleRad) - localY_rear * sin(angleRad));
         int boxCenterY_rear = roiPatternCenter_rear.y + static_cast<int>(localX_rear * sin(angleRad) + localY_rear * cos(angleRad));
         
-        std::cout << "[REAR 검사 위치] roiPatternCenter=(" << roiPatternCenter_rear.x << "," << roiPatternCenter_rear.y 
-                  << ") patternWidth=" << patternWidth << " endPercent=" << endPercent
-                  << " boxCenterX=" << boxCenterX_rear << " boxCenterY=" << boxCenterY_rear
-                  << " rearThicknessBoxWidth=" << rearThicknessBoxWidth << " rearThicknessBoxHeight=" << rearThicknessBoxHeight << std::endl;
         std::vector<int> thicknesses_rear;
         std::vector<cv::Point> measurementLines_rear; // 측정 라인 저장
         std::vector<cv::Point> blackPixelPoints_rear; // 검은색 픽셀 위치 저장 (시각화용 - 전체 스캔 라인)
@@ -2060,7 +2016,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         if (!thicknesses_rear.empty()) {
                 // 각 라인별 두께를 rearThicknessPoints에 저장 (InsProcessor에서 통계 계산)
                 // cv::Point의 y값에 두께(픽셀)을 저장
-                std::cout << "=== REAR 두께 측정 완료: 총 " << thicknesses_rear.size() << "개 라인 ===" << std::endl;
                 for (size_t i = 0; i < thicknesses_rear.size(); i++) {
                     if (rearThicknessPoints) {
                         rearThicknessPoints->push_back(cv::Point(i, thicknesses_rear[i]));
@@ -2074,7 +2029,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                        
         } else {
             std::cout << "=== REAR 두께 측정 검사 ===" << std::endl;
-            std::cout << "REAR에서 검은색 픽셀을 찾을 수 없어서 두께 측정 실패" << std::endl;
             isPassed = false;
         }
         } // stripRearEnabled 조건문 종료
@@ -2093,10 +2047,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             static_cast<int>(edgeCenter.y)
         );
         
-        std::cout << "[EDGE 검사 위치] edgeCenter=(" << edgeCenter.x << "," << edgeCenter.y 
-                  << ") edgeOffsetX=" << edgeOffsetX << " edgeOffsetFromCenter=" << edgeOffsetFromCenter
-                  << " edgeBoxCenter=(" << edgeBoxCenter.x << "," << edgeBoxCenter.y 
-                  << ") edgeBoxWidth=" << edgeBoxWidth << " edgeBoxHeight=" << edgeBoxHeight << std::endl;
         if (pattern.stripLengthEnabled && gradientPoints.size() >= 4) {
             // P3(상단 두번째), P4(하단 두번째) 점들 사용
             cv::Point p3 = gradientPoints[1];  // 상단 두번째 변화점
@@ -2129,7 +2079,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             }
             
             // 두 점 사이의 픽셀 거리 계산
-            double lengthDistance = cv::norm(p34MidPoint - edgeStartPoint);
+            double lengthDistancePx = cv::norm(p34MidPoint - edgeStartPoint);
+            
+            // 픽셀을 mm로 변환
+            double pixelToMm = pattern.stripLengthConversionMm / pattern.stripLengthCalibrationPx;
+            double lengthDistance = lengthDistancePx * pixelToMm;
             
             // 허용 범위 확인
             bool lengthInRange = (lengthDistance >= pattern.stripLengthMin && 
@@ -2145,7 +2099,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             
             isPassed = isPassed && lengthInRange;  // 전체 STRIP 검사 결과에 반영
         } else {
-            std::cout << "STRIP 길이 검사가 비활성화되어 있거나 gradient 포인트가 부족합니다." << std::endl;
         }
         
         // EDGE 검사 수행 (활성화된 경우)
@@ -2315,27 +2268,20 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     if (edgeIrregularityCount) *edgeIrregularityCount = 0;
                     if (edgeMaxDeviation) *edgeMaxDeviation = 0.0;
                     
-                    std::cout << "EDGE 포인트 추출 완료: " << leftEdgePoints.size() << "개" << std::endl;
                 } else {
-                    std::cout << "EDGE 검사 실패: 검사 영역이 이미지 범위를 벗어남" << std::endl;
                 }
             } catch (const cv::Exception& e) {
-                std::cout << "EDGE 검사 예외: " << e.what() << std::endl;
             }
         }
         
-        std::cout << "[performStripInspection 반환 전] startPoint=(" << startPoint.x << "," << startPoint.y 
-                  << ") maxGradientPoint=(" << maxGradientPoint.x << "," << maxGradientPoint.y 
-                  << ") isPassed=" << isPassed << std::endl;
+        // removed debug log
         
         // 오버레이 크기를 ROI 크기에 정확히 맞춤
         if (!resultImage.empty() && (resultImage.cols != roiImage.cols || resultImage.rows != roiImage.rows)) {
             try {
                 cv::resize(resultImage, resultImage, cv::Size(roiImage.cols, roiImage.rows));
             } catch (const cv::Exception& e) {
-                std::cout << "resultImage resize 예외: " << e.what() << std::endl;
-                std::cout << "resultImage: " << resultImage.cols << "x" << resultImage.rows 
-                          << " roiImage: " << roiImage.cols << "x" << roiImage.rows << std::endl;
+                // removed debug log
             }
         }
         

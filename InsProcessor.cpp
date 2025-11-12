@@ -27,7 +27,9 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
         return result;
     }
     
-    logDebug(QString("검사 시작: %1개 패턴").arg(patterns.size()));
+    // 검사 시작 로그
+    logDebug("검사 시작");
+    
     result.isPassed = true;
     
     // 1. 활성화된 패턴들을 유형별로 분류
@@ -38,17 +40,14 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
         switch (pattern.type) {
             case PatternType::ROI:
                 roiPatterns.append(pattern);
-                logDebug(QString("활성화된 ROI 패턴 발견: '%1'").arg(pattern.name));
                 break;
                 
             case PatternType::FID:
                 fidPatterns.append(pattern);
-                logDebug(QString("활성화된 FID 패턴 발견: '%1'").arg(pattern.name));
                 break;
                 
             case PatternType::INS:
                 insPatterns.append(pattern);
-                logDebug(QString("활성화된 INS 패턴 발견: '%1'").arg(pattern.name));
                 break;
                 
             case PatternType::FIL:
@@ -81,13 +80,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                 static_cast<int>(roiPattern.rect.width()),
                 static_cast<int>(roiPattern.rect.height())
             );
-            
-            logDebug(QString("ROI 패턴 '%1': 검사 영역 (%2,%3,%4,%5) 추가")
-                    .arg(roiPattern.name)
-                    .arg(static_cast<int>(roiPattern.rect.x()))
-                    .arg(static_cast<int>(roiPattern.rect.y()))
-                    .arg(roiPattern.rect.width())
-                    .arg(roiPattern.rect.height()));
             
             // ROI의 직접 자식들 (FID들) 매핑
             for (const QUuid& childId : roiPattern.childIds) {
@@ -148,8 +140,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
     
     // 5. FID 패턴 매칭 수행 (그룹 ROI 제한 적용)
     if (!fidPatterns.isEmpty()) {
-        logDebug(QString("FID 패턴 매칭 처리 중: %1개").arg(fidPatterns.size()));
-        
         for (const PatternInfo& pattern : fidPatterns) {
             // 매칭 검사가 활성화된 경우에만 수행
             if (!pattern.runInspection) {
@@ -182,22 +172,14 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             
             // 매칭 성공 시 검출된 각도를 FID 그룹 전체에 적용
             if (fidMatched) {
-                logDebug(QString("FID 패턴 '%1' 매칭 성공 - 검출 각도: %2°")
-                        .arg(pattern.name).arg(matchAngle, 0, 'f', 2));
-                
                 // FID 패턴의 각도를 검출된 각도로 업데이트
                 double oldAngle = pattern.angle;
                 const_cast<PatternInfo&>(pattern).angle = matchAngle;
                 result.angles[pattern.id] = matchAngle;
                 
-                logDebug(QString("FID 패턴 '%1' 각도 업데이트: %2° → %3°")
-                        .arg(pattern.name).arg(oldAngle).arg(matchAngle));
-                
         // 주의: 자식 INS의 티칭 각도는 변경하지 않습니다.
         // INS들은 검사 시점에 FID의 검출 각도 차이(fidAngle - fidTeach)를
         // 티칭 각도에 더해 최종 각도를 계산하도록 처리됩니다.
-        logDebug(QString("FID '%1' 검출 각도 적용됨 - 자식 INS의 티칭 각도는 유지됨(검사 시 조정됨)")
-            .arg(pattern.name));
             } else {
                 // 매칭 실패 시에도 검출된 각도는 적용
                 logDebug(QString("FID 패턴 '%1' 매칭 실패 - 하지만 검출 각도는 적용: %2°")
@@ -208,12 +190,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                 const_cast<PatternInfo&>(pattern).angle = matchAngle;
                 result.angles[pattern.id] = matchAngle;
                 
-                logDebug(QString("FID 패턴 '%1' 각도 업데이트: %2° → %3°")
-                        .arg(pattern.name).arg(oldAngle).arg(matchAngle));
-                
         // 마찬가지로 매칭 실패 시에도 자식 INS의 티칭 각도는 유지합니다.
-        logDebug(QString("FID '%1' (실패) - 검출 각도 적용됨, 자식 INS의 티칭 각도는 유지됨")
-            .arg(pattern.name));
             }
             
             // 결과 기록
@@ -224,31 +201,11 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             
             // 전체 결과 갱신
             result.isPassed = result.isPassed && fidMatched;
-            
-            logDebug(QString("FID 패턴 '%1' 매칭 결과: %2 (점수: %3, 위치: %4,%5, 최종각도: %6°)")
-                    .arg(pattern.name)
-                    .arg(fidMatched ? "성공" : "실패")
-                    .arg(matchScore, 0, 'f', 6)
-                    .arg(matchLoc.x)
-                    .arg(matchLoc.y)
-                    .arg(result.angles[pattern.id], 0, 'f', 2));
-            
-            // 박스 크기 및 좌표 출력
-            int rectX = static_cast<int>(pattern.rect.x());
-            int rectY = static_cast<int>(pattern.rect.y());
-            int rectW = static_cast<int>(pattern.rect.width());
-            int rectH = static_cast<int>(pattern.rect.height());
-            logDebug(QString("[FID검사전] 패턴 '%1': 박스=(%2,%3) 크기=%4x%5")
-                    .arg(pattern.name).arg(rectX).arg(rectY).arg(rectW).arg(rectH));
-            logDebug(QString("[FID검사후] 패턴 '%1': 매칭위치=(%2,%3) (좌상단 좌표)")
-                    .arg(pattern.name).arg(matchLoc.x).arg(matchLoc.y));
         }
     }
     
     // 6. INS 패턴 검사 수행 (그룹 ROI 제한 적용)
     if (!insPatterns.isEmpty()) {
-        logDebug(QString("INS 패턴 검사 처리 중: %1개").arg(insPatterns.size()));
-        
         for (const PatternInfo& pattern : insPatterns) {
             // 마스크 필터가 활성화되어 있으면 검사 PASS 처리
             bool hasMaskFilter = false;
@@ -497,15 +454,8 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             adjustedPattern.rect = adjustedRect;
             
             // 디버그: 검사 방법 확인
-            logDebug(QString("INS 패턴 '%1': 검사 방법=%2 (%3)")
-                    .arg(pattern.name)
-                    .arg(pattern.inspectionMethod)
-                    .arg(InspectionMethod::getName(pattern.inspectionMethod)));
             
             // 최종 계산된 각도 설정 (INS 원본 각도 + FID 회전 차이)
-            logDebug(QString("=== adjustedPattern.angle 설정 전: hasParentInfo=%1, pattern.angle=%2도 ===")
-                    .arg(hasParentInfo ? "true" : "false")
-                    .arg(pattern.angle, 0, 'f', 2));
                     
             if (hasParentInfo) {
                 // FID 회전 차이만큼 INS 원본 각도에 추가
@@ -524,8 +474,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                         .arg(adjustedPattern.angle, 0, 'f', 2));
             } else {
                 adjustedPattern.angle = pattern.angle; // 패턴 각도만 
-                logDebug(QString("=== hasParentInfo=false이므로 pattern.angle=%1도 그대로 사용 ===")
-                        .arg(adjustedPattern.angle, 0, 'f', 2));
             }
              
             switch (pattern.inspectionMethod) {
@@ -547,8 +495,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                 case InspectionMethod::STRIP:
                 {
                     // 디버그: STRIP 검사 직전 각도 확인
-                    logDebug(QString("=== STRIP 검사 직전: adjustedPattern.angle = %1도 ===")
-                            .arg(adjustedPattern.angle, 0, 'f', 2));
                     
                     inspPassed = checkStrip(image, adjustedPattern, inspScore, result);
 
@@ -588,32 +534,34 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             
             // 전체 결과 갱신
             result.isPassed = result.isPassed && inspPassed;
-            
-            logDebug(QString("INS 패턴 '%1' 검사 결과: %2 (점수: %3)")
-                    .arg(pattern.name)
-                    .arg(inspPassed ? "합격" : "불합격")
-                    .arg(inspScore, 0, 'f', 2));
-            
-            // 박스 크기 및 좌표 출력
-            logDebug(QString("[INS검사전] 패턴 '%1': 원본박스=(%2,%3) 크기=%4x%5")
-                    .arg(pattern.name)
-                    .arg(static_cast<int>(pattern.rect.x()))
-                    .arg(static_cast<int>(pattern.rect.y()))
-                    .arg(static_cast<int>(pattern.rect.width()))
-                    .arg(static_cast<int>(pattern.rect.height())));
-            logDebug(QString("[INS검사후] 패턴 '%1': 조정박스=(%2,%3) 크기=%4x%5")
-                    .arg(pattern.name)
-                    .arg(adjustedRect.x())
-                    .arg(adjustedRect.y())
-                    .arg(adjustedRect.width())
-                    .arg(adjustedRect.height()));
         }
     }
     
-    logDebug(QString("검사 결과: %1 (FID: %2개, INS: %3개)")
-            .arg(result.isPassed ? "합격" : "불합격")
-            .arg(result.fidResults.size())
-            .arg(result.insResults.size()));
+    // 전체 검사 결과 로그
+    QString resultText = result.isPassed ? "PASS" : "NG";
+    
+    // FID 결과 수집 (개별 PASS/NG 판정 포함)
+    QStringList fidDetails;
+    for (const PatternInfo& pattern : patterns) {
+        if (pattern.type == PatternType::FID && result.fidResults.contains(pattern.id)) {
+            bool fidPassed = result.fidResults.value(pattern.id);
+            double score = result.matchScores.value(pattern.id, 0.0);
+            double threshold = pattern.matchThreshold;
+            
+            QString fidResult = fidPassed ? "PASS" : "NG";
+            fidDetails.append(QString("%1 %2/%3").arg(fidResult)
+                                                  .arg(QString::number(score, 'f', 2))
+                                                  .arg(QString::number(threshold, 'f', 2)));
+        }
+    }
+    
+    QString fidInfo = fidDetails.isEmpty() ? "" : QString(" FID:[%1]").arg(fidDetails.join(" "));
+    
+    logDebug(QString("전체 검사 결과: %1%2")
+            .arg(resultText)
+            .arg(fidInfo));
+    
+    logDebug("검사 종료");
             
     return result;
 }
@@ -635,11 +583,6 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
         logDebug(QString("❌ FID 패턴 '%1': 템플릿 이미지가 없음 (NULL)").arg(pattern.name));
         return false;
     }
-    
-    logDebug(QString("✅ FID 패턴 '%1': 템플릿 이미지 크기=%2x%3")
-            .arg(pattern.name)
-            .arg(pattern.templateImage.width())
-            .arg(pattern.templateImage.height()));
     
     try {
         // **수정**: 저장된 템플릿 이미지를 그대로 사용 (0도 상태의 사각형 이미지)
@@ -698,8 +641,6 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
                     );
                     if (roi.rect.contains(fidCenter)) {
                         roiDefined = true;
-                        logDebug(QString("FID 패턴 '%1'이(가) ROI 패턴 '%2' 내에 있음 (패턴 주변 검색)")
-                                .arg(pattern.name).arg(roi.name));
                         break; // 첫 번째로 찾은 포함하는 ROI 사용
                     }
                 }
@@ -707,8 +648,6 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
         }
         
         // ★★★ 항상 패턴 주변 영역을 검색 영역으로 사용 ★★★
-        logDebug(QString("FID 패턴 '%1': 패턴 주변 영역을 검색 영역으로 사용 (패턴 기반 검색)")
-                .arg(pattern.name));
         
         // 패턴 중심 기반으로 검색 영역 결정 (패턴 크기의 2배 정도 마진)
         int margin = std::max(static_cast<int>(pattern.rect.width()), static_cast<int>(pattern.rect.height()));
@@ -720,11 +659,6 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
             std::min(image.rows - std::max(0, static_cast<int>(pattern.rect.y()) - margin), 
                     static_cast<int>(pattern.rect.height()) + 2 * margin)
         );
-        
-        logDebug(QString("FID 패턴 '%1': 최종 검색 영역 설정 (x:%2 y:%3 w:%4 h:%5) - 패턴 기준")
-                .arg(pattern.name)
-                .arg(searchRoi.x).arg(searchRoi.y)
-                .arg(searchRoi.width).arg(searchRoi.height));
         
         // 검색 영역 유효성 확인 및 로그
         if (searchRoi.width <= 0 || searchRoi.height <= 0 || 
@@ -801,13 +735,6 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
         
         switch (pattern.fidMatchMethod) {
             case 0: // 템플릿 매칭
-                logDebug(QString("FID 패턴 '%1' 템플릿 매칭 호출: useRotation=%2, min=%3°, max=%4°, step=%5°, ROI=%6x%7, templ=%8x%9")
-                        .arg(pattern.name)
-                        .arg(pattern.useRotation ? "true" : "false")
-                        .arg(tmplMinA).arg(tmplMaxA).arg(tmplStep)
-                        .arg(roi.cols).arg(roi.rows)
-                        .arg(processedTemplate.cols).arg(processedTemplate.rows));
-                        
                 matched = performTemplateMatching(roi, processedTemplate, localMatchLoc, score, tempAngle,
                                                pattern, tmplMinA, tmplMaxA, tmplStep);
                 
@@ -818,8 +745,6 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
                             .arg(pattern.name).arg(tempAngle).arg(matchAngle));
                 } else if (matched) {
                     matchAngle = pattern.angle; // 기본 각도 사용
-                    logDebug(QString("FID 패턴 '%1': 기본 각도 사용, pattern.angle=%2°, matchAngle=%3°")
-                            .arg(pattern.name).arg(pattern.angle).arg(matchAngle));
                 }
                 break;
                 
@@ -845,34 +770,12 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
             
             // 회전 매칭이 활성화된 경우 검출된 각도를 사용
             matchAngle = tempAngle;
-            
-            // ★★★ 검색 영역 디버그 로그 ★★★
-            qDebug() << QString("[FID MATCH DEBUG] Pattern: %1").arg(pattern.name);
-            qDebug() << QString("  Pattern Rect Original: x:%1 y:%2 w:%3 h:%4")
-                        .arg(pattern.rect.x(), 0, 'f', 1)
-                        .arg(pattern.rect.y(), 0, 'f', 1)
-                        .arg(pattern.rect.width(), 0, 'f', 1)
-                        .arg(pattern.rect.height(), 0, 'f', 1);
-            qDebug() << QString("  SearchROI: x:%1 y:%2 w:%3 h:%4").arg(searchRoi.x).arg(searchRoi.y)
-                        .arg(searchRoi.width).arg(searchRoi.height);
-            qDebug() << QString("  Local Match (ROI내): x:%1 y:%2").arg(localMatchLoc.x).arg(localMatchLoc.y);
-            qDebug() << QString("  Final Match Loc: x:%1 y:%2").arg(matchLoc.x).arg(matchLoc.y);
-            
-            logDebug(QString("매칭 위치: ROI 내 (%1,%2) -> 전체 이미지 (%3,%4)")
-                    .arg(localMatchLoc.x)
-                    .arg(localMatchLoc.y)
-                    .arg(matchLoc.x)
-                    .arg(matchLoc.y));
         }
         
         // 매칭 임계값과 비교
         if (matched && score >= pattern.matchThreshold) {
-            logDebug(QString("매칭 성공: 점수 %1 (임계값: %2)")
-                    .arg(score, 0, 'f', 2).arg(pattern.matchThreshold, 0, 'f', 2));
             return true;
         } else {
-            logDebug(QString("매칭 실패: 점수 %1 < 임계값 %2, 하지만 검출된 각도는 적용됨")
-                    .arg(score, 0, 'f', 2).arg(pattern.matchThreshold, 0, 'f', 2));
             // 매칭은 실패했지만 검출된 각도는 적용 (matchAngle은 이미 설정됨)
             return false;
         }
@@ -914,7 +817,6 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
     
     if (!pattern.useRotation) {
         // 회전 허용 안함: 원본 템플릿 그대로 매칭 (패턴 각도는 이미 티칭 시 반영됨)
-        logDebug(QString("회전 비허용: 원본 템플릿 그대로 매칭 (패턴 각도 %1°는 이미 반영됨)").arg(pattern.angle));
         
         // 원본 템플릿 그대로 사용
         cv::Mat templateForMatching = templGray.clone();
@@ -933,23 +835,11 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
         matchLoc.y = static_cast<int>(maxLoc.y + templateForMatching.rows / 2.0 + 0.5);
         score = maxVal;
         angle = pattern.angle; // 패턴에 저장된 각도 그대로 반환
-        
-        qDebug() << QString("[TEMPLATE MATCH DEBUG] Pattern: %1").arg(pattern.name);
-        qDebug() << QString("  useRotation: false");
-        qDebug() << QString("  maxLoc (top-left): x:%1 y:%2").arg(maxLoc.x).arg(maxLoc.y);
-        qDebug() << QString("  templateSize: w:%1 h:%2").arg(templateForMatching.cols).arg(templateForMatching.rows);
-        qDebug() << QString("  matchLoc (center): x:%1 y:%2").arg(matchLoc.x).arg(matchLoc.y);
-        qDebug() << QString("  score: %1, angle: %2°").arg(score, 0, 'f', 4).arg(angle);
-        
-        logDebug(QString("원본 템플릿 매칭 완료: 점수=%1, 각도=%2°, 위치=(%3,%4)")
-                .arg(score, 0, 'f', 4).arg(angle).arg(matchLoc.x).arg(matchLoc.y));
                 
         return true;
     }
     
     // 회전 허용: 티칭 각도를 기준으로 +/- 범위에서 모든 각도 시도
-    logDebug(QString("회전 허용: 티칭각도 %1°를 기준으로 %2°~%3° 범위에서 1도 간격으로 매칭")
-            .arg(pattern.angle).arg(minAngle).arg(maxAngle));
     
     // 티칭 각도 기준으로 상대 범위 적용
     double adjustedMinAngle = pattern.angle + minAngle;
@@ -1528,7 +1418,6 @@ bool InsProcessor::checkColor(const cv::Mat& image, const PatternInfo& pattern, 
                     processor.applyFilter(processedRoi, filteredRoi, filter);
                     if (!filteredRoi.empty()) {
                         processedRoi = filteredRoi.clone();
-                        logDebug(QString("필터 %1 적용 완료").arg(filter.type));
                     }
                 }
             }
@@ -1958,7 +1847,6 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
                     processor.applyFilter(filteredRoi, tempFiltered, filter);
                     if (!tempFiltered.empty()) {
                         filteredRoi = tempFiltered.clone();
-                        logDebug(QString("필터 %1 적용 완료").arg(filter.type));
                     }
                 }
             }
@@ -1977,7 +1865,6 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
                     processor.applyFilter(processedRoi, tempFiltered, filter);
                     if (!tempFiltered.empty()) {
                         processedRoi = tempFiltered.clone();
-                        logDebug(QString("필터 %1 적용 완료").arg(filter.type));
                     }
                 }
             }
@@ -2341,8 +2228,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         
         // 필터가 있고 회전이 있는 경우
         if (!pattern.filters.isEmpty() && std::abs(pattern.angle) > 0.1) {
-            logDebug(QString("회전된 패턴에 %1개 필터 적용").arg(pattern.filters.size()));
-            
             cv::Point2f center(pattern.rect.x() + pattern.rect.width()/2.0f, 
                              pattern.rect.y() + pattern.rect.height()/2.0f);
             
@@ -2396,7 +2281,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                         processor.applyFilter(roiMat, nextFiltered, filter);
                         if (!nextFiltered.empty()) {
                             nextFiltered.copyTo(roiMat);
-                            logDebug(QString("필터 %1 적용 완료").arg(filter.type));
                         }
                     }
                 }
@@ -2427,7 +2311,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                         processor.applyFilter(roiMat, nextFiltered, filter);
                         if (!nextFiltered.empty()) {
                             nextFiltered.copyTo(roiMat);
-                            logDebug(QString("필터 %1 적용 완료").arg(filter.type));
                         }
                     }
                 }
@@ -2471,8 +2354,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         std::vector<cv::Point> frontThicknessPoints, rearThicknessPoints;
         
         // 디버그: STRIP 검사 임계값 확인
-        logDebug(QString("=== STRIP 검사 임계값: pattern.passThreshold = %1 ===")
-                .arg(pattern.passThreshold, 0, 'f', 3));
                 
         // 측정된 두께 값들을 저장할 변수 (FRONT + REAR)
         int measuredMinThickness = 0, measuredMaxThickness = 0, measuredAvgThickness = 0;
@@ -2515,11 +2396,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         
         int sum = std::accumulate(thicknesses.begin(), thicknesses.end(), 0);
         measuredAvgThickness = sum / static_cast<int>(thicknesses.size());
-        
-        std::cout << "[InsProcessor] FRONT 두께 통계: Min=" << measuredMinThickness 
-                  << "px, Max=" << measuredMaxThickness 
-                  << "px, Avg=" << measuredAvgThickness << "px (샘플수: " 
-                  << thicknesses.size() << ")" << std::endl;
     }
     
     // REAR 두께 통계 계산 (ImageProcessor에서 받은 픽셀 데이터로부터)
@@ -2534,11 +2410,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         
         int sum = std::accumulate(thicknesses.begin(), thicknesses.end(), 0);
         rearMeasuredAvgThickness = sum / static_cast<int>(thicknesses.size());
-        
-        std::cout << "[InsProcessor] REAR 두께 통계: Min=" << rearMeasuredMinThickness 
-                  << "px, Max=" << rearMeasuredMaxThickness 
-                  << "px, Avg=" << rearMeasuredAvgThickness << "px (샘플수: " 
-                  << thicknesses.size() << ")" << std::endl;
     }
     
     // 픽셀을 mm로 변환 (두께 전용 calibration 필요)
@@ -2546,10 +2417,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     // 예: 실제 1.38mm = 55px → 1px = 1.38/55 = 0.0251mm
     // 우선은 strip length calibration을 임시로 사용 (나중에 별도 calibration 추가 필요)
     double thicknessPixelToMm = pattern.stripLengthConversionMm / pattern.stripLengthCalibrationPx;
-    
-    std::cout << "[두께 변환] stripLengthConversionMm=" << pattern.stripLengthConversionMm 
-              << "mm, stripLengthCalibrationPx=" << pattern.stripLengthCalibrationPx 
-              << "px → 1px = " << thicknessPixelToMm << "mm" << std::endl;
     
     // ROI 좌표를 원본 이미지 좌표로 변환 (extractROI와 정확히 동일한 방식으로 계산)
     cv::Point2f patternCenter(pattern.rect.x() + pattern.rect.width()/2.0f, 
@@ -2643,22 +2510,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             minY = qMin(minY, pt.y());
             maxY = qMax(maxY, pt.y());
         }
-        qDebug() << "[FRONT 포인트 상대좌표 범위]";
-        qDebug() << "  총 포인트 수:" << frontPointsConverted.size();
-        qDebug() << "  X 범위:" << minX << "~" << maxX << "너비:" << (maxX - minX);
-        qDebug() << "  Y 범위:" << minY << "~" << maxY << "높이:" << (maxY - minY);
-        
-        // FRONT 원본 포인트 확인 (변환 전)
-        if (!frontThicknessPoints.empty()) {
-            qDebug() << "[FRONT 원본 포인트 (변환 전)]";
-            qDebug() << "  총 개수:" << (int)frontThicknessPoints.size();
-            if (frontThicknessPoints.size() >= 2) {
-                cv::Point p0 = frontThicknessPoints[0];
-                cv::Point p1 = frontThicknessPoints[frontThicknessPoints.size()-1];
-                qDebug() << "  첫번째 포인트 (ROI좌표):" << p0.x << "," << p0.y;
-                qDebug() << "  마지막 포인트 (ROI좌표):" << p1.x << "," << p1.y;
-            }
-        }
     } else {
         qDebug() << "[FRONT] 포인트가 없음!";
     }
@@ -2672,29 +2523,8 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             minY = qMin(minY, pt.y());
             maxY = qMax(maxY, pt.y());
         }
-        qDebug() << "[REAR 포인트 상대좌표 범위]";
-        qDebug() << "  총 포인트 수:" << rearPointsConverted.size();
-        qDebug() << "  X 범위:" << minX << "~" << maxX << "너비:" << (maxX - minX);
-        qDebug() << "  Y 범위:" << minY << "~" << maxY << "높이:" << (maxY - minY);
-        
-        // REAR 원본 포인트 확인 (변환 전)
-        if (!rearThicknessPoints.empty()) {
-            qDebug() << "[REAR 원본 포인트 (변환 전)]";
-            qDebug() << "  총 개수:" << (int)rearThicknessPoints.size();
-            if (rearThicknessPoints.size() >= 2) {
-                cv::Point p0 = rearThicknessPoints[0];
-                cv::Point p1 = rearThicknessPoints[rearThicknessPoints.size()-1];
-                qDebug() << "  첫번째 포인트 (ROI좌표):" << p0.x << "," << p0.y;
-                qDebug() << "  마지막 포인트 (ROI좌표):" << p1.x << "," << p1.y;
-            }
-        }
         
         // 좌표 변환 디버그 정보
-        qDebug() << "[좌표 변환 디버그]";
-        qDebug() << "  patternCenterAbs:" << patternCenterAbs.x() << "," << patternCenterAbs.y();
-        qDebug() << "  offset:" << offset.x << "," << offset.y;
-        qDebug() << "  squareRoi:" << squareRoi.x << "," << squareRoi.y << squareRoi.width << "x" << squareRoi.height;
-        qDebug() << "  pattern.angle:" << pattern.angle << "도";
     } else {
         qDebug() << "[REAR] 포인트가 없음!";
     }
@@ -2781,11 +2611,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         
         frontThicknessPassed = (minMm >= pattern.stripThicknessMin && 
                                maxMm <= pattern.stripThicknessMax);
-        
-        qDebug() << "[FRONT 두께 판정]";
-        qDebug() << "  측정값: Min=" << minMm << "mm, Max=" << maxMm << "mm, Avg=" << avgMm << "mm";
-        qDebug() << "  설정범위:" << pattern.stripThicknessMin << "~" << pattern.stripThicknessMax << "mm";
-        qDebug() << "  판정:" << (frontThicknessPassed ? "PASS" : "FAIL");
     }
     
     // REAR 두께 검사 판정 (측정값이 있고 calibration이 있는 경우)
@@ -2798,11 +2623,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         
         rearThicknessPassed = (minMm >= pattern.stripRearThicknessMin && 
                               maxMm <= pattern.stripRearThicknessMax);
-        
-        qDebug() << "[REAR 두께 판정]";
-        qDebug() << "  측정값: Min=" << minMm << "mm, Max=" << maxMm << "mm, Avg=" << avgMm << "mm";
-        qDebug() << "  설정범위:" << pattern.stripRearThicknessMin << "~" << pattern.stripRearThicknessMax << "mm";
-        qDebug() << "  판정:" << (rearThicknessPassed ? "PASS" : "FAIL");
     }
     
     // EDGE 검사 결과 확인 (이미 edgePassed 변수에 저장되어 있음)
@@ -2812,14 +2632,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     
     // 모든 검사 항목을 AND 연산으로 최종 판정
     bool allTestsPassed = isPassed && stripLengthPassed && frontThicknessPassed && rearThicknessPassed && edgeTestPassed;
-    
-    qDebug() << "[STRIP 최종 판정]" << pattern.name;
-    qDebug() << "  매칭:" << (isPassed ? "PASS" : "FAIL");
-    qDebug() << "  길이:" << (stripLengthPassed ? "PASS" : "FAIL");
-    qDebug() << "  FRONT:" << (frontThicknessPassed ? "PASS" : "FAIL");
-    qDebug() << "  REAR:" << (rearThicknessPassed ? "PASS" : "FAIL");
-    qDebug() << "  EDGE:" << (edgeTestPassed ? "PASS" : "FAIL");
-    qDebug() << "  최종:" << (allTestsPassed ? "PASS" : "FAIL");
     
     if (allTestsPassed) {
         // 좌표 변환 적용
@@ -2979,17 +2791,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             result.edgePointDistances[pattern.id] = pointDistancesMm;
             result.edgeRegressionSlope[pattern.id] = m;
             result.edgeRegressionIntercept[pattern.id] = b;
-            
-            qDebug() << "[InsProcessor] EDGE 통계 (절대좌표):"
-                     << "포인트수=" << absoluteEdgePoints.size()
-                     << ", X범위=" << minX << "~" << maxX << "px"
-                     << ", 평균X=" << edgeAvgX << "px"
-                     << ", 최소편차=" << edgeMinDeviationMm << "mm"
-                     << ", 최대편차=" << edgeMaxDeviationMm << "mm"
-                     << ", 평균편차=" << edgeAvgDeviationMm << "mm"
-                     << ", 불량수=" << edgeOutlierCount << "/" << absoluteEdgePoints.size()
-                     << ", 허용거리=" << pattern.edgeDistanceMax << "mm"
-                     << ", 변환=" << pixelToMm << "mm/px";
         }
         
         // EDGE 검사 결과 저장 (불량수와 편차는 mm 기준)
@@ -3416,9 +3217,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                     }
                 }
                 
-                logDebug(QString("두께 측정 결과: 좌측=%1px, 우측=%2px, 길이=%3px")
-                        .arg(leftThickness).arg(rightThickness).arg(pixelDistance));
-                
                 // 측정된 두께 정보를 검사 결과에 추가하여 Qt로 표시
                 if (result.stripMeasuredThicknessAvg.contains(pattern.id) && 
                     result.stripThicknessMeasured[pattern.id]) {
@@ -3505,6 +3303,47 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             }
         }
         
+        // STRIP 검사 결과 로그 출력
+        double pixelToMm = pattern.stripLengthConversionMm / pattern.stripLengthCalibrationPx;
+        
+        // EDGE 검사 결과
+        QString edgeResult = edgeTestPassed ? "PASS" : "NG";
+        QString edgeDetail = QString("[%1/%2]").arg(QString::number(edgeOutlierCount))
+                                                .arg(QString::number(pattern.edgeMaxOutliers));
+        
+        // FRONT 두께 검사 결과
+        QString frontResult = frontThicknessPassed ? "PASS" : "NG";
+        QString frontDetail = "";
+        if (measuredAvgThickness > 0) {
+            double avgMm = measuredAvgThickness * pixelToMm;
+            frontDetail = QString("[%1/%2-%3]").arg(QString::number(avgMm, 'f', 2))
+                                                .arg(QString::number(pattern.stripThicknessMin, 'f', 2))
+                                                .arg(QString::number(pattern.stripThicknessMax, 'f', 2));
+        }
+        
+        // REAR 두께 검사 결과
+        QString rearResult = rearThicknessPassed ? "PASS" : "NG";
+        QString rearDetail = "";
+        if (rearMeasuredAvgThickness > 0) {
+            double avgMm = rearMeasuredAvgThickness * pixelToMm;
+            rearDetail = QString("[%1/%2-%3]").arg(QString::number(avgMm, 'f', 2))
+                                               .arg(QString::number(pattern.stripRearThicknessMin, 'f', 2))
+                                               .arg(QString::number(pattern.stripRearThicknessMax, 'f', 2));
+        }
+        
+        // STRIP LENGTH 검사 결과
+        QString stripResult = stripLengthPassed ? "PASS" : "NG";
+        QString stripDetail = "";
+        if (stripMeasuredLength > 0) {
+            stripDetail = QString("[%1/%2-%3]").arg(QString::number(stripMeasuredLength, 'f', 2))
+                                                .arg(QString::number(pattern.stripLengthMin, 'f', 2))
+                                                .arg(QString::number(pattern.stripLengthMax, 'f', 2));
+        }
+        
+        logDebug(QString("EDGE: %1 %2").arg(edgeResult).arg(edgeDetail));
+        logDebug(QString("FRONT: %1 %2").arg(frontResult).arg(frontDetail));
+        logDebug(QString("REAR: %1 %2").arg(rearResult).arg(rearDetail));
+        logDebug(QString("STRIP LENGTH: %1 %2").arg(stripResult).arg(stripDetail));
 
         
         return allTestsPassed;  // 모든 검사 통과 여부 반환

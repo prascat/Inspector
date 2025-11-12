@@ -775,6 +775,9 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("stripLengthConversionMm", QString::number(pattern.stripLengthConversionMm, 'f', 3));
     xml.writeAttribute("stripLengthCalibrationPx", QString::number(pattern.stripLengthCalibrationPx, 'f', 2));
     xml.writeAttribute("stripLengthCalibrated", pattern.stripLengthCalibrated ? "true" : "false");
+    xml.writeAttribute("stripLengthMin", QString::number(pattern.stripLengthMin, 'f', 2));
+    xml.writeAttribute("stripLengthMax", QString::number(pattern.stripLengthMax, 'f', 2));
+    xml.writeAttribute("stripLengthEnabled", pattern.stripLengthEnabled ? "true" : "false");
     
     // STRIP 두께 검사 관련 속성 저장
     xml.writeAttribute("stripThicknessMin", QString::number(pattern.stripThicknessMin, 'f', 2));
@@ -1402,6 +1405,21 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     if (!stripLengthCalibratedStr.isEmpty()) {
         pattern.stripLengthCalibrated = (stripLengthCalibratedStr == "true");
     } // 비어있으면 CommonDefs.h의 기본값(false) 사용
+    
+    QString stripLengthMinStr = xml.attributes().value("stripLengthMin").toString();
+    if (!stripLengthMinStr.isEmpty()) {
+        pattern.stripLengthMin = stripLengthMinStr.toDouble();
+    }
+    
+    QString stripLengthMaxStr = xml.attributes().value("stripLengthMax").toString();
+    if (!stripLengthMaxStr.isEmpty()) {
+        pattern.stripLengthMax = stripLengthMaxStr.toDouble();
+    }
+    
+    QString stripLengthEnabledStr = xml.attributes().value("stripLengthEnabled").toString();
+    if (!stripLengthEnabledStr.isEmpty()) {
+        pattern.stripLengthEnabled = (stripLengthEnabledStr == "true");
+    }
     
     // STRIP 두께 검사 관련 속성 읽기
     QString stripThicknessMinStr = xml.attributes().value("stripThicknessMin").toString();

@@ -192,8 +192,8 @@ struct PatternInfo {
     
     // STRIP 길이검사 관련 파라미터
     bool stripLengthEnabled = true;      // STRIP 길이검사 활성화 여부
-    int stripLengthMin = 100;            // 최소 길이 (픽셀)
-    int stripLengthMax = 500;            // 최대 길이 (픽셀)
+    double stripLengthMin = 5.7;         // 최소 길이 (mm)
+    double stripLengthMax = 6.0;         // 최대 길이 (mm)
     double stripLengthConversionMm = 6.0; // 수치 변환 (mm) - pixel to mm 변환값
     double stripLengthCalibrationPx = 0.0; // 캘리브레이션 기준 픽셀값
     bool stripLengthCalibrated = false;    // 캘리브레이션 완료 여부

@@ -3145,13 +3145,13 @@ void TeachingWidget::createPropertyPanels() {
     // STRIP 길이검사 범위 설정
     insStripLengthMinLabel = new QLabel("최소 길이:", insStripPanel);
     insStripLengthMinEdit = new QLineEdit(insStripPanel);
-    insStripLengthMinEdit->setText("100");
+    insStripLengthMinEdit->setText("5.70");
     insStripLengthMinEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insStripLengthMinEdit));
     insStripLayout->addRow(insStripLengthMinLabel, insStripLengthMinEdit);
     
     insStripLengthMaxLabel = new QLabel("최대 길이:", insStripPanel);
     insStripLengthMaxEdit = new QLineEdit(insStripPanel);
-    insStripLengthMaxEdit->setText("500");
+    insStripLengthMaxEdit->setText("6.00");
     insStripLengthMaxEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insStripLengthMaxEdit));
     insStripLayout->addRow(insStripLengthMaxLabel, insStripLengthMaxEdit);
     
@@ -5787,13 +5787,13 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                     // 길이검사 범위 값들 업데이트
                     if (insStripLengthMinEdit) {
                         insStripLengthMinEdit->blockSignals(true);
-                        insStripLengthMinEdit->setText(QString::number(pattern->stripLengthMin, 'f', 1));
+                        insStripLengthMinEdit->setText(QString::number(pattern->stripLengthMin, 'f', 2));
                         insStripLengthMinEdit->blockSignals(false);
                     }
                     
                     if (insStripLengthMaxEdit) {
                         insStripLengthMaxEdit->blockSignals(true);
-                        insStripLengthMaxEdit->setText(QString::number(pattern->stripLengthMax, 'f', 1));
+                        insStripLengthMaxEdit->setText(QString::number(pattern->stripLengthMax, 'f', 2));
                         insStripLengthMaxEdit->blockSignals(false);
                     }
                     

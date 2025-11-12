@@ -8,9 +8,15 @@
 #include <QDebug>
 #include <QTextCharFormat>
 #include <QScrollBar>
+#include <QDir>
+#include <QDateTime>
+#include <QCoreApplication>
 
 LogViewer::LogViewer(QWidget *parent) : QWidget(parent) {
     setWindowTitle(TR("INSPECTION_LOG"));
+    
+    // 로그 파일 초기화
+    openLogFile();
     
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -45,7 +51,7 @@ LogViewer::LogViewer(QWidget *parent) : QWidget(parent) {
     logTextEdit = new QTextEdit(this);
     logTextEdit->setReadOnly(true);
     logTextEdit->setLineWrapMode(QTextEdit::NoWrap);
-    logTextEdit->setFont(QFont("Courier New", 12));
+    logTextEdit->setFont(QFont("Courier New", 14));
     logTextEdit->setVisible(false);  // 초기에는 숨김
     
     // 어두운 배경색으로 설정하여 색상 텍스트가 잘 보이도록
@@ -93,7 +99,7 @@ void LogViewer::appendLog(const QString& text) {
                 format.setFontWeight(QFont::Bold);
             }
         }
-        else if (text.contains("검사 시작")) {
+        else if (text.contains("검사 시작") || text.contains("검사 종료")) {
             format.setForeground(QColor("#2196F3")); // 파란색
             format.setFontWeight(QFont::Bold);
         }
@@ -225,6 +231,70 @@ void LogViewer::trimLogIfNeeded() {
 // 이 메서드를 통해서만 로그 메시지 처리
 void LogViewer::receiveLogMessage(const QString& message) {
     appendLog(message);
+    writeToLogFile(message);
+}
+
+void LogViewer::openLogFile() {
+    // 실행 파일 경로 가져오기
+    QString appPath = QCoreApplication::applicationDirPath();
+    
+    // logs 폴더 경로
+    QString logsDir = appPath + "/logs";
+    
+    // logs 폴더가 없으면 생성
+    QDir dir;
+    if (!dir.exists(logsDir)) {
+        dir.mkpath(logsDir);
+    }
+    
+    // 현재 날짜로 파일명 생성 (예: 2025-11-12.log)
+    QString currentDate = QDateTime::currentDateTime().toString("yyyy-MM-dd");
+    currentLogFilePath = logsDir + "/" + currentDate + ".log";
+    
+    // 기존 파일이 열려있으면 닫기
+    if (logFile) {
+        if (logStream) {
+            delete logStream;
+            logStream = nullptr;
+        }
+        logFile->close();
+        delete logFile;
+        logFile = nullptr;
+    }
+    
+    // 새 로그 파일 열기 (append 모드)
+    logFile = new QFile(currentLogFilePath);
+    if (logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+        logStream = new QTextStream(logFile);
+        logStream->setEncoding(QStringConverter::Utf8);
+        qDebug() << "로그 파일 열림:" << currentLogFilePath;
+    } else {
+        qDebug() << "로그 파일 열기 실패:" << currentLogFilePath;
+        delete logFile;
+        logFile = nullptr;
+    }
+}
+
+void LogViewer::writeToLogFile(const QString& message) {
+    if (!logStream) {
+        return;
+    }
+    
+    // 날짜가 바뀌었는지 확인
+    QString currentDate = QDateTime::currentDateTime().toString("yyyy-MM-dd");
+    QString expectedFilePath = QCoreApplication::applicationDirPath() + "/logs/" + currentDate + ".log";
+    
+    // 날짜가 바뀌었으면 새 파일 열기
+    if (currentLogFilePath != expectedFilePath) {
+        openLogFile();
+        if (!logStream) {
+            return;
+        }
+    }
+    
+    // 로그 파일에 기록
+    *logStream << message << "\n";
+    logStream->flush();
 }
 
 void LogViewer::toggleCollapse() {

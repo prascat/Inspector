@@ -2039,8 +2039,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     
                     QRect rearTextRect(-rearTextW/2 - 2, -boxHeight/2 - rearTextH - 2, rearTextW + 4, rearTextH);
                     painter.fillRect(rearTextRect, QBrush(QColor(0, 0, 0, 180)));
-                    QColor rearTextColor = rearPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
-                    painter.setPen(rearTextColor);
+                    painter.setPen(QColor(255, 255, 255));  // 흰색
                     painter.drawText(rearTextRect, Qt::AlignCenter, rearLabel);
                     
                     // PASS/NG 표시 (이름표 위)
@@ -2178,8 +2177,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     
                     QRect frontTextRect(-frontTextW/2 - 2, -boxHeight/2 - frontTextH - 2, frontTextW + 4, frontTextH);
                     painter.fillRect(frontTextRect, QBrush(QColor(0, 0, 0, 180)));
-                    QColor frontTextColor = frontPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
-                    painter.setPen(frontTextColor);
+                    painter.setPen(QColor(255, 255, 255));  // 흰색
                     painter.drawText(frontTextRect, Qt::AlignCenter, frontLabel);
                     
                     // PASS/NG 표시 (이름표 위)
@@ -2329,16 +2327,29 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 double edgeAvgDev = result.edgeAvgDeviation.value(patternId, 0.0);
                 bool edgePassed = result.edgeResults.value(patternId, false);
                 
+                // 패턴 정보에서 최대 허용 불량 수 가져오기
+                int maxOutliers = 5;  // 기본값
+                for (const PatternInfo& p : patterns) {
+                    if (p.id == patternId) {
+                        maxOutliers = p.edgeMaxOutliers;
+                        break;
+                    }
+                }
+                
                 QString edgeLabel;
                 // 1mm 이하는 μm 단위로 표시
                 if (edgeMaxDev < 1.0 && edgeAvgDev < 1.0) {
-                    edgeLabel = QString("EDGE 최대:%1 평균:%2μm")
+                    edgeLabel = QString("EDGE 최대:%1 평균:%2μm 불량:%3/%4")
                         .arg(edgeMaxDev * 1000, 0, 'f', 0)
-                        .arg(edgeAvgDev * 1000, 0, 'f', 0);
+                        .arg(edgeAvgDev * 1000, 0, 'f', 0)
+                        .arg(edgeOutlierCount)
+                        .arg(maxOutliers);
                 } else {
-                    edgeLabel = QString("EDGE 최대:%1 평균:%2mm")
+                    edgeLabel = QString("EDGE 최대:%1 평균:%2mm 불량:%3/%4")
                         .arg(edgeMaxDev, 0, 'f', 4)
-                        .arg(edgeAvgDev, 0, 'f', 4);
+                        .arg(edgeAvgDev, 0, 'f', 4)
+                        .arg(edgeOutlierCount)
+                        .arg(maxOutliers);
                 }
                 
                 QFont boxFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
@@ -2352,8 +2363,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                     edgeRotatedCenter.y() - edgeBoxHeight/2 - edgeTextH - 5,
                                     edgeTextW + 6, edgeTextH);
                 painter.fillRect(edgeLabelRect, QBrush(QColor(0, 0, 0, 180)));
-                QColor edgeTextColor = edgePassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
-                painter.setPen(edgeTextColor);
+                painter.setPen(QColor(255, 255, 255));  // 흰색
                 painter.drawText(edgeLabelRect, Qt::AlignCenter, edgeLabel);
                 
                 // PASS/NG 표시 (이름표 위)
@@ -2494,9 +2504,9 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                             
                             // 측정된 길이 텍스트 표시
                             if (result.stripMeasuredLength.contains(patternId)) {
-                                double lengthPx = result.stripMeasuredLength[patternId];
+                                double lengthMm = result.stripMeasuredLength[patternId];  // 이미 mm 단위
                                 
-                                // 패턴 정보 가져오기 (캘리브레이션 값 사용)
+                                // 패턴 정보 가져오기 (픽셀 값 계산용)
                                 QString lengthText;
                                 const PatternInfo* pattern = nullptr;
                                 for (const PatternInfo& p : patterns) {
@@ -2506,19 +2516,17 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                     }
                                 }
                                 
-                                if (pattern && pattern->stripLengthCalibrated && pattern->stripLengthCalibrationPx > 0) {
-                                    // 캘리브레이션 완료: mm로 변환
-                                    // actualMm = measuredPx * (calibrationMm / calibrationPx)
-                                    double actualMm = lengthPx * (pattern->stripLengthConversionMm / pattern->stripLengthCalibrationPx);
-                                    lengthText = QString("%1 mm (%2 px)")
-                                        .arg(actualMm, 0, 'f', 3)
-                                        .arg(lengthPx, 0, 'f', 1);
-                                } else {
-                                    // 캘리브레이션 안된 경우 픽셀만 표시
-                                    lengthText = QString("%1 px").arg(lengthPx, 0, 'f', 1);
-                                }
-                                
-                                // 선의 중간 지점에 텍스트 표시 (INS 각도 적용)
+                            if (pattern && pattern->stripLengthCalibrated && pattern->stripLengthCalibrationPx > 0) {
+                                // mm를 픽셀로 역변환
+                                double mmToPixel = pattern->stripLengthCalibrationPx / pattern->stripLengthConversionMm;
+                                double lengthPx = lengthMm * mmToPixel;
+                                lengthText = QString("%1 mm (%2 px)")
+                                    .arg(lengthMm, 0, 'f', 2)
+                                    .arg(lengthPx, 0, 'f', 1);
+                            } else {
+                                // 캘리브레이션 안된 경우 mm만 표시
+                                lengthText = QString("%1 mm").arg(lengthMm, 0, 'f', 2);
+                            }                                // 선의 중간 지점에 텍스트 표시 (INS 각도 적용)
                                 QPointF midPoint = (avgLineCenter + endVP) / 2.0;
                                 
                                 // INS 각도 적용 (패턴 정보에서)
@@ -2533,7 +2541,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                 if (patternInfo) {
                                     painter.save();
                                     
-                                    // PASS/NG 판정 (배경색 결정을 위해 먼저 계산)
+                                    // PASS/NG 판정
                                     bool lengthPassed = result.stripLengthResults.value(patternId, false);
                                     
                                     // midPoint를 중심으로 회전
@@ -2543,32 +2551,33 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                     QFont lengthFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
                                     painter.setFont(lengthFont);
                                     QFontMetrics fm(lengthFont);
-                                    QRect textBounds = fm.boundingRect(lengthText);
                                     
-                                    // 텍스트 배경 (PASS/NG에 따라 색상 변경)
-                                    QRect textRect(-textBounds.width()/2 - 5,
-                                                  -textBounds.height()/2 - 3,
-                                                  textBounds.width() + 10,
-                                                  textBounds.height() + 6);
-                                    painter.fillRect(textRect, QColor(0, 0, 0, 180));
+                                    // "LEN: " 접두어 추가
+                                    QString lengthLabelText = QString("LEN: %1").arg(lengthText);
+                                    int lengthTextW = fm.horizontalAdvance(lengthLabelText);
+                                    int lengthTextH = fm.height();
                                     
-                                    // 텍스트
-                                    QColor lengthTextColor = lengthPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
-                                    painter.setPen(lengthTextColor);
-                                    painter.drawText(textRect, Qt::AlignCenter, lengthText);
+                                    // 길이 값 표시 (아래쪽)
+                                    QRect lengthRect(-lengthTextW/2 - 5,
+                                                    5,
+                                                    lengthTextW + 10,
+                                                    lengthTextH + 6);
+                                    painter.fillRect(lengthRect, QBrush(QColor(0, 0, 0, 180)));
+                                    painter.setPen(QColor(255, 255, 255));  // 흰색
+                                    painter.drawText(lengthRect, Qt::AlignCenter, lengthLabelText);
                                     
-                                    // PASS/NG 표시 (이름표 위)
+                                    // PASS/NG 표시 (위쪽)
                                     QString lengthPassText = lengthPassed ? "PASS" : "NG";
                                     QColor lengthPassColor = lengthPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
                                     int passTextW = fm.horizontalAdvance(lengthPassText);
                                     
-                                    QRect lengthPassRect(-passTextW/2 - 5,
-                                                        -textBounds.height()/2 - textBounds.height() - 6,
-                                                        passTextW + 10,
-                                                        textBounds.height() + 6);
-                                    painter.fillRect(lengthPassRect, QBrush(QColor(0, 0, 0, 180)));
+                                    QRect passRect(-passTextW/2 - 5,
+                                                  -lengthTextH - 5,
+                                                  passTextW + 10,
+                                                  lengthTextH + 6);
+                                    painter.fillRect(passRect, QBrush(QColor(0, 0, 0, 180)));
                                     painter.setPen(lengthPassColor);
-                                    painter.drawText(lengthPassRect, Qt::AlignCenter, lengthPassText);
+                                    painter.drawText(passRect, Qt::AlignCenter, lengthPassText);
                                     
                                     painter.restore();
                                 }
