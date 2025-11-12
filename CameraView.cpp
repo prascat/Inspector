@@ -1723,11 +1723,9 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         painter.translate(-centerViewport);
         
         QRectF labelRect(matchRect.center().x() - textW/2, matchRect.top() - textH - 2, textW + 6, textH);
-        QColor bgColor = passed ? UIColors::FIDUCIAL_COLOR : QColor(200, 0, 0);
-        bgColor.setAlpha(180);
-        painter.fillRect(labelRect, bgColor);
+        painter.fillRect(labelRect, QBrush(QColor(0, 0, 0, 180)));
         
-        painter.setPen(UIColors::getTextColor(bgColor));
+        painter.setPen(UIColors::FIDUCIAL_COLOR);
         painter.drawText(labelRect, Qt::AlignCenter, label);
         
         painter.restore();
@@ -1820,11 +1818,9 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             painter.translate(-centerViewport);
             
             QRectF labelRect(inspRect.center().x() - textW/2, inspRect.top() - textH - 2, textW + 6, textH);
-            QColor bgColor = passed ? UIColors::INSPECTION_COLOR : QColor(200, 0, 0);
-            bgColor.setAlpha(180);
-            painter.fillRect(labelRect, bgColor);
+            painter.fillRect(labelRect, QBrush(QColor(0, 0, 0, 180)));
             
-            painter.setPen(UIColors::getTextColor(bgColor));
+            painter.setPen(UIColors::INSPECTION_COLOR);
             painter.drawText(labelRect, Qt::AlignCenter, label);
             
             painter.restore();
@@ -2004,10 +2000,19 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         double minMm = rearMeasuredMin * pixelToMm;
                         double maxMm = rearMeasuredMax * pixelToMm;
                         double avgMm = rearMeasuredAvg * pixelToMm;
-                        rearLabel = QString("REAR Min:%1 Max:%2 Avg:%3mm")
-                            .arg(minMm, 0, 'f', 2)
-                            .arg(maxMm, 0, 'f', 2)
-                            .arg(avgMm, 0, 'f', 2);
+                        
+                        // 1mm 이하는 μm 단위로 표시
+                        if (minMm < 1.0 && maxMm < 1.0 && avgMm < 1.0) {
+                            rearLabel = QString("REAR Min:%1 Max:%2 Avg:%3μm")
+                                .arg(minMm * 1000, 0, 'f', 0)
+                                .arg(maxMm * 1000, 0, 'f', 0)
+                                .arg(avgMm * 1000, 0, 'f', 0);
+                        } else {
+                            rearLabel = QString("REAR Min:%1 Max:%2 Avg:%3mm")
+                                .arg(minMm, 0, 'f', 2)
+                                .arg(maxMm, 0, 'f', 2)
+                                .arg(avgMm, 0, 'f', 2);
+                        }
                     } else {
                         // calibration 없으면 픽셀값 표시
                         rearLabel = QString("REAR Min:%1 Max:%2 Avg:%3px")
@@ -2016,21 +2021,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                             .arg(rearMeasuredAvg);
                     }
                     
-                    QFont boxFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
-                    painter.setFont(boxFont);
-                    QFontMetrics boxFm(boxFont);
-                    int rearTextW = boxFm.horizontalAdvance(rearLabel);
-                    int rearTextH = boxFm.height();
-                    
-                    QRect rearTextRect(-rearTextW/2 - 2, -boxHeight/2 - rearTextH - 2, rearTextW + 4, rearTextH);
-                    QColor rearBgColor = QColor(0, 191, 255);
-                    rearBgColor.setAlpha(180);
-                    painter.fillRect(rearTextRect, QBrush(rearBgColor));
-                    painter.setPen(Qt::black);
-                    painter.drawText(rearTextRect, Qt::AlignCenter, rearLabel);
-                    
-                    // PASS/NG 표시 (이름표 위)
-                    // 최소, 최대 모두 범위 내에 있어야 통과
+                    // PASS/NG 판정 (배경색 결정을 위해 먼저 계산)
                     bool rearPassed = true;
                     if (patternInfo->stripLengthCalibrationPx > 0) {
                         double pixelToMm = patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx;
@@ -2040,6 +2031,19 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                      maxMm <= patternInfo->stripRearThicknessMax);
                     }
                     
+                    QFont boxFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
+                    painter.setFont(boxFont);
+                    QFontMetrics boxFm(boxFont);
+                    int rearTextW = boxFm.horizontalAdvance(rearLabel);
+                    int rearTextH = boxFm.height();
+                    
+                    QRect rearTextRect(-rearTextW/2 - 2, -boxHeight/2 - rearTextH - 2, rearTextW + 4, rearTextH);
+                    painter.fillRect(rearTextRect, QBrush(QColor(0, 0, 0, 180)));
+                    QColor rearTextColor = rearPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+                    painter.setPen(rearTextColor);
+                    painter.drawText(rearTextRect, Qt::AlignCenter, rearLabel);
+                    
+                    // PASS/NG 표시 (이름표 위)
                     QString rearPassText = rearPassed ? "PASS" : "NG";
                     QColor rearPassColor = rearPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
                     int passTextW = boxFm.horizontalAdvance(rearPassText);
@@ -2135,10 +2139,19 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         double minMm = frontMeasuredMin * pixelToMm;
                         double maxMm = frontMeasuredMax * pixelToMm;
                         double avgMm = frontMeasuredAvg * pixelToMm;
-                        frontLabel = QString("FRONT Min:%1 Max:%2 Avg:%3mm")
-                            .arg(minMm, 0, 'f', 2)
-                            .arg(maxMm, 0, 'f', 2)
-                            .arg(avgMm, 0, 'f', 2);
+                        
+                        // 1mm 이하는 μm 단위로 표시
+                        if (minMm < 1.0 && maxMm < 1.0 && avgMm < 1.0) {
+                            frontLabel = QString("FRONT Min:%1 Max:%2 Avg:%3μm")
+                                .arg(minMm * 1000, 0, 'f', 0)
+                                .arg(maxMm * 1000, 0, 'f', 0)
+                                .arg(avgMm * 1000, 0, 'f', 0);
+                        } else {
+                            frontLabel = QString("FRONT Min:%1 Max:%2 Avg:%3mm")
+                                .arg(minMm, 0, 'f', 2)
+                                .arg(maxMm, 0, 'f', 2)
+                                .arg(avgMm, 0, 'f', 2);
+                        }
                     } else {
                         // calibration 없으면 픽셀값 표시
                         frontLabel = QString("FRONT Min:%1 Max:%2 Avg:%3px")
@@ -2147,21 +2160,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                             .arg(frontMeasuredAvg);
                     }
                     
-                    QFont boxFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
-                    painter.setFont(boxFont);
-                    QFontMetrics boxFm(boxFont);
-                    int frontTextW = boxFm.horizontalAdvance(frontLabel);
-                    int frontTextH = boxFm.height();
-                    
-                    QRect frontTextRect(-frontTextW/2 - 2, -boxHeight/2 - frontTextH - 2, frontTextW + 4, frontTextH);
-                    QColor frontBgColor = Qt::cyan;
-                    frontBgColor.setAlpha(180);
-                    painter.fillRect(frontTextRect, QBrush(frontBgColor));
-                    painter.setPen(Qt::black);
-                    painter.drawText(frontTextRect, Qt::AlignCenter, frontLabel);
-                    
-                    // PASS/NG 표시 (이름표 위)
-                    // 최소, 최대 모두 범위 내에 있어야 통과
+                    // PASS/NG 판정 (배경색 결정을 위해 먼저 계산)
                     bool frontPassed = true;
                     if (patternInfo->stripLengthCalibrationPx > 0) {
                         double pixelToMm = patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx;
@@ -2171,6 +2170,19 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                       maxMm <= patternInfo->stripThicknessMax);
                     }
                     
+                    QFont boxFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
+                    painter.setFont(boxFont);
+                    QFontMetrics boxFm(boxFont);
+                    int frontTextW = boxFm.horizontalAdvance(frontLabel);
+                    int frontTextH = boxFm.height();
+                    
+                    QRect frontTextRect(-frontTextW/2 - 2, -boxHeight/2 - frontTextH - 2, frontTextW + 4, frontTextH);
+                    painter.fillRect(frontTextRect, QBrush(QColor(0, 0, 0, 180)));
+                    QColor frontTextColor = frontPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+                    painter.setPen(frontTextColor);
+                    painter.drawText(frontTextRect, Qt::AlignCenter, frontLabel);
+                    
+                    // PASS/NG 표시 (이름표 위)
                     QString frontPassText = frontPassed ? "PASS" : "NG";
                     QColor frontPassColor = frontPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
                     int passTextW = boxFm.horizontalAdvance(frontPassText);
@@ -2317,9 +2329,17 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 double edgeAvgDev = result.edgeAvgDeviation.value(patternId, 0.0);
                 bool edgePassed = result.edgeResults.value(patternId, false);
                 
-                QString edgeLabel = QString("EDGE 최대:%1 평균:%2 mm")
-                    .arg(edgeMaxDev, 0, 'f', 4)
-                    .arg(edgeAvgDev, 0, 'f', 4);
+                QString edgeLabel;
+                // 1mm 이하는 μm 단위로 표시
+                if (edgeMaxDev < 1.0 && edgeAvgDev < 1.0) {
+                    edgeLabel = QString("EDGE 최대:%1 평균:%2μm")
+                        .arg(edgeMaxDev * 1000, 0, 'f', 0)
+                        .arg(edgeAvgDev * 1000, 0, 'f', 0);
+                } else {
+                    edgeLabel = QString("EDGE 최대:%1 평균:%2mm")
+                        .arg(edgeMaxDev, 0, 'f', 4)
+                        .arg(edgeAvgDev, 0, 'f', 4);
+                }
                 
                 QFont boxFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
                 painter.setFont(boxFont);
@@ -2327,13 +2347,13 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 int edgeTextW = boxFm.horizontalAdvance(edgeLabel);
                 int edgeTextH = boxFm.height();
                 
-                // 검은 배경에 텍스트 표시 (라벨)
+                // PASS/NG에 따라 배경색 변경
                 QRectF edgeLabelRect(edgeRotatedCenter.x() - edgeTextW/2 - 3,
                                     edgeRotatedCenter.y() - edgeBoxHeight/2 - edgeTextH - 5,
                                     edgeTextW + 6, edgeTextH);
                 painter.fillRect(edgeLabelRect, QBrush(QColor(0, 0, 0, 180)));
-                QColor edgeLabelColor = edgePassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
-                painter.setPen(edgeLabelColor);
+                QColor edgeTextColor = edgePassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+                painter.setPen(edgeTextColor);
                 painter.drawText(edgeLabelRect, Qt::AlignCenter, edgeLabel);
                 
                 // PASS/NG 표시 (이름표 위)
@@ -2513,6 +2533,9 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                 if (patternInfo) {
                                     painter.save();
                                     
+                                    // PASS/NG 판정 (배경색 결정을 위해 먼저 계산)
+                                    bool lengthPassed = result.stripLengthResults.value(patternId, false);
+                                    
                                     // midPoint를 중심으로 회전
                                     painter.translate(midPoint);
                                     painter.rotate(patternInfo->angle);
@@ -2522,7 +2545,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                     QFontMetrics fm(lengthFont);
                                     QRect textBounds = fm.boundingRect(lengthText);
                                     
-                                    // 텍스트 배경 (반투명 검은색) - 중심 기준
+                                    // 텍스트 배경 (PASS/NG에 따라 색상 변경)
                                     QRect textRect(-textBounds.width()/2 - 5,
                                                   -textBounds.height()/2 - 3,
                                                   textBounds.width() + 10,
@@ -2530,11 +2553,11 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                     painter.fillRect(textRect, QColor(0, 0, 0, 180));
                                     
                                     // 텍스트
-                                    painter.setPen(QColor(255, 0, 255));
+                                    QColor lengthTextColor = lengthPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+                                    painter.setPen(lengthTextColor);
                                     painter.drawText(textRect, Qt::AlignCenter, lengthText);
                                     
                                     // PASS/NG 표시 (이름표 위)
-                                    bool lengthPassed = result.stripLengthResults.value(patternId, false);
                                     QString lengthPassText = lengthPassed ? "PASS" : "NG";
                                     QColor lengthPassColor = lengthPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
                                     int passTextW = fm.horizontalAdvance(lengthPassText);
@@ -2789,8 +2812,8 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         startTextWidth + 4,
                         startTextHeight
                     );
-                    painter.fillRect(startTextRect, Qt::yellow);
-                    painter.setPen(Qt::black);
+                    painter.fillRect(startTextRect, QBrush(QColor(0, 0, 0, 180)));
+                    painter.setPen(Qt::yellow);
                     painter.drawText(startTextRect, Qt::AlignCenter, startText);
                     
                     // 끝점 텍스트
@@ -2804,8 +2827,8 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         endTextWidth + 4,
                         endTextHeight
                     );
-                    painter.fillRect(endTextRect, Qt::yellow);
-                    painter.setPen(Qt::black);
+                    painter.fillRect(endTextRect, QBrush(QColor(0, 0, 0, 180)));
+                    painter.setPen(Qt::yellow);
                     painter.drawText(endTextRect, Qt::AlignCenter, endText);
                 }
             }
@@ -2876,10 +2899,8 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         int frontTextH = frontFm.height();
                         
                         QRect frontTextRect(-frontTextW/2 - 2, -boxHeight/2 - frontTextH - 2, frontTextW + 4, frontTextH);
-                        QColor frontBgColor = Qt::cyan;
-                        frontBgColor.setAlpha(180);
-                        painter.fillRect(frontTextRect, frontBgColor);
-                        painter.setPen(Qt::black);
+                        painter.fillRect(frontTextRect, QBrush(QColor(0, 0, 0, 180)));
+                        painter.setPen(Qt::cyan);
                         painter.drawText(frontTextRect, Qt::AlignCenter, frontLabel);
                         
                         // PASS/NG 표시 (티칭 모드에서는 표시 안함)
@@ -2956,10 +2977,8 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         int rearTextH = rearFm.height();
                         
                         QRect rearTextRect(-rearTextW/2 - 2, -boxHeight/2 - rearTextH - 2, rearTextW + 4, rearTextH);
-                        QColor rearBgColor = QColor(0, 191, 255);
-                        rearBgColor.setAlpha(180);
-                        painter.fillRect(rearTextRect, rearBgColor);
-                        painter.setPen(Qt::black);
+                        painter.fillRect(rearTextRect, QBrush(QColor(0, 0, 0, 180)));
+                        painter.setPen(QColor(0, 191, 255));
                         painter.drawText(rearTextRect, Qt::AlignCenter, rearLabel);
                         
                         // PASS/NG 표시 (티칭 모드에서는 표시 안함)
@@ -3041,10 +3060,8 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         int edgeTextH = edgeFm.height();
                         
                         QRect edgeTextRect(-edgeTextW/2 - 2, -boxHeight/2 - edgeTextH - 2, edgeTextW + 4, edgeTextH);
-                        QColor edgeBgColor = QColor(255, 128, 0);
-                        edgeBgColor.setAlpha(180);
-                        painter.fillRect(edgeTextRect, edgeBgColor);
-                        painter.setPen(Qt::black);
+                        painter.fillRect(edgeTextRect, QBrush(QColor(0, 0, 0, 180)));
+                        painter.setPen(QColor(255, 128, 0));
                         painter.drawText(edgeTextRect, Qt::AlignCenter, edgeLabel);
                         
                         // PASS/NG 표시 (티칭 모드에서는 표시 안함)
