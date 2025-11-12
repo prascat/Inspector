@@ -1642,7 +1642,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         painter.restore();
         
         // 패턴 이름 (회전 적용)
-        QFont font("Arial", 12, QFont::Bold);
+        QFont font(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
         painter.setFont(font);
         QFontMetrics fm(font);
         int textWidth = fm.horizontalAdvance(pattern.name);
@@ -1711,7 +1711,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         
         // FID 라벨
         QString label = QString("%1: %2").arg(patternInfo->name).arg(score, 0, 'f', 2);
-        QFont font("Arial", 11, QFont::Bold);
+        QFont font(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
         painter.setFont(font);
         QFontMetrics fm(font);
         int textW = fm.horizontalAdvance(label);
@@ -1808,7 +1808,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             
             // INS 라벨
             QString label = QString("%1: %2").arg(patternInfo->name).arg(score, 0, 'f', 2);
-            QFont font("Arial", 11, QFont::Bold);
+            QFont font(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
             painter.setFont(font);
             QFontMetrics fm(font);
             int textW = fm.horizontalAdvance(label);
@@ -2016,7 +2016,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                             .arg(rearMeasuredAvg);
                     }
                     
-                    QFont boxFont("Arial", 8, QFont::Bold);
+                    QFont boxFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
                     painter.setFont(boxFont);
                     QFontMetrics boxFm(boxFont);
                     int rearTextW = boxFm.horizontalAdvance(rearLabel);
@@ -2125,7 +2125,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                             .arg(frontMeasuredAvg);
                     }
                     
-                    QFont boxFont("Arial", 8, QFont::Bold);
+                    QFont boxFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
                     painter.setFont(boxFont);
                     QFontMetrics boxFm(boxFont);
                     int frontTextW = boxFm.horizontalAdvance(frontLabel);
@@ -2164,7 +2164,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     }
                     
                     // 각 포인트에 번호 표시
-                    QFont pointFont("Arial", 9, QFont::Bold);
+                    QFont pointFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
                     painter.setFont(pointFont);
                     
                     QStringList pointLabels = {"P1", "P2", "P3", "P4"};
@@ -2277,7 +2277,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     .arg(edgeMaxDev, 0, 'f', 4)
                     .arg(edgeAvgDev, 0, 'f', 4);
                 
-                QFont boxFont("Arial", 9, QFont::Bold);
+                QFont boxFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
                 painter.setFont(boxFont);
                 QFontMetrics boxFm(boxFont);
                 int edgeTextW = boxFm.horizontalAdvance(edgeLabel);
@@ -2461,7 +2461,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                     painter.translate(midPoint);
                                     painter.rotate(patternInfo->angle);
                                     
-                                    QFont lengthFont("Arial", 10, QFont::Bold);
+                                    QFont lengthFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
                                     painter.setFont(lengthFont);
                                     QFontMetrics fm(lengthFont);
                                     QRect textBounds = fm.boundingRect(lengthText);
@@ -2542,7 +2542,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
             painter.restore();
             
             // 패턴 이름 (회전 적용)
-            QFont font("Arial", 12, QFont::Bold);
+            QFont font(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
             painter.setFont(font);
             QFontMetrics fm(font);
             int textWidth = fm.horizontalAdvance(pattern.name);
@@ -2593,7 +2593,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
             painter.restore();
             
             // 패턴 이름 (회전 적용)
-            QFont font("Arial", 12, QFont::Bold);
+            QFont font(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
             painter.setFont(font);
             QFontMetrics fm(font);
             int textWidth = fm.horizontalAdvance(pattern.name);
@@ -2704,7 +2704,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                     painter.drawLine(posEndTop, posEndBottom);
                     
                     // 범위 텍스트 표시
-                    QFont rangeFont("Arial", 10, QFont::Bold);
+                    QFont rangeFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
                     painter.setFont(rangeFont);
                     QFontMetrics rangeFm(rangeFont);
                     
@@ -2799,7 +2799,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         QString frontLabel = QString("FRONT:%1~%2mm")
                                             .arg(pattern.stripThicknessMin)
                                             .arg(pattern.stripThicknessMax);
-                        QFont frontFont("Arial", 9, QFont::Bold);
+                        QFont frontFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
                         painter.setFont(frontFont);
                         QFontMetrics frontFm(frontFont);
                         int frontTextW = frontFm.horizontalAdvance(frontLabel);
@@ -2874,7 +2874,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         QString rearLabel = QString("REAR:%1~%2mm")
                                           .arg(pattern.stripRearThicknessMin)
                                           .arg(pattern.stripRearThicknessMax);
-                        QFont rearFont("Arial", 9, QFont::Bold);
+                        QFont rearFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
                         painter.setFont(rearFont);
                         QFontMetrics rearFm(rearFont);
                         int rearTextW = rearFm.horizontalAdvance(rearLabel);
@@ -2955,7 +2955,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         painter.drawRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
                         
                         QString edgeLabel = "EDGE";
-                        QFont edgeFont("Arial", 9, QFont::Bold);
+                        QFont edgeFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
                         painter.setFont(edgeFont);
                         QFontMetrics edgeFm(edgeFont);
                         int edgeTextW = edgeFm.horizontalAdvance(edgeLabel);

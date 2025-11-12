@@ -29,6 +29,16 @@
 #define CONFIG_FILE "config.xml"
 #define MAX_CAMERAS 4                   // 최대 카메라 연결수
 
+// 이름표 폰트 설정 (패턴 및 검사박스 이름표에 공통 사용)
+#define NAMEPLATE_FONT_FAMILY "Arial"
+#define NAMEPLATE_FONT_SIZE 12
+#define NAMEPLATE_FONT_WEIGHT QFont::Bold
+
+// 라벨 폰트 설정 (모든 이름표에 공통 사용)
+#define LABEL_FONT_FAMILY "Arial"
+#define LABEL_FONT_SIZE 12
+#define LABEL_FONT_WEIGHT QFont::Bold
+
 struct InspectionResult {
     bool isPassed = false;
     QMap<QUuid, bool> fidResults;          // FID 검사 결과 (패턴 ID -> 통과 여부)
