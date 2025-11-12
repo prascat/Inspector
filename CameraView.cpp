@@ -1806,8 +1806,8 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             
             painter.restore();
             
-            // INS 라벨
-            QString label = QString("%1: %2").arg(patternInfo->name).arg(score, 0, 'f', 2);
+            // INS 라벨 (이름만 표시)
+            QString label = patternInfo->name;
             QFont font(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
             painter.setFont(font);
             QFontMetrics fm(font);
@@ -2020,12 +2020,34 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     painter.setFont(boxFont);
                     QFontMetrics boxFm(boxFont);
                     int rearTextW = boxFm.horizontalAdvance(rearLabel);
-                    int rearTextH = boxFm.height();  // 1줄
+                    int rearTextH = boxFm.height();
                     
                     QRect rearTextRect(-rearTextW/2 - 2, -boxHeight/2 - rearTextH - 2, rearTextW + 4, rearTextH);
-                    painter.fillRect(rearTextRect, QBrush(QColor(0, 191, 255)));
+                    QColor rearBgColor = QColor(0, 191, 255);
+                    rearBgColor.setAlpha(180);
+                    painter.fillRect(rearTextRect, QBrush(rearBgColor));
                     painter.setPen(Qt::black);
                     painter.drawText(rearTextRect, Qt::AlignCenter, rearLabel);
+                    
+                    // PASS/NG 표시 (이름표 위)
+                    // 최소, 최대 모두 범위 내에 있어야 통과
+                    bool rearPassed = true;
+                    if (patternInfo->stripLengthCalibrationPx > 0) {
+                        double pixelToMm = patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx;
+                        double minMm = rearMeasuredMin * pixelToMm;
+                        double maxMm = rearMeasuredMax * pixelToMm;
+                        rearPassed = (minMm >= patternInfo->stripRearThicknessMin && 
+                                     maxMm <= patternInfo->stripRearThicknessMax);
+                    }
+                    
+                    QString rearPassText = rearPassed ? "PASS" : "NG";
+                    QColor rearPassColor = rearPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+                    int passTextW = boxFm.horizontalAdvance(rearPassText);
+                    
+                    QRect rearPassRect(-passTextW/2 - 2, -boxHeight/2 - rearTextH*2 - 4, passTextW + 4, rearTextH);
+                    painter.fillRect(rearPassRect, QBrush(QColor(0, 0, 0, 180)));
+                    painter.setPen(rearPassColor);
+                    painter.drawText(rearPassRect, Qt::AlignCenter, rearPassText);
                     
                     painter.restore();
                 }
@@ -2129,12 +2151,34 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     painter.setFont(boxFont);
                     QFontMetrics boxFm(boxFont);
                     int frontTextW = boxFm.horizontalAdvance(frontLabel);
-                    int frontTextH = boxFm.height();  // 1줄
+                    int frontTextH = boxFm.height();
                     
                     QRect frontTextRect(-frontTextW/2 - 2, -boxHeight/2 - frontTextH - 2, frontTextW + 4, frontTextH);
-                    painter.fillRect(frontTextRect, QBrush(Qt::cyan));
+                    QColor frontBgColor = Qt::cyan;
+                    frontBgColor.setAlpha(180);
+                    painter.fillRect(frontTextRect, QBrush(frontBgColor));
                     painter.setPen(Qt::black);
                     painter.drawText(frontTextRect, Qt::AlignCenter, frontLabel);
+                    
+                    // PASS/NG 표시 (이름표 위)
+                    // 최소, 최대 모두 범위 내에 있어야 통과
+                    bool frontPassed = true;
+                    if (patternInfo->stripLengthCalibrationPx > 0) {
+                        double pixelToMm = patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx;
+                        double minMm = frontMeasuredMin * pixelToMm;
+                        double maxMm = frontMeasuredMax * pixelToMm;
+                        frontPassed = (minMm >= patternInfo->stripThicknessMin && 
+                                      maxMm <= patternInfo->stripThicknessMax);
+                    }
+                    
+                    QString frontPassText = frontPassed ? "PASS" : "NG";
+                    QColor frontPassColor = frontPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+                    int passTextW = boxFm.horizontalAdvance(frontPassText);
+                    
+                    QRect frontPassRect(-passTextW/2 - 2, -boxHeight/2 - frontTextH*2 - 4, passTextW + 4, frontTextH);
+                    painter.fillRect(frontPassRect, QBrush(QColor(0, 0, 0, 180)));
+                    painter.setPen(frontPassColor);
+                    painter.drawText(frontPassRect, Qt::AlignCenter, frontPassText);
                     
                     painter.restore();
                 }
@@ -2189,7 +2233,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         QRectF labelRect(vpPoints[i].x() + 8,
                                        vpPoints[i].y() - textH/2,
                                        textW + 4, textH);
-                        painter.fillRect(labelRect, QBrush(QColor(0, 0, 0, 200)));
+                        painter.fillRect(labelRect, QBrush(QColor(0, 0, 0, 180)));
                         painter.setPen(pointColors[i]);
                         painter.drawText(labelRect, Qt::AlignCenter, pointLabels[i]);
                     }
@@ -2291,6 +2335,18 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 QColor edgeLabelColor = edgePassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
                 painter.setPen(edgeLabelColor);
                 painter.drawText(edgeLabelRect, Qt::AlignCenter, edgeLabel);
+                
+                // PASS/NG 표시 (이름표 위)
+                QString edgePassText = edgePassed ? "PASS" : "NG";
+                QColor edgePassColor = edgePassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+                int passTextW = boxFm.horizontalAdvance(edgePassText);
+                
+                QRectF edgePassRect(edgeRotatedCenter.x() - passTextW/2 - 3,
+                                   edgeRotatedCenter.y() - edgeBoxHeight/2 - edgeTextH*2 - 7,
+                                   passTextW + 6, edgeTextH);
+                painter.fillRect(edgePassRect, QBrush(QColor(0, 0, 0, 180)));
+                painter.setPen(edgePassColor);
+                painter.drawText(edgePassRect, Qt::AlignCenter, edgePassText);
                 
                 painter.restore();
             }
@@ -2476,6 +2532,20 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                     // 텍스트
                                     painter.setPen(QColor(255, 0, 255));
                                     painter.drawText(textRect, Qt::AlignCenter, lengthText);
+                                    
+                                    // PASS/NG 표시 (이름표 위)
+                                    bool lengthPassed = result.stripLengthResults.value(patternId, false);
+                                    QString lengthPassText = lengthPassed ? "PASS" : "NG";
+                                    QColor lengthPassColor = lengthPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+                                    int passTextW = fm.horizontalAdvance(lengthPassText);
+                                    
+                                    QRect lengthPassRect(-passTextW/2 - 5,
+                                                        -textBounds.height()/2 - textBounds.height() - 6,
+                                                        passTextW + 10,
+                                                        textBounds.height() + 6);
+                                    painter.fillRect(lengthPassRect, QBrush(QColor(0, 0, 0, 180)));
+                                    painter.setPen(lengthPassColor);
+                                    painter.drawText(lengthPassRect, Qt::AlignCenter, lengthPassText);
                                     
                                     painter.restore();
                                 }
@@ -2806,9 +2876,14 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         int frontTextH = frontFm.height();
                         
                         QRect frontTextRect(-frontTextW/2 - 2, -boxHeight/2 - frontTextH - 2, frontTextW + 4, frontTextH);
-                        painter.fillRect(frontTextRect, Qt::cyan);
+                        QColor frontBgColor = Qt::cyan;
+                        frontBgColor.setAlpha(180);
+                        painter.fillRect(frontTextRect, frontBgColor);
                         painter.setPen(Qt::black);
                         painter.drawText(frontTextRect, Qt::AlignCenter, frontLabel);
+                        
+                        // PASS/NG 표시 (티칭 모드에서는 표시 안함)
+                        // 티칭 모드는 검사 결과가 없으므로 생략
                         
                         painter.restore();
                     }
@@ -2881,9 +2956,13 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         int rearTextH = rearFm.height();
                         
                         QRect rearTextRect(-rearTextW/2 - 2, -boxHeight/2 - rearTextH - 2, rearTextW + 4, rearTextH);
-                        painter.fillRect(rearTextRect, QColor(0, 191, 255));
+                        QColor rearBgColor = QColor(0, 191, 255);
+                        rearBgColor.setAlpha(180);
+                        painter.fillRect(rearTextRect, rearBgColor);
                         painter.setPen(Qt::black);
                         painter.drawText(rearTextRect, Qt::AlignCenter, rearLabel);
+                        
+                        // PASS/NG 표시 (티칭 모드에서는 표시 안함)
                         
                         painter.restore();
                     }
@@ -2962,9 +3041,13 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         int edgeTextH = edgeFm.height();
                         
                         QRect edgeTextRect(-edgeTextW/2 - 2, -boxHeight/2 - edgeTextH - 2, edgeTextW + 4, edgeTextH);
-                        painter.fillRect(edgeTextRect, QColor(255, 128, 0));
+                        QColor edgeBgColor = QColor(255, 128, 0);
+                        edgeBgColor.setAlpha(180);
+                        painter.fillRect(edgeTextRect, edgeBgColor);
                         painter.setPen(Qt::black);
                         painter.drawText(edgeTextRect, Qt::AlignCenter, edgeLabel);
+                        
+                        // PASS/NG 표시 (티칭 모드에서는 표시 안함)
                         
                         painter.restore();
                     }
@@ -3026,7 +3109,7 @@ void CameraView::paintEvent(QPaintEvent *event) {
         int textHeight = distFm.height();
         
         QRectF textRect(midPoint.x() - textWidth/2 - 4, midPoint.y() - textHeight/2 - 2, textWidth + 8, textHeight + 4);
-        painter.fillRect(textRect, QColor(0, 0, 0, 200));
+        painter.fillRect(textRect, QColor(0, 0, 0, 180));
         painter.setPen(Qt::yellow);
         painter.drawText(textRect, Qt::AlignCenter, distanceText);
         

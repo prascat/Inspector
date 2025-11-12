@@ -776,6 +776,12 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("stripLengthCalibrationPx", QString::number(pattern.stripLengthCalibrationPx, 'f', 2));
     xml.writeAttribute("stripLengthCalibrated", pattern.stripLengthCalibrated ? "true" : "false");
     
+    // STRIP 두께 검사 관련 속성 저장
+    xml.writeAttribute("stripThicknessMin", QString::number(pattern.stripThicknessMin, 'f', 2));
+    xml.writeAttribute("stripThicknessMax", QString::number(pattern.stripThicknessMax, 'f', 2));
+    xml.writeAttribute("stripRearThicknessMin", QString::number(pattern.stripRearThicknessMin, 'f', 2));
+    xml.writeAttribute("stripRearThicknessMax", QString::number(pattern.stripRearThicknessMax, 'f', 2));
+    
     if (!pattern.templateImage.isNull()) {
         QByteArray ba;
         QBuffer buffer(&ba);
@@ -1396,6 +1402,27 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     if (!stripLengthCalibratedStr.isEmpty()) {
         pattern.stripLengthCalibrated = (stripLengthCalibratedStr == "true");
     } // 비어있으면 CommonDefs.h의 기본값(false) 사용
+    
+    // STRIP 두께 검사 관련 속성 읽기
+    QString stripThicknessMinStr = xml.attributes().value("stripThicknessMin").toString();
+    if (!stripThicknessMinStr.isEmpty()) {
+        pattern.stripThicknessMin = stripThicknessMinStr.toDouble();
+    }
+    
+    QString stripThicknessMaxStr = xml.attributes().value("stripThicknessMax").toString();
+    if (!stripThicknessMaxStr.isEmpty()) {
+        pattern.stripThicknessMax = stripThicknessMaxStr.toDouble();
+    }
+    
+    QString stripRearThicknessMinStr = xml.attributes().value("stripRearThicknessMin").toString();
+    if (!stripRearThicknessMinStr.isEmpty()) {
+        pattern.stripRearThicknessMin = stripRearThicknessMinStr.toDouble();
+    }
+    
+    QString stripRearThicknessMaxStr = xml.attributes().value("stripRearThicknessMax").toString();
+    if (!stripRearThicknessMaxStr.isEmpty()) {
+        pattern.stripRearThicknessMax = stripRearThicknessMaxStr.toDouble();
+    }
     
     QString imageStr = xml.attributes().value("templateImage").toString();
     qDebug() << QString("INS 패턴 '%1' templateImage 속성 길이: %2").arg(pattern.name).arg(imageStr.length());

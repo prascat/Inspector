@@ -2766,7 +2766,62 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     result.stripRearMeasuredThicknessAvg[pattern.id] = rearMeasuredAvgThickness;
     result.stripRearThicknessMeasured[pattern.id] = (rearMeasuredAvgThickness > 0);
     
-    if (isPassed) {
+    // 각 검사 항목별 PASS/FAIL 판정
+    bool frontThicknessPassed = true;
+    bool rearThicknessPassed = true;
+    bool edgeTestPassed = edgePassed;  // EDGE 검사 결과 사용
+    
+    // FRONT 두께 검사 판정 (측정값이 있고 calibration이 있는 경우)
+    // 최소, 최대, 평균 모두 설정 범위 내에 있어야 통과
+    if (measuredAvgThickness > 0 && pattern.stripLengthCalibrationPx > 0) {
+        double pixelToMm = pattern.stripLengthConversionMm / pattern.stripLengthCalibrationPx;
+        double minMm = measuredMinThickness * pixelToMm;
+        double maxMm = measuredMaxThickness * pixelToMm;
+        double avgMm = measuredAvgThickness * pixelToMm;
+        
+        frontThicknessPassed = (minMm >= pattern.stripThicknessMin && 
+                               maxMm <= pattern.stripThicknessMax);
+        
+        qDebug() << "[FRONT 두께 판정]";
+        qDebug() << "  측정값: Min=" << minMm << "mm, Max=" << maxMm << "mm, Avg=" << avgMm << "mm";
+        qDebug() << "  설정범위:" << pattern.stripThicknessMin << "~" << pattern.stripThicknessMax << "mm";
+        qDebug() << "  판정:" << (frontThicknessPassed ? "PASS" : "FAIL");
+    }
+    
+    // REAR 두께 검사 판정 (측정값이 있고 calibration이 있는 경우)
+    // 최소, 최대, 평균 모두 설정 범위 내에 있어야 통과
+    if (rearMeasuredAvgThickness > 0 && pattern.stripLengthCalibrationPx > 0) {
+        double pixelToMm = pattern.stripLengthConversionMm / pattern.stripLengthCalibrationPx;
+        double minMm = rearMeasuredMinThickness * pixelToMm;
+        double maxMm = rearMeasuredMaxThickness * pixelToMm;
+        double avgMm = rearMeasuredAvgThickness * pixelToMm;
+        
+        rearThicknessPassed = (minMm >= pattern.stripRearThicknessMin && 
+                              maxMm <= pattern.stripRearThicknessMax);
+        
+        qDebug() << "[REAR 두께 판정]";
+        qDebug() << "  측정값: Min=" << minMm << "mm, Max=" << maxMm << "mm, Avg=" << avgMm << "mm";
+        qDebug() << "  설정범위:" << pattern.stripRearThicknessMin << "~" << pattern.stripRearThicknessMax << "mm";
+        qDebug() << "  판정:" << (rearThicknessPassed ? "PASS" : "FAIL");
+    }
+    
+    // EDGE 검사 결과 확인 (이미 edgePassed 변수에 저장되어 있음)
+    if (result.edgeResults.contains(pattern.id)) {
+        edgeTestPassed = result.edgeResults[pattern.id];
+    }
+    
+    // 모든 검사 항목을 AND 연산으로 최종 판정
+    bool allTestsPassed = isPassed && stripLengthPassed && frontThicknessPassed && rearThicknessPassed && edgeTestPassed;
+    
+    qDebug() << "[STRIP 최종 판정]" << pattern.name;
+    qDebug() << "  매칭:" << (isPassed ? "PASS" : "FAIL");
+    qDebug() << "  길이:" << (stripLengthPassed ? "PASS" : "FAIL");
+    qDebug() << "  FRONT:" << (frontThicknessPassed ? "PASS" : "FAIL");
+    qDebug() << "  REAR:" << (rearThicknessPassed ? "PASS" : "FAIL");
+    qDebug() << "  EDGE:" << (edgeTestPassed ? "PASS" : "FAIL");
+    qDebug() << "  최종:" << (allTestsPassed ? "PASS" : "FAIL");
+    
+    if (allTestsPassed) {
         // 좌표 변환 적용
         
         startPoint.x += static_cast<int>(offset.x);
@@ -3408,7 +3463,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         result.insProcessedImages[pattern.id] = resultImage.clone();
         result.insMethodTypes[pattern.id] = InspectionMethod::STRIP;
         result.insScores[pattern.id] = score;
-        result.insResults[pattern.id] = isPassed;
+        result.insResults[pattern.id] = allTestsPassed;  // 모든 검사 통과 여부
         
         // 두께 측정 결과 저장
         if (leftThickness > 0 || rightThickness > 0) {
@@ -3452,7 +3507,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         
 
         
-        return isPassed;
+        return allTestsPassed;  // 모든 검사 통과 여부 반환
         
     } catch (const cv::Exception& e) {
         logDebug(QString("STRIP 길이 검사 중 OpenCV 예외 발생 - %1: %2").arg(pattern.name).arg(e.what()));

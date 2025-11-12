@@ -202,15 +202,15 @@ struct PatternInfo {
     bool stripFrontEnabled = true;       // FRONT 두께 검사 활성화 여부
     int stripThicknessBoxWidth = 100;    // 두께 측정 박스 너비 (픽셀)
     int stripThicknessBoxHeight = 200;   // 두께 측정 박스 높이 (픽셀)
-    int stripThicknessMin = 70;          // 최소 두께 (픽셀)
-    int stripThicknessMax = 85;          // 최대 두께 (픽셀)
+    double stripThicknessMin = 1.0;      // 최소 두께 (mm)
+    double stripThicknessMax = 2.0;      // 최대 두께 (mm)
 
     // STRIP REAR 두께 측정 관련 파라미터
     bool stripRearEnabled = true;            // REAR 두께 검사 활성화 여부
     int stripRearThicknessBoxWidth = 100;    // REAR 두께 측정 박스 너비 (픽셀)
     int stripRearThicknessBoxHeight = 200;   // REAR 두께 측정 박스 높이 (픽셀)
-    int stripRearThicknessMin = 140;         // REAR 최소 두께 (픽셀)
-    int stripRearThicknessMax = 160;         // REAR 최대 두께 (픽셀)
+    double stripRearThicknessMin = 1.0;      // REAR 최소 두께 (mm)
+    double stripRearThicknessMax = 2.0;      // REAR 최대 두께 (mm)
 
     // EDGE 검사 관련 파라미터 (심선 끝 절단면 품질)
     bool edgeEnabled = true;                 // EDGE 검사 활성화 여부
