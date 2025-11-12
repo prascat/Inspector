@@ -442,13 +442,6 @@ private:
     QLabel* insEdgeEndPercentLabel = nullptr;
     QSpinBox* insEdgeEndPercentSpin = nullptr;
 
-    // SLOPE 검사 관련 위젯들
-    QCheckBox* insSlopeEnabledCheck = nullptr;
-    QLabel* insSlopeTopToleranceLabel = nullptr;
-    QDoubleSpinBox* insSlopeTopToleranceSpin = nullptr;
-    QLabel* insSlopeBottomToleranceLabel = nullptr;
-    QDoubleSpinBox* insSlopeBottomToleranceSpin = nullptr;
-
     QLabel* fidAngleLabel = nullptr;
     QLabel* fidToLabel = nullptr;
     // 필터 패널

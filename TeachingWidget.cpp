@@ -3435,35 +3435,6 @@ void TeachingWidget::createPropertyPanels() {
     insStripLayout->addRow(insEdgeStartPercentLabel, insEdgeStartPercentSpin);
     insStripLayout->addRow(insEdgeEndPercentLabel, insEdgeEndPercentSpin);
 
-    // SLOPE 검사 구분선
-    QFrame* slopeSeparator = new QFrame(insStripPanel);
-    slopeSeparator->setFrameShape(QFrame::HLine);
-    slopeSeparator->setFrameShadow(QFrame::Sunken);
-    insStripLayout->addRow(slopeSeparator);
-
-    // SLOPE 검사 위젯 생성
-    insSlopeEnabledCheck = new QCheckBox("SLOPE 기울기 검사 활성화", insStripPanel);
-    insSlopeEnabledCheck->setChecked(true);
-
-    insSlopeTopToleranceLabel = new QLabel("상단(P1-P3) 허용 오차:", insStripPanel);
-    insSlopeTopToleranceSpin = new QDoubleSpinBox(insStripPanel);
-    insSlopeTopToleranceSpin->setRange(0.1, 10.0);
-    insSlopeTopToleranceSpin->setValue(2.0);
-    insSlopeTopToleranceSpin->setDecimals(1);
-    insSlopeTopToleranceSpin->setSuffix(" 도");
-
-    insSlopeBottomToleranceLabel = new QLabel("하단(P2-P4) 허용 오차:", insStripPanel);
-    insSlopeBottomToleranceSpin = new QDoubleSpinBox(insStripPanel);
-    insSlopeBottomToleranceSpin->setRange(0.1, 10.0);
-    insSlopeBottomToleranceSpin->setValue(2.0);
-    insSlopeBottomToleranceSpin->setDecimals(1);
-    insSlopeBottomToleranceSpin->setSuffix(" 도");
-
-    // SLOPE 위젯들을 레이아웃에 추가
-    insStripLayout->addRow("", insSlopeEnabledCheck);
-    insStripLayout->addRow(insSlopeTopToleranceLabel, insSlopeTopToleranceSpin);
-    insStripLayout->addRow(insSlopeBottomToleranceLabel, insSlopeBottomToleranceSpin);
-
     insMainLayout->addWidget(insStripPanel);
 
     // === CRIMP 검사 파라미터 그룹 ===
@@ -5386,62 +5357,6 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
     }
     
-    // SLOPE 검사 활성화
-    if (insSlopeEnabledCheck) {
-        connect(insSlopeEnabledCheck, &QCheckBox::toggled, [this](bool enabled) {
-            QTreeWidgetItem* selectedItem = patternTree->currentItem();
-            if (selectedItem) {
-                QUuid patternId = getPatternIdFromItem(selectedItem);
-                if (!patternId.isNull()) {
-                    PatternInfo* pattern = cameraView->getPatternById(patternId);
-                    if (pattern && pattern->type == PatternType::INS) {
-                        pattern->slopeEnabled = enabled;
-                        cameraView->updatePatternById(patternId, *pattern);
-                        cameraView->update();
-                    }
-                }
-            }
-        });
-    }
-    
-    // SLOPE 상단 허용 오차
-    if (insSlopeTopToleranceSpin) {
-        connect(insSlopeTopToleranceSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), 
-                [this](double value) {
-            QTreeWidgetItem* selectedItem = patternTree->currentItem();
-            if (selectedItem) {
-                QUuid patternId = getPatternIdFromItem(selectedItem);
-                if (!patternId.isNull()) {
-                    PatternInfo* pattern = cameraView->getPatternById(patternId);
-                    if (pattern && pattern->type == PatternType::INS) {
-                        pattern->slopeTopTolerance = value;
-                        cameraView->updatePatternById(patternId, *pattern);
-                        cameraView->update();
-                    }
-                }
-            }
-        });
-    }
-    
-    // SLOPE 하단 허용 오차
-    if (insSlopeBottomToleranceSpin) {
-        connect(insSlopeBottomToleranceSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), 
-                [this](double value) {
-            QTreeWidgetItem* selectedItem = patternTree->currentItem();
-            if (selectedItem) {
-                QUuid patternId = getPatternIdFromItem(selectedItem);
-                if (!patternId.isNull()) {
-                    PatternInfo* pattern = cameraView->getPatternById(patternId);
-                    if (pattern && pattern->type == PatternType::INS) {
-                        pattern->slopeBottomTolerance = value;
-                        cameraView->updatePatternById(patternId, *pattern);
-                        cameraView->update();
-                    }
-                }
-            }
-        });
-    }
-    
     // 패턴 각도 텍스트박스
     if (angleEdit) {
         connect(angleEdit, &QLineEdit::textChanged, [this](const QString &text) {
@@ -5994,25 +5909,6 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insEdgeEndPercentSpin->blockSignals(true);
                         insEdgeEndPercentSpin->setValue(pattern->edgeEndPercent);
                         insEdgeEndPercentSpin->blockSignals(false);
-                    }
-                    
-                    // SLOPE 검사 UI 업데이트
-                    if (insSlopeEnabledCheck) {
-                        insSlopeEnabledCheck->blockSignals(true);
-                        insSlopeEnabledCheck->setChecked(pattern->slopeEnabled);
-                        insSlopeEnabledCheck->blockSignals(false);
-                    }
-                    
-                    if (insSlopeTopToleranceSpin) {
-                        insSlopeTopToleranceSpin->blockSignals(true);
-                        insSlopeTopToleranceSpin->setValue(pattern->slopeTopTolerance);
-                        insSlopeTopToleranceSpin->blockSignals(false);
-                    }
-                    
-                    if (insSlopeBottomToleranceSpin) {
-                        insSlopeBottomToleranceSpin->blockSignals(true);
-                        insSlopeBottomToleranceSpin->setValue(pattern->slopeBottomTolerance);
-                        insSlopeBottomToleranceSpin->blockSignals(false);
                     }
                     
                     if (insBinaryThreshSpin) {

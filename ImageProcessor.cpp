@@ -752,16 +752,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             // 이미 1채널이면 그대로 사용
             processed = roiImage.clone();
         }
-        
-        std::cout << "[performStripInspection] processed 이미지 - 크기:" << processed.cols << "x" << processed.rows 
-                  << ", 채널:" << processed.channels() << ", 타입:" << processed.type() << std::endl;
-        
+           
         // 이미지 통계 확인
         double minVal, maxVal;
         cv::minMaxLoc(processed, &minVal, &maxVal);
         int nonZero = cv::countNonZero(processed);
-        std::cout << "[performStripInspection] processed 통계 - min:" << minVal << ", max:" << maxVal 
-                  << ", nonZero:" << nonZero << "/" << processed.total() << std::endl;
         
         // ===== 필터에서 이미 완벽하게 전처리된 이미지 사용 (마스킹 불필요) =====
         // extractROI에서 이미 패턴 외부는 흰색, 내부는 필터 적용된 이진화 이미지
@@ -770,23 +765,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         // ===== 2단계: 컨투어 검출 =====
         std::vector<std::vector<cv::Point>> contours;
         cv::findContours(maskedProcessed, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-        
-        // 디버그: 컨투어 개수 출력만
-        std::cout << "컨투어 검출 완료: 총 " << contours.size() << "개 컨투어" << std::endl;
-        
-        // 디버그: 컨투어 시각화 이미지 저장
-        cv::Mat contourDebugImage;
-        cv::cvtColor(maskedProcessed, contourDebugImage, cv::COLOR_GRAY2BGR);
-        cv::drawContours(contourDebugImage, contours, -1, cv::Scalar(0, 255, 0), 2);
-        cv::imwrite("../deploy/debug_contours.png", contourDebugImage);
-        std::cout << "[DEBUG] 컨투어 이미지 저장: ../deploy/debug_contours.png" << std::endl;
-        
-        // 원본 processed 이미지도 저장
-        cv::imwrite("../deploy/debug_processed.png", processed);
-        cv::imwrite("../deploy/debug_masked.png", maskedProcessed);
-        std::cout << "[DEBUG] processed 이미지 저장: ../deploy/debug_processed.png" << std::endl;
-        std::cout << "[DEBUG] masked 이미지 저장: ../deploy/debug_masked.png" << std::endl;
-        
+             
         if (contours.empty()) {
             score = 0.0;
             cleanOriginal.copyTo(resultImage);

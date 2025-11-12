@@ -2701,6 +2701,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     
     // OpenCV에서 검출된 gradientPoints를 사용 (4개 포인트)
     QPoint absPoint1, absPoint2, absPoint3, absPoint4;
+    cv::Point roiPoint1, roiPoint2, roiPoint3, roiPoint4;  // ROI 좌표 저장
     
     if (gradientPoints.size() >= 4) {
         // OpenCV gradientPoints 순서 재정렬 - 올바른 위치로 매핑
@@ -2711,7 +2712,11 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             gradientPoints[3]   // Point 4: 오른쪽 아래
         };
         
-
+        // ROI 좌표 저장 (회전 전)
+        roiPoint1 = orderedPoints[0];
+        roiPoint2 = orderedPoints[1];
+        roiPoint3 = orderedPoints[2];
+        roiPoint4 = orderedPoints[3];
         
         // 유틸리티 함수를 사용하여 점들을 변환
         QList<QPoint> transformedPoints = InsProcessor::transformPatternPoints(
@@ -2739,12 +2744,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     result.stripPoint3[pattern.id] = absPoint3;
     result.stripPoint4[pattern.id] = absPoint4;
     result.stripPointsValid[pattern.id] = true;
-    
-    // 기울기 계산 (Point 1-3, Point 2-4)
-    double slope13 = static_cast<double>(absPoint3.y() - absPoint1.y()) / static_cast<double>(absPoint3.x() - absPoint1.x());
-    double slope24 = static_cast<double>(absPoint4.y() - absPoint2.y()) / static_cast<double>(absPoint4.x() - absPoint2.x());
-    result.stripSlope13[pattern.id] = slope13;
-    result.stripSlope24[pattern.id] = slope24;
     
     // STRIP 길이 검사 결과 저장
     result.stripLengthResults[pattern.id] = stripLengthPassed;

@@ -182,7 +182,6 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
         panStartPos = event->pos();
         panStartOffset = panOffset;
         setCursor(Qt::ClosedHandCursor);
-        qDebug() << "패닝 시작! (모든 모드)";
         return;
     }
     
@@ -2197,29 +2196,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 }
             }
             
-            // ===== FRONT 두께 측정 - 전체 스캔 라인 (녹색) - 주석 처리 =====
-            // if (result.stripFrontThicknessPoints.contains(patternId)) {
-            //     const QList<QPoint>& frontPoints = result.stripFrontThicknessPoints[patternId];
-            //     
-            //     painter.setPen(QPen(QColor(0, 255, 0), 2));  // 녹색, 2px
-            //     
-            //     // 2개씩 묶어서 선으로 그리기 (시작점-끝점)
-            //     for (int i = 0; i + 1 < frontPoints.size(); i += 2) {
-            //         QPoint ptStart = frontPoints[i];
-            //         QPoint ptEnd = frontPoints[i + 1];
-            //         
-            //         // 절대좌표를 Scene -> Viewport로 변환
-            //         QPointF pt1Scene(ptStart.x(), ptStart.y());
-            //         QPointF pt2Scene(ptEnd.x(), ptEnd.y());
-            //         
-            //         QPointF pt1VP = mapFromScene(pt1Scene);
-            //         QPointF pt2VP = mapFromScene(pt2Scene);
-            //         
-            //         // 선으로 연결
-            //         painter.drawLine(pt1VP, pt2VP);
-            //     }
-            // }
-            
             // ===== FRONT 검은색 구간만 빨간색으로 그리기 =====
             if (result.stripFrontBlackRegionPoints.contains(patternId)) {
                 const QList<QPoint>& frontBlackPoints = result.stripFrontBlackRegionPoints[patternId];
@@ -2242,29 +2218,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     painter.drawLine(pt1VP, pt2VP);
                 }
             }
-            
-            // ===== REAR 두께 측정 - 전체 스캔 라인 (녹색) - 주석 처리 =====
-            // if (result.stripRearThicknessPoints.contains(patternId)) {
-            //     const QList<QPoint>& rearPoints = result.stripRearThicknessPoints[patternId];
-            //     
-            //     painter.setPen(QPen(QColor(0, 255, 0), 2));  // 녹색, 2px
-            //     
-            //     // 2개씩 묶어서 선으로 그리기 (시작점-끝점)
-            //     for (int i = 0; i + 1 < rearPoints.size(); i += 2) {
-            //         QPoint ptStart = rearPoints[i];
-            //         QPoint ptEnd = rearPoints[i + 1];
-            //         
-            //         // 절대좌표를 Scene -> Viewport로 변환
-            //         QPointF pt1Scene(ptStart.x(), ptStart.y());
-            //         QPointF pt2Scene(ptEnd.x(), ptEnd.y());
-            //         
-            //         QPointF pt1VP = mapFromScene(pt1Scene);
-            //         QPointF pt2VP = mapFromScene(pt2Scene);
-            //         
-            //         // 선으로 연결
-            //         painter.drawLine(pt1VP, pt2VP);
-            //     }
-            // }
             
             // ===== REAR 검은색 구간만 빨간색으로 그리기 =====
             if (result.stripRearBlackRegionPoints.contains(patternId)) {
@@ -2319,18 +2272,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 double edgeMinDev = result.edgeMinDeviation.value(patternId, 0.0);
                 double edgeAvgDev = result.edgeAvgDeviation.value(patternId, 0.0);
                 bool edgePassed = result.edgeResults.value(patternId, false);
-                
-                qDebug() << "[CameraView] EDGE 라벨:" 
-                         << "patternId=" << patternId
-                         << "edgeMaxDev=" << edgeMaxDev
-                         << "edgeAvgDev=" << edgeAvgDev
-                         << "result.edgeAvgDeviation.size()=" << result.edgeAvgDeviation.size();
-                
-                // QMap의 실제 키 확인
-                qDebug() << "[CameraView] edgeAvgDeviation 키 목록:";
-                for (auto it = result.edgeAvgDeviation.begin(); it != result.edgeAvgDeviation.end(); ++it) {
-                    qDebug() << "  키=" << it.key() << "값=" << it.value();
-                }
                 
                 QString edgeLabel = QString("EDGE 최대:%1 평균:%2 mm")
                     .arg(edgeMaxDev, 0, 'f', 4)
