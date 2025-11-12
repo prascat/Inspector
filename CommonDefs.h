@@ -77,20 +77,13 @@ struct InspectionResult {
     QMap<QUuid, QPointF> stripRearBoxCenter;        // REAR 박스 중심 상대좌표 (패턴 중심 기준)
     QMap<QUuid, QSizeF> stripRearBoxSize;           // REAR 박스 크기 (width, height)
     
-    // STRIP 두께 측정 포인트들 (절대좌표 - 렌더링용)
-    // FRONT: [좌측상, 좌측하, 우측상, 우측하], REAR: [좌측상, 좌측하, 우측상, 우측하]
-    QMap<QUuid, QList<QPoint>> stripFrontThicknessPoints;  // FRONT 두께 측정 포인트들 (절대좌표)
-    QMap<QUuid, QList<QPoint>> stripRearThicknessPoints;   // REAR 두께 측정 포인트들 (절대좌표)
-    QMap<QUuid, QPointF> stripScanDirection;        // 스캔 방향 벡터 (정규화됨) - 점 표시 방향용
-    
-    // STRIP 스캔 라인 시작-끝점 쌍 (각 수직 스캔 라인의 상단-하단)
-    QMap<QUuid, QList<QPair<QPoint, QPoint>>> stripFrontScanLines;  // FRONT 스캔 라인 시작-끝점 쌍
-    QMap<QUuid, QList<QPair<QPoint, QPoint>>> stripRearScanLines;   // REAR 스캔 라인 시작-끝점 쌍
-    
-    // STRIP 두께 측정 포인트들 (라인별로 그룹화됨 - 렌더링용)
-    // 각 라인마다 [점1, 점2, ...] 형태로 저장 (한 스캔 라인의 모든 검사 점)
-    QMap<QUuid, QList<QList<QPoint>>> stripFrontThicknessPointsByLine;  // FRONT 두께 측정 포인트들 (라인별 그룹화, 상대좌표)
-    QMap<QUuid, QList<QList<QPoint>>> stripRearThicknessPointsByLine;   // REAR 두께 측정 포인트들 (라인별 그룹화, 상대좌표)
+    // STRIP 두께 측정 포인트들 (검은색 구간의 시작-끝점 쌍)
+    // 절대좌표로 저장 (원본 이미지 기준)
+    // 2개씩 쌍으로 저장: [라인1시작, 라인1끝, 라인2시작, 라인2끝, ...]
+    QMap<QUuid, QList<QPoint>> stripFrontThicknessPoints;  // FRONT 두께 측정 라인들 (전체 스캔 라인 - 녹색)
+    QMap<QUuid, QList<QPoint>> stripRearThicknessPoints;   // REAR 두께 측정 라인들 (전체 스캔 라인 - 녹색)
+    QMap<QUuid, QList<QPoint>> stripFrontBlackRegionPoints;  // FRONT 검은색 검출 구간만 (빨간색)
+    QMap<QUuid, QList<QPoint>> stripRearBlackRegionPoints;   // REAR 검은색 검출 구간만 (빨간색)
     
     // STRIP 실제 측정 지점 (절대좌표 - 검사 로그의 실제 검출된 위치)
     QMap<QUuid, QPoint> stripStartPoint;            // STRIP 측정 시작점 (절대좌표)
@@ -188,6 +181,9 @@ struct PatternInfo {
     bool stripLengthEnabled = true;      // STRIP 길이검사 활성화 여부
     int stripLengthMin = 100;            // 최소 길이 (픽셀)
     int stripLengthMax = 500;            // 최대 길이 (픽셀)
+    double stripLengthConversionMm = 6.0; // 수치 변환 (mm) - pixel to mm 변환값
+    double stripLengthCalibrationPx = 0.0; // 캘리브레이션 기준 픽셀값
+    bool stripLengthCalibrated = false;    // 캘리브레이션 완료 여부
     
     // STRIP 두께 측정 관련 파라미터 (프론트)
     bool stripFrontEnabled = true;       // FRONT 두께 검사 활성화 여부

@@ -78,7 +78,9 @@ public:
                                      bool* stripLengthPassed = nullptr, double* stripMeasuredLength = nullptr, 
                                      cv::Point* stripLengthStartPoint = nullptr, cv::Point* stripLengthEndPoint = nullptr,
                                      std::vector<cv::Point>* frontThicknessPoints = nullptr,
-                                     std::vector<cv::Point>* rearThicknessPoints = nullptr);
+                                     std::vector<cv::Point>* rearThicknessPoints = nullptr,
+                                     std::vector<cv::Point>* frontBlackRegionPoints = nullptr,
+                                     std::vector<cv::Point>* rearBlackRegionPoints = nullptr);
 };
 
 #endif // IMAGEPROCESSOR_H

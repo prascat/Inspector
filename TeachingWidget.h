@@ -389,6 +389,10 @@ private:
     QSpinBox* insStripLengthMinSpin = nullptr;
     QLabel* insStripLengthMaxLabel = nullptr;
     QSpinBox* insStripLengthMaxSpin = nullptr;
+    QLabel* insStripLengthConversionLabel = nullptr;
+    QDoubleSpinBox* insStripLengthConversionSpin = nullptr;
+    QLabel* insStripLengthMeasuredLabel = nullptr;
+    QPushButton* insStripLengthRefreshButton = nullptr;
     
     // CRIMP 검사 패널 관련 위젯
     QGroupBox* insCrimpPanel = nullptr;

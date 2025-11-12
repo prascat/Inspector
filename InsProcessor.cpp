@@ -2364,11 +2364,14 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         cv::Point stripLengthEndPoint;
                 
     // performStripInspection 호출을 간소화: PatternInfo 전체를 전달
+    std::vector<cv::Point> frontBlackRegionPoints, rearBlackRegionPoints; // 검은색 구간 포인트 (빨간색 표시용)
+    
     bool isPassed = ImageProcessor::performStripInspection(roiImage, templateImage,
                                   pattern,
                                   score, startPoint, maxGradientPoint, gradientPoints, resultImage, &edgePoints,
                                   &stripLengthPassed, &stripMeasuredLength, &stripLengthStartPoint, &stripLengthEndPoint,
-                                  &frontThicknessPoints, &rearThicknessPoints);
+                                  &frontThicknessPoints, &rearThicknessPoints,
+                                  &frontBlackRegionPoints, &rearBlackRegionPoints);
     
     // ROI 좌표를 원본 이미지 좌표로 변환 (extractROI와 정확히 동일한 방식으로 계산)
     cv::Point2f patternCenter(pattern.rect.x() + pattern.rect.width()/2.0f, 
@@ -2403,117 +2406,140 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     QPointF patternCenterAbs(pattern.rect.x() + pattern.rect.width()/2.0f,
                             pattern.rect.y() + pattern.rect.height()/2.0f);
     
-    // FRONT 포인트들을 패턴 상대좌표로 변환하고 라인별로 그룹화
-    QList<QList<QPoint>> frontPointsByLine;  // 라인별 그룹화된 포인트
-    QList<QPoint> currentLine;
-    
     // angleRad는 이미 위에서 정의됨 (line 2378)
     double cosA = cos(angleRad);
     double sinA = sin(angleRad);
     
-    for (int idx = 0; idx < frontThicknessPoints.size(); idx += 2) {
-        // 한 라인의 시작-끝점 (2개씩 묶임)
-        if (idx + 1 < frontThicknessPoints.size()) {
-            QList<QPoint> linePoints;
-            
-            for (int ptIdx = idx; ptIdx <= idx + 1; ptIdx++) {
-                const cv::Point& pt = frontThicknessPoints[ptIdx];
-                // pt는 ROI 이미지 내 좌표
-                // ROI 좌표 -> 절대좌표
-                QPointF ptAbs(pt.x + offset.x, pt.y + offset.y);
-                
-                // 절대좌표 -> 패턴 상대좌표 (회전 고려)
-                QPointF ptRel = ptAbs - patternCenterAbs;
-                
-                // 역회전: 패턴 각도를 제거
-                QPointF ptRotated;
-                ptRotated.setX(ptRel.x() * cosA + ptRel.y() * sinA);
-                ptRotated.setY(-ptRel.x() * sinA + ptRel.y() * cosA);
-                
-                linePoints.append(QPoint(static_cast<int>(ptRotated.x()), 
-                                        static_cast<int>(ptRotated.y())));
-            }
-            
-            frontPointsByLine.append(linePoints);
-        }
+    // FRONT 포인트들을 절대좌표로 변환
+    // frontThicknessPoints: 검은색 구간의 모든 픽셀들 (ROI 좌표)
+    QList<QPoint> frontPointsConverted;
+    
+    for (const cv::Point& pt : frontThicknessPoints) {
+        // ROI 좌표를 절대좌표로 변환 (offset만 추가)
+        QPoint ptAbs(pt.x + static_cast<int>(offset.x), 
+                     pt.y + static_cast<int>(offset.y));
+        frontPointsConverted.append(ptAbs);
     }
     
-    // REAR 포인트들을 패턴 상대좌표로 변환하고 라인별로 그룹화
-    QList<QList<QPoint>> rearPointsByLine;
+    // REAR 포인트들을 절대좌표로 변환
+    // rearThicknessPoints: 검은색 구간의 모든 픽셀들 (ROI 좌표)
+    QList<QPoint> rearPointsConverted;
     
-    for (int idx = 0; idx < rearThicknessPoints.size(); idx += 2) {
-        // 한 라인의 시작-끝점 (2개씩 묶임)
-        if (idx + 1 < rearThicknessPoints.size()) {
-            QList<QPoint> linePoints;
-            
-            for (int ptIdx = idx; ptIdx <= idx + 1; ptIdx++) {
-                const cv::Point& pt = rearThicknessPoints[ptIdx];
-                // pt는 ROI 이미지 내 좌표
-                // ROI 좌표 -> 절대좌표
-                QPointF ptAbs(pt.x + offset.x, pt.y + offset.y);
-                
-                // 절대좌표 -> 패턴 상대좌표 (회전 고려)
-                QPointF ptRel = ptAbs - patternCenterAbs;
-                
-                // 역회전
-                QPointF ptRotated;
-                ptRotated.setX(ptRel.x() * cosA + ptRel.y() * sinA);
-                ptRotated.setY(-ptRel.x() * sinA + ptRel.y() * cosA);
-                
-                linePoints.append(QPoint(static_cast<int>(ptRotated.x()), 
-                                        static_cast<int>(ptRotated.y())));
-            }
-            
-            rearPointsByLine.append(linePoints);
-        }
+    for (const cv::Point& pt : rearThicknessPoints) {
+        // ROI 좌표를 절대좌표로 변환 (offset만 추가)
+        QPoint ptAbs(pt.x + static_cast<int>(offset.x), 
+                     pt.y + static_cast<int>(offset.y));
+        rearPointsConverted.append(ptAbs);
     }
     
-    // 라인별 그룹화된 포인트 저장
-    result.stripFrontThicknessPointsByLine[pattern.id] = frontPointsByLine;
-    result.stripRearThicknessPointsByLine[pattern.id] = rearPointsByLine;
-    
-    // 스캔 라인 시작-끝점 쌍 저장 (2개씩 쌍을 이룸)
-    QList<QPair<QPoint, QPoint>> frontScanLines, rearScanLines;
-    
-    // FRONT: 라인별로 시작-끝점 저장
-    for (const QList<QPoint>& linePoints : frontPointsByLine) {
-        if (linePoints.size() >= 2) {
-            frontScanLines.append(qMakePair(linePoints[0], linePoints[1]));
-        }
+    // 검은색 구간 포인트들도 절대좌표로 변환
+    QList<QPoint> frontBlackPointsConverted;
+    for (const cv::Point& pt : frontBlackRegionPoints) {
+        QPoint ptAbs(pt.x + static_cast<int>(offset.x), 
+                     pt.y + static_cast<int>(offset.y));
+        frontBlackPointsConverted.append(ptAbs);
     }
     
-    // REAR: 라인별로 시작-끝점 저장
-    for (const QList<QPoint>& linePoints : rearPointsByLine) {
-        if (linePoints.size() >= 2) {
-            rearScanLines.append(qMakePair(linePoints[0], linePoints[1]));
-        }
+    QList<QPoint> rearBlackPointsConverted;
+    for (const cv::Point& pt : rearBlackRegionPoints) {
+        QPoint ptAbs(pt.x + static_cast<int>(offset.x), 
+                     pt.y + static_cast<int>(offset.y));
+        rearBlackPointsConverted.append(ptAbs);
     }
     
-    result.stripFrontScanLines[pattern.id] = frontScanLines;
-    result.stripRearScanLines[pattern.id] = rearScanLines;
+    // 변환된 포인트 저장 (절대좌표)
+    result.stripFrontThicknessPoints[pattern.id] = frontPointsConverted;
+    result.stripRearThicknessPoints[pattern.id] = rearPointsConverted;
+    result.stripFrontBlackRegionPoints[pattern.id] = frontBlackPointsConverted;
+    result.stripRearBlackRegionPoints[pattern.id] = rearBlackPointsConverted;
     
-    // 스캔 방향 벡터 저장 (정규화된 방향 - 수직 스캔)
-    // angleRad는 이미 위에서 정의됨 (line 2378)
-    // 각도를 적용한 수직 방향 계산 (pattern.angle 적용)
-    double scanAngleRad = pattern.angle * M_PI / 180.0;
-    double scanDirX = sin(scanAngleRad);     // 수직 방향 X 성분
-    double scanDirY = cos(scanAngleRad);     // 수직 방향 Y 성분
-    result.stripScanDirection[pattern.id] = QPointF(scanDirX, scanDirY);
+    // FRONT 두께 계산 (Y좌표 범위)
+    if (!frontThicknessPoints.empty()) {
+        int minY = INT_MAX, maxY = INT_MIN;
+        for (const cv::Point& pt : frontThicknessPoints) {
+            minY = std::min(minY, pt.y);
+            maxY = std::max(maxY, pt.y);
+        }
+        measuredMinThickness = minY;
+        measuredMaxThickness = maxY;
+        measuredAvgThickness = (minY + maxY) / 2;
+    }
     
-    if (!rearPointsByLine.isEmpty()) {
+    // REAR 두께 계산 (Y좌표 범위)
+    if (!rearThicknessPoints.empty()) {
+        int minY = INT_MAX, maxY = INT_MIN;
+        for (const cv::Point& pt : rearThicknessPoints) {
+            minY = std::min(minY, pt.y);
+            maxY = std::max(maxY, pt.y);
+        }
+        rearMeasuredMinThickness = minY;
+        rearMeasuredMaxThickness = maxY;
+        rearMeasuredAvgThickness = (minY + maxY) / 2;
+    }
+    
+    // FRONT 포인트 디버그 정보
+    if (!frontPointsConverted.isEmpty()) {
         int minX = INT_MAX, maxX = INT_MIN, minY = INT_MAX, maxY = INT_MIN;
-        for (const QList<QPoint>& linePoints : rearPointsByLine) {
-            for (const QPoint& pt : linePoints) {
-                minX = qMin(minX, pt.x());
-                maxX = qMax(maxX, pt.x());
-                minY = qMin(minY, pt.y());
-                maxY = qMax(maxY, pt.y());
-            }
+        for (const QPoint& pt : frontPointsConverted) {
+            minX = qMin(minX, pt.x());
+            maxX = qMax(maxX, pt.x());
+            minY = qMin(minY, pt.y());
+            maxY = qMax(maxY, pt.y());
         }
-        qDebug() << "[REAR 포인트 상대좌표 범위]";
-        qDebug() << "  라인 개수:" << rearPointsByLine.size();
+        qDebug() << "[FRONT 포인트 상대좌표 범위]";
+        qDebug() << "  총 포인트 수:" << frontPointsConverted.size();
         qDebug() << "  X 범위:" << minX << "~" << maxX << "너비:" << (maxX - minX);
         qDebug() << "  Y 범위:" << minY << "~" << maxY << "높이:" << (maxY - minY);
+        
+        // FRONT 원본 포인트 확인 (변환 전)
+        if (!frontThicknessPoints.empty()) {
+            qDebug() << "[FRONT 원본 포인트 (변환 전)]";
+            qDebug() << "  총 개수:" << (int)frontThicknessPoints.size();
+            if (frontThicknessPoints.size() >= 2) {
+                cv::Point p0 = frontThicknessPoints[0];
+                cv::Point p1 = frontThicknessPoints[frontThicknessPoints.size()-1];
+                qDebug() << "  첫번째 포인트 (ROI좌표):" << p0.x << "," << p0.y;
+                qDebug() << "  마지막 포인트 (ROI좌표):" << p1.x << "," << p1.y;
+            }
+        }
+    } else {
+        qDebug() << "[FRONT] 포인트가 없음!";
+    }
+    
+    // REAR 포인트 디버그 정보
+    if (!rearPointsConverted.isEmpty()) {
+        int minX = INT_MAX, maxX = INT_MIN, minY = INT_MAX, maxY = INT_MIN;
+        for (const QPoint& pt : rearPointsConverted) {
+            minX = qMin(minX, pt.x());
+            maxX = qMax(maxX, pt.x());
+            minY = qMin(minY, pt.y());
+            maxY = qMax(maxY, pt.y());
+        }
+        qDebug() << "[REAR 포인트 상대좌표 범위]";
+        qDebug() << "  총 포인트 수:" << rearPointsConverted.size();
+        qDebug() << "  X 범위:" << minX << "~" << maxX << "너비:" << (maxX - minX);
+        qDebug() << "  Y 범위:" << minY << "~" << maxY << "높이:" << (maxY - minY);
+        
+        // REAR 원본 포인트 확인 (변환 전)
+        if (!rearThicknessPoints.empty()) {
+            qDebug() << "[REAR 원본 포인트 (변환 전)]";
+            qDebug() << "  총 개수:" << (int)rearThicknessPoints.size();
+            if (rearThicknessPoints.size() >= 2) {
+                cv::Point p0 = rearThicknessPoints[0];
+                cv::Point p1 = rearThicknessPoints[rearThicknessPoints.size()-1];
+                qDebug() << "  첫번째 포인트 (ROI좌표):" << p0.x << "," << p0.y;
+                qDebug() << "  마지막 포인트 (ROI좌표):" << p1.x << "," << p1.y;
+            }
+        }
+        
+        // 좌표 변환 디버그 정보
+        qDebug() << "[좌표 변환 디버그]";
+        qDebug() << "  patternCenterAbs:" << patternCenterAbs.x() << "," << patternCenterAbs.y();
+        qDebug() << "  offset:" << offset.x << "," << offset.y;
+        qDebug() << "  squareRoi:" << squareRoi.x << "," << squareRoi.y << squareRoi.width << "x" << squareRoi.height;
+        qDebug() << "  pattern.angle:" << pattern.angle << "도";
+    } else {
+        qDebug() << "[REAR] 포인트가 없음!";
     }
     
     // OpenCV에서 검출된 gradientPoints를 사용 (4개 포인트)

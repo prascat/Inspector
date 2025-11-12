@@ -654,7 +654,9 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                                            bool* stripLengthPassed, double* stripMeasuredLength, 
                                            cv::Point* stripLengthStartPoint, cv::Point* stripLengthEndPoint,
                                            std::vector<cv::Point>* frontThicknessPoints,
-                                           std::vector<cv::Point>* rearThicknessPoints) {
+                                           std::vector<cv::Point>* rearThicknessPoints,
+                                           std::vector<cv::Point>* frontBlackRegionPoints,
+                                           std::vector<cv::Point>* rearBlackRegionPoints) {
     std::cout << "[performStripInspection 시작] roiImage:" << roiImage.cols << "x" << roiImage.rows 
               << " templateImage:" << templateImage.cols << "x" << templateImage.rows << std::endl;
     
@@ -1697,34 +1699,77 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             
             std::vector<int> thicknesses;
             std::vector<cv::Point> measurementLines; // 측정 라인 저장
-            std::vector<cv::Point> blackPixelPoints; // 검은색 픽셀 위치 저장 (시각화용)
+            std::vector<cv::Point> blackPixelPoints; // 검은색 픽셀 위치 저장 (시각화용 - 전체 스캔 라인)
+            std::vector<cv::Point> blackRegionPoints; // 검은색이 실제로 검출된 구간만 저장 (빨간색으로 표시용)
             
-            // 각도 계산은 위에서 이미 완료됨 (angleRad, cosA, sinA 사용)
+            // 각도 계산
             double cosA = cos(angleRad);
             double sinA = sin(angleRad);
             
+            // 박스 왼쪽 끝 계산
+            int boxLeftX = boxCenterX - thicknessBoxWidth/2;
+            int boxTopY = boxCenterY - thicknessBoxHeight/2;
+            int boxBottomY = boxCenterY + thicknessBoxHeight/2;
+            
             // 박스 영역에서 세로 방향으로 스캔하여 검은색 픽셀 두께 측정
-            // gradient 시작점을 검사 width의 중앙으로 설정
-            for (int dx = -thicknessBoxWidth/2; dx <= thicknessBoxWidth/2; dx += 3) { // 3픽셀 간격으로 스캔
-                // 각도를 적용한 세로 스캔 라인 계산
+            // 박스 테두리를 피해서 안쪽만 그림: dx=2 ~ width-2
+            
+            // 첫 라인과 마지막 라인의 시작점과 끝점을 미리 계산 (직선 보간용)
+            int scanHeight = thicknessBoxHeight - 2;
+            int firstDx = 2;
+            int lastDx = thicknessBoxWidth - 2;
+            
+            cv::Point2d firstTop, lastTop, firstBottom, lastBottom;
+            
+            if (std::abs(angle) < 0.1) {
+                // 각도가 거의 없는 경우
+                firstTop = cv::Point2d(boxCenterX - thicknessBoxWidth/2 + firstDx, boxCenterY - thicknessBoxHeight/2 + 1);
+                lastTop = cv::Point2d(boxCenterX - thicknessBoxWidth/2 + lastDx, boxCenterY - thicknessBoxHeight/2 + 1);
+                firstBottom = cv::Point2d(boxCenterX - thicknessBoxWidth/2 + firstDx, boxCenterY + thicknessBoxHeight/2 - 1);
+                lastBottom = cv::Point2d(boxCenterX - thicknessBoxWidth/2 + lastDx, boxCenterY + thicknessBoxHeight/2 - 1);
+            } else {
+                // 각도가 있는 경우
+                double cosA = cos(angleRad);
+                double sinA = sin(angleRad);
+                
+                int localX1 = -thicknessBoxWidth/2 + firstDx;
+                int localX2 = -thicknessBoxWidth/2 + lastDx;
+                int localTopY = -thicknessBoxHeight/2 + 1;
+                int localBottomY = thicknessBoxHeight/2 - 1;
+                
+                firstTop.x = boxCenterX + (localX1 * cosA - localTopY * sinA);
+                firstTop.y = boxCenterY + (localX1 * sinA + localTopY * cosA);
+                
+                lastTop.x = boxCenterX + (localX2 * cosA - localTopY * sinA);
+                lastTop.y = boxCenterY + (localX2 * sinA + localTopY * cosA);
+                
+                firstBottom.x = boxCenterX + (localX1 * cosA - localBottomY * sinA);
+                firstBottom.y = boxCenterY + (localX1 * sinA + localBottomY * cosA);
+                
+                lastBottom.x = boxCenterX + (localX2 * cosA - localBottomY * sinA);
+                lastBottom.y = boxCenterY + (localX2 * sinA + localBottomY * cosA);
+            }
+            
+            int totalLines = lastDx - firstDx;
+            
+            for (int dx = firstDx; dx < thicknessBoxWidth - 1; dx += 1) {
                 cv::Point scanTop, scanBottom;
                 
                 if (std::abs(angle) < 0.1) {
-                    // 각도가 거의 없는 경우 - 직선 스캔
-                    scanTop = cv::Point(boxCenterX + dx, boxCenterY - thicknessBoxHeight/2);
-                    scanBottom = cv::Point(boxCenterX + dx, boxCenterY + thicknessBoxHeight/2);
+                    // 각도가 거의 없는 경우
+                    int localX = -thicknessBoxWidth/2 + dx;
+                    int localTopY = -thicknessBoxHeight/2 + 1;
+                    scanTop = cv::Point(boxCenterX + localX, boxCenterY + localTopY);
+                    scanBottom = cv::Point(boxCenterX + localX, boxCenterY + localTopY + scanHeight);
                 } else {
-                    // 각도가 있는 경우 - 회전된 스캔 라인
-                    int localX = dx;
-                    int localTopY = -thicknessBoxHeight/2;
-                    int localBottomY = thicknessBoxHeight/2;
+                    // 각도가 있는 경우 - scanTop과 scanBottom 모두 선형 보간
+                    double t = (double)(dx - firstDx) / totalLines;
                     
-                    // 각도 적용하여 회전
-                    scanTop.x = boxCenterX + static_cast<int>(localX * cosA - localTopY * sinA);
-                    scanTop.y = boxCenterY + static_cast<int>(localX * sinA + localTopY * cosA);
+                    scanTop.x = static_cast<int>(std::round(firstTop.x + t * (lastTop.x - firstTop.x)));
+                    scanTop.y = static_cast<int>(std::round(firstTop.y + t * (lastTop.y - firstTop.y)));
                     
-                    scanBottom.x = boxCenterX + static_cast<int>(localX * cosA - localBottomY * sinA);
-                    scanBottom.y = boxCenterY + static_cast<int>(localX * sinA + localBottomY * cosA);
+                    scanBottom.x = static_cast<int>(std::round(firstBottom.x + t * (lastBottom.x - firstBottom.x)));
+                    scanBottom.y = static_cast<int>(std::round(firstBottom.y + t * (lastBottom.y - firstBottom.y)));
                 }
                 
                 // 스캔 라인이 이미지 범위를 벗어나면 건너뛰기
@@ -1734,7 +1779,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     continue;
                 }
                 
-                // 세로 라인을 따라 검은색 픽셀 구간 찾기
+                // 모든 스캔 라인의 시작-끝점을 저장 (검은색 유무 관계없이)
+                blackPixelPoints.push_back(scanTop);
+                blackPixelPoints.push_back(scanBottom);
+                
+                // 세로 라인을 따라 검은색 픽셀 구간 찾기 (두께 측정용)
                 cv::LineIterator it(cleanOriginal, scanTop, scanBottom, 8);
                 std::vector<std::pair<int, int>> blackRegions; // 검은색 구간의 시작과 끝
                 int regionStart = -1;
@@ -1746,8 +1795,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     linePoints.push_back(it.pos());
                 }
                 
-                // 다시 처음부터 스캔하여 검은색 픽셀 찾기
+                // 다시 처음부터 스캔하여 검은색 픽셀 찾기 (두께 측정)
                 it = cv::LineIterator(cleanOriginal, scanTop, scanBottom, 8);
+                int firstBlackIdx = -1;  // 첫 번째 검은색 픽셀 인덱스
+                int lastBlackIdx = -1;   // 마지막 검은색 픽셀 인덱스
+                
                 for (int i = 0; i < it.count; i++, ++it) {
                     cv::Vec3b pixel = cleanOriginal.at<cv::Vec3b>(it.pos());
                     // 검은색 픽셀 판단 (RGB 값이 모두 낮은 경우)
@@ -1757,6 +1809,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                         // 검은색 구간 시작
                         regionStart = i;
                         inBlackRegion = true;
+                        
+                        // 첫 번째 검은색 구간의 시작점 기록
+                        if (firstBlackIdx == -1) {
+                            firstBlackIdx = i;
+                        }
                     } else if (!isBlack && inBlackRegion) {
                         // 검은색 구간 끝
                         int thickness = i - regionStart;
@@ -1764,11 +1821,8 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                             thicknesses.push_back(thickness);
                             blackRegions.push_back({regionStart, i});
                             
-                            // 검은색 구간의 시작-끝점만 저장 (효율성)
-                            if (regionStart < linePoints.size() && (i-1) < linePoints.size()) {
-                                blackPixelPoints.push_back(linePoints[regionStart]);  // 시작점
-                                blackPixelPoints.push_back(linePoints[i-1]);         // 끝점
-                            }
+                            // 마지막 검은색 구간의 끝점 업데이트
+                            lastBlackIdx = i - 1;
                         }
                         inBlackRegion = false;
                     }
@@ -1781,12 +1835,16 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                         thicknesses.push_back(thickness);
                         blackRegions.push_back({regionStart, it.count});
                         
-                        // 검은색 구간의 시작-끝점만 저장 (효율성)
-                        if (regionStart < linePoints.size()) {
-                            blackPixelPoints.push_back(linePoints[regionStart]);        // 시작점
-                            blackPixelPoints.push_back(linePoints[linePoints.size()-1]); // 끝점
-                        }
+                        // 마지막 검은색 구간의 끝점 업데이트
+                        lastBlackIdx = it.count - 1;
                     }
+                }
+                
+                // 첫 번째 검은색 시작점부터 마지막 검은색 끝점까지 하나의 선으로 저장
+                if (firstBlackIdx >= 0 && lastBlackIdx >= 0 && 
+                    firstBlackIdx < linePoints.size() && lastBlackIdx < linePoints.size()) {
+                    blackRegionPoints.push_back(linePoints[firstBlackIdx]);
+                    blackRegionPoints.push_back(linePoints[lastBlackIdx]);
                 }
                 
                 // 검은색 구간이 발견된 경우 측정 라인 저장
@@ -1813,8 +1871,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 
                 // 최종 판정에 두께 조건 추가
                 isPassed = isPassed && thicknessPassed;
-                
-
                 
                 // 두께 측정된 검은색 픽셀들을 포인트 저장소에만 기록 (그리지는 않음)
                 // blackPixelPoints는 나중에 result에 저장됨
@@ -1851,6 +1907,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 if (frontThicknessPoints) {
                     *frontThicknessPoints = blackPixelPoints;
                 }
+                
+                // FRONT 검은색 구간 포인트들을 저장 (빨간색 표시용)
+                if (frontBlackRegionPoints) {
+                    *frontBlackRegionPoints = blackRegionPoints;
+                }
                            
             } else {
                 std::cout << "=== STRIP 두께 측정 검사 ===" << std::endl;
@@ -1885,29 +1946,70 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                   << " rearThicknessBoxWidth=" << rearThicknessBoxWidth << " rearThicknessBoxHeight=" << rearThicknessBoxHeight << std::endl;
         std::vector<int> thicknesses_rear;
         std::vector<cv::Point> measurementLines_rear; // 측정 라인 저장
-        std::vector<cv::Point> blackPixelPoints_rear; // 검은색 픽셀 위치 저장 (시각화용)
+        std::vector<cv::Point> blackPixelPoints_rear; // 검은색 픽셀 위치 저장 (시각화용 - 전체 스캔 라인)
+        std::vector<cv::Point> blackRegionPoints_rear; // 검은색이 실제로 검출된 구간만 저장 (빨간색으로 표시용)
+        
+        // 박스 왼쪽 끝 계산
+        int boxLeftX_rear = boxCenterX_rear - rearThicknessBoxWidth/2;
+        int boxTopY_rear = boxCenterY_rear - rearThicknessBoxHeight/2;
+        int boxBottomY_rear = boxCenterY_rear + rearThicknessBoxHeight/2;
         
         // 박스 영역에서 세로 방향으로 스캔하여 검은색 픽셀 두께 측정 (REAR)
-        for (int dx = -rearThicknessBoxWidth/2; dx <= rearThicknessBoxWidth/2; dx += 3) { // 3픽셀 간격으로 스캔
-            // 각도를 적용한 세로 스캔 라인 계산
+        // 박스 테두리를 피해서 안쪽만 그림: dx=2 ~ width-1
+        
+        // 첫 라인과 마지막 라인의 시작점과 끝점을 미리 계산 (직선 보간용)
+        int scanHeight_rear = rearThicknessBoxHeight - 2;
+        int firstDx_rear = 2;
+        int lastDx_rear = rearThicknessBoxWidth - 1;
+        
+        cv::Point2d firstTop_rear, lastTop_rear, firstBottom_rear, lastBottom_rear;
+        
+        if (std::abs(angle) < 0.1) {
+            // 각도가 거의 없는 경우
+            firstTop_rear = cv::Point2d(boxCenterX_rear - rearThicknessBoxWidth/2 + firstDx_rear, boxCenterY_rear - rearThicknessBoxHeight/2 + 1);
+            lastTop_rear = cv::Point2d(boxCenterX_rear - rearThicknessBoxWidth/2 + lastDx_rear, boxCenterY_rear - rearThicknessBoxHeight/2 + 1);
+            firstBottom_rear = cv::Point2d(boxCenterX_rear - rearThicknessBoxWidth/2 + firstDx_rear, boxCenterY_rear + rearThicknessBoxHeight/2 - 1);
+            lastBottom_rear = cv::Point2d(boxCenterX_rear - rearThicknessBoxWidth/2 + lastDx_rear, boxCenterY_rear + rearThicknessBoxHeight/2 - 1);
+        } else {
+            // 각도가 있는 경우
+            int localX1 = -rearThicknessBoxWidth/2 + firstDx_rear;
+            int localX2 = -rearThicknessBoxWidth/2 + lastDx_rear;
+            int localTopY = -rearThicknessBoxHeight/2 + 1;
+            int localBottomY = rearThicknessBoxHeight/2 - 1;
+            
+            firstTop_rear.x = boxCenterX_rear + (localX1 * cosA_rear - localTopY * sinA_rear);
+            firstTop_rear.y = boxCenterY_rear + (localX1 * sinA_rear + localTopY * cosA_rear);
+            
+            lastTop_rear.x = boxCenterX_rear + (localX2 * cosA_rear - localTopY * sinA_rear);
+            lastTop_rear.y = boxCenterY_rear + (localX2 * sinA_rear + localTopY * cosA_rear);
+            
+            firstBottom_rear.x = boxCenterX_rear + (localX1 * cosA_rear - localBottomY * sinA_rear);
+            firstBottom_rear.y = boxCenterY_rear + (localX1 * sinA_rear + localBottomY * cosA_rear);
+            
+            lastBottom_rear.x = boxCenterX_rear + (localX2 * cosA_rear - localBottomY * sinA_rear);
+            lastBottom_rear.y = boxCenterY_rear + (localX2 * sinA_rear + localBottomY * cosA_rear);
+        }
+        
+        int totalLines_rear = lastDx_rear - firstDx_rear;
+        
+        for (int dx = firstDx_rear; dx < rearThicknessBoxWidth; dx += 1) {
             cv::Point scanTop_rear, scanBottom_rear;
             
             if (std::abs(angle) < 0.1) {
-                // 각도가 거의 없는 경우 - 직선 스캔
-                scanTop_rear = cv::Point(boxCenterX_rear + dx, boxCenterY_rear - rearThicknessBoxHeight/2);
-                scanBottom_rear = cv::Point(boxCenterX_rear + dx, boxCenterY_rear + rearThicknessBoxHeight/2);
+                // 각도가 거의 없는 경우
+                int localX = -rearThicknessBoxWidth/2 + dx;
+                int localTopY = -rearThicknessBoxHeight/2 + 1;
+                scanTop_rear = cv::Point(boxCenterX_rear + localX, boxCenterY_rear + localTopY);
+                scanBottom_rear = cv::Point(boxCenterX_rear + localX, boxCenterY_rear + localTopY + scanHeight_rear);
             } else {
-                // 각도가 있는 경우 - 회전된 스캔 라인
-                int localX = dx;
-                int localTopY = -rearThicknessBoxHeight/2;
-                int localBottomY = rearThicknessBoxHeight/2;
+                // 각도가 있는 경우 - scanTop과 scanBottom 모두 선형 보간
+                double t = (double)(dx - firstDx_rear) / totalLines_rear;
                 
-                // 각도 적용하여 회전
-                scanTop_rear.x = boxCenterX_rear + static_cast<int>(localX * cosA_rear - localTopY * sinA_rear);
-                scanTop_rear.y = boxCenterY_rear + static_cast<int>(localX * sinA_rear + localTopY * cosA_rear);
+                scanTop_rear.x = static_cast<int>(std::round(firstTop_rear.x + t * (lastTop_rear.x - firstTop_rear.x)));
+                scanTop_rear.y = static_cast<int>(std::round(firstTop_rear.y + t * (lastTop_rear.y - firstTop_rear.y)));
                 
-                scanBottom_rear.x = boxCenterX_rear + static_cast<int>(localX * cosA_rear - localBottomY * sinA_rear);
-                scanBottom_rear.y = boxCenterY_rear + static_cast<int>(localX * sinA_rear + localBottomY * cosA_rear);
+                scanBottom_rear.x = static_cast<int>(std::round(firstBottom_rear.x + t * (lastBottom_rear.x - firstBottom_rear.x)));
+                scanBottom_rear.y = static_cast<int>(std::round(firstBottom_rear.y + t * (lastBottom_rear.y - firstBottom_rear.y)));
             }
             
             // 스캔 라인이 이미지 범위를 벗어나면 건너뛰기
@@ -1917,7 +2019,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 continue;
             }
             
-            // 세로 라인을 따라 검은색 픽셀 구간 찾기
+            // 모든 스캔 라인의 시작-끝점을 저장 (검은색 유무 관계없이)
+            blackPixelPoints_rear.push_back(scanTop_rear);
+            blackPixelPoints_rear.push_back(scanBottom_rear);
+            
+            // 세로 라인을 따라 검은색 픽셀 구간 찾기 (두께 측정용)
             cv::LineIterator it(cleanOriginal, scanTop_rear, scanBottom_rear, 8);
             std::vector<std::pair<int, int>> blackRegions_rear; // 검은색 구간의 시작과 끝
             int regionStart = -1;
@@ -1929,32 +2035,35 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 linePoints_rear.push_back(it.pos());
             }
             
-            // 다시 처음부터 스캔하여 검은색 픽셀 찾기
+            // 다시 처음부터 스캔하여 검은색 픽셀 찾기 (두께 측정)
             it = cv::LineIterator(cleanOriginal, scanTop_rear, scanBottom_rear, 8);
             for (int i = 0; i < it.count; i++, ++it) {
                 cv::Vec3b pixel = cleanOriginal.at<cv::Vec3b>(it.pos());
                 // 검은색 픽셀 판단 (RGB 값이 모두 낮은 경우)
                 bool isBlack = (pixel[0] < 50 && pixel[1] < 50 && pixel[2] < 50);
                 
-                if (isBlack && !inBlackRegion) {
-                    // 검은색 구간 시작
-                    regionStart = i;
-                    inBlackRegion = true;
-                } else if (!isBlack && inBlackRegion) {
-                    // 검은색 구간 끝
-                    int thickness = i - regionStart;
-                    if (thickness >= 3) { // 최소 3픽셀 이상만 유효한 두께로 인정
-                        thicknesses_rear.push_back(thickness);
-                        blackRegions_rear.push_back({regionStart, i});
-                        
-                        // 검은색 구간의 픽셀들을 시각화용으로 저장
-                        for (int j = regionStart; j < i; j++) {
-                            if (j < linePoints_rear.size()) {
-                                blackPixelPoints_rear.push_back(linePoints_rear[j]);
+                if (isBlack) {
+                    if (!inBlackRegion) {
+                        // 검은색 구간 시작
+                        regionStart = i;
+                        inBlackRegion = true;
+                    }
+                } else {
+                    if (inBlackRegion) {
+                        // 검은색 구간 끝
+                        int thickness = i - regionStart;
+                        if (thickness >= 3) { // 최소 3픽셀 이상만 유효한 두께로 인정
+                            thicknesses_rear.push_back(thickness);
+                            blackRegions_rear.push_back({regionStart, i});
+                            
+                            // 검은색 구간의 실제 시작점과 끝점 저장 (빨간색 표시용)
+                            if (regionStart < linePoints_rear.size() && i - 1 < linePoints_rear.size()) {
+                                blackRegionPoints_rear.push_back(linePoints_rear[regionStart]);
+                                blackRegionPoints_rear.push_back(linePoints_rear[i - 1]);
                             }
                         }
+                        inBlackRegion = false;
                     }
-                    inBlackRegion = false;
                 }
             }
             
@@ -1965,11 +2074,10 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     thicknesses_rear.push_back(thickness);
                     blackRegions_rear.push_back({regionStart, it.count});
                     
-                    // 검은색 구간의 픽셀들을 시각화용으로 저장
-                    for (int j = regionStart; j < it.count; j++) {
-                        if (j < linePoints_rear.size()) {
-                            blackPixelPoints_rear.push_back(linePoints_rear[j]);
-                        }
+                    // 검은색 구간의 실제 시작점과 끝점 저장 (빨간색 표시용)
+                    if (regionStart < linePoints_rear.size() && it.count - 1 < linePoints_rear.size()) {
+                        blackRegionPoints_rear.push_back(linePoints_rear[regionStart]);
+                        blackRegionPoints_rear.push_back(linePoints_rear[it.count - 1]);
                     }
                 }
             }
@@ -2030,6 +2138,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             if (rearThicknessPoints) {
                 *rearThicknessPoints = blackPixelPoints_rear;
             }
+            
+            // REAR 검은색 구간 포인트들을 저장 (빨간색 표시용)
+            if (rearBlackRegionPoints) {
+                *rearBlackRegionPoints = blackRegionPoints_rear;
+            }
                        
         } else {
             std::cout << "=== REAR 두께 측정 검사 ===" << std::endl;
@@ -2057,32 +2170,38 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                   << " edgeBoxCenter=(" << edgeBoxCenter.x << "," << edgeBoxCenter.y 
                   << ") edgeBoxWidth=" << edgeBoxWidth << " edgeBoxHeight=" << edgeBoxHeight << std::endl;
         if (pattern.stripLengthEnabled && gradientPoints.size() >= 4) {
-            // 이미 계산된 P2, P4 점들 사용 (gradientPoints에서)
-            cv::Point p2 = gradientPoints[1];  // 하단 첫번째 변화점
+            // P3(상단 두번째), P4(하단 두번째) 점들 사용
+            cv::Point p3 = gradientPoints[1];  // 상단 두번째 변화점
             cv::Point p4 = gradientPoints[3];  // 하단 두번째 변화점
             
-            // P2, P4 중간점 계산 (상단-하단 중심)
-            cv::Point p24MidPoint = cv::Point((p2.x + p4.x) / 2, (p2.y + p4.y) / 2);
+            // P3, P4 중간점 계산
+            cv::Point p34MidPoint = cv::Point((p3.x + p4.x) / 2, (p3.y + p4.y) / 2);
             
-            // EDGE 절단면 평균 X 위치와 EDGE 포인트들의 중심 Y 위치로 시작점 계산
+            // EDGE 평균선의 회전 중심점을 시작점으로 사용
             cv::Point edgeStartPoint;
             if (edgeAverageX && *edgeAverageX > 0 && edgePoints && !edgePoints->empty()) {
-                // EDGE 포인트들의 중심 Y 위치 계산
-                double sumY = 0.0;
+                // EDGE 포인트들의 첫번째와 마지막 Y 좌표 찾기
+                int minY = edgePoints->front().y;
+                int maxY = edgePoints->front().y;
                 for (const auto& pt : *edgePoints) {
-                    sumY += pt.y;
+                    if (pt.y < minY) minY = pt.y;
+                    if (pt.y > maxY) maxY = pt.y;
                 }
-                int edgeCenterY = static_cast<int>(sumY / edgePoints->size());
                 
-                // 시작점: EDGE 평균 X 위치 + EDGE 포인트들의 중심 Y 위치
-                edgeStartPoint = cv::Point(*edgeAverageX, edgeCenterY);
+                // 평균선의 회전 중심점 (avgLineCenter와 동일)
+                // avgLineTop = (avgX, minY), avgLineBottom = (avgX, maxY)
+                // avgLineCenter = (avgLineTop + avgLineBottom) / 2
+                int edgeLineCenterY = (minY + maxY) / 2;
+                
+                // 시작점: 평균선의 중심점 (회전 중심)
+                edgeStartPoint = cv::Point(*edgeAverageX, edgeLineCenterY);
             } else {
                 // 폴백: EDGE 검사 영역 중심점 사용
                 edgeStartPoint = edgeBoxCenter;
             }
             
             // 두 점 사이의 픽셀 거리 계산
-            double lengthDistance = cv::norm(p24MidPoint - edgeStartPoint);
+            double lengthDistance = cv::norm(p34MidPoint - edgeStartPoint);
             
             // 허용 범위 확인
             bool lengthInRange = (lengthDistance >= pattern.stripLengthMin && 
@@ -2094,7 +2213,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             if (stripLengthPassed) *stripLengthPassed = lengthInRange;
             if (stripMeasuredLength) *stripMeasuredLength = lengthDistance;
             if (stripLengthStartPoint) *stripLengthStartPoint = edgeStartPoint;
-            if (stripLengthEndPoint) *stripLengthEndPoint = p24MidPoint;
+            if (stripLengthEndPoint) *stripLengthEndPoint = p34MidPoint;
             
             isPassed = isPassed && lengthInRange;  // 전체 STRIP 검사 결과에 반영
         } else {

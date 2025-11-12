@@ -3071,6 +3071,32 @@ void TeachingWidget::createPropertyPanels() {
     insStripLengthMaxSpin->setValue(500);
     insStripLayout->addRow(insStripLengthMaxLabel, insStripLengthMaxSpin);
     
+    // STRIP 길이 수치 변환 설정 (스핀박스 + 갱신 버튼)
+    insStripLengthConversionLabel = new QLabel("수치 변환 (mm):", insStripPanel);
+    
+    QWidget* conversionWidget = new QWidget(insStripPanel);
+    QHBoxLayout* conversionLayout = new QHBoxLayout(conversionWidget);
+    conversionLayout->setContentsMargins(0, 0, 0, 0);
+    conversionLayout->setSpacing(5);
+    
+    insStripLengthConversionSpin = new QDoubleSpinBox(insStripPanel);
+    insStripLengthConversionSpin->setRange(0.001, 100.0);
+    insStripLengthConversionSpin->setDecimals(3);
+    insStripLengthConversionSpin->setSingleStep(0.001);
+    insStripLengthConversionSpin->setValue(6.0);
+    conversionLayout->addWidget(insStripLengthConversionSpin);
+    
+    insStripLengthRefreshButton = new QPushButton("갱신", insStripPanel);
+    insStripLengthRefreshButton->setMaximumWidth(80);
+    conversionLayout->addWidget(insStripLengthRefreshButton);
+    
+    insStripLayout->addRow(insStripLengthConversionLabel, conversionWidget);
+    
+    // 측정값 결과 라벨 (별도 행)
+    insStripLengthMeasuredLabel = new QLabel("측정값: - mm", insStripPanel);
+    insStripLengthMeasuredLabel->setStyleSheet("QLabel { color: #00AAFF; font-weight: bold; }");
+    insStripLayout->addRow("", insStripLengthMeasuredLabel);
+    
     // FRONT 두께검사 구분선 추가
     QFrame* frontSeparator = new QFrame(insStripPanel);
     frontSeparator->setFrameShape(QFrame::HLine);
@@ -4933,6 +4959,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                         // 길이검사 관련 위젯들 활성화/비활성화
                         if (insStripLengthMinSpin) insStripLengthMinSpin->setEnabled(enabled);
                         if (insStripLengthMaxSpin) insStripLengthMaxSpin->setEnabled(enabled);
+                        if (insStripLengthConversionSpin) insStripLengthConversionSpin->setEnabled(enabled);
                         
                         cameraView->updatePatternById(patternId, *pattern);
                         cameraView->update();
@@ -4966,6 +4993,63 @@ void TeachingWidget::connectPropertyPanelEvents() {
                     if (pattern && pattern->type == PatternType::INS) {
                         pattern->stripLengthMax = value;
                         cameraView->updatePatternById(patternId, *pattern);
+                    }
+                }
+            }
+        });
+        
+        // 길이검사 수치 변환 변경 이벤트
+        connect(insStripLengthConversionSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this](double value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->stripLengthConversionMm = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                    }
+                }
+            }
+        });
+        
+        // 길이 측정값 갱신 버튼
+        connect(insStripLengthRefreshButton, &QPushButton::clicked, [this]() {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        // 마지막 검사 결과에서 측정된 길이 가져오기
+                        const InspectionResult& result = cameraView->getLastInspectionResult();
+                        if (result.stripMeasuredLength.contains(patternId)) {
+                            double pixelLength = result.stripMeasuredLength[patternId];
+                            double mmLength = pattern->stripLengthConversionMm;
+                            
+                            // 캘리브레이션 값 저장
+                            pattern->stripLengthCalibrationPx = pixelLength;
+                            pattern->stripLengthCalibrated = true;
+                            
+                            // 변환 비율 계산: pixel/mm
+                            double conversionRatio = pixelLength / mmLength;
+                            
+                            // 측정값 라벨 업데이트
+                            if (insStripLengthMeasuredLabel) {
+                                insStripLengthMeasuredLabel->setText(
+                                    QString("측정값: %1 px (%2 px/mm)").arg(pixelLength, 0, 'f', 1).arg(conversionRatio, 0, 'f', 2)
+                                );
+                            }
+                            
+                            qDebug() << "STRIP 길이 캘리브레이션:" 
+                                    << "측정 픽셀=" << pixelLength 
+                                    << "실제 mm=" << mmLength
+                                    << "변환 비율=" << conversionRatio << "px/mm";
+                        } else {
+                            if (insStripLengthMeasuredLabel) {
+                                insStripLengthMeasuredLabel->setText("측정값: 검사 필요");
+                            }
+                        }
                     }
                 }
             }
@@ -5703,6 +5787,12 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripLengthMaxSpin->blockSignals(true);
                         insStripLengthMaxSpin->setValue(pattern->stripLengthMax);
                         insStripLengthMaxSpin->blockSignals(false);
+                    }
+                    
+                    if (insStripLengthConversionSpin) {
+                        insStripLengthConversionSpin->blockSignals(true);
+                        insStripLengthConversionSpin->setValue(pattern->stripLengthConversionMm);
+                        insStripLengthConversionSpin->blockSignals(false);
                     }
                     
                     // FRONT 두께 검사 활성화 상태 업데이트

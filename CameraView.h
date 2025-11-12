@@ -185,6 +185,10 @@ public:
     PatternInfo* getPatternById(const QUuid& id);
     const PatternInfo* getPatternById(const QUuid& id) const;
     void updateFidTemplateImage(const QUuid& patternId, const QImage& templateImage);
+    
+    // 검사 결과 접근자
+    const InspectionResult& getLastInspectionResult() const { return lastInspectionResult; }
+    bool hasLastInspectionResult() const { return hasInspectionResult; }
 
     // 필터 관련 메서드들 (UUID 기반으로 통일)
     void addPatternFilter(const QUuid& patternId, int filterType);
@@ -279,6 +283,7 @@ protected:
     void paintEvent(QPaintEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    bool event(QEvent* event) override;  // 제스처 이벤트 처리
     
 private:
     bool isInspectionMode = false;
