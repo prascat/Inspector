@@ -1773,10 +1773,9 @@ void TeachingWidget::connectEvents() {
             }
         }
         
-        // 패턴 각도 변경 시 템플릿 이미지 업데이트 (시뮬레이션 모드 지원)
-        if (pattern->type == PatternType::FID) {
-            updateFidTemplateImage(pattern, pattern->rect);
-        } else if (pattern->type == PatternType::INS) {
+        // FID 패턴의 각도 변경 시 템플릿 이미지는 업데이트하지 않음
+        // (원본 템플릿 유지, 검사 시 회전 매칭으로 처리)
+        if (pattern->type == PatternType::INS) {
             updateInsTemplateImage(pattern, pattern->rect);
         }
     });
@@ -3992,83 +3991,21 @@ void TeachingWidget::updateFidTemplateImage(PatternInfo* pattern, const QRectF& 
 
     cv::Mat roiMat;
     
-    // FID 템플릿 이미지: 회전각에 따라 유동적으로 사각형 크기 계산
-    cv::Point2f center(newRect.x() + newRect.width()/2.0f, newRect.y() + newRect.height()/2.0f);
-    
-    // 회전각에 따른 최소 필요 사각형 크기 계산
-    double angleRad = std::abs(pattern->angle) * M_PI / 180.0;
-    double width = newRect.width();
-    double height = newRect.height();
-    
-    // 회전된 사각형의 경계 상자 크기 계산
-    double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
-    double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
-    
-    // 정사각형 크기는 회전된 경계 상자 중 더 큰 값 + 여유분
-    int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
-    
-    // 정사각형 ROI 영역 계산 (중심점 기준)
-    int halfSize = maxSize / 2;
-    cv::Rect squareRoi(
-        static_cast<int>(center.x) - halfSize,
-        static_cast<int>(center.y) - halfSize,
-        maxSize,
-        maxSize
+    // FID 템플릿 이미지: 각도 무시하고 원본 사각형만 저장 (검사 시 회전 매칭 사용)
+    cv::Rect roi(
+        static_cast<int>(newRect.x()),
+        static_cast<int>(newRect.y()),
+        static_cast<int>(newRect.width()),
+        static_cast<int>(newRect.height())
     );
     
-    // 이미지 경계와 교집합 구하기
+    // 이미지 경계 확인
     cv::Rect imageBounds(0, 0, sourceFrame.cols, sourceFrame.rows);
-    cv::Rect validRoi = squareRoi & imageBounds;
+    cv::Rect validRoi = roi & imageBounds;
     
     if (validRoi.width > 0 && validRoi.height > 0) {
-        // 정사각형 결과 이미지 생성 (검은색 배경)
-        roiMat = cv::Mat::zeros(maxSize, maxSize, sourceFrame.type());
-        
-        // 유효한 영역만 복사
-        int offsetX = validRoi.x - squareRoi.x;
-        int offsetY = validRoi.y - squareRoi.y;
-        
-        cv::Mat validImage = sourceFrame(validRoi);
-        cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
-        validImage.copyTo(roiMat(resultRect));
-        
-        // 패턴 영역 외부 마스킹 (패턴 영역만 보이도록)
-        cv::Mat mask = cv::Mat::zeros(maxSize, maxSize, CV_8UC1);
-        
-        // 정사각형 중심을 기준으로 패턴 영역 계산
-        cv::Point2f patternCenter(maxSize / 2.0f, maxSize / 2.0f);
-        cv::Size2f patternSize(newRect.width(), newRect.height());
-        
-        if (std::abs(pattern->angle) > 0.1) {
-            // 회전된 패턴의 경우: 회전된 사각형 마스크
-            cv::Point2f vertices[4];
-            cv::RotatedRect rotatedRect(patternCenter, patternSize, pattern->angle);
-            rotatedRect.points(vertices);
-            
-            std::vector<cv::Point> points;
-            for (int i = 0; i < 4; i++) {
-                points.push_back(cv::Point(static_cast<int>(vertices[i].x), 
-                                         static_cast<int>(vertices[i].y)));
-            }
-            
-            cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{points}, cv::Scalar(255));
-        } else {
-            // 회전 없는 경우: 일반 사각형 마스크
-            cv::Rect patternRect(
-                static_cast<int>(patternCenter.x - patternSize.width / 2),
-                static_cast<int>(patternCenter.y - patternSize.height / 2),
-                static_cast<int>(patternSize.width),
-                static_cast<int>(patternSize.height)
-            );
-            cv::rectangle(mask, patternRect, cv::Scalar(255), -1);
-        }
-        
-        // 마스크 반전: 패턴 영역 외부를 흰색으로 설정
-        cv::Mat invertedMask;
-        cv::bitwise_not(mask, invertedMask);
-        
-        // 패턴 영역 외부를 흰색으로 마스킹
-        roiMat.setTo(cv::Scalar(255, 255, 255), invertedMask);
+        // 원본 사각형 영역만 추출 (회전 적용 안 함)
+        roiMat = sourceFrame(validRoi).clone();
     }
     
     if (roiMat.empty()) {
