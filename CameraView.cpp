@@ -1993,6 +1993,97 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     painter.setBrush(Qt::NoBrush);
                     painter.drawRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
                     
+                    // 검은색 검출 영역의 Convex Hull 그리기 (회전 변환 내부에서)
+                    if (result.stripRearBlackRegionPoints.contains(patternId)) {
+                        const QList<QPoint>& rearBlackPoints = result.stripRearBlackRegionPoints[patternId];
+                        
+                        if (!rearBlackPoints.isEmpty()) {
+                            // 절대좌표를 박스 로컬 좌표로 변환 (painter가 이미 회전/이동됨)
+                            QVector<QPointF> localPoints;
+                            
+                            double rad = -insAngle * M_PI / 180.0;
+                            double cosA = std::cos(rad);
+                            double sinA = std::sin(rad);
+                            
+                            for (const QPoint& pt : rearBlackPoints) {
+                                QPointF ptScene(pt.x(), pt.y());
+                                QPointF ptVP = mapFromScene(ptScene);
+                                
+                                // 박스 중심 기준으로 상대 좌표 계산
+                                QPointF relPt = ptVP - rearBoxCenter;
+                                
+                                // 역회전 적용 (painter 회전 상태 보정)
+                                double rotX = relPt.x() * cosA - relPt.y() * sinA;
+                                double rotY = relPt.x() * sinA + relPt.y() * cosA;
+                                
+                                localPoints.append(QPointF(rotX, rotY));
+                            }
+                            
+                            // OpenCV로 Convex Hull 계산
+                            std::vector<cv::Point2f> cvPoints;
+                            for (const QPointF& pt : localPoints) {
+                                cvPoints.push_back(cv::Point2f(pt.x(), pt.y()));
+                            }
+                            
+                            std::vector<cv::Point2f> hull;
+                            cv::convexHull(cvPoints, hull);
+                            
+                            // Hull에 약간의 마진 추가 (3픽셀)
+                            std::vector<cv::Point2f> expandedHull;
+                            cv::Point2f center(0, 0);
+                            for (const cv::Point2f& p : hull) {
+                                center.x += p.x;
+                                center.y += p.y;
+                            }
+                            center.x /= hull.size();
+                            center.y /= hull.size();
+                            
+                            for (const cv::Point2f& pt : hull) {
+                                cv::Point2f dir = pt - center;
+                                float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+                                if (len > 0.1f) {
+                                    dir.x /= len;
+                                    dir.y /= len;
+                                    expandedHull.push_back(cv::Point2f(pt.x + dir.x * 3.0f, pt.y + dir.y * 3.0f));
+                                } else {
+                                    expandedHull.push_back(pt);
+                                }
+                            }
+                            
+                            // Convex Hull을 QPolygonF로 변환
+                            QPolygonF hullPolygon;
+                            for (const cv::Point2f& pt : expandedHull) {
+                                hullPolygon.append(QPointF(pt.x, pt.y));
+                            }
+                            
+                            // PASS/NG 판정
+                            bool rearPassed = true;
+                            if (patternInfo->stripLengthCalibrationPx > 0) {
+                                int rearMeasuredMin = result.stripRearMeasuredThicknessMin.value(patternId, 0);
+                                int rearMeasuredMax = result.stripRearMeasuredThicknessMax.value(patternId, 0);
+                                double pixelToMm = patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx;
+                                double minMm = rearMeasuredMin * pixelToMm;
+                                double maxMm = rearMeasuredMax * pixelToMm;
+                                rearPassed = (minMm >= patternInfo->stripRearThicknessMin && 
+                                             maxMm <= patternInfo->stripRearThicknessMax);
+                            }
+                            
+                            // 박스 영역으로 클리핑
+                            QPainterPath boxClip;
+                            boxClip.addRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
+                            
+                            // 폴리곤 채우기 (PASS: 초록색 alpha 40%, NG: 빨간색 alpha 40%)
+                            QColor fillColor = rearPassed ? QColor(0, 255, 0, 102) : QColor(255, 0, 0, 102);
+                            painter.setBrush(fillColor);
+                            painter.setPen(Qt::NoPen);
+                            
+                            QPainterPath hullPath;
+                            hullPath.addPolygon(hullPolygon);
+                            QPainterPath clippedPath = hullPath.intersected(boxClip);
+                            painter.drawPath(clippedPath);
+                        }
+                    }
+                    
                     // REAR 라벨에 최소/최대/평균 값 표시
                     int rearMeasuredMin = result.stripRearMeasuredThicknessMin.value(patternId, 0);
                     int rearMeasuredMax = result.stripRearMeasuredThicknessMax.value(patternId, 0);
@@ -2026,16 +2117,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                             .arg(rearMeasuredAvg);
                     }
                     
-                    // PASS/NG 판정 (배경색 결정을 위해 먼저 계산)
-                    bool rearPassed = true;
-                    if (patternInfo->stripLengthCalibrationPx > 0) {
-                        double pixelToMm = patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx;
-                        double minMm = rearMeasuredMin * pixelToMm;
-                        double maxMm = rearMeasuredMax * pixelToMm;
-                        rearPassed = (minMm >= patternInfo->stripRearThicknessMin && 
-                                     maxMm <= patternInfo->stripRearThicknessMax);
-                    }
-                    
                     QFont boxFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
                     painter.setFont(boxFont);
                     QFontMetrics boxFm(boxFont);
@@ -2047,7 +2128,18 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     painter.setPen(QColor(255, 255, 255));  // 흰색
                     painter.drawText(rearTextRect, Qt::AlignCenter, rearLabel);
                     
-                    // PASS/NG 표시 (이름표 위)
+                    // PASS/NG 표시 (이름표 위) - 판정 다시 계산
+                    bool rearPassed = true;
+                    if (patternInfo->stripLengthCalibrationPx > 0) {
+                        int rearMeasuredMin = result.stripRearMeasuredThicknessMin.value(patternId, 0);
+                        int rearMeasuredMax = result.stripRearMeasuredThicknessMax.value(patternId, 0);
+                        double pixelToMm = patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx;
+                        double minMm = rearMeasuredMin * pixelToMm;
+                        double maxMm = rearMeasuredMax * pixelToMm;
+                        rearPassed = (minMm >= patternInfo->stripRearThicknessMin && 
+                                     maxMm <= patternInfo->stripRearThicknessMax);
+                    }
+                    
                     QString rearPassText = rearPassed ? "PASS" : "NG";
                     QColor rearPassColor = rearPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
                     int passTextW = boxFm.horizontalAdvance(rearPassText);
@@ -2131,6 +2223,97 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     painter.setBrush(Qt::NoBrush);
                     painter.drawRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
                     
+                    // 검은색 검출 영역의 Convex Hull 그리기 (회전 변환 내부에서)
+                    if (result.stripFrontBlackRegionPoints.contains(patternId)) {
+                        const QList<QPoint>& frontBlackPoints = result.stripFrontBlackRegionPoints[patternId];
+                        
+                        if (!frontBlackPoints.isEmpty()) {
+                            // 절대좌표를 박스 로컬 좌표로 변환 (painter가 이미 회전/이동됨)
+                            QVector<QPointF> localPoints;
+                            
+                            double rad = -insAngle * M_PI / 180.0;
+                            double cosA = std::cos(rad);
+                            double sinA = std::sin(rad);
+                            
+                            for (const QPoint& pt : frontBlackPoints) {
+                                QPointF ptScene(pt.x(), pt.y());
+                                QPointF ptVP = mapFromScene(ptScene);
+                                
+                                // 박스 중심 기준으로 상대 좌표 계산
+                                QPointF relPt = ptVP - frontBoxCenter;
+                                
+                                // 역회전 적용 (painter 회전 상태 보정)
+                                double rotX = relPt.x() * cosA - relPt.y() * sinA;
+                                double rotY = relPt.x() * sinA + relPt.y() * cosA;
+                                
+                                localPoints.append(QPointF(rotX, rotY));
+                            }
+                            
+                            // OpenCV로 Convex Hull 계산
+                            std::vector<cv::Point2f> cvPoints;
+                            for (const QPointF& pt : localPoints) {
+                                cvPoints.push_back(cv::Point2f(pt.x(), pt.y()));
+                            }
+                            
+                            std::vector<cv::Point2f> hull;
+                            cv::convexHull(cvPoints, hull);
+                            
+                            // Hull에 약간의 마진 추가 (3픽셀)
+                            std::vector<cv::Point2f> expandedHull;
+                            cv::Point2f center(0, 0);
+                            for (const cv::Point2f& p : hull) {
+                                center.x += p.x;
+                                center.y += p.y;
+                            }
+                            center.x /= hull.size();
+                            center.y /= hull.size();
+                            
+                            for (const cv::Point2f& pt : hull) {
+                                cv::Point2f dir = pt - center;
+                                float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+                                if (len > 0.1f) {
+                                    dir.x /= len;
+                                    dir.y /= len;
+                                    expandedHull.push_back(cv::Point2f(pt.x + dir.x * 3.0f, pt.y + dir.y * 3.0f));
+                                } else {
+                                    expandedHull.push_back(pt);
+                                }
+                            }
+                            
+                            // Convex Hull을 QPolygonF로 변환
+                            QPolygonF hullPolygon;
+                            for (const cv::Point2f& pt : expandedHull) {
+                                hullPolygon.append(QPointF(pt.x, pt.y));
+                            }
+                            
+                            // PASS/NG 판정
+                            bool frontPassed = true;
+                            if (patternInfo->stripLengthCalibrationPx > 0) {
+                                int frontMeasuredMin = result.stripMeasuredThicknessMin.value(patternId, 0);
+                                int frontMeasuredMax = result.stripMeasuredThicknessMax.value(patternId, 0);
+                                double pixelToMm = patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx;
+                                double minMm = frontMeasuredMin * pixelToMm;
+                                double maxMm = frontMeasuredMax * pixelToMm;
+                                frontPassed = (minMm >= patternInfo->stripThicknessMin && 
+                                              maxMm <= patternInfo->stripThicknessMax);
+                            }
+                            
+                            // 박스 영역으로 클리핑
+                            QPainterPath boxClip;
+                            boxClip.addRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
+                            
+                            // 폴리곤 채우기 (PASS: 초록색 alpha 40%, NG: 빨간색 alpha 40%)
+                            QColor fillColor = frontPassed ? QColor(0, 255, 0, 102) : QColor(255, 0, 0, 102);
+                            painter.setBrush(fillColor);
+                            painter.setPen(Qt::NoPen);
+                            
+                            QPainterPath hullPath;
+                            hullPath.addPolygon(hullPolygon);
+                            QPainterPath clippedPath = hullPath.intersected(boxClip);
+                            painter.drawPath(clippedPath);
+                        }
+                    }
+                    
                     // FRONT 라벨에 최소/최대/평균 값 표시
                     int frontMeasuredMin = result.stripMeasuredThicknessMin.value(patternId, 0);
                     int frontMeasuredMax = result.stripMeasuredThicknessMax.value(patternId, 0);
@@ -2164,16 +2347,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                             .arg(frontMeasuredAvg);
                     }
                     
-                    // PASS/NG 판정 (배경색 결정을 위해 먼저 계산)
-                    bool frontPassed = true;
-                    if (patternInfo->stripLengthCalibrationPx > 0) {
-                        double pixelToMm = patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx;
-                        double minMm = frontMeasuredMin * pixelToMm;
-                        double maxMm = frontMeasuredMax * pixelToMm;
-                        frontPassed = (minMm >= patternInfo->stripThicknessMin && 
-                                      maxMm <= patternInfo->stripThicknessMax);
-                    }
-                    
                     QFont boxFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
                     painter.setFont(boxFont);
                     QFontMetrics boxFm(boxFont);
@@ -2185,7 +2358,18 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     painter.setPen(QColor(255, 255, 255));  // 흰색
                     painter.drawText(frontTextRect, Qt::AlignCenter, frontLabel);
                     
-                    // PASS/NG 표시 (이름표 위)
+                    // PASS/NG 표시 (이름표 위) - 판정 다시 계산
+                    bool frontPassed = true;
+                    if (patternInfo->stripLengthCalibrationPx > 0) {
+                        int frontMeasuredMin = result.stripMeasuredThicknessMin.value(patternId, 0);
+                        int frontMeasuredMax = result.stripMeasuredThicknessMax.value(patternId, 0);
+                        double pixelToMm = patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx;
+                        double minMm = frontMeasuredMin * pixelToMm;
+                        double maxMm = frontMeasuredMax * pixelToMm;
+                        frontPassed = (minMm >= patternInfo->stripThicknessMin && 
+                                      maxMm <= patternInfo->stripThicknessMax);
+                    }
+                    
                     QString frontPassText = frontPassed ? "PASS" : "NG";
                     QColor frontPassColor = frontPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
                     int passTextW = boxFm.horizontalAdvance(frontPassText);
@@ -2255,51 +2439,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 }
             }
             
-            // ===== FRONT 검은색 구간만 빨간색으로 그리기 =====
-            if (result.stripFrontBlackRegionPoints.contains(patternId)) {
-                const QList<QPoint>& frontBlackPoints = result.stripFrontBlackRegionPoints[patternId];
-                
-                painter.setPen(QPen(QColor(255, 0, 0), 3));  // 빨간색, 3px (더 굵게)
-                
-                // 2개씩 묶어서 선으로 그리기 (검은색 구간의 시작점-끝점)
-                for (int i = 0; i + 1 < frontBlackPoints.size(); i += 2) {
-                    QPoint ptStart = frontBlackPoints[i];
-                    QPoint ptEnd = frontBlackPoints[i + 1];
-                    
-                    // 절대좌표를 Scene -> Viewport로 변환
-                    QPointF pt1Scene(ptStart.x(), ptStart.y());
-                    QPointF pt2Scene(ptEnd.x(), ptEnd.y());
-                    
-                    QPointF pt1VP = mapFromScene(pt1Scene);
-                    QPointF pt2VP = mapFromScene(pt2Scene);
-                    
-                    // 선으로 연결
-                    painter.drawLine(pt1VP, pt2VP);
-                }
-            }
-            
-            // ===== REAR 검은색 구간만 빨간색으로 그리기 =====
-            if (result.stripRearBlackRegionPoints.contains(patternId)) {
-                const QList<QPoint>& rearBlackPoints = result.stripRearBlackRegionPoints[patternId];
-                
-                painter.setPen(QPen(QColor(255, 0, 0), 3));  // 빨간색, 3px (더 굵게)
-                
-                // 2개씩 묶어서 선으로 그리기 (검은색 구간의 시작점-끝점)
-                for (int i = 0; i + 1 < rearBlackPoints.size(); i += 2) {
-                    QPoint ptStart = rearBlackPoints[i];
-                    QPoint ptEnd = rearBlackPoints[i + 1];
-                    
-                    // 절대좌표를 Scene -> Viewport로 변환
-                    QPointF pt1Scene(ptStart.x(), ptStart.y());
-                    QPointF pt2Scene(ptEnd.x(), ptEnd.y());
-                    
-                    QPointF pt1VP = mapFromScene(pt1Scene);
-                    QPointF pt2VP = mapFromScene(pt2Scene);
-                    
-                    // 선으로 연결
-                    painter.drawLine(pt1VP, pt2VP);
-                }
-            }
+            // 두께 검사 결과는 박스 채우기로 표현 (아래 FRONT/REAR 박스 시각화에서 처리)
             
             // ===== EDGE 박스 시각화 =====
             if (result.edgeBoxCenter.contains(patternId) && result.edgeBoxSize.contains(patternId)) {

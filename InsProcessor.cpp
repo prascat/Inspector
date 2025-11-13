@@ -199,6 +199,14 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             result.locations[pattern.id] = matchLoc;
             // angles는 위에서 이미 설정됨
             
+            // FID 검사 결과 로그 (개별 출력)
+            QString fidResult = fidMatched ? "PASS" : "NG";
+            logDebug(QString("%1: %2 [%3/%4]")
+                    .arg(pattern.name)
+                    .arg(fidResult)
+                    .arg(QString::number(matchScore, 'f', 2))
+                    .arg(QString::number(pattern.matchThreshold, 'f', 2)));
+            
             // 전체 결과 갱신
             result.isPassed = result.isPassed && fidMatched;
         }
@@ -2282,8 +2290,8 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                       pattern.rect.y() + pattern.rect.height()/2.0f);
     
     cv::Rect squareRoi(
-        static_cast<int>(center.x) - halfSize,    // extractROI와 정확히 동일
-        static_cast<int>(center.y) - halfSize,    // extractROI와 정확히 동일
+        static_cast<int>(std::round(center.x)) - halfSize,    // extractROI와 정확히 동일 (round 사용)
+        static_cast<int>(std::round(center.y)) - halfSize,    // extractROI와 정확히 동일 (round 사용)
         maxSize,
         maxSize
     );
@@ -3199,10 +3207,10 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                                                 .arg(QString::number(pattern.stripLengthMax, 'f', 2));
         }
         
-        logDebug(QString("EDGE: %1 %2").arg(edgeResult).arg(edgeDetail));
-        logDebug(QString("FRONT: %1 %2").arg(frontResult).arg(frontDetail));
-        logDebug(QString("REAR: %1 %2").arg(rearResult).arg(rearDetail));
-        logDebug(QString("STRIP LENGTH: %1 %2").arg(stripResult).arg(stripDetail));
+        logDebug(QString("%1 EDGE: %2 %3").arg(pattern.name).arg(edgeResult).arg(edgeDetail));
+        logDebug(QString("%1 FRONT: %2 %3").arg(pattern.name).arg(frontResult).arg(frontDetail));
+        logDebug(QString("%1 REAR: %2 %3").arg(pattern.name).arg(rearResult).arg(rearDetail));
+        logDebug(QString("%1 STRIP LENGTH: %2 %3").arg(pattern.name).arg(stripResult).arg(stripDetail));
 
         
         return allTestsPassed;  // 모든 검사 통과 여부 반환

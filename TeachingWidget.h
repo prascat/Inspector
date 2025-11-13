@@ -254,10 +254,12 @@ private slots:
     bool runInspect(const cv::Mat& frame, int specificCameraIndex = -1);
     void onBackButtonClicked();
     void toggleFullScreenMode();
-    void receiveLogMessage(const QString& message);
     
     // 카메라 모드 슬롯들 (camOn/camOff)
     void onCamModeToggled();
+    
+public slots:
+    void receiveLogMessage(const QString& message);
     
 private:
     void updateMainCameraUI(const InspectionResult& result, const cv::Mat& frameForInspection);

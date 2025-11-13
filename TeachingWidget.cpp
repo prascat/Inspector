@@ -6409,8 +6409,72 @@ void TeachingWidget::updateLogOverlayPosition() {
 void TeachingWidget::receiveLogMessage(const QString& message) {
     if (!logTextEdit || !logOverlayWidget) return;
     
-    // 로그 메시지 추가 (제한 없음)
-    logTextEdit->append(message);
+    // 현재 커서를 끝으로 이동
+    QTextCursor cursor = logTextEdit->textCursor();
+    cursor.movePosition(QTextCursor::End);
+    logTextEdit->setTextCursor(cursor);
+    
+    // 텍스트 색상 결정
+    QTextCharFormat format;
+    
+    // "검사 시작", "검사 종료"
+    if (message.contains("검사 시작") || message.contains("검사 종료")) {
+        format.setForeground(QColor("#2196F3")); // 파란색
+        format.setFontWeight(QFont::Bold);
+    }
+    // "전체 검사 결과"
+    else if (message.contains("전체 검사 결과:")) {
+        if (message.contains("PASS")) {
+            format.setForeground(QColor("#4CAF50")); // 초록색
+            format.setFontWeight(QFont::Bold);
+        } else if (message.contains("NG")) {
+            format.setForeground(QColor("#F44336")); // 빨간색
+            format.setFontWeight(QFont::Bold);
+        }
+    }
+    // INS 패턴 검사 결과 - PASS는 초록, NG는 빨강
+    else if ((message.contains("EDGE:") || message.contains("FRONT:") || message.contains("REAR:") || message.contains("STRIP LENGTH:"))) {
+        if (message.contains("PASS")) {
+            format.setForeground(QColor("#4CAF50")); // 초록색
+        } else if (message.contains("NG")) {
+            format.setForeground(QColor("#F44336")); // 빨간색
+        } else {
+            format.setForeground(QColor("#8BCB8B")); // INS 색상 (연한 초록색)
+        }
+    }
+    // FID 패턴 - FID 색상
+    else if (message.contains(": PASS [") || message.contains(": NG [")) {
+        // "F_u4E4Y: PASS [1.00/0.80]" 형식
+        format.setForeground(QColor("#7094DB")); // FID 색상 (연한 파란색)
+    }
+    else {
+        format.setForeground(QColor("#FFFFFF")); // 기본 흰색
+    }
+    
+    // 타임스탬프 분리 처리
+    if (message.contains("\" - \"")) {
+        QStringList parts = message.split("\" - \"");
+        if (parts.size() >= 2) {
+            // 타임스탬프 부분 (회색)
+            QTextCharFormat timestampFormat;
+            timestampFormat.setForeground(QColor("#9E9E9E"));
+            cursor.insertText(parts[0] + "\" - \"", timestampFormat);
+            
+            // 메시지 부분 (위에서 결정된 색상)
+            QString msg = parts[1];
+            if (msg.endsWith("\"")) {
+                msg.chop(1);
+            }
+            cursor.insertText(msg, format);
+        } else {
+            cursor.insertText(message, format);
+        }
+    } else {
+        cursor.insertText(message, format);
+    }
+    
+    cursor.insertText("\n");
+    logTextEdit->ensureCursorVisible();
     
     // 오버레이가 숨겨져 있으면 표시
     if (!logOverlayWidget->isVisible()) {
