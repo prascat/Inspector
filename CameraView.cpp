@@ -2468,11 +2468,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         avgLineCenter = (lineTopVP + lineBottomVP) / 2.0;
                         hasAvgLineCenter = true;
                         
-                        QPen avgLinePen(QColor(255, 255, 0), 2);  // 노란색, 2px
-                        avgLinePen.setStyle(Qt::DashLine);
-                        painter.setPen(avgLinePen);
-                        painter.drawLine(lineTopVP, lineBottomVP);
-                        
                         // ========== STRIP 탈피 길이 측정 선 ==========
                         // EDGE 평균선 중심점을 시작점으로 사용
                         if (result.stripLengthEndPoint.contains(patternId)) {
@@ -2494,9 +2489,9 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                             
                             // 측정된 길이 텍스트 표시
                             if (result.stripMeasuredLength.contains(patternId)) {
-                                double lengthMm = result.stripMeasuredLength[patternId];  // 이미 mm 단위
+                                double measuredValue = result.stripMeasuredLength[patternId];
                                 
-                                // 패턴 정보 가져오기 (픽셀 값 계산용)
+                                // 패턴 정보 가져오기
                                 QString lengthText;
                                 const PatternInfo* pattern = nullptr;
                                 for (const PatternInfo& p : patterns) {
@@ -2506,17 +2501,24 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                     }
                                 }
                                 
-                            if (pattern && pattern->stripLengthCalibrated && pattern->stripLengthCalibrationPx > 0) {
-                                // mm를 픽셀로 역변환
-                                double mmToPixel = pattern->stripLengthCalibrationPx / pattern->stripLengthConversionMm;
-                                double lengthPx = lengthMm * mmToPixel;
-                                lengthText = QString("%1 mm (%2 px)")
-                                    .arg(lengthMm, 0, 'f', 2)
-                                    .arg(lengthPx, 0, 'f', 1);
-                            } else {
-                                // 캘리브레이션 안된 경우 mm만 표시
-                                lengthText = QString("%1 mm").arg(lengthMm, 0, 'f', 2);
-                            }                                // 선의 중간 지점에 텍스트 표시 (INS 각도 적용)
+                                if (pattern && pattern->stripLengthCalibrated && 
+                                    pattern->stripLengthCalibrationPx > 0.0 && 
+                                    pattern->stripLengthConversionMm > 0.0 &&
+                                    std::isfinite(measuredValue)) {
+                                    // 캘리브레이션 완료: mm 값과 픽셀 값 함께 표시
+                                    double mmToPixel = pattern->stripLengthCalibrationPx / pattern->stripLengthConversionMm;
+                                    double lengthPx = measuredValue * mmToPixel;
+                                    lengthText = QString("%1 mm (%2 px)")
+                                        .arg(measuredValue, 0, 'f', 2)
+                                        .arg(lengthPx, 0, 'f', 1);
+                                } else {
+                                    // 캘리브레이션 전: 픽셀 값만 표시
+                                    if (std::isfinite(measuredValue)) {
+                                        lengthText = QString("%1 px").arg(measuredValue, 0, 'f', 1);
+                                    } else {
+                                        lengthText = "ERROR";  // 무한대 또는 NaN인 경우
+                                    }
+                                }                                // 선의 중간 지점에 텍스트 표시 (INS 각도 적용)
                                 QPointF midPoint = (avgLineCenter + endVP) / 2.0;
                                 
                                 // INS 각도 적용 (패턴 정보에서)

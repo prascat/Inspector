@@ -4,7 +4,8 @@
 #include <algorithm>
 #include <iostream>
 #include <ctime>
-#include <cstdlib> 
+#include <cstdlib>
+#include <cmath> 
 
 ImageProcessor::ImageProcessor() {
 
@@ -2058,21 +2059,55 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             // EDGE 평균선의 회전 중심점을 시작점으로 사용
             cv::Point edgeStartPoint;
             if (edgeAverageX && *edgeAverageX > 0 && edgePoints && !edgePoints->empty()) {
-                // EDGE 포인트들의 첫번째와 마지막 Y 좌표 찾기
-                int minY = edgePoints->front().y;
-                int maxY = edgePoints->front().y;
-                for (const auto& pt : *edgePoints) {
-                    if (pt.y < minY) minY = pt.y;
-                    if (pt.y > maxY) maxY = pt.y;
+                // EDGE 포인트들을 Y 좌표 순으로 정렬
+                std::vector<cv::Point> sortedPoints = *edgePoints;
+                std::sort(sortedPoints.begin(), sortedPoints.end(), 
+                         [](const cv::Point& a, const cv::Point& b) { return a.y < b.y; });
+                
+                // 중간 지점의 실제 EDGE 포인트 찾기
+                int centerIdx = sortedPoints.size() / 2;
+                cv::Point centerPoint = sortedPoints[centerIdx];
+                
+                // 중간 포인트가 평균 X값과 너무 차이나면 주변 포인트 검색
+                int avgX = *edgeAverageX;
+                int bestIdx = centerIdx;
+                int minDistance = std::abs(centerPoint.x - avgX);
+                
+                // 중간 지점 주변 포인트들에서 평균 X에 가장 가까우면서 연속성이 있는 포인트 찾기
+                int searchRange = std::min(5, (int)sortedPoints.size() / 3);
+                
+                for (int i = std::max(0, centerIdx - searchRange); 
+                     i <= std::min((int)sortedPoints.size() - 1, centerIdx + searchRange); i++) {
+                    
+                    int distance = std::abs(sortedPoints[i].x - avgX);
+                    
+                    // 거리 조건: 평균 X에 더 가까워야 함
+                    bool betterDistance = (distance < minDistance);
+                    
+                    // 연속성 조건: 주변 포인트들과 X값이 크게 다르지 않아야 함
+                    bool goodContinuity = true;
+                    if (i > 0 && i < (int)sortedPoints.size() - 1) {
+                        int prevDiff = std::abs(sortedPoints[i].x - sortedPoints[i-1].x);
+                        int nextDiff = std::abs(sortedPoints[i].x - sortedPoints[i+1].x);
+                        // X값 변화가 30픽셀 이상이면 이상한 포인트로 판단
+                        if (prevDiff > 30 || nextDiff > 30) {
+                            goodContinuity = false;
+                        }
+                    }
+                    
+                    if (betterDistance && goodContinuity) {
+                        minDistance = distance;
+                        bestIdx = i;
+                    }
                 }
                 
-                // 평균선의 회전 중심점 (avgLineCenter와 동일)
-                // avgLineTop = (avgX, minY), avgLineBottom = (avgX, maxY)
-                // avgLineCenter = (avgLineTop + avgLineBottom) / 2
-                int edgeLineCenterY = (minY + maxY) / 2;
+                // 최적의 포인트를 시작점으로 사용
+                edgeStartPoint = sortedPoints[bestIdx];
                 
-                // 시작점: 평균선의 중심점 (회전 중심)
-                edgeStartPoint = cv::Point(*edgeAverageX, edgeLineCenterY);
+                // 디버그 로그
+                printf("[EDGE 시작점 선택] 총 %zu개 포인트, 중간 인덱스: %d, 선택된 인덱스: %d, 좌표: (%d, %d)\n",
+                       sortedPoints.size(), centerIdx, bestIdx, edgeStartPoint.x, edgeStartPoint.y);
+                
             } else {
                 // 폴백: EDGE 검사 영역 중심점 사용
                 edgeStartPoint = edgeBoxCenter;
@@ -2081,13 +2116,27 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             // 두 점 사이의 픽셀 거리 계산
             double lengthDistancePx = cv::norm(p34MidPoint - edgeStartPoint);
             
-            // 픽셀을 mm로 변환
-            double pixelToMm = pattern.stripLengthConversionMm / pattern.stripLengthCalibrationPx;
-            double lengthDistance = lengthDistancePx * pixelToMm;
+            // 캘리브레이션 여부에 따라 픽셀 또는 mm로 변환
+            double lengthDistance = 0.0;
+            bool lengthInRange = false;
             
-            // 허용 범위 확인
-            bool lengthInRange = (lengthDistance >= pattern.stripLengthMin && 
-                                lengthDistance <= pattern.stripLengthMax);
+            if (pattern.stripLengthCalibrated && 
+                pattern.stripLengthCalibrationPx > 0.0 && 
+                pattern.stripLengthConversionMm > 0.0) {
+                // 캘리브레이션이 완료된 경우: mm로 변환
+                double pixelToMm = pattern.stripLengthConversionMm / pattern.stripLengthCalibrationPx;
+                lengthDistance = lengthDistancePx * pixelToMm;
+                
+                // 허용 범위 확인 (mm 기준)
+                lengthInRange = (lengthDistance >= pattern.stripLengthMin && 
+                               lengthDistance <= pattern.stripLengthMax);
+            } else {
+                // 캘리브레이션이 안된 경우: 픽셀 값 그대로 사용
+                lengthDistance = lengthDistancePx;
+                
+                // 픽셀 기준으로 허용 범위 확인 (필요시)
+                lengthInRange = true;  // 캘리브레이션 전에는 일단 통과로 처리
+            }
             
 
             
