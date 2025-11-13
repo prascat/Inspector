@@ -6442,9 +6442,10 @@ void TeachingWidget::updateLogOverlayPosition() {
     if (!logOverlayWidget || !cameraView) return;
     
     int bottomMargin = 10;
+    int rightMargin = 10;
     
-    // 화면 하단 중앙에 배치
-    int x = (cameraView->width() - logOverlayWidget->width()) / 2;
+    // 화면 하단 오른쪽에 배치 (프로퍼티 패널과 겹치지 않도록)
+    int x = cameraView->width() - logOverlayWidget->width() - rightMargin;
     int y = cameraView->height() - logOverlayWidget->height() - bottomMargin;
     
     logOverlayWidget->move(x, y);
