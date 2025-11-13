@@ -489,6 +489,14 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
         });
     }
      
+    // 전체화면 모드 초기화
+    isFullScreenMode = true; // 시작할 때 최대화 모드
+    windowedGeometry = QRect(100, 100, 1200, 700); // 기본 윈도우 크기
+    
+    // Ctrl+F로 전체화면 토글 단축키 설정 (Ubuntu F11 충돌 회피)
+    fullscreenShortcut = new QShortcut(QKeySequence("Ctrl+F"), this);
+    connect(fullscreenShortcut, &QShortcut::activated, this, &TeachingWidget::toggleFullScreenMode);
+    
     // UI 텍스트 초기 갱신
     QTimer::singleShot(100, this, &TeachingWidget::updateUITexts);
 }
@@ -1039,14 +1047,7 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
     msgBox.exec();
                     return;
                 }
-                
-                // 2. 카메라 및 프레임 확인 (시뮬레이션 모드 고려)
-                qDebug() << "[RUN 버튼 디버그] camOff:" << camOff << "cameraIndex:" << cameraIndex << "cameraFrames.size():" << cameraFrames.size();
-                if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
-                    qDebug() << "[RUN 버튼 디버그] cameraFrames[" << cameraIndex << "] empty:" << cameraFrames[cameraIndex].empty() 
-                             << "size:" << cameraFrames[cameraIndex].cols << "x" << cameraFrames[cameraIndex].rows;
-                }
-                
+
                 if (camOff) {
                     // 시뮬레이션 모드: 현재 카메라 프레임이 있는지 확인
                     
@@ -2833,8 +2834,8 @@ void TeachingWidget::createPropertyPanels() {
     // FID 패턴에서 매칭 방법 및 매칭 검사 옵션 추가
     fidMatchMethodLabel = new QLabel("매칭 방법:", fidPropWidget);
     fidMatchMethodCombo = new QComboBox(fidPropWidget);
-    fidMatchMethodCombo->addItem("템플릿 매칭", 0);
-    fidMatchMethodCombo->addItem("특징점 매칭", 1);
+    fidMatchMethodCombo->addItem("Coefficient", 0);
+    fidMatchMethodCombo->addItem("Correlation", 1);
     
     QHBoxLayout* fidMatchMethodLayout = new QHBoxLayout();
     fidMatchMethodLayout->addWidget(fidMatchMethodLabel);
@@ -3898,8 +3899,7 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
         if (roiMat.empty()) {
             return;
         }
-        
-        // 4. 자신의 필터 적용 (필요하다면)
+  
     for (const FilterInfo& filter : pattern->filters) {
         if (filter.enabled) {
             cv::Mat filtered;
@@ -4083,17 +4083,7 @@ void TeachingWidget::updateFidTemplateImage(PatternInfo* pattern, const QRectF& 
         return;
     }
 
-    // 활성화된 모든 필터(마스크 포함) 순차 적용
-    for (const FilterInfo& filter : pattern->filters) {
-        if (filter.enabled) {
-            cv::Mat filtered;
-            ImageProcessor processor;
-            processor.applyFilter(roiMat, filtered, filter);
-            if (!filtered.empty()) {
-                roiMat = filtered.clone();
-            }
-        }
-    }
+    // FID는 필터를 사용하지 않음 (원본 이미지로만 매칭)
 
     // BGR -> RGB 변환
     cv::cvtColor(roiMat, roiMat, cv::COLOR_BGR2RGB);
@@ -8369,11 +8359,8 @@ void TeachingWidget::resumeToLiveMode() {
             }
         }
         
-        // **camOff 모드에서만 프레임을 비우고, 실제 카메라 모드에서는 프레임 유지**
-        // 실제 카메라 모드에서는 라이브 영상을 계속 유지해야 함
-        if (camOff && cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
-            cameraFrames[cameraIndex] = cv::Mat();
-        }
+        // **cameraFrames는 유지 - camOff 모드에서는 티칭 이미지 보존, camOn 모드에서는 라이브 영상 유지**
+        // 프레임을 비우지 않음
         
         // **6. UI 이벤트 처리**
         QApplication::processEvents();
@@ -8761,6 +8748,9 @@ void TeachingWidget::saveRecipe() {
         ConfigManager::instance()->setLastRecipePath(currentRecipeName);
         ConfigManager::instance()->saveConfig();
         
+        // 윈도우 타이틀 업데이트
+        setWindowTitle(QString("KM Inspector - %1").arg(currentRecipeName));
+        
         CustomMessageBox msgBox(this);
         msgBox.setIcon(CustomMessageBox::Information);
         msgBox.setTitle("레시피 저장");
@@ -8856,6 +8846,9 @@ void TeachingWidget::clearCameraInfos() {
         }
     }
     cameraInfos.clear();
+    
+    // 레시피 초기화 시 타이틀도 초기화
+    setWindowTitle("KM Inspector");
 }
 
 void TeachingWidget::appendCameraInfo(const CameraInfo& info) {
@@ -10083,47 +10076,25 @@ void TeachingWidget::onCamModeToggled() {
             patternTree->clear();
         }
         
-        // cameraFrames 초기화 (새로운 레시피 모드 진입 시)
-        cameraFrames.clear();
-        qDebug() << "[onCamModeToggled] camOff 모드 진입 - cameraFrames 초기화 (레시피 로드 준비)";
+        // cameraFrames 초기화 후 현재 레시피가 있으면 티칭 이미지 다시 로드
+        QString currentRecipe = getCurrentRecipeName();
+        qDebug() << "[onCamModeToggled] camOff 모드 진입 - 현재 레시피:" << currentRecipe;
         
-        // cameraIndex 초기화 - 레시피 모드에서도 0번부터 시작
-        cameraIndex = 0;
+        if (!currentRecipe.isEmpty()) {
+            qDebug() << "[onCamModeToggled] 레시피 재로드 (티칭 이미지 포함):" << currentRecipe;
+            // 레시피를 다시 로드하여 티칭 이미지 가져오기
+            onRecipeSelected(currentRecipe);
+        } else {
+            // 레시피가 없으면 cameraFrames 초기화
+            cameraFrames.clear();
+            qDebug() << "[onCamModeToggled] 레시피 없음 - cameraFrames 초기화";
+        }
         
         qDebug() << "레시피 모드로 전환 완료";
         
     } else {
         // camOff -> camOn (레시피 모드 -> 라이브 모드) 전환
         qDebug() << "모드 전환: 레시피 모드 -> 라이브 모드";
-        
-        // 레시피 모드 데이터 초기화
-        // cameraInfos 초기화
-        clearCameraInfos();
-        
-        // 패턴 리스트 초기화
-        if (cameraView) {
-            cameraView->clearPatterns();
-            cameraView->clearCurrentRect();
-            // camOn 모드로 전환 시에만 배경 이미지 초기화
-            cameraView->setBackgroundPixmap(QPixmap()); // 배경 이미지 초기화
-        }
-        
-        // 패턴 트리 초기화
-        if (patternTree) {
-            patternTree->clear();
-        }
-        
-        // cameraFrames 초기화 (라이브 모드 진입 시)
-        cameraFrames.clear();
-        qDebug() << "[onCamModeToggled] camOn 모드 진입 - cameraFrames 초기화 (라이브 모드 준비)";
-        
-        // cameraIndex 초기화
-        cameraIndex = 0;
-        
-        // 카메라 이름 초기화
-        if (cameraView) {
-            cameraView->update();
-        }
         
         // 카메라 재연결 시도
         detectCameras();
@@ -10723,6 +10694,9 @@ void TeachingWidget::newRecipe() {
     currentRecipeName = recipeName;
     hasUnsavedChanges = true;  // 사용자가 명시적으로 저장할 때까지 대기
     
+    // 윈도우 타이틀 업데이트
+    setWindowTitle(QString("KM Inspector - %1").arg(recipeName));
+    
     qDebug() << QString("새 레시피 '%1' 준비 완료 (저장 대기)").arg(recipeName);
 }
 
@@ -10930,26 +10904,16 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
     QStringList recipeCameraUuids = manager.getRecipeCameraUuids(recipeName);
     qDebug() << QString("레시피 '%1'의 카메라 목록: %2").arg(recipeName).arg(recipeCameraUuids.join(", "));
     
-    // **★★★ 중요: 콜백 정의 전에 먼저 카메라 연결 상태 확인하여 camOff 설정 ★★★**
-    bool hasConnectedCamera = false;
-    for (const auto& info : cameraInfos) {
-        if (info.isConnected) {
-            hasConnectedCamera = true;
-            break;
-        }
-    }
-    
-    if (hasConnectedCamera && camOff) {
-        qDebug() << QString("🎥 [레시피 로드 시작] 실제 카메라 연결됨 → CAM ON 모드로 전환 (콜백 실행 전)");
-        camOff = false;
-    } else if (!hasConnectedCamera && !camOff) {
-        qDebug() << QString("🎯 [레시피 로드 시작] 카메라 연결 안됨 → 시뮬레이션 모드로 전환");
-        camOff = true;
-    }
+    // **camOff 상태는 사용자가 CAM 버튼으로 제어하므로 자동 전환하지 않음**
+    qDebug() << QString("🎥 [레시피 로드 시작] 현재 camOff 상태: %1 (true=시뮬레이션, false=실제카메라)").arg(camOff);
     
     // camOff 모드에서는 cameraInfos를 비워서 레시피에서 새로 생성하도록 함
+    // camOn 모드에서는 기존 cameraInfos 유지 (카메라 연결 상태 유지)
     if (camOff) {
+        qDebug() << QString("🎯 [레시피 로드] camOff 모드 - cameraInfos 초기화");
         cameraInfos.clear();
+    } else {
+        qDebug() << QString("🎯 [레시피 로드] camOn 모드 - cameraInfos 유지");
     }
     
     // 티칭 이미지 콜백 함수 정의 (camOn/camOff 공통)
@@ -10962,13 +10926,8 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
             qDebug() << QString("이미지 경로[%1]: %2").arg(i).arg(imagePaths[i]);
         }
         
-        // **카메라 ON 상태에서는 저장된 이미지를 로드하지 않음 (티칭만 로드)**
-        if (!camOff) {
-            qDebug() << QString("[카메라 ON] 저장된 이미지 로드 스킵 - 실시간 카메라 프레임 사용");
-            qDebug() << QString("=== teachingImageCallback 완료: 카메라ON 모드 ===");
-            updatePreviewFrames();  // 프리뷰는 업데이트
-            return;
-        }
+        // **카메라 ON/OFF 모두 티칭 이미지를 cameraFrames에 로드**
+        qDebug() << QString("[레시피 로드] 티칭 이미지 로드 시작 - camOff=%1").arg(camOff);
         
         int imageIndex = 0;
         for (const QString& imagePath : imagePaths) {
@@ -11039,6 +10998,9 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
     if (manager.loadRecipe(recipeFileName, cameraInfos, calibrationMap, cameraView, patternTree, teachingImageCallback, this)) {
         currentRecipeName = recipeName;
         hasUnsavedChanges = false;
+        
+        // 윈도우 타이틀 업데이트
+        setWindowTitle(QString("KM Inspector - %1").arg(recipeName));
         
         // 최근 사용한 레시피를 ConfigManager에 저장
         ConfigManager::instance()->setLastRecipePath(recipeName);
@@ -11238,5 +11200,19 @@ void TeachingWidget::setTeachingButtonsEnabled(bool enabled) {
             // TEACH OFF: View 모드로 설정 (모든 편집 기능 차단)
             cameraView->setEditMode(CameraView::EditMode::View);
         }
+    }
+}
+
+void TeachingWidget::toggleFullScreenMode() {
+    if (isFullScreenMode) {
+        // 전체화면 -> 윈도우 모드 (타이틀바 유지)
+        showNormal();
+        setGeometry(windowedGeometry);
+        isFullScreenMode = false;
+    } else {
+        // 윈도우 모드 -> 전체화면 (타이틀바 유지)
+        windowedGeometry = geometry();
+        showMaximized();
+        isFullScreenMode = true;
     }
 }

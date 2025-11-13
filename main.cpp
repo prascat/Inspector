@@ -72,10 +72,11 @@ int main(int argc, char *argv[]) {
     // 티칭 위젯 생성
     TeachingWidget widget(0, "카메라 1");
     
-    // 초기 윈도우 크기 설정 (로그 뷰어 접혀있는 상태 기준)
-    widget.resize(1200, 700);
+    // 윈도우 타이틀 설정
+    widget.setWindowTitle("KM Inspector");
     
-    widget.show();
+    // 최대화 모드로 시작 (타이틀바 유지)
+    widget.showMaximized();
     
     // 글로벌 로그 리시버 설정
     globalLogReceiver = widget.getLogViewer();

@@ -20,6 +20,11 @@ CameraSettingsDialog::CameraSettingsDialog(QWidget* parent)
     setMinimumSize(700, 450);
     
     setupUI();
+    
+    // 부모 위젯 중앙에 배치
+    if (parent) {
+        move(parent->geometry().center() - rect().center());
+    }
 }
 
 CameraSettingsDialog::~CameraSettingsDialog() {

@@ -1709,8 +1709,8 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         
         painter.restore();
         
-        // FID 라벨
-        QString label = QString("%1: %2").arg(patternInfo->name).arg(score, 0, 'f', 2);
+        // FID 라벨 (점수를 퍼센트로 표시)
+        QString label = QString("%1: %2%").arg(patternInfo->name).arg(score * 100.0, 0, 'f', 1);
         QFont font(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
         painter.setFont(font);
         QFontMetrics fm(font);
@@ -1804,8 +1804,8 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             
             painter.restore();
             
-            // INS 라벨 (이름만 표시)
-            QString label = patternInfo->name;
+            // INS 라벨 (이름과 점수를 퍼센트로 표시)
+            QString label = QString("%1: %2%").arg(patternInfo->name).arg(score * 100.0, 0, 'f', 1);
             QFont font(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
             painter.setFont(font);
             QFontMetrics fm(font);

@@ -249,16 +249,28 @@ int CustomMessageBox::exec() {
 }
 
 void CustomMessageBox::centerOnScreen() {
-    QScreen* screen = QApplication::primaryScreen();
-    if (!screen) return;
-    
-    QRect screenGeometry = screen->availableGeometry();
-    QRect dialogGeometry = frameGeometry();
-    
-    int x = screenGeometry.center().x() - dialogGeometry.width() / 2;
-    int y = screenGeometry.center().y() - dialogGeometry.height() / 2 - 32;  // 타이틀바 높이(32px) 만큼 위로 보정
-    
-    move(x, y);
+    // 부모 위젯이 있으면 부모 위젯 중앙에 배치
+    if (parentWidget()) {
+        QRect parentGeometry = parentWidget()->geometry();
+        QRect dialogGeometry = frameGeometry();
+        
+        int x = parentGeometry.center().x() - dialogGeometry.width() / 2;
+        int y = parentGeometry.center().y() - dialogGeometry.height() / 2;
+        
+        move(x, y);
+    } else {
+        // 부모가 없으면 화면 중앙에 배치
+        QScreen* screen = QApplication::primaryScreen();
+        if (!screen) return;
+        
+        QRect screenGeometry = screen->availableGeometry();
+        QRect dialogGeometry = frameGeometry();
+        
+        int x = screenGeometry.center().x() - dialogGeometry.width() / 2;
+        int y = screenGeometry.center().y() - dialogGeometry.height() / 2;
+        
+        move(x, y);
+    }
 }
 
 void CustomMessageBox::setInputField(bool enabled, const QString& defaultText) {

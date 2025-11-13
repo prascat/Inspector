@@ -43,6 +43,7 @@
 #include <QSlider>
 #include <QProgressDialog>
 #include <QStringList>
+#include <QShortcut>
 #include <atomic>
 #include <opencv2/opencv.hpp>
 
@@ -248,6 +249,7 @@ private slots:
     void switchToTestMode();
     bool runInspect(const cv::Mat& frame, int specificCameraIndex = -1);
     void onBackButtonClicked();
+    void toggleFullScreenMode();
     
     // 카메라 모드 슬롯들 (camOn/camOff)
     void onCamModeToggled();
@@ -616,6 +618,11 @@ private:
     
     // 패턴 백업 관련 (검사 중지 시 원래 상태로 복원용)
     QMap<QUuid, PatternInfo> originalPatternBackup; // 원본 패턴 정보 백업
+    
+    // 전체화면 모드 관련
+    bool isFullScreenMode;
+    QRect windowedGeometry;
+    QShortcut* fullscreenShortcut;
     
     // 레시피 메뉴
     QMenu* recipeMenu = nullptr;

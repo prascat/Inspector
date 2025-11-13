@@ -173,7 +173,7 @@ struct PatternInfo {
     double maxAngle = 15.0;
     double angleStep = 1.0;
     QImage templateImage;
-    int fidMatchMethod = 0;     // 추가: FID 매칭 방법 (0: 템플릿, 1: 특징점, 2: 윤곽선)
+    int fidMatchMethod = 0;     // FID 템플릿 매칭 방법 (0: Coefficient, 1: Correlation)
     bool runInspection = true;  // 추가: 매칭 검사 활성화 여부
     
     // Inspection 속성

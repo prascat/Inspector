@@ -686,39 +686,7 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
         // **수정**: 템플릿은 티칭할 때 저장된 원본 그대로 사용 (검사 시 갱신하지 않음)
         cv::Mat processedTemplate = templateMat.clone();
         
-        // 검색 영역(ROI)에만 필터 적용 (템플릿은 그대로 유지)
-        if (!pattern.filters.isEmpty()) {
-            logDebug(QString("FID 패턴 '%1': %2개의 필터를 검색 영역에만 적용")
-                    .arg(pattern.name)
-                    .arg(pattern.filters.size()));
-                    
-            // 검색 영역에만 필터 적용 (템플릿은 건드리지 않음)
-            cv::Mat filteredRoi = roi.clone();
-            ImageProcessor processor;
-            
-            for (const FilterInfo& filter : pattern.filters) {
-                if (filter.enabled) {
-                    try {
-                        cv::Mat tempRoi;
-                        processor.applyFilter(filteredRoi, tempRoi, filter);
-                        
-                        if (!tempRoi.empty()) {
-                            filteredRoi = tempRoi.clone();
-                            logDebug(QString("FID 패턴 '%1': 필터 %2 검색 영역에 적용됨")
-                                    .arg(pattern.name)
-                                    .arg(filter.type));
-                        }
-                    } catch (const cv::Exception& e) {
-                        logDebug(QString("FID 패턴 '%1': 필터 적용 중 예외 발생 - %2")
-                                .arg(pattern.name)
-                                .arg(e.what()));
-                    }
-                }
-            }
-            
-            // 필터 적용된 검색 영역으로 교체 (템플릿은 그대로)
-            roi = filteredRoi;
-        }
+        // FID는 필터를 사용하지 않음 (원본 이미지로만 매칭)
         
         // 매칭 수행
         bool matched = false;
@@ -733,33 +701,17 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
             tmplStep = pattern.angleStep;
         }
         
-        switch (pattern.fidMatchMethod) {
-            case 0: // 템플릿 매칭
-                matched = performTemplateMatching(roi, processedTemplate, localMatchLoc, score, tempAngle,
-                                               pattern, tmplMinA, tmplMaxA, tmplStep);
-                
-                // 회전 매칭이 적용된 경우 탐지된 각도 사용
-                if (pattern.useRotation && matched) {
-                    matchAngle = tempAngle;
-                    logDebug(QString("FID 패턴 '%1': 회전 매칭 적용됨, tempAngle=%2°, matchAngle=%3°")
-                            .arg(pattern.name).arg(tempAngle).arg(matchAngle));
-                } else if (matched) {
-                    matchAngle = pattern.angle; // 기본 각도 사용
-                }
-                break;
-                
-            case 1: // 특징점 매칭
-                logDebug(QString("특징점 매칭 수행 중: 패턴 '%1', 검색 영역 (%2,%3,%4,%5)")
-                        .arg(pattern.name)
-                        .arg(searchRoi.x).arg(searchRoi.y)
-                        .arg(searchRoi.width).arg(searchRoi.height));
-                // **수정**: 처리된 템플릿 사용, 각도 무시
-                matched = performFeatureMatching(roi, processedTemplate, localMatchLoc, score, tempAngle);
-                break;
-                
-            default:
-                logDebug("알 수 없는 매칭 방법");
-                return false;
+        // fidMatchMethod: 0=Coefficient (TM_CCOEFF_NORMED), 1=Correlation (TM_CCORR_NORMED)
+        matched = performTemplateMatching(roi, processedTemplate, localMatchLoc, score, tempAngle,
+                                       pattern, tmplMinA, tmplMaxA, tmplStep);
+        
+        // 회전 매칭이 적용된 경우 탐지된 각도 사용
+        if (pattern.useRotation && matched) {
+            matchAngle = tempAngle;
+            logDebug(QString("FID 패턴 '%1': 회전 매칭 적용됨, tempAngle=%2°, matchAngle=%3°")
+                    .arg(pattern.name).arg(tempAngle).arg(matchAngle));
+        } else if (matched) {
+            matchAngle = pattern.angle; // 기본 각도 사용
         }
         
         // ROI 좌표를 원본 이미지 좌표로 변환
@@ -822,8 +774,11 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
         cv::Mat templateForMatching = templGray.clone();
         cv::Mat templateMask;
         
+        // 매칭 메트릭 선택: 0=Coefficient, 1=Correlation
+        int matchMethod = (pattern.fidMatchMethod == 0) ? cv::TM_CCOEFF_NORMED : cv::TM_CCORR_NORMED;
+        
         cv::Mat result;
-        cv::matchTemplate(imageGray, templateForMatching, result, cv::TM_CCOEFF_NORMED);
+        cv::matchTemplate(imageGray, templateForMatching, result, matchMethod);
         
         double minVal, maxVal;
         cv::Point minLoc, maxLoc;
@@ -966,10 +921,13 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
             continue;
         }
         
+        // 매칭 메트릭 선택: 0=Coefficient, 1=Correlation
+        int matchMethod = (pattern.fidMatchMethod == 0) ? cv::TM_CCOEFF_NORMED : cv::TM_CCORR_NORMED;
+        
         cv::Mat result;
         try {
             // FID 패턴 매칭은 마스크 없이 수행
-            cv::matchTemplate(imageGray, templateForMatching, result, cv::TM_CCOEFF_NORMED);
+            cv::matchTemplate(imageGray, templateForMatching, result, matchMethod);
         } catch (const cv::Exception& e) {
             logDebug(QString("각도 %1°: 템플릿 매칭 오류 - %2").arg(currentAngle).arg(e.what()));
             continue;
@@ -1096,10 +1054,13 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
             continue;
         }
         
+        // 매칭 메트릭 선택: 0=Coefficient, 1=Correlation
+        int matchMethod = (pattern.fidMatchMethod == 0) ? cv::TM_CCOEFF_NORMED : cv::TM_CCORR_NORMED;
+        
         cv::Mat result;
         try {
             // FID 패턴 매칭은 마스크 없이 수행
-            cv::matchTemplate(imageGray, templateForMatching, result, cv::TM_CCOEFF_NORMED);
+            cv::matchTemplate(imageGray, templateForMatching, result, matchMethod);
         } catch (const cv::Exception& e) {
             continue;
         }
@@ -2733,67 +2694,32 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             double minX = absoluteEdgePoints[0].x();
             double maxX = absoluteEdgePoints[0].x();
             
-            // EDGE 포인트들의 선형 회귀 계산 (거의 수직선이므로 Y를 독립변수로 사용)
-            double sumY = 0.0;
+            // OpenCV fitLine을 사용하여 EDGE 포인트들에 최적의 직선 맞추기
+            std::vector<cv::Point2f> points;
             for (const QPoint& pt : absoluteEdgePoints) {
-                sumY += pt.y();
+                points.push_back(cv::Point2f(pt.x(), pt.y()));
             }
-            double avgY = sumY / absoluteEdgePoints.size();
             
-            // X의 분산과 Y의 분산을 비교하여 적절한 회귀 방향 선택
-            double varX = 0.0, varY = 0.0;
-            for (const QPoint& pt : absoluteEdgePoints) {
-                double dx = pt.x() - edgeAvgX;
-                double dy = pt.y() - avgY;
-                varX += dx * dx;
-                varY += dy * dy;
-            }
-            varX /= absoluteEdgePoints.size();
-            varY /= absoluteEdgePoints.size();
+            cv::Vec4f lineParams;
+            cv::fitLine(points, lineParams, cv::DIST_L2, 0, 0.01, 0.01);
             
+            // lineParams: [vx, vy, x0, y0]
+            // vx, vy: 직선의 방향 벡터 (정규화됨)
+            // x0, y0: 직선이 지나는 점
+            float vx = lineParams[0];
+            float vy = lineParams[1];
+            float x0 = lineParams[2];
+            float y0 = lineParams[3];
+            
+            // y = mx + b 형태로 변환
             double m = 0.0, b = 0.0;
-            
-            // Y 분산이 X 분산보다 크면 일반적인 y = mx + b 사용
-            // X 분산이 Y 분산보다 크면 x = my + c를 y = (1/m)x - c/m 형태로 변환
-            if (varY >= varX && varX > 0.001) {
-                // 일반적인 선형 회귀: y = mx + b
-                double sumXY = 0.0, sumXX = 0.0;
-                for (const QPoint& pt : absoluteEdgePoints) {
-                    double dx = pt.x() - edgeAvgX;
-                    double dy = pt.y() - avgY;
-                    sumXY += dx * dy;
-                    sumXX += dx * dx;
-                }
-                m = (sumXX > 0) ? (sumXY / sumXX) : 0.0;
-                b = avgY - m * edgeAvgX;
+            if (std::abs(vx) > 0.001) {
+                m = vy / vx;  // 기울기
+                b = y0 - m * x0;  // y절편
             } else {
-                // 수직에 가까운 경우: x = m'y + c를 y = mx + b 형태로 변환
-                double sumXY = 0.0, sumYY = 0.0;
-                for (const QPoint& pt : absoluteEdgePoints) {
-                    double dx = pt.x() - edgeAvgX;
-                    double dy = pt.y() - avgY;
-                    sumXY += dx * dy;
-                    sumYY += dy * dy;
-                }
-                
-                if (sumYY > 0.001) {
-                    double m_prime = sumXY / sumYY;  // x = m'y + c에서의 기울기
-                    double c = edgeAvgX - m_prime * avgY;
-                    
-                    // y = mx + b 형태로 변환: x = m'y + c => y = (1/m')x - c/m'
-                    if (std::abs(m_prime) > 0.001) {
-                        m = 1.0 / m_prime;
-                        b = -c / m_prime;
-                    } else {
-                        // 완전 수직인 경우: x = 상수 (기울기 무한대)
-                        m = 1e6;  // 매우 큰 기울기로 근사
-                        b = avgY - m * edgeAvgX;
-                    }
-                } else {
-                    // 수평선인 경우
-                    m = 0.0;
-                    b = avgY;
-                }
+                // 완전 수직선인 경우
+                m = 1e6;  // 매우 큰 기울기
+                b = 0;
             }
             
             double minDistancePx = std::numeric_limits<double>::max();

@@ -34,6 +34,11 @@ SerialSettingsDialog::SerialSettingsDialog(SerialCommunication* serialComm, QWid
     refreshPortList();
     updateConnectionStatus();
     tryAutoConnect(); // 저장된 설정으로 자동 연결 시도
+    
+    // 부모 위젯 중앙에 배치
+    if (parent) {
+        move(parent->geometry().center() - rect().center());
+    }
 }
 
 void SerialSettingsDialog::setupUI()

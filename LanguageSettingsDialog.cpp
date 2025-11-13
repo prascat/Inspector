@@ -12,6 +12,11 @@ LanguageSettingsDialog::LanguageSettingsDialog(QWidget* parent)
     setWindowTitle(TR("LANGUAGE_SETTINGS"));
     resize(400, 200);
     
+    // 부모 위젯 중앙에 배치
+    if (parent) {
+        move(parent->geometry().center() - rect().center());
+    }
+    
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
     
     // 언어 선택에 대한 설명 레이블

@@ -22,6 +22,11 @@ FilterDialog::FilterDialog(CameraView* cameraView, int patternIndex, QWidget* pa
 
     setupUI();
     setPatternIndex(patternIndex);
+    
+    // 부모 위젯 중앙에 배치
+    if (parent) {
+        move(parent->geometry().center() - rect().center());
+    }
 }
 
 QUuid FilterDialog::getPatternId(int index) const {
