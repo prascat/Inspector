@@ -1403,14 +1403,10 @@ void TeachingWidget::updateFilterParam(const QUuid& patternId, int filterIndex, 
     // 필터 조정 중임을 표시
     setFilterAdjusting(true);
     
-    // 실시간 필터 적용을 위한 화면 업데이트 추가
-    printf("[TeachingWidget] updateFilterParam - 필터 실시간 적용\n");
-    fflush(stdout);
+    // 실시간 필터 적용을 위한 화면 업데이트
     updateCameraFrame();
     
     // 모든 패턴의 템플릿 이미지 실시간 갱신 (필터 변경으로 인한 영향을 고려)
-    printf("[TeachingWidget] Real-time template update after filter parameter change\n");
-    fflush(stdout);
     updateAllPatternTemplateImages();
     
     // 필터 조정 완료

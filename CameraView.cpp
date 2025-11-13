@@ -358,10 +358,7 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
         // MOVE 모드에서 패턴 내부 클릭: 이동 시작
         QUuid hitPatternId = hitTest(pos);
         
-        qDebug() << "[mousePressEvent] hitPatternId=" << (hitPatternId.isNull() ? "NULL" : hitPatternId.toString());
-        
         if (m_editMode == EditMode::Move && !hitPatternId.isNull()) {
-            qDebug() << "[mousePressEvent] 패턴 선택, setSelectedPatternId 호출";
             setSelectedPatternId(hitPatternId);
             isDragging = true;
             PatternInfo* pattern = getPatternById(hitPatternId);
@@ -374,7 +371,6 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
 
         // MOVE 모드에서 빈 공간 클릭: 패턴 선택 해제 및 검사 결과 필터 해제
         if (m_editMode == EditMode::Move && hitPatternId.isNull()) {
-            qDebug() << "[mousePressEvent] 빈 공간 클릭 - 패턴 선택 해제";
             setSelectedPatternId(QUuid());  // setSelectedPatternId 호출로 통일
             
             // 검사 결과 필터 해제 - 모든 패턴 검사 결과 표시
@@ -478,8 +474,6 @@ void CameraView::mouseMoveEvent(QMouseEvent* event) {
         // 회전 시작 시점에 고정된 중심점 사용
         QPoint center = rotationCenter;
         
-        qDebug() << "[회전] rotateStartPos=" << rotateStartPos << "현재pos=" << event->pos() << "center=" << center << "initialAngle=" << initialAngle;
-        
         // 각도 계산을 라디안으로 수행하여 더 정확하게 처리
         double dx1 = rotateStartPos.x() - center.x();
         double dy1 = rotateStartPos.y() - center.y();
@@ -498,8 +492,6 @@ void CameraView::mouseMoveEvent(QMouseEvent* event) {
         double newAngle = initialAngle + deltaAngle * 180.0 / M_PI;
         newAngle = std::fmod(newAngle, 360.0);
         if (newAngle < 0) newAngle += 360.0;
-        
-        qDebug() << "[회전] deltaAngle(rad)=" << deltaAngle << "newAngle=" << newAngle;
         
         // 패턴 각도 업데이트 (개별 회전)
         pattern->angle = newAngle;
