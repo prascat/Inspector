@@ -2735,7 +2735,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
     // ========== PASS/NG 표시 (화면 상단 중앙) ==========
     QString resultText = lastInspectionPassed ? "PASS" : "NG";
     QColor textColor = lastInspectionPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
-    QFont font("Arial", 28, QFont::Bold);
+    QFont font("Arial", 48, QFont::Bold);  // 28 -> 48로 증가
     painter.setFont(font);
     QFontMetrics fm(font);
     QRect bounds = fm.boundingRect("PASS");

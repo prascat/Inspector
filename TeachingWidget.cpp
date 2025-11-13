@@ -1551,23 +1551,22 @@ void TeachingWidget::setupRightPanelOverlay() {
     // 오른쪽 패널 오버레이 위젯 생성
     rightPanelOverlay = new QWidget(this);
     
-    // 반투명 배경 적용 (Qt::WA_TranslucentBackground 필요)
-    rightPanelOverlay->setAttribute(Qt::WA_TranslucentBackground, false); // QWidget은 이 속성 불필요
+    // 반투명 배경 적용
     rightPanelOverlay->setAutoFillBackground(true);
     
     // 팔레트로 반투명 배경 설정
     QPalette palette = rightPanelOverlay->palette();
-    palette.setColor(QPalette::Window, QColor(30, 30, 30, 200)); // 반투명 어두운 배경
+    palette.setColor(QPalette::Window, QColor(30, 30, 30, 200));
     rightPanelOverlay->setPalette(palette);
     
     rightPanelOverlay->setStyleSheet(
         "QWidget#rightPanelOverlay {"
-        "  background-color: rgba(30, 30, 30, 200);" // 반투명 어두운 배경
+        "  background-color: rgba(30, 30, 30, 200);"
         "  border: 2px solid rgba(100, 100, 100, 150);"
         "  border-radius: 10px;"
         "}"
         "QTreeWidget, QTextEdit, QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QCheckBox, QLabel {"
-        "  background-color: rgba(50, 50, 50, 230);" // 자식 위젯들은 약간 더 불투명
+        "  background-color: rgba(50, 50, 50, 230);"
         "  color: white;"
         "}"
     );
@@ -1578,16 +1577,25 @@ void TeachingWidget::setupRightPanelOverlay() {
     rightPanelLayout->setContentsMargins(10, 10, 10, 10);
     rightPanelLayout->setSpacing(5);
     
-    // 초기 위치는 updateLogOverlayPosition에서 설정됨
-    rightPanelOverlay->raise(); // 맨 위로
+    // 초기 크기 설정 (너비 400px로 증가)
+    rightPanelOverlay->setMinimumWidth(250);
+    rightPanelOverlay->resize(400, 600);
+    
+    rightPanelOverlay->raise();
     rightPanelOverlay->show();
     
-    // 드래그 가능하도록 이벤트 필터 설치
+    // 드래그 및 리사이즈를 위한 이벤트 필터 설치
     rightPanelOverlay->installEventFilter(this);
     rightPanelDragPos = QPoint();
     rightPanelDragging = false;
+    rightPanelResizing = false;
+    rightPanelResizeEdge = ResizeEdge::None;
     
-    // 초기 위치 설정을 위해 updateLogOverlayPosition 호출
+    // 마우스 추적 활성화 (리사이즈 커서 변경용)
+    rightPanelOverlay->setMouseTracking(true);
+    rightPanelOverlay->setAttribute(Qt::WA_Hover, true);
+    
+    // 초기 위치 설정
     QTimer::singleShot(100, this, &TeachingWidget::updateLogOverlayPosition);
 }
 
@@ -6454,17 +6462,14 @@ void TeachingWidget::updateLogOverlayPosition() {
     if (rightPanelOverlay && cameraView) {
         int leftMargin = 10;
         int topMargin = 10;
-        int panelWidth = 320;
-        int panelHeight = cameraView->height() - topMargin * 2;
         
         // cameraView의 글로벌 좌표를 this 기준으로 변환
         QPoint cameraViewPos = cameraView->mapTo(this, QPoint(0, 0));
         
-        rightPanelOverlay->setGeometry(
+        // 위치만 업데이트 (사용자가 크기 조절했을 수 있으므로 크기는 건드리지 않음)
+        rightPanelOverlay->move(
             cameraViewPos.x() + leftMargin,  // cameraView 왼쪽 상단 기준
-            cameraViewPos.y() + topMargin,
-            panelWidth,
-            panelHeight
+            cameraViewPos.y() + topMargin
         );
     }
 }
@@ -6495,20 +6500,28 @@ void TeachingWidget::receiveLogMessage(const QString& message) {
             format.setFontWeight(QFont::Bold);
         }
     }
-    // INS 패턴 검사 결과 - PASS는 초록, NG는 빨강
+    // INS 패턴 검사 결과 - PASS는 초록, NG는 빨강, FAIL은 진한 빨강
     else if ((message.contains("EDGE:") || message.contains("FRONT:") || message.contains("REAR:") || message.contains("STRIP LENGTH:"))) {
         if (message.contains("PASS")) {
             format.setForeground(QColor("#4CAF50")); // 초록색
+        } else if (message.contains("FAIL")) {
+            format.setForeground(QColor("#D32F2F")); // FAIL - 진한 빨간색
+            format.setFontWeight(QFont::Bold);
         } else if (message.contains("NG")) {
             format.setForeground(QColor("#F44336")); // 빨간색
         } else {
             format.setForeground(QColor("#8BCB8B")); // INS 색상 (연한 초록색)
         }
     }
-    // FID 패턴 - FID 색상
-    else if (message.contains(": PASS [") || message.contains(": NG [")) {
+    // FID 패턴 - FID 색상, FAIL은 빨간색
+    else if (message.contains(": PASS [") || message.contains(": NG [") || message.contains(": FAIL [")) {
         // "F_u4E4Y: PASS [1.00/0.80]" 형식
-        format.setForeground(QColor("#7094DB")); // FID 색상 (연한 파란색)
+        if (message.contains(": FAIL [")) {
+            format.setForeground(QColor("#F44336")); // FAIL - 빨간색
+            format.setFontWeight(QFont::Bold);
+        } else {
+            format.setForeground(QColor("#7094DB")); // FID 색상 (연한 파란색)
+        }
     }
     else {
         format.setForeground(QColor("#FFFFFF")); // 기본 흰색
@@ -7364,27 +7377,159 @@ void TeachingWidget::updateCameraFrame() {
 }
 
 bool TeachingWidget::eventFilter(QObject *watched, QEvent *event) {
-    // 오른쪽 패널 오버레이 드래그 처리
+    // 오른쪽 패널 오버레이 드래그 및 리사이즈 처리
     if (watched == rightPanelOverlay) {
-        if (event->type() == QEvent::MouseButtonPress) {
-            QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
+        QMouseEvent *mouseEvent = nullptr;
+        QHoverEvent *hoverEvent = nullptr;
+        
+        if (event->type() == QEvent::MouseMove || event->type() == QEvent::MouseButtonPress || 
+            event->type() == QEvent::MouseButtonRelease) {
+            mouseEvent = static_cast<QMouseEvent*>(event);
+        } else if (event->type() == QEvent::HoverMove) {
+            hoverEvent = static_cast<QHoverEvent*>(event);
+        }
+        
+        if (event->type() == QEvent::MouseMove) {
+            if (rightPanelResizing) {
+                // 리사이즈 중
+                QPoint globalDelta = mouseEvent->globalPos() - rightPanelDragPos;
+                QRect geo = rightPanelOverlay->geometry();
+                
+                if (rightPanelResizeEdge == ResizeEdge::Right || rightPanelResizeEdge == ResizeEdge::BottomRight) {
+                    int newWidth = geo.width() + globalDelta.x();
+                    if (newWidth >= rightPanelOverlay->minimumWidth()) {
+                        geo.setWidth(newWidth);
+                    }
+                }
+                if (rightPanelResizeEdge == ResizeEdge::Bottom || rightPanelResizeEdge == ResizeEdge::BottomRight) {
+                    int newHeight = geo.height() + globalDelta.y();
+                    if (newHeight >= 200) {
+                        geo.setHeight(newHeight);
+                    }
+                }
+                
+                rightPanelOverlay->setGeometry(geo);
+                rightPanelDragPos = mouseEvent->globalPos();
+                return true;
+            } else if (rightPanelDragging) {
+                // 드래그 중
+                QPoint delta = mouseEvent->pos() - rightPanelDragPos;
+                rightPanelOverlay->move(rightPanelOverlay->pos() + delta);
+                return true;
+            } else {
+                // 드래그/리사이즈 중이 아닐 때만 커서 업데이트
+                QPoint pos = mouseEvent->pos();
+                int w = rightPanelOverlay->width();
+                int h = rightPanelOverlay->height();
+                int edgeMargin = 10;
+                
+                // 오른쪽과 하단 경계 체크 (리사이즈 가능 영역)
+                bool atRight = (pos.x() >= w - edgeMargin);
+                bool atBottom = (pos.y() >= h - edgeMargin);
+                
+                // 이전 상태 저장
+                ResizeEdge previousEdge = rightPanelResizeEdge;
+                
+                if (atRight && atBottom) {
+                    // 오른쪽 하단 모서리
+                    rightPanelOverlay->setCursor(Qt::SizeFDiagCursor);
+                    rightPanelResizeEdge = ResizeEdge::BottomRight;
+                } else if (atRight) {
+                    // 오른쪽 경계
+                    rightPanelOverlay->setCursor(Qt::SizeHorCursor);
+                    rightPanelResizeEdge = ResizeEdge::Right;
+                } else if (atBottom) {
+                    // 하단 경계
+                    rightPanelOverlay->setCursor(Qt::SizeVerCursor);
+                    rightPanelResizeEdge = ResizeEdge::Bottom;
+                } else {
+                    // 경계 밖(내부) - 항상 일반 포인터로 설정
+                    rightPanelOverlay->setCursor(Qt::ArrowCursor);
+                    rightPanelResizeEdge = ResizeEdge::None;
+                }
+            }
+        }
+        else if (event->type() == QEvent::MouseButtonPress) {
             if (mouseEvent->button() == Qt::LeftButton) {
-                rightPanelDragging = true;
-                rightPanelDragPos = mouseEvent->pos();
+                if (rightPanelResizeEdge != ResizeEdge::None) {
+                    rightPanelResizing = true;
+                    rightPanelDragPos = mouseEvent->globalPos();
+                    return true;
+                } else {
+                    // 자식 위젯이 아닌 경우에만 드래그
+                    QWidget* childWidget = rightPanelOverlay->childAt(mouseEvent->pos());
+                    if (!childWidget) {
+                        rightPanelDragging = true;
+                        rightPanelDragPos = mouseEvent->pos();
+                        return true;
+                    }
+                }
+            }
+        }
+        else if (event->type() == QEvent::HoverMove) {
+            // HoverMove 이벤트로 자식 위젯 위에서도 커서 업데이트
+            if (!rightPanelDragging && !rightPanelResizing && hoverEvent) {
+                QPoint pos = hoverEvent->position().toPoint();
+                int w = rightPanelOverlay->width();
+                int h = rightPanelOverlay->height();
+                int edgeMargin = 10;
+                
+                bool atRight = (pos.x() >= w - edgeMargin);
+                bool atBottom = (pos.y() >= h - edgeMargin);
+                
+                if (atRight && atBottom) {
+                    rightPanelOverlay->setCursor(Qt::SizeFDiagCursor);
+                    rightPanelResizeEdge = ResizeEdge::BottomRight;
+                } else if (atRight) {
+                    rightPanelOverlay->setCursor(Qt::SizeHorCursor);
+                    rightPanelResizeEdge = ResizeEdge::Right;
+                } else if (atBottom) {
+                    rightPanelOverlay->setCursor(Qt::SizeVerCursor);
+                    rightPanelResizeEdge = ResizeEdge::Bottom;
+                } else {
+                    rightPanelOverlay->setCursor(Qt::ArrowCursor);
+                    rightPanelResizeEdge = ResizeEdge::None;
+                }
+            }
+        }
+        else if (event->type() == QEvent::MouseButtonRelease) {
+            if (mouseEvent->button() == Qt::LeftButton) {
+                rightPanelDragging = false;
+                rightPanelResizing = false;
+                
+                // 버튼 릴리즈 후 현재 마우스 위치로 상태 재평가
+                QPoint globalPos = QCursor::pos();
+                QPoint localPos = rightPanelOverlay->mapFromGlobal(globalPos);
+                
+                int w = rightPanelOverlay->width();
+                int h = rightPanelOverlay->height();
+                int edgeMargin = 10;
+                
+                bool atRight = (localPos.x() >= w - edgeMargin);
+                bool atBottom = (localPos.y() >= h - edgeMargin);
+                
+                if (atRight && atBottom) {
+                    rightPanelOverlay->setCursor(Qt::SizeFDiagCursor);
+                    rightPanelResizeEdge = ResizeEdge::BottomRight;
+                } else if (atRight) {
+                    rightPanelOverlay->setCursor(Qt::SizeHorCursor);
+                    rightPanelResizeEdge = ResizeEdge::Right;
+                } else if (atBottom) {
+                    rightPanelOverlay->setCursor(Qt::SizeVerCursor);
+                    rightPanelResizeEdge = ResizeEdge::Bottom;
+                } else {
+                    rightPanelOverlay->setCursor(Qt::ArrowCursor);
+                    rightPanelResizeEdge = ResizeEdge::None;
+                }
+                
                 return true;
             }
         }
-        else if (event->type() == QEvent::MouseMove && rightPanelDragging) {
-            QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
-            QPoint delta = mouseEvent->pos() - rightPanelDragPos;
-            rightPanelOverlay->move(rightPanelOverlay->pos() + delta);
-            return true;
-        }
-        else if (event->type() == QEvent::MouseButtonRelease) {
-            QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
-            if (mouseEvent->button() == Qt::LeftButton) {
-                rightPanelDragging = false;
-                return true;
+        else if (event->type() == QEvent::Leave) {
+            // 오버레이 영역을 벗어나면 커서를 일반 포인터로 복원
+            if (!rightPanelDragging && !rightPanelResizing) {
+                rightPanelOverlay->setCursor(Qt::ArrowCursor);
+                rightPanelResizeEdge = ResizeEdge::None;
             }
         }
     }

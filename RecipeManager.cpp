@@ -233,6 +233,17 @@ bool RecipeManager::saveRecipe(const QString& fileName,
     xml.writeAttribute("version", "1.0");
     xml.writeAttribute("createdTime", QDateTime::currentDateTime().toString(Qt::ISODate));
     
+    // 프로퍼티 오버레이 위치와 크기 저장
+    if (teachingWidget && teachingWidget->rightPanelOverlay) {
+        QRect geo = teachingWidget->rightPanelOverlay->geometry();
+        xml.writeAttribute("propertyX", QString::number(geo.x()));
+        xml.writeAttribute("propertyY", QString::number(geo.y()));
+        xml.writeAttribute("propertyWidth", QString::number(geo.width()));
+        xml.writeAttribute("propertyHeight", QString::number(geo.height()));
+        qDebug() << QString("프로퍼티 오버레이 저장: x=%1, y=%2, w=%3, h=%4")
+                    .arg(geo.x()).arg(geo.y()).arg(geo.width()).arg(geo.height());
+    }
+    
     // 카메라들 컨테이너
     xml.writeStartElement("Cameras");
     
@@ -434,6 +445,22 @@ bool RecipeManager::loadRecipe(const QString& fileName,
         }
         
         qDebug() << QString("Recipe 루트 요소 확인 완료");
+        
+        // 프로퍼티 오버레이 위치와 크기 읽기
+        if (teachingWidget && teachingWidget->rightPanelOverlay) {
+            QXmlStreamAttributes attrs = xml.attributes();
+            if (attrs.hasAttribute("propertyX") && attrs.hasAttribute("propertyY") &&
+                attrs.hasAttribute("propertyWidth") && attrs.hasAttribute("propertyHeight")) {
+                int x = attrs.value("propertyX").toInt();
+                int y = attrs.value("propertyY").toInt();
+                int width = attrs.value("propertyWidth").toInt();
+                int height = attrs.value("propertyHeight").toInt();
+                
+                teachingWidget->rightPanelOverlay->setGeometry(x, y, width, height);
+                qDebug() << QString("프로퍼티 오버레이 복원: x=%1, y=%2, w=%3, h=%4")
+                            .arg(x).arg(y).arg(width).arg(height);
+            }
+        }
         
         // 시뮬레이션 모드일 때 기존 카메라 정보 초기화
         bool isSimulationMode = false;

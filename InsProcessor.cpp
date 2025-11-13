@@ -200,7 +200,8 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             // angles는 위에서 이미 설정됨
             
             // FID 검사 결과 로그 (개별 출력)
-            QString fidResult = fidMatched ? "PASS" : "NG";
+            // FID는 패턴 매칭 실패 시 FAIL (템플릿을 찾지 못함)
+            QString fidResult = fidMatched ? "PASS" : "FAIL";
             logDebug(QString("%1: %2 [%3/%4]")
                     .arg(pattern.name)
                     .arg(fidResult)
@@ -251,10 +252,13 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             if (!pattern.parentId.isNull()) {
                 // 부모 FID의 매칭 결과가 있는지 확인
                 if (result.fidResults.contains(pattern.parentId)) {
-                    // 부모 FID가 매칭에 실패했을 경우 이 INS 패턴 검사 건너뛰기
+                    // 부모 FID가 매칭에 실패했을 경우 이 INS 패턴은 FAIL (검사 불가)
                     if (!result.fidResults[pattern.parentId]) {
-                        logDebug(QString("INS 패턴 '%1': 부모 FID '%2'가 매칭에 실패하여 검사 건너뜀")
-                                .arg(pattern.name).arg(pattern.parentId.toString()));
+                        logDebug(QString("INS 패턴 '%1': FAIL - 부모 FID 매칭 실패로 검사 불가")
+                                .arg(pattern.name));
+                        result.insResults[pattern.id] = false;
+                        result.insScores[pattern.id] = 0.0;
+                        result.isPassed = false;
                         continue;
                     }
                     
@@ -481,6 +485,23 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                 result.parentAngles[pattern.id] = pattern.angle;
             }
             
+            // INS 검사 결과 로그 (개별 출력)
+            QString insResultText;
+            if (!result.fidResults.value(pattern.parentId, true) && !pattern.parentId.isNull()) {
+                // 부모 FID 매칭 실패로 검사 불가
+                insResultText = "FAIL";
+            } else if (inspPassed) {
+                insResultText = "PASS";
+            } else {
+                insResultText = "NG";
+            }
+            
+            logDebug(QString("%1: %2 [%3/%4]")
+                    .arg(pattern.name)
+                    .arg(insResultText)
+                    .arg(QString::number(inspScore, 'f', 2))
+                    .arg(QString::number(pattern.passThreshold, 'f', 2)));
+            
             // 전체 결과 갱신
             result.isPassed = result.isPassed && inspPassed;
         }
@@ -489,7 +510,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
     // 전체 검사 결과 로그
     QString resultText = result.isPassed ? "PASS" : "NG";
     
-    // FID 결과 수집 (개별 PASS/NG 판정 포함)
+    // FID 결과 수집 (개별 PASS/FAIL 판정 포함)
     QStringList fidDetails;
     for (const PatternInfo& pattern : patterns) {
         if (pattern.type == PatternType::FID && result.fidResults.contains(pattern.id)) {
@@ -497,7 +518,8 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             double score = result.matchScores.value(pattern.id, 0.0);
             double threshold = pattern.matchThreshold;
             
-            QString fidResult = fidPassed ? "PASS" : "NG";
+            // FID는 매칭 실패 시 FAIL
+            QString fidResult = fidPassed ? "PASS" : "FAIL";
             fidDetails.append(QString("%1 %2/%3").arg(fidResult)
                                                   .arg(QString::number(score, 'f', 2))
                                                   .arg(QString::number(threshold, 'f', 2)));

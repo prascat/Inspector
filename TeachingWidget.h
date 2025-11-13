@@ -604,9 +604,16 @@ private:
     CustomPatternTreeWidget* patternTree;
     QLabel *zoomValueLabel;
     QVBoxLayout *rightPanelLayout;
+    
+public:
     QWidget *rightPanelOverlay = nullptr;
+    
+private:
     QPoint rightPanelDragPos;
     bool rightPanelDragging = false;
+    bool rightPanelResizing = false;
+    enum class ResizeEdge { None, Right, Bottom, BottomRight };
+    ResizeEdge rightPanelResizeEdge = ResizeEdge::None;
     FilterDialog* filterDialog;
     
     // 카메라 관련
