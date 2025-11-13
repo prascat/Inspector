@@ -23,6 +23,9 @@ ConfigManager::ConfigManager(QObject* parent) : QObject(parent) {
     m_lastRecipePath = "";
     m_serialPort = "";
     m_serialBaudRate = 115200;  // 기본 보드레이트
+    m_serverIp = "127.0.0.1";  // 기본 서버 IP
+    m_serverPort = 5000;  // 기본 서버 포트
+    m_autoConnect = false;  // 기본 자동 연결 비활성화
 }
 
 ConfigManager::~ConfigManager() {
@@ -79,6 +82,16 @@ bool ConfigManager::loadConfig() {
             } else if (xml.name() == QLatin1String("SerialBaudRate")) {
                 m_serialBaudRate = xml.readElementText().toInt();
                 qDebug() << "[ConfigManager] 시리얼 보드레이트 로드됨:" << m_serialBaudRate;
+            } else if (xml.name() == QLatin1String("ServerIp")) {
+                m_serverIp = xml.readElementText();
+                qDebug() << "[ConfigManager] 서버 IP 로드됨:" << m_serverIp;
+            } else if (xml.name() == QLatin1String("ServerPort")) {
+                m_serverPort = xml.readElementText().toInt();
+                qDebug() << "[ConfigManager] 서버 포트 로드됨:" << m_serverPort;
+            } else if (xml.name() == QLatin1String("AutoConnect")) {
+                QString value = xml.readElementText();
+                m_autoConnect = (value.toLower() == "true");
+                qDebug() << "[ConfigManager] 자동 연결 설정 로드됨:" << m_autoConnect;
             } else {
                 xml.skipCurrentElement();
             }
@@ -137,6 +150,11 @@ bool ConfigManager::saveConfig() {
         xml.writeTextElement("SerialPort", m_serialPort);
     }
     xml.writeTextElement("SerialBaudRate", QString::number(m_serialBaudRate));
+    
+    // 서버 연결 설정 저장
+    xml.writeTextElement("ServerIp", m_serverIp);
+    xml.writeTextElement("ServerPort", QString::number(m_serverPort));
+    xml.writeTextElement("AutoConnect", m_autoConnect ? "true" : "false");
     
     xml.writeEndElement(); // Config
     xml.writeEndDocument();
@@ -210,5 +228,41 @@ void ConfigManager::setSerialBaudRate(int baudRate) {
         saveConfig(); // 즉시 저장
         emit configChanged();
         qDebug() << "[ConfigManager] 시리얼 보드레이트 변경됨:" << baudRate;
+    }
+}
+
+QString ConfigManager::getServerIp() const {
+    return m_serverIp;
+}
+
+void ConfigManager::setServerIp(const QString& ip) {
+    if (m_serverIp != ip) {
+        m_serverIp = ip;
+        emit configChanged();
+        qDebug() << "[ConfigManager] 서버 IP 변경됨:" << ip;
+    }
+}
+
+int ConfigManager::getServerPort() const {
+    return m_serverPort;
+}
+
+void ConfigManager::setServerPort(int port) {
+    if (m_serverPort != port) {
+        m_serverPort = port;
+        emit configChanged();
+        qDebug() << "[ConfigManager] 서버 포트 변경됨:" << port;
+    }
+}
+
+bool ConfigManager::getAutoConnect() const {
+    return m_autoConnect;
+}
+
+void ConfigManager::setAutoConnect(bool enable) {
+    if (m_autoConnect != enable) {
+        m_autoConnect = enable;
+        emit configChanged();
+        qDebug() << "[ConfigManager] 자동 연결 설정 변경됨:" << enable;
     }
 }

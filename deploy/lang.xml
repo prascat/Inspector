@@ -615,6 +615,13 @@
         <zh>相机设置</zh>
     </String>
     
+    <String key="SERVER_SETTINGS">
+        <ko>서버 연결</ko>
+        <en>Server Connection</en>
+        <ja>サーバー接続</ja>
+        <zh>服务器连接</zh>
+    </String>
+    
     <!-- 검사 결과 관련 -->
     <String key="PASS">
         <ko>합격</ko>

@@ -182,12 +182,12 @@ add_executable(MV
     InsProcessor.cpp 
     CameraView.cpp 
     FilterDialog.cpp 
-    LogViewer.cpp 
     CameraSettingsDialog.cpp 
     FilterPropertyWidget.cpp
     LanguageManager.cpp
     LanguageSettingsDialog.cpp
     SerialSettingsDialog.cpp
+    ClientDialog.cpp
     RecipeManager.cpp
     ConfigManager.cpp
     SerialCommunication.cpp

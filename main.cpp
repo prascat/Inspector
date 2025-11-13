@@ -6,9 +6,6 @@
 #include "SerialCommunication.h"
 #include "ConfigManager.h"
 
-// 전역 로그 객체를 위한 포인터
-QObject* globalLogReceiver = nullptr;
-
 // 자동 시리얼 연결 함수
 void tryAutoConnectSerial(SerialCommunication* serialComm) {
     if (!serialComm) return;
@@ -50,24 +47,8 @@ void tryAutoConnectSerial(SerialCommunication* serialComm) {
     }
 }
 
-// Qt 메시지 핸들러 (모든 QDebug 출력을 가로챔)
-void messageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg) {
-    // 원래 콘솔 출력은 유지
-    fprintf(stderr, "%s\n", qPrintable(msg));
-    
-    // 로그 창으로도 전달
-    if (globalLogReceiver) {
-        QMetaObject::invokeMethod(globalLogReceiver, "receiveLogMessage",
-            Qt::QueuedConnection,
-            Q_ARG(QString, msg));
-    }
-}
-
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
-    
-    // 메시지 핸들러 설치
-    qInstallMessageHandler(messageHandler);
     
     // 티칭 위젯 생성
     TeachingWidget widget(0, "카메라 1");
@@ -77,9 +58,6 @@ int main(int argc, char *argv[]) {
     
     // 최대화 모드로 시작 (타이틀바 유지)
     widget.showMaximized();
-    
-    // 글로벌 로그 리시버 설정
-    globalLogReceiver = widget.getLogViewer();
     
     // 시리얼 통신 객체 생성 및 설정
     SerialCommunication* serialComm = new SerialCommunication(&app);

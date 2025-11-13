@@ -174,6 +174,11 @@ void FilterDialog::onFilterCheckStateChanged(int state) {
         if (existingFilterIndex >= 0) {
             // 기존 필터 활성화
             cameraView->setPatternFilterEnabled(patternId, existingFilterIndex, true);
+            
+            // 실시간 미리보기를 위해 필터 선택 상태 설정
+            if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
+                parentWidget->selectFilterForPreview(patternId, existingFilterIndex);
+            }
         } else {
             // 새 필터 추가
             cameraView->addPatternFilter(patternId, filterType);
@@ -183,6 +188,11 @@ void FilterDialog::onFilterCheckStateChanged(int state) {
             QMap<QString, int> params = filterWidgets[filterType]->getParams();
             for (auto it = params.begin(); it != params.end(); ++it) {
                 cameraView->setPatternFilterParam(patternId, newFilterIndex, it.key(), it.value());
+            }
+            
+            // 실시간 미리보기를 위해 필터 선택 상태 설정
+            if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
+                parentWidget->selectFilterForPreview(patternId, newFilterIndex);
             }
             
             // FILTER_MASK 타입 필터가 추가된 경우 겹치는 INS 패턴들의 템플릿 이미지 갱신
@@ -413,6 +423,11 @@ void FilterDialog::updateFilterParam(int filterType, const QString& paramName, i
     if (existingFilterIndex >= 0) {
         // 기존 필터의 파라미터 업데이트
         cameraView->setPatternFilterParam(patternId, existingFilterIndex, paramName, value);
+        
+        // 실시간 미리보기를 위해 필터 선택 상태 설정
+        if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
+            parentWidget->selectFilterForPreview(patternId, existingFilterIndex);
+        }
     } else {
         // 새로운 필터 추가 및 파라미터 설정
         cameraView->addPatternFilter(patternId, filterType);
@@ -422,6 +437,11 @@ void FilterDialog::updateFilterParam(int filterType, const QString& paramName, i
         QMap<QString, int> params = filterWidgets[filterType]->getParams();
         for (auto it = params.begin(); it != params.end(); ++it) {
             cameraView->setPatternFilterParam(patternId, newFilterIndex, it.key(), it.value());
+        }
+        
+        // 실시간 미리보기를 위해 필터 선택 상태 설정
+        if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
+            parentWidget->selectFilterForPreview(patternId, newFilterIndex);
         }
     }
     
@@ -565,6 +585,9 @@ void FilterDialog::onCancelClicked() {
 
             // 화면 갱신
             if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
+                // 필터 선택 상태 해제
+                parentWidget->selectFilterForPreview(QUuid(), -1);
+                
                 parentWidget->updateCameraFrame();
                 
                 // 필터 상태가 복구되었으므로 모든 패턴의 템플릿 이미지 갱신
@@ -779,6 +802,9 @@ void FilterDialog::onApplyClicked() {
     // 부모 TeachingWidget에 업데이트 신호 보내기
     auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget());
     if (parentWidget) {
+        // 필터 선택 상태 해제
+        parentWidget->selectFilterForPreview(QUuid(), -1);
+        
         // 패턴 트리 업데이트하여 필터 항목들을 추가
         parentWidget->updatePatternTree();
         // 화면 갱신

@@ -44,13 +44,13 @@
 #include <QProgressDialog>
 #include <QStringList>
 #include <QShortcut>
+#include <QTextEdit>
 #include <atomic>
 #include <opencv2/opencv.hpp>
 
 #include "CommonDefs.h"
 #include "FilterDialog.h"
 #include "InsProcessor.h"
-#include "LogViewer.h"
 #include "ConfigManager.h"
 
 #ifdef USE_SPINNAKER
@@ -58,10 +58,10 @@
 #endif
 
 // 전방 선언
-class LogViewer;
 class SerialCommunication;
 class SerialSettingsDialog;
 class CameraSettingsDialog;
+class ClientDialog;
 
 class CameraGrabberThread : public QThread {
     Q_OBJECT
@@ -187,7 +187,6 @@ public:
     // TEACH 모드 관련
     void onTeachModeToggled(bool checked);
     void setTeachingButtonsEnabled(bool enabled);
-    LogViewer* getLogViewer() const { return logViewer; }
     
     // 레시피 매니저 접근
     RecipeManager* getRecipeManager() const { return recipeManager; }
@@ -196,6 +195,9 @@ public:
     // 필터 조정 모드 제어
     void setFilterAdjusting(bool adjusting) { isFilterAdjusting = adjusting; }
     bool getFilterAdjusting() const { return isFilterAdjusting; }
+    
+    // 필터 미리보기를 위한 선택 상태 설정
+    void selectFilterForPreview(const QUuid& patternId, int filterIndex);
     
     // 패턴 업데이트 중 UI 업데이트 방지
     void setUpdatingPattern(bool updating) { isUpdatingPattern = updating; }
@@ -225,6 +227,7 @@ private slots:
     void updateUITexts();
     void openLanguageSettings();
     void showCameraSettings();
+    void showServerSettings();
     void showSerialSettings();
     void openGeneralSettings() {
         QMessageBox::information(this, TR("GENERAL_SETTINGS"), 
@@ -251,6 +254,7 @@ private slots:
     bool runInspect(const cv::Mat& frame, int specificCameraIndex = -1);
     void onBackButtonClicked();
     void toggleFullScreenMode();
+    void receiveLogMessage(const QString& message);
     
     // 카메라 모드 슬롯들 (camOn/camOff)
     void onCamModeToggled();
@@ -298,7 +302,6 @@ private:
     QMenuBar* menuBar = nullptr;
     QMenu* fileMenu = nullptr;
     QMenu* settingsMenu = nullptr;
-    QMenu* toolsMenu = nullptr;
     QMenu* helpMenu = nullptr;
     
     QAction* camModeAction = nullptr;
@@ -309,6 +312,7 @@ private:
     QAction* settingsAction = nullptr;
     QAction* loadRecipeAction = nullptr;
     QAction* aboutAction = nullptr;
+    QAction* serverSettingsAction = nullptr;
     QAction* serialSettingsAction = nullptr;
     
     // 버튼 멤버 변수들
@@ -330,6 +334,7 @@ private:
     QLabel* patternIdLabel = nullptr;
     QLabel* patternNameLabel = nullptr;
     QLabel* patternTypeLabel = nullptr;
+    QLabel* patternCameraLabel = nullptr;
     QLabel* positionSizeLabel = nullptr;
     QLabel* positionLabel = nullptr;
     QLabel* sizeLabel = nullptr;
@@ -480,7 +485,8 @@ private:
     // 패턴 기본 정보 관련 위젯들
     QLabel* patternIdValue = nullptr;      
     QLineEdit* patternNameEdit = nullptr;  
-    QLabel* patternTypeValue = nullptr;      
+    QLabel* patternTypeValue = nullptr;
+    QLabel* patternCameraValue = nullptr;
 
     // 위치 및 크기 관련 위젯들
     QLabel* patternXValue = nullptr;        
@@ -513,6 +519,11 @@ private:
     void setupPatternTree();
     void setupPatternTypeButtons(QVBoxLayout *cameraLayout);
     void setupPreviewOverlay();
+    void setupStatusPanel();
+    void updateStatusPanel();
+    void updateStatusPanelPosition();
+    void setupLogOverlay();
+    void updateLogOverlayPosition();
     void setupButton(QPushButton* button);
 
     // ===== 레이아웃 생성 함수 =====
@@ -577,9 +588,8 @@ private:
     void savePatternToXml(QXmlStreamWriter& xml, const PatternInfo& pattern, const QList<PatternInfo>& allPatterns);
 
     // ===== 멤버 변수 =====
-    // 처리기 및 로깅 관련
+    // 처리기 관련
     InsProcessor* insProcessor;
-    LogViewer* logViewer;
     
     // 패턴 타입 선택 관련
     QWidget* patternTypeWidget;
@@ -597,7 +607,18 @@ private:
     QString cameraStatus;
     QVector<CameraInfo> cameraInfos;
     QLabel* previewOverlayLabel = nullptr;  // 메인 화면 오른쪽 상단 미리보기
+    
+    // 상태 표시 패널
+    QLabel* serverStatusLabel = nullptr;
+    QLabel* serialStatusLabel = nullptr;
+    QLabel* diskSpaceLabel = nullptr;
+    QTimer* statusUpdateTimer = nullptr;
     QVector<bool> cameraConnected;
+    
+    // 로그 오버레이
+    QWidget* logOverlayWidget = nullptr;
+    QTextEdit* logTextEdit = nullptr;
+    QStringList logMessages;
     
     // 카메라 모드 관련 (camOn/camOff)
     QVariantMap backupRecipeData; // 레시피 백업 데이터
@@ -617,6 +638,7 @@ private:
     SerialCommunication* serialCommunication = nullptr;
     SerialSettingsDialog* serialSettingsDialog = nullptr;
     CameraSettingsDialog* cameraSettingsDialog = nullptr;  // 카메라 설정 다이얼로그
+    ClientDialog* clientDialog = nullptr;  // 서버 연결 설정 다이얼로그
     
     // 패턴 백업 관련 (검사 중지 시 원래 상태로 복원용)
     QMap<QUuid, PatternInfo> originalPatternBackup; // 원본 패턴 정보 백업

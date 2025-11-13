@@ -14,6 +14,7 @@
 #include <QLineEdit>
 #include <QGestureEvent>
 #include <QPinchGesture>
+#include <QScrollBar>
 #include <cmath>
 #include <algorithm>
 
@@ -204,49 +205,34 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
             qDebug() << "[mousePressEvent] 검사 결과 모드 - 패턴 클릭 처리";
             QUuid clickedPatternId;
             
-            // ROI 패턴 클릭 확인
-            for (const PatternInfo& pattern : patterns) {
-                if (pattern.type != PatternType::ROI || !pattern.enabled) continue;
+            // FID 패턴 클릭 확인 (ROI는 제외)
+            for (auto it = lastInspectionResult.fidResults.begin(); it != lastInspectionResult.fidResults.end(); ++it) {
+                QUuid patternId = it.key();
                 
-                bool patternVisible = (pattern.cameraUuid == currentCameraUuid || pattern.cameraUuid.isEmpty());
-                if (!patternVisible) continue;
+                if (!lastInspectionResult.locations.contains(patternId)) continue;
                 
-                if (pattern.rect.toRect().contains(originalPos)) {
-                    clickedPatternId = pattern.id;
+                cv::Point matchLoc = lastInspectionResult.locations[patternId];
+                const PatternInfo* patternInfo = nullptr;
+                for (const PatternInfo& pattern : patterns) {
+                    if (pattern.id == patternId) {
+                        patternInfo = &pattern;
+                        break;
+                    }
+                }
+                
+                if (!patternInfo || patternInfo->type != PatternType::FID) continue;
+                
+                int width = patternInfo->rect.width();
+                int height = patternInfo->rect.height();
+                QRect matchRect(matchLoc.x - width/2, matchLoc.y - height/2, width, height);
+                
+                if (matchRect.contains(originalPos)) {
+                    clickedPatternId = patternId;
                     break;
                 }
             }
             
-            // FID 패턴 클릭 확인
-            if (clickedPatternId.isNull()) {
-                for (auto it = lastInspectionResult.fidResults.begin(); it != lastInspectionResult.fidResults.end(); ++it) {
-                    QUuid patternId = it.key();
-                    
-                    if (!lastInspectionResult.locations.contains(patternId)) continue;
-                    
-                    cv::Point matchLoc = lastInspectionResult.locations[patternId];
-                    const PatternInfo* patternInfo = nullptr;
-                    for (const PatternInfo& pattern : patterns) {
-                        if (pattern.id == patternId) {
-                            patternInfo = &pattern;
-                            break;
-                        }
-                    }
-                    
-                    if (!patternInfo || patternInfo->type != PatternType::FID) continue;
-                    
-                    int width = patternInfo->rect.width();
-                    int height = patternInfo->rect.height();
-                    QRect matchRect(matchLoc.x - width/2, matchLoc.y - height/2, width, height);
-                    
-                    if (matchRect.contains(originalPos)) {
-                        clickedPatternId = patternId;
-                        break;
-                    }
-                }
-            }
-            
-            // INS 패턴 클릭 확인
+            // INS 패턴 클릭 확인 (ROI는 제외)
             if (clickedPatternId.isNull()) {
                 for (auto it = lastInspectionResult.insResults.begin(); it != lastInspectionResult.insResults.end(); ++it) {
                     QUuid patternId = it.key();
@@ -275,13 +261,17 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
                 }
             }
             
-            // 패턴 클릭 시: 아무것도 안 함 (현재 필터 유지)
-            // 빈 공간 클릭 시: 모든 패턴 표시
+            // FID/INS 클릭 또는 빈 공간 클릭 처리
             if (clickedPatternId.isNull()) {
-                // 빈 공간 클릭 - 모든 패턴 표시
+                // FID/INS 패턴이 없는 곳 클릭 - 모든 패턴 표시
                 selectedInspectionPatternId = QUuid();
                 viewport()->update();
                 emit selectedInspectionPatternCleared();
+            } else {
+                // FID/INS 패턴 클릭 - 해당 패턴만 필터링
+                selectedInspectionPatternId = clickedPatternId;
+                viewport()->update();
+                emit patternSelected(clickedPatternId);
             }
             // 검사 결과 모드에서는 여기서 반드시 return! 다른 처리 금지!
             return;
@@ -359,7 +349,13 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
         QUuid hitPatternId = hitTest(pos);
         
         if (m_editMode == EditMode::Move && !hitPatternId.isNull()) {
-            setSelectedPatternId(hitPatternId);
+            // 패턴 선택 (이미 선택된 경우에도 시그널 발생)
+            if (hitPatternId != selectedPatternId) {
+                setSelectedPatternId(hitPatternId);
+            } else {
+                // 이미 선택된 패턴을 다시 클릭한 경우에도 시그널 발생
+                emit patternSelected(hitPatternId);
+            }
             isDragging = true;
             PatternInfo* pattern = getPatternById(hitPatternId);
             if (pattern) {
@@ -371,6 +367,7 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
 
         // MOVE 모드에서 빈 공간 클릭: 패턴 선택 해제 및 검사 결과 필터 해제
         if (m_editMode == EditMode::Move && hitPatternId.isNull()) {
+            // 빈 공간을 클릭했을 때만 선택 해제
             setSelectedPatternId(QUuid());  // setSelectedPatternId 호출로 통일
             
             // 검사 결과 필터 해제 - 모든 패턴 검사 결과 표시
@@ -400,9 +397,24 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
 void CameraView::mouseMoveEvent(QMouseEvent* event) {
     // 패닝 모드일 때 처리
     if (isPanning) {
-        QPoint viewportDelta = event->pos() - panStartPos;
-        // 뷰포트 중심을 이동
-        centerOn(mapToScene(rect().center() - viewportDelta));
+        QPoint delta = event->pos() - panStartPos;
+        
+        // 델타가 0이면 처리하지 않음 (불필요한 연산 방지)
+        if (delta.manhattanLength() == 0) {
+            return;
+        }
+        
+        // 수평/수직 스크롤바를 직접 조정 (크로스 플랫폼에서 더 안정적)
+        QScrollBar* hBar = horizontalScrollBar();
+        QScrollBar* vBar = verticalScrollBar();
+        
+        if (hBar) {
+            hBar->setValue(hBar->value() - delta.x());
+        }
+        if (vBar) {
+            vBar->setValue(vBar->value() - delta.y());
+        }
+        
         panStartPos = event->pos();
         return;
     }
@@ -1605,15 +1617,16 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult& res
 void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult& result) {
     bool hasSelectedPattern = !selectedInspectionPatternId.isNull();
     
-    // ========== ROI 패턴 먼저 그리기 ==========
+    // ========== ROI 패턴 먼저 그리기 (항상 표시) ==========
     for (const PatternInfo& pattern : patterns) {
         if (pattern.type != PatternType::ROI || !pattern.enabled) continue;
         
-        // 필터가 적용된 경우, 선택된 패턴만 그리기
-        if (hasSelectedPattern && pattern.id != selectedInspectionPatternId) continue;
+        // ROI는 필터링 적용 안 함 (항상 표시)
         
-        bool patternVisible = (pattern.cameraUuid == currentCameraUuid || pattern.cameraUuid.isEmpty());
-        if (!patternVisible) continue;
+        // 패턴 표시 조건: 패턴에 카메라 지정이 없거나, 현재 카메라가 비어있거나, 카메라가 일치하면 표시
+        if (!pattern.cameraUuid.isEmpty() && !currentCameraUuid.isEmpty() && pattern.cameraUuid != currentCameraUuid) {
+            continue;
+        }
         
         QPointF topLeft = mapFromScene(pattern.rect.topLeft());
         QPointF bottomRight = mapFromScene(pattern.rect.bottomRight());
@@ -1675,7 +1688,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         
         if (!patternInfo || patternInfo->type != PatternType::FID) continue;
         
-        bool patternVisible = (patternInfo->cameraUuid == currentCameraUuid || patternInfo->cameraUuid.isEmpty());
+        bool patternVisible = (patternInfo->cameraUuid.isEmpty() || patternInfo->cameraUuid == currentCameraUuid || currentCameraUuid.isEmpty());
         if (!patternVisible) continue;
         
         // FID 박스 그리기 (검출된 위치 기준)
@@ -1756,7 +1769,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             continue;
         }
         
-        bool patternVisible = (patternInfo->cameraUuid == currentCameraUuid || patternInfo->cameraUuid.isEmpty());
+        bool patternVisible = (patternInfo->cameraUuid.isEmpty() || patternInfo->cameraUuid == currentCameraUuid || currentCameraUuid.isEmpty());
         if (!patternVisible) continue;
         
         // 선택된 패턴이 있으면 그 패턴만 그리기 (INS 박스)
@@ -2611,10 +2624,9 @@ void CameraView::paintEvent(QPaintEvent *event) {
             if (pattern.id == selectedPatternId) continue;
             if (!pattern.enabled) continue;
             
-            bool patternVisible = (pattern.cameraUuid == currentCameraUuid || pattern.cameraUuid.isEmpty());
-            if (!patternVisible) continue;
-            
-            // Scene 좌표를 viewport 좌표로 변환 (고정된 뷰포트에 그리기)
+        if (!pattern.cameraUuid.isEmpty() && !currentCameraUuid.isEmpty() && pattern.cameraUuid != currentCameraUuid) {
+            continue;
+        }            // Scene 좌표를 viewport 좌표로 변환 (고정된 뷰포트에 그리기)
             QPointF topLeft = mapFromScene(pattern.rect.topLeft());
             QPointF bottomRight = mapFromScene(pattern.rect.bottomRight());
             QRectF displayRect(topLeft, bottomRight);
@@ -3519,7 +3531,7 @@ QUuid CameraView::hitTest(const QPoint& pos) {
     if (!selectedPatternId.isNull()) {
         PatternInfo* selectedPattern = getPatternById(selectedPatternId);
         if (selectedPattern && selectedPattern->enabled) {
-            bool patternVisible = (currentCameraUuid.isEmpty() || selectedPattern->cameraUuid == currentCameraUuid);
+            bool patternVisible = (selectedPattern->cameraUuid.isEmpty() || selectedPattern->cameraUuid == currentCameraUuid || currentCameraUuid.isEmpty());
             
             if (patternVisible) {
                 QPointF topLeft = mapFromScene(selectedPattern->rect.topLeft());
@@ -3537,7 +3549,7 @@ QUuid CameraView::hitTest(const QPoint& pos) {
     for (int i = patterns.size() - 1; i >= 0; --i) {
         if (!patterns[i].enabled) continue;
         
-        bool patternVisible = (currentCameraUuid.isEmpty() || patterns[i].cameraUuid == currentCameraUuid);
+        bool patternVisible = (patterns[i].cameraUuid.isEmpty() || patterns[i].cameraUuid == currentCameraUuid || currentCameraUuid.isEmpty());
        
         if (!patternVisible) continue;
         

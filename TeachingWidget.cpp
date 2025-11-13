@@ -1,10 +1,10 @@
 #include "TeachingWidget.h"
 #include "ImageProcessor.h"
 #include "FilterDialog.h"
-#include "LogViewer.h"
 #include "CameraSettingsDialog.h"
 #include "LanguageSettingsDialog.h"
 #include "SerialSettingsDialog.h"
+#include "ClientDialog.h"
 #include "SerialCommunication.h"
 #include "LanguageManager.h"
 #include "RecipeManager.h"
@@ -12,6 +12,7 @@
 #include "CustomMessageBox.h"
 #include <QTimer>
 #include <QProgressDialog>
+#include <QStorageInfo>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -426,9 +427,8 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     rightPanelLayout = createRightPanel();
     contentLayout->addLayout(rightPanelLayout, 1);
     
-    // 로그 뷰어 생성 및 추가 (맨 아래)
-    logViewer = new LogViewer(this);
-    mainLayout->addWidget(logViewer);   // 메인 레이아웃의 맨 아래에 추가
+    // 로그 오버레이 생성 (화면 하단)
+    setupLogOverlay();
     
     // 패턴 테이블 설정
     setupPatternTree();
@@ -445,23 +445,8 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     // 이벤트 연결
     connectEvents();
     
-    // 로그 뷰어 신호 연결
-    if (logViewer) {
-        connect(insProcessor, &InsProcessor::logMessage, logViewer, &LogViewer::receiveLogMessage);
-        
-        // 로그 뷰어 접기/펼치기 신호 -> 윈도우 크기 조정
-        connect(logViewer, &LogViewer::collapseStateChanged, this, [this](bool collapsed) {
-            QSize currentSize = this->size();
-            int heightDiff = 150 - 35;  // EXPANDED_HEIGHT - COLLAPSED_HEIGHT
-            if (collapsed) {
-                // 로그 접을 때: 높이를 줄임
-                this->resize(currentSize.width(), std::max(400, currentSize.height() - heightDiff));
-            } else {
-                // 로그 펼칠 때: 높이를 늘림
-                this->resize(currentSize.width(), currentSize.height() + heightDiff);
-            }
-        });
-    }
+    // InsProcessor 로그를 오버레이로 연결
+    connect(insProcessor, &InsProcessor::logMessage, this, &TeachingWidget::receiveLogMessage);
 
     uiUpdateThread = new UIUpdateThread(this);
     
@@ -781,14 +766,14 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     cameraSettingsAction = settingsMenu->addAction(TR("CAMERA_SETTINGS"));
     cameraSettingsAction->setEnabled(true);
 
+    serverSettingsAction = settingsMenu->addAction(TR("SERVER_SETTINGS"));
+    serverSettingsAction->setEnabled(true);
+
+    serialSettingsAction = settingsMenu->addAction(TR("SERIAL_SETTINGS"));
+    serialSettingsAction->setEnabled(true);
+
     languageSettingsAction = settingsMenu->addAction(TR("LANGUAGE_SETTINGS"));
     languageSettingsAction->setEnabled(true);
-
-    // 도구 메뉴
-    toolsMenu = menuBar->addMenu(TR("TOOLS_MENU"));
-    
-    // 시리얼 설정 액션 추가
-    serialSettingsAction = toolsMenu->addAction(TR("SERIAL_SETTINGS"));
 
     // 도움말 메뉴
     helpMenu = menuBar->addMenu(TR("HELP_MENU"));
@@ -808,6 +793,7 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     connect(saveImageAction, &QAction::triggered, this, &TeachingWidget::saveCurrentImage);
     connect(exitAction, &QAction::triggered, this, &QWidget::close);
     connect(cameraSettingsAction, &QAction::triggered, this, &TeachingWidget::showCameraSettings);
+    connect(serverSettingsAction, &QAction::triggered, this, &TeachingWidget::showServerSettings);
     connect(languageSettingsAction, &QAction::triggered, this, &TeachingWidget::openLanguageSettings);
     connect(serialSettingsAction, &QAction::triggered, this, &TeachingWidget::showSerialSettings);
     connect(aboutAction, &QAction::triggered, this, &TeachingWidget::showAboutDialog);
@@ -1112,7 +1098,8 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                 }
                 
                 for (const PatternInfo& pattern : patterns) {
-                    if (pattern.enabled && pattern.cameraUuid == targetUuid) {
+                    // 시뮬레이션 모드거나 UUID가 일치하는 경우
+                    if (pattern.enabled && (camOff || pattern.cameraUuid == targetUuid || pattern.cameraUuid.isEmpty())) {
                         hasEnabledPatterns = true;
                         break;
                     }
@@ -1140,12 +1127,7 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                 }
 
                 
-                // **5. 로그 뷰어 표시**
-                if (logViewer) {
-                    logViewer->show();
-                }
-                
-                // **6. 검사 모드 활성화**
+                // **5. 검사 모드 활성화**
                 if (cameraView) {
                     cameraView->setInspectionMode(true);
                 }
@@ -1422,6 +1404,117 @@ void TeachingWidget::updateFilterParam(const QUuid& patternId, int filterIndex, 
     }
 }
 
+void TeachingWidget::setupLogOverlay() {
+    if (!cameraView) return;
+    
+    // 로그 오버레이 위젯 생성 - cameraView에 붙임
+    logOverlayWidget = new QWidget(cameraView);
+    logOverlayWidget->setFixedSize(800, 120);
+    logOverlayWidget->setStyleSheet(
+        "QWidget {"
+        "  background-color: rgba(0, 0, 0, 180);"
+        "  border: none;"
+        "}"
+    );
+    
+    QVBoxLayout* logLayout = new QVBoxLayout(logOverlayWidget);
+    logLayout->setContentsMargins(5, 5, 5, 5);
+    logLayout->setSpacing(2);
+    
+    // 로그 텍스트 표시 (최근 5줄만)
+    logTextEdit = new QTextEdit(logOverlayWidget);
+    logTextEdit->setReadOnly(true);
+    logTextEdit->setStyleSheet(
+        "QTextEdit {"
+        "  background-color: transparent;"
+        "  color: white;"
+        "  border: none;"
+        "  font-family: 'Courier New', monospace;"
+        "  font-size: 12px;"
+        "}"
+    );
+    logTextEdit->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    logTextEdit->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    logLayout->addWidget(logTextEdit);
+    
+    // 초기 메시지 추가
+    logMessages.append("프로그램이 시작되었습니다.");
+    logTextEdit->append("프로그램이 시작되었습니다.");
+    
+    // 오버레이 표시
+    logOverlayWidget->show();
+    logOverlayWidget->raise();
+    
+    // 위치 설정
+    updateLogOverlayPosition();
+}
+
+void TeachingWidget::setupStatusPanel() {
+    if (!cameraView) return;
+    
+    // 서버 연결 상태 레이블
+    serverStatusLabel = new QLabel(cameraView);
+    serverStatusLabel->setFixedSize(240, 30);
+    serverStatusLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    serverStatusLabel->setStyleSheet(
+        "QLabel {"
+        "  background-color: rgba(0, 0, 0, 180);"
+        "  color: white;"
+        "  border: 1px solid #555;"
+        "  border-radius: 3px;"
+        "  padding-left: 8px;"
+        "  font-size: 12px;"
+        "}"
+    );
+    serverStatusLabel->setText("🌐 서버: 미연결");
+    serverStatusLabel->raise();
+    
+    // 시리얼 연결 상태 레이블
+    serialStatusLabel = new QLabel(cameraView);
+    serialStatusLabel->setFixedSize(240, 30);
+    serialStatusLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    serialStatusLabel->setStyleSheet(
+        "QLabel {"
+        "  background-color: rgba(0, 0, 0, 180);"
+        "  color: white;"
+        "  border: 1px solid #555;"
+        "  border-radius: 3px;"
+        "  padding-left: 8px;"
+        "  font-size: 12px;"
+        "}"
+    );
+    serialStatusLabel->setText("📡 시리얼: 미연결");
+    serialStatusLabel->raise();
+    
+    // 디스크 용량 레이블
+    diskSpaceLabel = new QLabel(cameraView);
+    diskSpaceLabel->setFixedSize(240, 30);
+    diskSpaceLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    diskSpaceLabel->setStyleSheet(
+        "QLabel {"
+        "  background-color: rgba(0, 0, 0, 180);"
+        "  color: white;"
+        "  border: 1px solid #555;"
+        "  border-radius: 3px;"
+        "  padding-left: 8px;"
+        "  font-size: 12px;"
+        "}"
+    );
+    diskSpaceLabel->setText("💾 디스크: 계산 중...");
+    diskSpaceLabel->raise();
+    
+    // 초기 위치 설정
+    updateStatusPanelPosition();
+    
+    // 상태 업데이트 타이머 (1초마다)
+    statusUpdateTimer = new QTimer(this);
+    connect(statusUpdateTimer, &QTimer::timeout, this, &TeachingWidget::updateStatusPanel);
+    statusUpdateTimer->start(1000);
+    
+    // 초기 상태 업데이트
+    updateStatusPanel();
+}
+
 void TeachingWidget::setupPreviewOverlay() {
     if (!cameraView) return;
     
@@ -1449,6 +1542,9 @@ void TeachingWidget::setupPreviewOverlay() {
     
     // cameraView 크기 변경 시 미리보기 위치 재조정
     cameraView->installEventFilter(this);
+    
+    // 상태 표시 패널 생성 (미리보기 아래)
+    setupStatusPanel();
 }
 
 
@@ -2709,6 +2805,12 @@ void TeachingWidget::createPropertyPanels() {
         "}"
     );
     basicInfoLayout->addRow(patternTypeLabel, patternTypeValue);
+    
+    // 카메라 이름
+    patternCameraLabel = new QLabel("카메라:", basicInfoGroup);
+    patternCameraValue = new QLabel(basicInfoGroup);
+    patternCameraValue->setStyleSheet("color: #aaa;");
+    basicInfoLayout->addRow(patternCameraLabel, patternCameraValue);
 
     mainContentLayout->addWidget(basicInfoGroup);
 
@@ -3093,10 +3195,7 @@ void TeachingWidget::createPropertyPanels() {
     insStripStartSlider = new QSlider(Qt::Horizontal, startWidget);
     insStripStartSlider->setRange(0, 50);
     insStripStartSlider->setValue(20);
-    insStripStartSlider->setStyleSheet(
-        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
-        "QSlider::handle:horizontal { background: #ff4444; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
-        "QSlider::sub-page:horizontal { background: #ff8888; border-radius: 3px; }");
+    insStripStartSlider->setStyleSheet(UIColors::sliderStyle());
     insStripStartValueLabel = new QLabel("20%", startWidget);
     insStripStartValueLabel->setMinimumWidth(30);
     
@@ -3114,10 +3213,7 @@ void TeachingWidget::createPropertyPanels() {
     insStripEndSlider = new QSlider(Qt::Horizontal, endWidget);
     insStripEndSlider->setRange(50, 100);
     insStripEndSlider->setValue(85);
-    insStripEndSlider->setStyleSheet(
-        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
-        "QSlider::handle:horizontal { background: #4444ff; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
-        "QSlider::sub-page:horizontal { background: #8888ff; border-radius: 3px; }");
+    insStripEndSlider->setStyleSheet(UIColors::sliderStyle());
     insStripEndValueLabel = new QLabel("85%", endWidget);
     insStripEndValueLabel->setMinimumWidth(30);
     
@@ -3208,10 +3304,7 @@ void TeachingWidget::createPropertyPanels() {
     insStripThicknessWidthSlider = new QSlider(Qt::Horizontal, thicknessWidthWidget);
     insStripThicknessWidthSlider->setRange(10, 200);
     insStripThicknessWidthSlider->setValue(50);
-    insStripThicknessWidthSlider->setStyleSheet(
-        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
-        "QSlider::handle:horizontal { background: #44ff44; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
-        "QSlider::sub-page:horizontal { background: #88ff88; border-radius: 3px; }");
+    insStripThicknessWidthSlider->setStyleSheet(UIColors::sliderStyle());
     insStripThicknessWidthValueLabel = new QLabel("50mm", thicknessWidthWidget);
     insStripThicknessWidthValueLabel->setMinimumWidth(40);
     
@@ -3229,10 +3322,7 @@ void TeachingWidget::createPropertyPanels() {
     insStripThicknessHeightSlider = new QSlider(Qt::Horizontal, thicknessHeightWidget);
     insStripThicknessHeightSlider->setRange(10, 100);
     insStripThicknessHeightSlider->setValue(30);
-    insStripThicknessHeightSlider->setStyleSheet(
-        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
-        "QSlider::handle:horizontal { background: #ff8844; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
-        "QSlider::sub-page:horizontal { background: #ffaa88; border-radius: 3px; }");
+    insStripThicknessHeightSlider->setStyleSheet(UIColors::sliderStyle());
     insStripThicknessHeightValueLabel = new QLabel("30mm", thicknessHeightWidget);
     insStripThicknessHeightValueLabel->setMinimumWidth(40);
     
@@ -3259,10 +3349,7 @@ void TeachingWidget::createPropertyPanels() {
     insStripRearThicknessWidthSlider = new QSlider(Qt::Horizontal, insStripPanel);
     insStripRearThicknessWidthSlider->setRange(10, 200);
     insStripRearThicknessWidthSlider->setValue(50);
-    insStripRearThicknessWidthSlider->setStyleSheet(
-        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
-        "QSlider::handle:horizontal { background: #8844ff; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
-        "QSlider::sub-page:horizontal { background: #aa88ff; border-radius: 3px; }");
+    insStripRearThicknessWidthSlider->setStyleSheet(UIColors::sliderStyle());
     insStripRearThicknessWidthValueLabel = new QLabel("50", insStripPanel);
     insStripRearThicknessWidthValueLabel->setMinimumWidth(40);
     
@@ -3279,10 +3366,7 @@ void TeachingWidget::createPropertyPanels() {
     insStripRearThicknessHeightSlider = new QSlider(Qt::Horizontal, insStripPanel);
     insStripRearThicknessHeightSlider->setRange(10, 100);
     insStripRearThicknessHeightSlider->setValue(30);
-    insStripRearThicknessHeightSlider->setStyleSheet(
-        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
-        "QSlider::handle:horizontal { background: #4488ff; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
-        "QSlider::sub-page:horizontal { background: #88aaff; border-radius: 3px; }");
+    insStripRearThicknessHeightSlider->setStyleSheet(UIColors::sliderStyle());
     insStripRearThicknessHeightValueLabel = new QLabel("30", insStripPanel);
     insStripRearThicknessHeightValueLabel->setMinimumWidth(40);
     
@@ -3352,10 +3436,7 @@ void TeachingWidget::createPropertyPanels() {
     insEdgeOffsetXSlider = new QSlider(Qt::Horizontal, insStripPanel);
     insEdgeOffsetXSlider->setRange(1, 500);  // 임시값, 패턴 선택시 동적 조정
     insEdgeOffsetXSlider->setValue(10);
-    insEdgeOffsetXSlider->setStyleSheet(
-        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
-        "QSlider::handle:horizontal { background: #ffdd44; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
-        "QSlider::sub-page:horizontal { background: #ffee88; border-radius: 3px; }");
+    insEdgeOffsetXSlider->setStyleSheet(UIColors::sliderStyle());
     insEdgeOffsetXValueLabel = new QLabel("10", insStripPanel);
     
     QWidget* edgeOffsetWidget = new QWidget(insStripPanel);
@@ -3368,10 +3449,7 @@ void TeachingWidget::createPropertyPanels() {
     insEdgeWidthSlider = new QSlider(Qt::Horizontal, insStripPanel);
     insEdgeWidthSlider->setRange(10, 300);  // 최대값 300으로 고정
     insEdgeWidthSlider->setValue(50);
-    insEdgeWidthSlider->setStyleSheet(
-        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
-        "QSlider::handle:horizontal { background: #ff44aa; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
-        "QSlider::sub-page:horizontal { background: #ff88cc; border-radius: 3px; }");
+    insEdgeWidthSlider->setStyleSheet(UIColors::sliderStyle());
     insEdgeWidthValueLabel = new QLabel("50", insStripPanel);
     
     QWidget* edgeWidthWidget = new QWidget(insStripPanel);
@@ -3385,10 +3463,7 @@ void TeachingWidget::createPropertyPanels() {
     insEdgeHeightSlider = new QSlider(Qt::Horizontal, insStripPanel);
     insEdgeHeightSlider->setRange(20, 300);  // 최대값 300으로 고정
     insEdgeHeightSlider->setValue(100);
-    insEdgeHeightSlider->setStyleSheet(
-        "QSlider::groove:horizontal { background: #f0f0f0; height: 6px; border-radius: 3px; }"
-        "QSlider::handle:horizontal { background: #44ffaa; width: 18px; height: 18px; border-radius: 9px; margin: -6px 0; }"
-        "QSlider::sub-page:horizontal { background: #88ffcc; border-radius: 3px; }");
+    insEdgeHeightSlider->setStyleSheet(UIColors::sliderStyle());
     insEdgeHeightValueLabel = new QLabel("100", insStripPanel);
     
     QWidget* edgeHeightWidget = new QWidget(insStripPanel);
@@ -5407,6 +5482,23 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
             patternNameEdit->setText(pattern->name);
         }
         
+        if (patternCameraValue) {
+            // 카메라 이름 표시
+            QString cameraName = "알 수 없음";
+            if (pattern->cameraUuid.isEmpty()) {
+                cameraName = "모든 카메라";
+            } else {
+                // cameraInfos에서 카메라 이름 찾기
+                for (const CameraInfo& info : getCameraInfos()) {
+                    if (info.uniqueId == pattern->cameraUuid) {
+                        cameraName = info.name;
+                        break;
+                    }
+                }
+            }
+            patternCameraValue->setText(cameraName);
+        }
+        
         if (patternTypeValue) {
             QString typeText;
             QColor typeColor;
@@ -6202,6 +6294,131 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat& frame, int camIdx) {
     updatePreviewFrames();
 }
 
+void TeachingWidget::updateStatusPanel() {
+    if (!serverStatusLabel || !serialStatusLabel || !diskSpaceLabel) return;
+    
+    // 서버 연결 상태 업데이트
+    ConfigManager* config = ConfigManager::instance();
+    QString serverIp = config->getServerIp();
+    int serverPort = config->getServerPort();
+    
+    // TODO: 실제 서버 연결 상태 확인
+    serverStatusLabel->setText(QString("🌐 서버: 미연결 (%1:%2)").arg(serverIp).arg(serverPort));
+    serverStatusLabel->setStyleSheet(
+        "QLabel {"
+        "  background-color: rgba(0, 0, 0, 180);"
+        "  color: #ff9800;"  // 주황색 (미연결)
+        "  border: 1px solid #555;"
+        "  border-radius: 3px;"
+        "  padding-left: 8px;"
+        "  font-size: 12px;"
+        "}"
+    );
+    
+    // 시리얼 연결 상태 업데이트
+    if (serialCommunication && serialCommunication->isConnected()) {
+        QString portName = config->getSerialPort();
+        serialStatusLabel->setText(QString("📡 시리얼: 연결됨 (%1)").arg(portName));
+        serialStatusLabel->setStyleSheet(
+            "QLabel {"
+            "  background-color: rgba(0, 0, 0, 180);"
+            "  color: #4caf50;"  // 녹색 (연결됨)
+            "  border: 1px solid #555;"
+            "  border-radius: 3px;"
+            "  padding-left: 8px;"
+            "  font-size: 12px;"
+            "}"
+        );
+    } else {
+        serialStatusLabel->setText("📡 시리얼: 미연결");
+        serialStatusLabel->setStyleSheet(
+            "QLabel {"
+            "  background-color: rgba(0, 0, 0, 180);"
+            "  color: #ff9800;"  // 주황색 (미연결)
+            "  border: 1px solid #555;"
+            "  border-radius: 3px;"
+            "  padding-left: 8px;"
+            "  font-size: 12px;"
+            "}"
+        );
+    }
+    
+    // 디스크 용량 업데이트
+    QStorageInfo storage = QStorageInfo::root();
+    qint64 availableGB = storage.bytesAvailable() / (1024 * 1024 * 1024);
+    qint64 totalGB = storage.bytesTotal() / (1024 * 1024 * 1024);
+    int percent = totalGB > 0 ? (int)((storage.bytesAvailable() * 100) / storage.bytesTotal()) : 0;
+    
+    diskSpaceLabel->setText(QString("💾 디스크: %1GB / %2GB (%3%)")
+                           .arg(availableGB).arg(totalGB).arg(percent));
+    
+    // 용량에 따라 색상 변경
+    QString diskColor = "#4caf50";  // 녹색 (충분)
+    if (percent < 10) {
+        diskColor = "#f44336";  // 빨간색 (부족)
+    } else if (percent < 20) {
+        diskColor = "#ff9800";  // 주황색 (경고)
+    }
+    
+    diskSpaceLabel->setStyleSheet(
+        QString("QLabel {"
+                "  background-color: rgba(0, 0, 0, 180);"
+                "  color: %1;"
+                "  border: 1px solid #555;"
+                "  border-radius: 3px;"
+                "  padding-left: 8px;"
+                "  font-size: 12px;"
+                "}").arg(diskColor)
+    );
+}
+
+void TeachingWidget::updateStatusPanelPosition() {
+    if (!previewOverlayLabel || !serverStatusLabel || !serialStatusLabel || !diskSpaceLabel) return;
+    if (!cameraView) return;
+    
+    int rightMargin = 10;
+    int topMargin = 10;
+    int spacing = 5;
+    
+    // 미리보기 오버레이 위치
+    int previewX = cameraView->width() - previewOverlayLabel->width() - rightMargin;
+    int previewY = topMargin;
+    previewOverlayLabel->move(previewX, previewY);
+    
+    // 상태 패널 위치 (미리보기 아래)
+    int statusX = previewX;
+    int statusY = previewY + previewOverlayLabel->height() + spacing;
+    
+    serverStatusLabel->move(statusX, statusY);
+    serialStatusLabel->move(statusX, statusY + serverStatusLabel->height() + spacing);
+    diskSpaceLabel->move(statusX, statusY + serverStatusLabel->height() + serialStatusLabel->height() + spacing * 2);
+}
+
+void TeachingWidget::updateLogOverlayPosition() {
+    if (!logOverlayWidget || !cameraView) return;
+    
+    int bottomMargin = 10;
+    
+    // 화면 하단 중앙에 배치
+    int x = (cameraView->width() - logOverlayWidget->width()) / 2;
+    int y = cameraView->height() - logOverlayWidget->height() - bottomMargin;
+    
+    logOverlayWidget->move(x, y);
+}
+
+void TeachingWidget::receiveLogMessage(const QString& message) {
+    if (!logTextEdit || !logOverlayWidget) return;
+    
+    // 로그 메시지 추가 (제한 없음)
+    logTextEdit->append(message);
+    
+    // 오버레이가 숨겨져 있으면 표시
+    if (!logOverlayWidget->isVisible()) {
+        logOverlayWidget->show();
+        logOverlayWidget->raise();
+    }
+}
+
 void TeachingWidget::updatePreviewFrames() {
     if (!previewOverlayLabel) return;
     
@@ -6670,10 +6887,6 @@ void TeachingWidget::updateUITexts() {
         settingsMenu->setTitle(TR("SETTINGS_MENU"));
         settingsMenu->setEnabled(true);  // 활성화 상태 유지
     }
-    if (toolsMenu) {
-        toolsMenu->setTitle(TR("TOOLS_MENU"));
-        toolsMenu->setEnabled(true);  // 활성화 상태 유지
-    }
     if (helpMenu) {
         helpMenu->setTitle(TR("HELP_MENU"));
         helpMenu->setEnabled(true);  // 활성화 상태 유지
@@ -6684,6 +6897,14 @@ void TeachingWidget::updateUITexts() {
     if (cameraSettingsAction) {
         cameraSettingsAction->setText(TR("CAMERA_SETTINGS"));
         cameraSettingsAction->setEnabled(true);  // 활성화 상태 유지
+    }
+    if (serverSettingsAction) {
+        serverSettingsAction->setText(TR("SERVER_SETTINGS"));
+        serverSettingsAction->setEnabled(true);  // 활성화 상태 유지
+    }
+    if (serialSettingsAction) {
+        serialSettingsAction->setText(TR("SERIAL_SETTINGS"));
+        serialSettingsAction->setEnabled(true);  // 활성화 상태 유지
     }
     if (languageSettingsAction) {
         languageSettingsAction->setText(TR("LANGUAGE_SETTINGS"));
@@ -6833,6 +7054,20 @@ void TeachingWidget::setSerialCommunication(SerialCommunication* serialComm) {
     serialCommunication = serialComm;
 }
 
+void TeachingWidget::showServerSettings() {
+    // 서버 설정 다이얼로그가 없으면 생성
+    if (!clientDialog) {
+        clientDialog = new ClientDialog(this);
+        connect(clientDialog, &ClientDialog::settingsChanged, this, [this]() {
+            qDebug() << "서버 설정이 변경되었습니다.";
+            // 필요시 서버 재연결 로직 추가
+        });
+    }
+    
+    // 다이얼로그 표시
+    clientDialog->exec();
+}
+
 void TeachingWidget::showSerialSettings() {
     // 시리얼 통신 객체가 없으면 에러
     if (!serialCommunication) {
@@ -6865,6 +7100,12 @@ void TeachingWidget::openLanguageSettings() {
 void TeachingWidget::updatePreviewUI() {
     // 미리보기 오버레이는 updatePreviewFrames에서 자동 업데이트됨
     // (기존 cameraPreviewLabels 대신 단일 오버레이 사용)
+}
+
+void TeachingWidget::selectFilterForPreview(const QUuid& patternId, int filterIndex) {
+    // 필터 미리보기를 위한 선택 상태 설정
+    selectedPatternId = patternId;
+    selectedFilterIndex = filterIndex;
 }
 
 void TeachingWidget::updateCameraFrame() {
@@ -7036,11 +7277,10 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event) {
         }
     }
     
-    // **cameraView 리사이즈 이벤트 - 미리보기 오버레이 위치 재조정**
+    // **cameraView 리사이즈 이벤트 - 미리보기 오버레이 및 상태 패널 위치 재조정**
     if (watched == cameraView && event->type() == QEvent::Resize) {
-        if (previewOverlayLabel) {
-            previewOverlayLabel->move(cameraView->width() - previewOverlayLabel->width() - 10, 10);
-        }
+        updateStatusPanelPosition();
+        updateLogOverlayPosition();
     }
     
     return QWidget::eventFilter(watched, event);
@@ -7998,12 +8238,15 @@ bool TeachingWidget::runInspect(const cv::Mat& frame, int specificCameraIndex) {
     
     if (targetIndex >= 0 && targetIndex < cameraInfos.size()) {
         targetUuid = cameraInfos[targetIndex].uniqueId;
-    } else {
+    } else if (!camOff) {
+        // 실제 카메라 모드인데 유효한 카메라가 없으면 실패
         return false;
     }
+    // 시뮬레이션 모드(camOff)면 targetUuid가 비어있어도 계속 진행
     
     for (const PatternInfo& pattern : allPatterns) {
-        if (pattern.enabled && pattern.cameraUuid == targetUuid) {
+        // 시뮬레이션 모드거나 UUID가 일치하는 경우
+        if (pattern.enabled && (camOff || pattern.cameraUuid == targetUuid || pattern.cameraUuid.isEmpty())) {
             cameraPatterns.append(pattern);
         }
     }
@@ -8231,8 +8474,12 @@ void TeachingWidget::resumeToLiveMode() {
 }
 
 void TeachingWidget::switchToTestMode() {
-    if (logViewer) {
-        logViewer->show();
+    // 로그 메시지 추가
+    if (logTextEdit && logOverlayWidget) {
+        receiveLogMessage("검사 모드로 전환되었습니다.");
+        logOverlayWidget->show();
+        logOverlayWidget->raise();
+        updateLogOverlayPosition();
     }
     
     cameraView->setInspectionMode(true);
@@ -8297,6 +8544,11 @@ void TeachingWidget::switchToTestMode() {
 }
 
 void TeachingWidget::switchToRecipeMode() {
+    // 로그 메시지 추가
+    if (logTextEdit) {
+        receiveLogMessage("레시피 모드로 전환되었습니다.");
+    }
+    
     cameraView->setInspectionMode(false);
     
     if (uiUpdateThread && uiUpdateThread->isRunning()) {
@@ -9196,6 +9448,19 @@ cv::Mat TeachingWidget::grabFrameFromSpinnakerCamera(Spinnaker::CameraPtr& camer
 #endif
 
 TeachingWidget::~TeachingWidget() {
+    // 타이머 정리
+    if (statusUpdateTimer) {
+        statusUpdateTimer->stop();
+        disconnect(statusUpdateTimer, nullptr, this, nullptr);
+        delete statusUpdateTimer;
+        statusUpdateTimer = nullptr;
+    }
+    
+    // InsProcessor 연결 해제
+    if (insProcessor) {
+        disconnect(insProcessor, nullptr, this, nullptr);
+    }
+    
     #ifdef USE_SPINNAKER
         // Spinnaker SDK 정리
         releaseSpinnakerSDK();
@@ -9364,6 +9629,11 @@ void TeachingWidget::addPattern() {
         
         // 카메라 UUID 설정 (camOn/camOff 동일 처리)
         pattern.cameraUuid = getCameraInfo(cameraIndex).uniqueId;
+        
+        // currentCameraUuid가 비어있으면 자동 설정
+        if (cameraView && cameraView->getCurrentCameraUuid().isEmpty()) {
+            cameraView->setCurrentCameraUuid(pattern.cameraUuid);
+        }
         
         // 타입별 색상 설정 (UIColors 클래스 사용)
         switch (currentPatternType) {
@@ -9837,11 +10107,6 @@ void TeachingWidget::updateMainCameraUI(const InspectionResult& result, const cv
         }
         
         cameraView->update();
-    }
-    
-    // **로그 뷰어 표시**
-    if (logViewer) {
-        logViewer->show();
     }
 }
 

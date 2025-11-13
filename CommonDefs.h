@@ -379,6 +379,10 @@ namespace UIColors {
     const QColor BTN_ADD_COLOR = QColor("#FFFFFF");     // 흰색 - 추가
     const QColor BTN_REMOVE_COLOR = QColor("#FFFFFF");  // 흰색 - 삭제
     const QColor BTN_FILTER_COLOR = QColor("#FFFFFF");  // 흰색 - 필터
+    
+    // 슬라이더 색상
+    const QColor SLIDER_HANDLE_COLOR = QColor("#64B5F6");   // 연한 파란색 - 슬라이더 핸들
+    const QColor SLIDER_ACTIVE_COLOR = QColor("#90CAF9");   // 더 연한 파란색 - 활성 구간
         
     // 필터 관련 색상
     const QColor FILTER_BG_COLOR = QColor(174, 213, 239); // 연한 라이트 스카이 블루 
@@ -565,6 +569,29 @@ namespace UIColors {
         .arg(checkedColor.darker(120).name());
     
         return style;
+    }
+
+    inline QString sliderStyle() {
+        return QString(
+            "QSlider::groove:horizontal {"
+            "  background: #f0f0f0;"
+            "  height: 6px;"
+            "  border-radius: 3px;"
+            "}"
+            "QSlider::handle:horizontal {"
+            "  background: %1;"
+            "  width: 18px;"
+            "  height: 18px;"
+            "  border-radius: 9px;"
+            "  margin: -6px 0;"
+            "}"
+            "QSlider::sub-page:horizontal {"
+            "  background: %2;"
+            "  border-radius: 3px;"
+            "}"
+        )
+        .arg(SLIDER_HANDLE_COLOR.name())
+        .arg(SLIDER_ACTIVE_COLOR.name());
     }
 }
 

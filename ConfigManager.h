@@ -34,6 +34,16 @@ public:
     int getSerialBaudRate() const;
     void setSerialBaudRate(int baudRate);
     
+    // 서버 연결 설정
+    QString getServerIp() const;
+    void setServerIp(const QString& ip);
+    
+    int getServerPort() const;
+    void setServerPort(int port);
+    
+    bool getAutoConnect() const;
+    void setAutoConnect(bool enable);
+    
 signals:
     void configChanged();
     void languageChanged(const QString& newLanguage);
@@ -50,6 +60,9 @@ private:
     QString m_lastRecipePath;
     QString m_serialPort;
     int m_serialBaudRate;
+    QString m_serverIp;
+    int m_serverPort;
+    bool m_autoConnect;
     
     // 설정 파일 경로
     QString getConfigFilePath() const;
