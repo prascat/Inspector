@@ -63,9 +63,6 @@ cv::Mat TeachingWidget::getCurrentFilteredFrame() const {
                 if (pattern.id == selectedPatternId && selectedFilterIndex < pattern.filters.size()) {
                     const FilterInfo& filter = pattern.filters[selectedFilterIndex];
                     
-                    printf("[getCurrentFilteredFrame] 필터 적용: type=%d, enabled=%d, angle=%.1f\n", 
-                           filter.type, filter.enabled, pattern.angle);
-                    
                     // 회전이 있는 경우: 회전된 사각형 영역에만 필터 적용
                     if (std::abs(pattern.angle) > 0.1) {
                         cv::Point2f center(pattern.rect.x() + pattern.rect.width()/2.0f, 
@@ -484,8 +481,17 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
             // 레시피 경로에서 레시피 이름 추출
             QString recipeName = QFileInfo(lastRecipePath).baseName();
             qDebug() << "[TeachingWidget] 마지막 레시피 자동 로드:" << recipeName;
-            // 레시피 선택 (메시지박스 없이)
-            onRecipeSelected(recipeName);
+            
+            // 레시피 파일 존재 여부 확인
+            RecipeManager checkManager;
+            QString recipeFilePath = QDir(checkManager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(recipeName));
+            
+            if (QFile::exists(recipeFilePath)) {
+                // 레시피 선택 (메시지박스 없이)
+                onRecipeSelected(recipeName);
+            } else {
+                qDebug() << "[TeachingWidget] 레시피 파일이 존재하지 않음 (자동 로드 생략):" << recipeName;
+            }
         });
     }
      
@@ -705,8 +711,16 @@ void TeachingWidget::openRecipe(bool autoMode) {
     
     // 자동 모드에서만 직접 onRecipeSelected 호출
     if (autoMode) {
-        qDebug() << QString("자동 모드 - onRecipeSelected 호출: %1").arg(selectedRecipe);
-        onRecipeSelected(selectedRecipe);
+        // 레시피 파일 존재 여부 확인
+        RecipeManager checkManager;
+        QString recipeFilePath = QDir(checkManager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(selectedRecipe));
+        
+        if (QFile::exists(recipeFilePath)) {
+            qDebug() << QString("자동 모드 - onRecipeSelected 호출: %1").arg(selectedRecipe);
+            onRecipeSelected(selectedRecipe);
+        } else {
+            qDebug() << QString("자동 모드 - 레시피 파일이 존재하지 않음 (메시지 생략): %1").arg(selectedRecipe);
+        }
     }
 }
 
@@ -1412,7 +1426,7 @@ void TeachingWidget::setupPreviewOverlay() {
     
     // 메인 화면 오른쪽 상단에 미리보기 레이블 생성
     previewOverlayLabel = new QLabel(cameraView);
-    previewOverlayLabel->setFixedSize(240, 180);  // 고정 크기
+    previewOverlayLabel->setFixedSize(240, 180);  // 고정 크기 (1/4 크기)
     previewOverlayLabel->setAlignment(Qt::AlignCenter);
     previewOverlayLabel->setStyleSheet(
         "QLabel {"
@@ -10976,8 +10990,14 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
             qDebug() << QString("=== cameraInfos 정보 끝 ===");
 
     } else {
-        CustomMessageBox(this, CustomMessageBox::Critical, "레시피 불러오기 실패",
-            QString("레시피 불러오기에 실패했습니다:\n%1").arg(manager.getLastError())).exec();
+        QString errorMsg = manager.getLastError();
+        // 레시피가 존재하지 않는 경우에는 메시지 박스를 표시하지 않음 (자동 로드 시)
+        if (!errorMsg.contains("존재하지 않습니다") && !errorMsg.contains("does not exist")) {
+            CustomMessageBox(this, CustomMessageBox::Critical, "레시피 불러오기 실패",
+                QString("레시피 불러오기에 실패했습니다:\n%1").arg(errorMsg)).exec();
+        } else {
+            qDebug() << QString("레시피가 존재하지 않음 (자동 로드 시 메시지 생략): %1").arg(errorMsg);
+        }
     }
 }
 
