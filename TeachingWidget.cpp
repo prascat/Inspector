@@ -249,7 +249,7 @@ void CameraGrabberThread::run()
                                                 try {
                                                     Spinnaker::ImageProcessor processor;
                                                     processor.SetColorProcessing(Spinnaker::SPINNAKER_COLOR_PROCESSING_ALGORITHM_DIRECTIONAL_FILTER);
-                                                    Spinnaker::ImagePtr convertedImage = processor.Convert(spinImage, Spinnaker::PixelFormat_RGB8);
+                                                    Spinnaker::ImagePtr convertedImage = processor.Convert(spinImage, Spinnaker::PixelFormat_BGR8);
                                                     
                                                     if (convertedImage && !convertedImage->IsIncomplete()) {
                                                         unsigned char* buffer = static_cast<unsigned char*>(convertedImage->GetData());
@@ -8987,36 +8987,8 @@ bool TeachingWidget::connectSpinnakerCamera(int index, CameraInfo& info)
             catch (Spinnaker::Exception& e) {
             }
             
-            // 화이트 밸런스 설정 추가 - 색상 온도 문제 해결
-            try {
-                // 자동 화이트 밸런스 설정
-                Spinnaker::GenApi::CEnumerationPtr ptrBalanceWhiteAuto = nodeMap.GetNode("BalanceWhiteAuto");
-                if (Spinnaker::GenApi::IsAvailable(ptrBalanceWhiteAuto) && Spinnaker::GenApi::IsWritable(ptrBalanceWhiteAuto)) {
-                    // Continuous로 설정하여 실시간 화이트밸런스 조정
-                    Spinnaker::GenApi::CEnumEntryPtr ptrBalanceWhiteAutoContinuous = ptrBalanceWhiteAuto->GetEntryByName("Continuous");
-                    if (Spinnaker::GenApi::IsAvailable(ptrBalanceWhiteAutoContinuous)) {
-                        ptrBalanceWhiteAuto->SetIntValue(ptrBalanceWhiteAutoContinuous->GetValue());
-                        std::cout << "자동 화이트밸런스 설정 완료 (Continuous)" << std::endl;
-                    }
-                }
-                
-                // 색상 변환 활성화 (가능한 경우)
-                Spinnaker::GenApi::CBooleanPtr ptrColorTransformationEnable = nodeMap.GetNode("ColorTransformationEnable");
-                if (Spinnaker::GenApi::IsAvailable(ptrColorTransformationEnable) && Spinnaker::GenApi::IsWritable(ptrColorTransformationEnable)) {
-                    ptrColorTransformationEnable->SetValue(true);
-                    std::cout << "색상 변환 활성화 완료" << std::endl;
-                }
-                
-                // 색온도 설정 (일반적인 실내 조명: 3000K-4000K)
-                Spinnaker::GenApi::CFloatPtr ptrColorTransformationValueSelector = nodeMap.GetNode("ColorTransformationValue");
-                if (Spinnaker::GenApi::IsAvailable(ptrColorTransformationValueSelector) && Spinnaker::GenApi::IsWritable(ptrColorTransformationValueSelector)) {
-                    // 기본적인 색온도 보정값 설정 (값은 카메라 모델에 따라 다를 수 있음)
-                    std::cout << "색온도 보정 설정 시도" << std::endl;
-                }
-                
-            } catch (Spinnaker::Exception& e) {
-                std::cout << "화이트밸런스 설정 오류 (무시하고 계속): " << e.what() << std::endl;
-            }
+            // 화이트 밸런스 및 색상 설정은 UserSet에서 로드된 설정을 그대로 사용
+            // (자동으로 변경하지 않음)
         }
         catch (Spinnaker::Exception& e) {
             // 설정 오류가 있더라도 계속 진행
@@ -9108,7 +9080,7 @@ cv::Mat TeachingWidget::grabFrameFromSpinnakerCamera(Spinnaker::CameraPtr& camer
                     try {
                         Spinnaker::ImageProcessor processor;
                         processor.SetColorProcessing(Spinnaker::SPINNAKER_COLOR_PROCESSING_ALGORITHM_DIRECTIONAL_FILTER);
-                        Spinnaker::ImagePtr convertedImage = processor.Convert(latestImage, Spinnaker::PixelFormat_RGB8);
+                        Spinnaker::ImagePtr convertedImage = processor.Convert(latestImage, Spinnaker::PixelFormat_BGR8);
                         
                         if (convertedImage && !convertedImage->IsIncomplete()) {
                             unsigned char* buffer = static_cast<unsigned char*>(convertedImage->GetData());
@@ -9179,13 +9151,12 @@ cv::Mat TeachingWidget::grabFrameFromSpinnakerCamera(Spinnaker::CameraPtr& camer
             unsigned char* buffer = static_cast<unsigned char*>(spinImage->GetData());
             cvImage = cv::Mat(height, width, CV_8UC1, buffer).clone();
         } else {
-            // 컬러 이미지 변환 (RGB8 형식으로)
+            // 컬러 이미지 변환 (BGR8 형식으로 - OpenCV는 BGR 순서 사용)
             try {
-                // 이미지 처리기를 사용하여 RGB8로 변환
+                // 이미지 처리기를 사용하여 BGR8로 변환
                 Spinnaker::ImageProcessor processor;
-                // 색상 처리 알고리즘을 DIRECTIONAL_FILTER로 변경하여 더 자연스러운 색감 구현
                 processor.SetColorProcessing(Spinnaker::SPINNAKER_COLOR_PROCESSING_ALGORITHM_DIRECTIONAL_FILTER);
-                Spinnaker::ImagePtr convertedImage = processor.Convert(spinImage, Spinnaker::PixelFormat_RGB8);
+                Spinnaker::ImagePtr convertedImage = processor.Convert(spinImage, Spinnaker::PixelFormat_BGR8);
                 
                 if (convertedImage && !convertedImage->IsIncomplete()) {
                     unsigned char* buffer = static_cast<unsigned char*>(convertedImage->GetData());
