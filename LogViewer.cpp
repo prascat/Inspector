@@ -11,6 +11,8 @@
 #include <QDir>
 #include <QDateTime>
 #include <QCoreApplication>
+#include <QMenu>
+#include <QAction>
 
 LogViewer::LogViewer(QWidget *parent) : QWidget(parent) {
     setWindowTitle(TR("INSPECTION_LOG"));
@@ -53,6 +55,10 @@ LogViewer::LogViewer(QWidget *parent) : QWidget(parent) {
     logTextEdit->setLineWrapMode(QTextEdit::NoWrap);
     logTextEdit->setFont(QFont("Courier New", 14));
     logTextEdit->setVisible(false);  // 초기에는 숨김
+    
+    // 컴텍스트 메뉴 설정
+    logTextEdit->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(logTextEdit, &QTextEdit::customContextMenuRequested, this, &LogViewer::showContextMenu);
     
     // 어두운 배경색으로 설정하여 색상 텍스트가 잘 보이도록
     logTextEdit->setStyleSheet(
@@ -319,6 +325,20 @@ void LogViewer::setCollapsed(bool collapsed) {
     
     // 부모 윈도우 크기 조정 신호 발출
     emit collapseStateChanged(collapsed);
+}
+
+void LogViewer::clearLog() {
+    logTextEdit->clear();
+    currentLineCount = 0;
+}
+
+void LogViewer::showContextMenu(const QPoint &pos) {
+    QMenu contextMenu(tr("로그 메뉴"), this);
+    
+    QAction *clearAction = contextMenu.addAction(tr("로그 클리어"));
+    connect(clearAction, &QAction::triggered, this, &LogViewer::clearLog);
+    
+    contextMenu.exec(logTextEdit->mapToGlobal(pos));
 }
 
 void LogViewer::updateCollapseButton() {

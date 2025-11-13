@@ -26,6 +26,8 @@ signals:
 
 private slots:
     void toggleCollapse();
+    void clearLog();
+    void showContextMenu(const QPoint &pos);
 
 private:
     void trimLogIfNeeded();

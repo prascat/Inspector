@@ -307,16 +307,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                         parentAngle = fidAngle;
                         hasParentInfo = true;
                         
-                        // 각도 계산 디버그 로그 추가
-                        logDebug(QString("INS 패턴 '%1' FID 그룹 회전:")
-                                .arg(pattern.name));
-                        logDebug(QString("  - INS 개별 각도 (무시됨): %1°")
-                                .arg(pattern.angle, 0, 'f', 2));
-                        logDebug(QString("  - FID 검출 각도 (적용됨): %1°")
-                                .arg(fidAngle, 0, 'f', 2));
-                        logDebug(QString("  - 최종 사용 각도: %1°")
-                                .arg(parentAngle, 0, 'f', 2));
-                        
                         // 부모 FID 위치에 따른 검사 영역 조정 구현
                         // 1. 티칭 시점의 FID/INS 중심을 부동소수점으로 사용하여 상대 벡터 계산
                         QPointF fidTeachingCenterF = parentFidInfo.rect.center();
@@ -354,44 +344,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                             width,                  // 너비 동일
                             height                  // 높이 동일
                         );
-                        
-            // 로그: FID/INS 티칭-검출 중심 및 회전 정보 (부동소수점 기반)
-            logDebug(QString("INS 패턴 '%1': FID 중심 덩어리 회전 적용")
-                .arg(pattern.name));
-            logDebug(QString("  - FID 티칭 중심: (%1,%2)")
-                .arg(fidTeachingCenterF.x(), 0, 'f', 1).arg(fidTeachingCenterF.y(), 0, 'f', 1));
-            logDebug(QString("  - FID 검출 중심: (%1,%2)")
-                .arg(fidLoc.x).arg(fidLoc.y));
-            logDebug(QString("  - INS 티칭 중심: (%1,%2)")
-                .arg(insTeachingCenterF.x(), 0, 'f', 1).arg(insTeachingCenterF.y(), 0, 'f', 1));
-            logDebug(QString("  - FID로부터 INS 상대위치 (티칭): (%1,%2)")
-                .arg(relX, 0, 'f', 1).arg(relY, 0, 'f', 1));
-            logDebug(QString("  - 회전 각도: %1° (FID검출:%2° - FID티칭:%3°)")
-                .arg(angleDiff, 0, 'f', 2).arg(fidAngle, 0, 'f', 2).arg(parentFidTeachingAngle, 0, 'f', 2));
-            logDebug(QString("  - 회전된 상대위치: (%1,%2)")
-                .arg(rotatedX, 0, 'f', 1).arg(rotatedY, 0, 'f', 1));
-            logDebug(QString("  - INS 최종 중심: (%1,%2)")
-                .arg(newCenterX).arg(newCenterY));
-            logDebug(QString("  - 전체 그룹이 FID 중심 (%1,%2) 기준으로 %3° 덩어리 회전됨")
-                .arg(fidLoc.x).arg(fidLoc.y).arg(angleDiff, 0, 'f', 2));
-                        
-                        logDebug(QString("INS 패턴 '%1': 부모 FID '%2'의 위치(%3,%4) 각도(%5°) 기반으로 조정")
-                                .arg(pattern.name)
-                                .arg(pattern.parentId.toString())
-                                .arg(fidLoc.x)
-                                .arg(fidLoc.y)
-                                .arg(fidAngle, 0, 'f', 2));
-                                
-                        logDebug(QString("INS 패턴 '%1': 원본 영역(%2,%3,%4,%5) -> 조정된 영역(%6,%7,%8,%9)")
-                                .arg(pattern.name)
-                                .arg(originalRect.x())
-                                .arg(originalRect.y())
-                                .arg(originalRect.width())
-                                .arg(originalRect.height())
-                                .arg(adjustedRect.x())
-                                .arg(adjustedRect.y())
-                                .arg(adjustedRect.width())
-                                .arg(adjustedRect.height()));
                         }
                     }
                 }
@@ -461,17 +413,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                 // FID 회전 차이만큼 INS 원본 각도에 추가
                 double fidAngleDiff = parentAngle - parentFidTeachingAngle;
                 adjustedPattern.angle = pattern.angle + fidAngleDiff; // INS 원본 각도 + FID 회전 차이
-                
-                logDebug(QString("INS 패턴 '%1' 최종 각도 계산:")
-                        .arg(pattern.name));
-                logDebug(QString("  - INS 원본 각도: %1°")
-                        .arg(pattern.angle, 0, 'f', 2));
-                logDebug(QString("  - FID 회전 차이: %1° (검출:%2° - 티칭:%3°)")
-                        .arg(fidAngleDiff, 0, 'f', 2)
-                        .arg(parentAngle, 0, 'f', 2)
-                        .arg(parentFidTeachingAngle, 0, 'f', 2));
-                logDebug(QString("  - 최종 검사 각도: %1°")
-                        .arg(adjustedPattern.angle, 0, 'f', 2));
             } else {
                 adjustedPattern.angle = pattern.angle; // 패턴 각도만 
             }
@@ -822,9 +763,6 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
     cv::Mat bestMask; // 최고 점수를 얻은 마스크 저장용
     
     // 각도 범위 내에서 최적 매칭 검색
-    logDebug(QString("회전 템플릿 매칭 시작: 각도 범위=%1° ~ %2°, 스텝=%3°")
-            .arg(adjustedMinAngle).arg(adjustedMaxAngle).arg(angleStep));
-            
     // 각도 리스트 생성: 2단계 적응적 검색 + 조기 종료
     std::vector<double> angleList;
     
@@ -839,25 +777,7 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
         }
     }
     
-    // 디버깅용: 검색 전략 출력
-    logDebug(QString("=== 2단계 적응적 회전 매칭 ==="));
-    logDebug(QString("티칭 각도: %1° (1순위)").arg(pattern.angle));
-    logDebug(QString("상대 범위: %1° ~ %2°").arg(minAngle).arg(maxAngle));
-    logDebug(QString("절대 범위: %1° ~ %2°").arg(adjustedMinAngle).arg(adjustedMaxAngle));
-    logDebug(QString("1단계 검색: 5도 간격, %1개 각도").arg(coarseAngles.size()));
-    
-    QString coarseAngleStr;
-    for (size_t i = 0; i < std::min(coarseAngles.size(), size_t(10)); ++i) {
-        if (i > 0) coarseAngleStr += ", ";
-        coarseAngleStr += QString::number(coarseAngles[i], 'f', 0) + "°";
-    }
-    if (coarseAngles.size() > 10) {
-        coarseAngleStr += QString(" ... (총 %1개)").arg(coarseAngles.size());
-    }
-    logDebug(QString("1단계 각도 리스트: %1").arg(coarseAngleStr));
-    
     // === 1단계: 티칭 각도 + 5도 간격 빠른 검색 ===
-    logDebug(QString("1단계 시작: 티칭각도 + %1개 각도에서 빠른 검색").arg(coarseAngles.size()));
     
     double bestCoarseScore = -1.0;
     double bestCoarseAngle = pattern.angle;
@@ -881,12 +801,9 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
         
         if (isTeachingAngle) {
             // 티칭 각도인 경우: 원본 템플릿 그대로 사용
-            logDebug(QString("티칭 각도 %1°: 원본 템플릿 사용").arg(currentAngle));
             templateForMatching = templGray.clone();
         } else {
             // 다른 각도인 경우: 패딩된 템플릿을 회전
-            logDebug(QString("각도 %1°: 템플릿 회전 (상대각도: %2°)")
-                    .arg(currentAngle).arg(currentAngle - pattern.angle));
             
             cv::Mat rotMatrix = cv::getRotationMatrix2D(
                 cv::Point2f(paddedTempl.cols / 2.0, paddedTempl.rows / 2.0), 
@@ -943,28 +860,16 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
         cv::Point minLoc, maxLoc;
         cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
         
-        logDebug(QString("1단계 - 각도 %1°%2: 매칭 점수=%3, 위치=(%4,%5)")
-                .arg(currentAngle, 0, 'f', 0)
-                .arg(isTeachingAngle ? " (티칭)" : "")
-                .arg(maxVal, 0, 'f', 4)
-                .arg(maxLoc.x).arg(maxLoc.y));
-        
         // 1단계 최고 점수 업데이트
         if (maxVal > bestCoarseScore) {
             bestCoarseScore = maxVal;
             bestCoarseAngle = currentAngle;
             bestCoarseLocation.x = static_cast<int>(maxLoc.x + templateForMatching.cols / 2.0 + 0.5);
             bestCoarseLocation.y = static_cast<int>(maxLoc.y + templateForMatching.rows / 2.0 + 0.5);
-            logDebug(QString("1단계 새로운 최고! 각도 %1°%2: %3")
-                    .arg(currentAngle, 0, 'f', 0)
-                    .arg(isTeachingAngle ? " (티칭)" : "")
-                    .arg(maxVal, 0, 'f', 4));
         }
         
         // 조기 종료: 95% 이상 점수면 검색 중단
         if (maxVal >= 0.95) {
-            logDebug(QString("조기 종료: 충분히 높은 점수(%1) 달성, 각도 %2°")
-                    .arg(maxVal, 0, 'f', 4).arg(currentAngle));
             matchLoc.x = static_cast<int>(maxLoc.x + templateForMatching.cols / 2.0 + 0.5);
             matchLoc.y = static_cast<int>(maxLoc.y + templateForMatching.rows / 2.0 + 0.5);
             score = maxVal;
@@ -982,9 +887,6 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
         }
     }
     
-    logDebug(QString("1단계 완료: 최고 점수=%1, 각도=%2°")
-            .arg(bestCoarseScore, 0, 'f', 4).arg(bestCoarseAngle, 0, 'f', 0));
-    
     // === 2단계: 1단계 최적 각도 주변에서 1도 간격 정밀 검색 ===
     double fineSearchMin = bestCoarseAngle - 3.0;
     double fineSearchMax = bestCoarseAngle + 3.0;
@@ -992,9 +894,6 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
     // 원래 범위를 벗어나지 않도록 제한
     fineSearchMin = std::max(fineSearchMin, adjustedMinAngle);
     fineSearchMax = std::min(fineSearchMax, adjustedMaxAngle);
-    
-    logDebug(QString("2단계 시작: %1° 주변 %2°~%3° 범위에서 1도 간격 정밀 검색")
-            .arg(bestCoarseAngle, 0, 'f', 0).arg(fineSearchMin, 0, 'f', 0).arg(fineSearchMax, 0, 'f', 0));
     
     // 2단계 각도 리스트 생성 (1단계에서 이미 시도한 각도 제외)
     std::vector<double> fineAngles;
@@ -1011,8 +910,6 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
             fineAngles.push_back(currentAngle);
         }
     }
-    
-    logDebug(QString("2단계 각도 개수: %1개").arg(fineAngles.size()));
     
     for (double currentAngle : fineAngles) {
         // 티칭 각도인지 확인 (거의 없겠지만)
@@ -1074,11 +971,6 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
         cv::Point minLoc, maxLoc;
         cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
         
-        logDebug(QString("2단계 - 각도 %1°: 매칭 점수=%2, 위치=(%3,%4)")
-                .arg(currentAngle, 0, 'f', 0)
-                .arg(maxVal, 0, 'f', 4)
-                .arg(maxLoc.x).arg(maxLoc.y));
-        
         // 가장 높은 점수 업데이트
         if (maxVal > bestScore) {
             bestScore = maxVal;
@@ -1086,17 +978,8 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
             bestLocation.x = static_cast<int>(maxLoc.x + templateForMatching.cols / 2.0 + 0.5);
             bestLocation.y = static_cast<int>(maxLoc.y + templateForMatching.rows / 2.0 + 0.5);
             bestTemplate = templateForMatching.clone();
-            logDebug(QString("2단계 새로운 최고! 각도 %1°: %2 -> 중심점(%3,%4)")
-                    .arg(currentAngle, 0, 'f', 0)
-                    .arg(maxVal, 0, 'f', 4)
-                    .arg(bestLocation.x).arg(bestLocation.y));
         }
     }
-    
-    // 2단계 완료
-    logDebug(QString("2단계 완료: 최종 최고 점수=%1, 각도=%2°, 위치=(%3,%4)")
-            .arg(bestScore, 0, 'f', 4).arg(bestAngle, 0, 'f', 0)
-            .arg(bestLocation.x).arg(bestLocation.y));
 
     // 결과 반환
     matchLoc = bestLocation;
