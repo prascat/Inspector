@@ -510,7 +510,7 @@ private:
     void initBasicSettings();
     void setupPatternTree();
     void setupPatternTypeButtons(QVBoxLayout *cameraLayout);
-    void setupCameraPreviews(QVBoxLayout *cameraLayout);
+    void setupPreviewOverlay();
     void setupButton(QPushButton* button);
 
     // ===== 레이아웃 생성 함수 =====
@@ -594,7 +594,7 @@ private:
     // 카메라 관련
     QString cameraStatus;
     QVector<CameraInfo> cameraInfos;
-    QVector<QLabel*> cameraPreviewLabels;
+    QLabel* previewOverlayLabel = nullptr;  // 메인 화면 오른쪽 상단 미리보기
     QVector<bool> cameraConnected;
     
     // 카메라 모드 관련 (camOn/camOff)

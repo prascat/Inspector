@@ -984,8 +984,8 @@ QVBoxLayout* TeachingWidget::createCameraLayout() {
     // 2. 패턴 타입 버튼 추가
     setupPatternTypeButtons(cameraLayout);
     
-    // 3. 카메라 미리보기 영역 추가
-    setupCameraPreviews(cameraLayout);
+    // 3. 메인 화면 오른쪽 상단에 미리보기 오버레이 추가
+    setupPreviewOverlay();
     
     return cameraLayout;
 }
@@ -1407,65 +1407,33 @@ void TeachingWidget::updateFilterParam(const QUuid& patternId, int filterIndex, 
     }
 }
 
-void TeachingWidget::setupCameraPreviews(QVBoxLayout *cameraLayout) {
-    // 프리뷰는 메인 카메라를 제외한 나머지 카메라들 (MAX_CAMERAS - 1)
-    int previewCameraCount = MAX_CAMERAS - 1; // 메인 카메라 1개를 제외한 프리뷰 카메라 수
+void TeachingWidget::setupPreviewOverlay() {
+    if (!cameraView) return;
     
-    // 3개 이하면 한 줄, 4개 이상이면 두 줄로 배치
-    int camerasPerRow = (previewCameraCount <= 3) ? previewCameraCount : ((previewCameraCount + 1) / 2);
-    int totalRows = (previewCameraCount + camerasPerRow - 1) / camerasPerRow; // 올림 계산
+    // 메인 화면 오른쪽 상단에 미리보기 레이블 생성
+    previewOverlayLabel = new QLabel(cameraView);
+    previewOverlayLabel->setFixedSize(240, 180);  // 고정 크기
+    previewOverlayLabel->setAlignment(Qt::AlignCenter);
+    previewOverlayLabel->setStyleSheet(
+        "QLabel {"
+        "  background-color: rgba(0, 0, 0, 200);"
+        "  color: white;"
+        "  border: 2px solid #555;"
+        "  border-radius: 5px;"
+        "}"
+    );
+    previewOverlayLabel->setText("CAM 2\n" + TR("CAMERA_NO_CONNECTION"));
+    previewOverlayLabel->setCursor(Qt::PointingHandCursor);  // 클릭 가능 커서
+    previewOverlayLabel->raise();  // 최상단에 표시
     
-    int cameraIndex = 0;
-    
-    for (int row = 0; row < totalRows && cameraIndex < previewCameraCount; row++) {
-        QHBoxLayout *previewLayout = new QHBoxLayout();
-        previewLayout->setSpacing(10);
-        previewLayout->setContentsMargins(0, 5, 0, 5);
-        previewLayout->setAlignment(Qt::AlignCenter);
-        
-        // 각 행에 카메라 미리보기 추가
-        int camerasInThisRow = qMin(camerasPerRow, previewCameraCount - cameraIndex);
-        for (int col = 0; col < camerasInThisRow; col++) {
-            QFrame *cameraFrame = createCameraPreviewFrame(cameraIndex);
-            previewLayout->addWidget(cameraFrame, 1); // 크기 비율을 1로 설정하여 동일하게 유지
-            cameraIndex++;
-        }
-        
-        cameraLayout->addLayout(previewLayout);
-    }
-}
-
-QFrame* TeachingWidget::createCameraPreviewFrame(int index) {
-    QFrame *cameraFrame = new QFrame(this);
-    cameraFrame->setFrameStyle(QFrame::Box | QFrame::Raised);
-    cameraFrame->setLineWidth(1);
-    // 고정 크기 대신 유동적인 크기 정책 사용
-    cameraFrame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    // 카메라 개수에 따라 최소 크기 조정 (8개까지 고려)
-    int minWidth = (MAX_CAMERAS <= 4) ? 120 : 100;
-    int minHeight = (MAX_CAMERAS <= 4) ? 90 : 75;
-    cameraFrame->setMinimumSize(minWidth, minHeight);
-    
-    QVBoxLayout *frameLayout = new QVBoxLayout(cameraFrame);
-    frameLayout->setContentsMargins(1, 1, 1, 1);
-    frameLayout->setSpacing(0);
-    
-    QLabel *previewLabel = new QLabel(cameraFrame);
-    // 고정 크기 대신 유동적 크기 정책 사용
-    previewLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    previewLabel->setAlignment(Qt::AlignCenter);
-    previewLabel->setStyleSheet("background-color: black; color: white;");
-    // 프리뷰는 메인 카메라(1번)를 제외한 카메라들이므로 index + 2로 표시
-    previewLabel->setText(QString(TR("CAMERA_NO_CONNECTION")).arg(index + 2));
-    
-    frameLayout->addWidget(previewLabel);
-    cameraPreviewLabels.append(previewLabel);
+    // 오른쪽 상단 위치로 이동 (10px 마진)
+    previewOverlayLabel->move(cameraView->width() - previewOverlayLabel->width() - 10, 10);
     
     // 클릭 이벤트 처리를 위한 이벤트 필터 설치
-    previewLabel->installEventFilter(this);
-    previewLabel->setProperty("cameraIndex", index);
+    previewOverlayLabel->installEventFilter(this);
     
-    return cameraFrame;
+    // cameraView 크기 변경 시 미리보기 위치 재조정
+    cameraView->installEventFilter(this);
 }
 
 
@@ -2552,6 +2520,9 @@ void TeachingWidget::onPatternSelected(QTreeWidgetItem* current, QTreeWidgetItem
         // 선택된 필터 정보 초기화
         selectedPatternId = QUuid();
         selectedFilterIndex = -1;
+        
+        // 선택 해제 시 원본 화면으로 복원
+        updateCameraFrame();
         return;
     }
     
@@ -2632,6 +2603,9 @@ void TeachingWidget::onPatternSelected(QTreeWidgetItem* current, QTreeWidgetItem
                     }
                 });
                 
+                // 필터 선택 시 필터 적용된 화면 표시
+                updateCameraFrame();
+                
                 return;
             }
         }
@@ -2644,6 +2618,9 @@ void TeachingWidget::onPatternSelected(QTreeWidgetItem* current, QTreeWidgetItem
     // 선택된 필터 정보 초기화 (패턴만 선택된 경우)
     selectedPatternId = QUuid();
     selectedFilterIndex = -1;
+    
+    // 필터가 아닌 일반 패턴 선택 시 원본 화면으로 복원
+    updateCameraFrame();
     
     if (pattern) {
         cameraView->setSelectedPatternId(pattern->id);
@@ -6050,17 +6027,6 @@ void TeachingWidget::detectCameras() {
                 
                 // Spinnaker 카메라를 연결했으면 OpenCV 카메라 검색 건너뛰기
                 if (connectedCameras > 0) {
-                    progressDialog->setLabelText("미리보기 레이블 초기화 중...");
-                    progressDialog->setValue(95);
-                    QApplication::processEvents();
-                    
-                    // 미리보기 레이블에 카메라 인덱스 매핑 초기화
-                    for (int i = 0; i < cameraPreviewLabels.size(); i++) {
-                        if (cameraPreviewLabels[i]) {
-                            cameraPreviewLabels[i]->setProperty("uniqueCameraId", "");
-                        }
-                    }
-                    
                     progressDialog->setValue(100);
                     progressDialog->deleteLater();
                     return;
@@ -6073,16 +6039,8 @@ void TeachingWidget::detectCameras() {
     }
     
     // Spinnaker SDK가 활성화되어 있으면 OpenCV 카메라 검색 건너뛰기
-    progressDialog->setLabelText("미리보기 레이블 초기화 중...");
     progressDialog->setValue(95);
     QApplication::processEvents();
-    
-    // 미리보기 레이블에 카메라 인덱스 매핑 초기화  
-    for (int i = 0; i < cameraPreviewLabels.size(); i++) {
-        if (cameraPreviewLabels[i]) {
-            cameraPreviewLabels[i]->setProperty("uniqueCameraId", "");
-        }
-    }
     
     progressDialog->setValue(100);
     progressDialog->deleteLater();
@@ -6223,16 +6181,9 @@ void TeachingWidget::detectCameras() {
     }
 #endif
     
-    // 미리보기 레이블에 카메라 인덱스 매핑 초기화
-    progressDialog->setLabelText("미리보기 레이블 초기화 중...");
+    // 미리보기 오버레이는 updatePreviewFrames에서 자동 업데이트됨
     progressDialog->setValue(95);
     QApplication::processEvents();
-    
-    for (int i = 0; i < cameraPreviewLabels.size(); i++) {
-        if (cameraPreviewLabels[i]) {
-            cameraPreviewLabels[i]->setProperty("uniqueCameraId", "");
-        }
-    }
     
     // 완료
     progressDialog->setLabelText(QString("카메라 검색 완료! %1개 카메라 발견").arg(connectedCameras));
@@ -6300,75 +6251,56 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat& frame, int camIdx) {
 }
 
 void TeachingWidget::updatePreviewFrames() {
-    // 모든 미리보기 레이블 순회
-    for (int labelIdx = 0; labelIdx < cameraPreviewLabels.size(); labelIdx++) {
-        QLabel* previewLabel = cameraPreviewLabels[labelIdx];
-        if (!previewLabel) continue;
+    if (!previewOverlayLabel) return;
+    
+    // 메인 카메라가 아닌 두 번째 카메라(index 1) 표시
+    int cameraCount = getCameraInfosCount();
+    if (cameraCount < 2) {
+        previewOverlayLabel->setText("CAM 2\n" + TR("NO_CONNECTION"));
+        return;
+    }
+    
+    // 두 번째 카메라 정보 가져오기
+    CameraInfo info = getCameraInfo(1);
+    int camIdx = 1;
+    
+    // 카메라 프레임이 있는지 확인
+    if (camIdx >= 0 && camIdx < static_cast<int>(cameraFrames.size()) && 
+        !cameraFrames[camIdx].empty()) {
         
-        // 이 레이블에 할당된 카메라 UUID 가져오기
-        QString assignedUuid = previewLabel->property("uniqueCameraId").toString();
-        
-        if (assignedUuid.isEmpty()) {
-            // UUID가 없으면 "연결 없음" 표시
-            previewLabel->clear();
-            previewLabel->setText(TR("NO_CONNECTION"));
-            previewLabel->setStyleSheet("background-color: black; color: white;");
-            continue;
-        }
-        
-        // UUID로 카메라 인덱스 찾기
-        int camIdx = -1;
-        QString cameraName;
-        int cameraCount = getCameraInfosCount();
-        for (int i = 0; i < cameraCount; i++) {
-            CameraInfo info = getCameraInfo(i);
-            if (info.uniqueId == assignedUuid) {
-                camIdx = i;
-                cameraName = info.name;
-                break;
-            }
-        }
-        
-        // 카메라 인덱스가 유효하고 프레임이 있는지 확인
-        if (camIdx >= 0 && camIdx < static_cast<int>(cameraFrames.size()) && 
-            !cameraFrames[camIdx].empty()) {
+        try {
+            // 프레임 복사 및 크기 조정
+            cv::Mat previewFrame = cameraFrames[camIdx].clone();
+            cv::cvtColor(previewFrame, previewFrame, cv::COLOR_BGR2RGB);
             
-            try {
-                // 프레임 복사 및 크기 조정
-                cv::Mat previewFrame = cameraFrames[camIdx].clone();
-                cv::resize(previewFrame, previewFrame, cv::Size(160, 120));
-                cv::cvtColor(previewFrame, previewFrame, cv::COLOR_BGR2RGB);
-                
-                // QPixmap 변환
-                QImage image(previewFrame.data, previewFrame.cols, previewFrame.rows, 
-                           previewFrame.step, QImage::Format_RGB888);
-                QPixmap pixmap = QPixmap::fromImage(image.copy());
-                
-                // 레이블에 설정
-                QSize labelSize = previewLabel->size();
-                if (labelSize.width() > 0 && labelSize.height() > 0) {
-                    QPixmap scaledPixmap = pixmap.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                    
-                    previewLabel->setPixmap(scaledPixmap);
-                    previewLabel->setScaledContents(true);
-                    previewLabel->setStyleSheet("background-color: black;");
-                    
-                    // 툴팁 설정
-                    previewLabel->setToolTip(QString("클릭하여 %1로 전환\nUUID: %2")
-                                           .arg(cameraName).arg(assignedUuid));
-                }
+            // QPixmap 변환
+            QImage image(previewFrame.data, previewFrame.cols, previewFrame.rows, 
+                       previewFrame.step, QImage::Format_RGB888);
+            QPixmap pixmap = QPixmap::fromImage(image.copy());
+            
+            // 레이블 크기에 맞춰 스케일링
+            QSize labelSize = previewOverlayLabel->size();
+            if (labelSize.width() > 0 && labelSize.height() > 0) {
+                QPixmap scaledPixmap = pixmap.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                previewOverlayLabel->setPixmap(scaledPixmap);
+                previewOverlayLabel->setScaledContents(false);
+                previewOverlayLabel->setStyleSheet(
+                    "QLabel {"
+                    "  background-color: rgba(0, 0, 0, 200);"
+                    "  border: 2px solid #555;"
+                    "  border-radius: 5px;"
+                    "}"
+                );
             }
-            catch (const std::exception& e) {
-                previewLabel->clear();
-                previewLabel->setText(TR("PROCESSING_ERROR"));
-                previewLabel->setStyleSheet("background-color: red; color: white;");
-            }
-        } else {
-            // 프레임이 없으면 "신호 없음" 표시
-            previewLabel->clear();
-            previewLabel->setText(TR("NO_SIGNAL"));
-            previewLabel->setStyleSheet("background-color: gray; color: white;");
         }
+        catch (const std::exception& e) {
+            previewOverlayLabel->clear();
+            previewOverlayLabel->setText("CAM 2\n" + TR("PROCESSING_ERROR"));
+        }
+    } else {
+        // 프레임이 없으면 "신호 없음" 표시
+        previewOverlayLabel->clear();
+        previewOverlayLabel->setText("CAM 2\n" + TR("NO_SIGNAL"));
     }
 }
 
@@ -6478,32 +6410,7 @@ void TeachingWidget::startCamera() {
         cameraView->setCurrentCameraName(cameraName);
     }
 
-    // 5. 미리보기 레이블 초기화 및 할당
-    for (int i = 0; i < cameraPreviewLabels.size(); i++) {
-        if (cameraPreviewLabels[i]) {
-            cameraPreviewLabels[i]->clear();
-            cameraPreviewLabels[i]->setProperty("uniqueCameraId", "");
-            cameraPreviewLabels[i]->setText(TR("NO_CONNECTION"));
-            cameraPreviewLabels[i]->setStyleSheet("background-color: black; color: white;");
-        }
-    }
-
-    QSet<int> usedCameras;
-    usedCameras.insert(cameraIndex); // 메인 카메라는 이미 사용 중
-    
-    int previewLabelIndex = 0;
-    for (int i = 0; i < cameraInfos.size(); i++) {
-        if (usedCameras.contains(i)) continue;
-        
-        if (previewLabelIndex < cameraPreviewLabels.size() && cameraPreviewLabels[previewLabelIndex]) {
-            cameraPreviewLabels[previewLabelIndex]->setProperty("uniqueCameraId", cameraInfos[i].uniqueId);
-            cameraPreviewLabels[previewLabelIndex]->installEventFilter(this);
-            cameraPreviewLabels[previewLabelIndex]->setCursor(Qt::PointingHandCursor);
-            usedCameras.insert(i);
-            cameraPreviewLabels[previewLabelIndex]->clear();
-            previewLabelIndex++;
-        }
-    }
+    // 5. 미리보기 오버레이는 updatePreviewFrames에서 자동 업데이트됨
 
     // 6. 미리보기 UI 업데이트
     updatePreviewUI();
@@ -6707,18 +6614,7 @@ void TeachingWidget::stopCamera() {
         cameraInfos[i].isConnected = false;
     }
     
-    // 5. 미리보기 레이블 초기화
-    for (int i = 0; i < cameraPreviewLabels.size(); i++) {
-        QLabel* previewLabel = cameraPreviewLabels[i];
-        if (previewLabel) {
-            previewLabel->clear();
-            previewLabel->setProperty("uniqueCameraId", "");
-            previewLabel->setScaledContents(false);
-            previewLabel->setAlignment(Qt::AlignCenter);
-            previewLabel->setStyleSheet("background-color: black; color: white;");
-            previewLabel->setText(TR("NO_CONNECTION"));
-        }
-    }
+    // 5. 미리보기 오버레이는 updatePreviewFrames에서 자동 업데이트됨
     
     // 6. 메인 카메라 뷰 초기화
     if (cameraView) {
@@ -6973,52 +6869,8 @@ void TeachingWidget::openLanguageSettings() {
 }
 
 void TeachingWidget::updatePreviewUI() {
-    // 미리보기 레이블 업데이트
-    for (int i = 0; i < cameraPreviewLabels.size(); i++) {
-        if (i >= cameraPreviewLabels.size()) continue;
-        QLabel* previewLabel = cameraPreviewLabels[i];
-        if (!previewLabel) continue;
-        
-        QString uniqueCameraId = previewLabel->property("uniqueCameraId").toString();
-        if (uniqueCameraId.isEmpty()) {
-            previewLabel->clear();
-            previewLabel->setText(TR("NO_CONNECTION"));
-            previewLabel->setStyleSheet("background-color: black; color: white;");
-            continue;
-        }
-        
-        // 고유 ID로 카메라 정보 찾기
-        int foundCameraIndex = -1;
-        int cameraCount = getCameraInfosCount();
-        for (int j = 0; j < cameraCount; j++) {
-            CameraInfo info = getCameraInfo(j);
-            if (info.uniqueId == uniqueCameraId) {
-                foundCameraIndex = j;
-                break;
-            }
-        }
-        
-        // 레이블에 카메라 정보 표시
-        if (foundCameraIndex >= 0) {
-            CameraInfo info = getCameraInfo(foundCameraIndex);
-            if (info.isConnected) {
-                // 카메라가 연결되어 있으면 빈 텍스트로 설정 (영상이 표시될 것임)
-                previewLabel->setText("");
-                previewLabel->setStyleSheet("");
-                // 여기서 setPixmap()을 호출하지 않음 - processGrabbedFrame에서 처리함
-            } else {
-                // 연결되지 않은 카메라 정보 표시
-                previewLabel->clear();
-                previewLabel->setText(TR("NO_CONNECTION"));
-                previewLabel->setStyleSheet("background-color: black; color: white;");
-            }
-        } else {
-            // 매핑된 카메라를 찾을 수 없는 경우
-            previewLabel->clear();
-            previewLabel->setText(TR("NO_CONNECTION"));
-            previewLabel->setStyleSheet("background-color: black; color: white;");
-        }
-    }
+    // 미리보기 오버레이는 updatePreviewFrames에서 자동 업데이트됨
+    // (기존 cameraPreviewLabels 대신 단일 오버레이 사용)
 }
 
 void TeachingWidget::updateCameraFrame() {
@@ -7154,27 +7006,22 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event) {
         QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
         if (mouseEvent->button() == Qt::LeftButton) {
             
-            // **미리보기 레이블 클릭 확인**
-            for (int i = 0; i < cameraPreviewLabels.size(); i++) {
-                if (watched == cameraPreviewLabels[i]) {
-                    QString cameraUuid = cameraPreviewLabels[i]->property("uniqueCameraId").toString();
-                    
-                    if (!cameraUuid.isEmpty()) {
+            // **미리보기 오버레이 클릭 처리 - CAM 2로 전환**
+            if (watched == previewOverlayLabel && previewOverlayLabel) {
+                int cameraCount = getCameraInfosCount();
+                if (cameraCount >= 2) {
+                    CameraInfo info = getCameraInfo(1);  // CAM 2
+                    if (info.isConnected && !info.uniqueId.isEmpty()) {
                         // 현재 카메라와 다른 경우에만 전환
-                        if (isValidCameraIndex(cameraIndex)) {
-                            QString currentUuid = getCameraInfo(cameraIndex).uniqueId;
-                            if (cameraUuid != currentUuid) {
-                                // **단순한 카메라 전환만**
-                                switchToCamera(cameraUuid);
-                            }
+                        if (cameraIndex != 1) {
+                            switchToCamera(info.uniqueId);
                         }
-                        return true;
                     }
-                    break;
                 }
+                return true;
             }
             
-            // **템플릿 이미지 클릭 처리 (기존 코드)**
+            // **템플릿 이미지 클릭 처리**
             if (watched == fidTemplateImg || watched == insTemplateImg) {
                 QLabel* imageLabel = qobject_cast<QLabel*>(watched);
                 if (imageLabel) {
@@ -7192,6 +7039,13 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event) {
                     return true;
                 }
             }
+        }
+    }
+    
+    // **cameraView 리사이즈 이벤트 - 미리보기 오버레이 위치 재조정**
+    if (watched == cameraView && event->type() == QEvent::Resize) {
+        if (previewOverlayLabel) {
+            previewOverlayLabel->move(cameraView->width() - previewOverlayLabel->width() - 10, 10);
         }
     }
     
@@ -7253,31 +7107,7 @@ void TeachingWidget::switchToCamera(const QString& cameraUuid) {
         cameraView->setCurrentCameraUuid(cameraUuid);
     }
 
-    // **미리보기 레이블 재할당**
-    for (int i = 0; i < cameraPreviewLabels.size(); i++) {
-        if (cameraPreviewLabels[i]) {
-            cameraPreviewLabels[i]->setProperty("uniqueCameraId", "");
-            cameraPreviewLabels[i]->clear();
-            cameraPreviewLabels[i]->setText(TR("NO_CONNECTION"));
-            cameraPreviewLabels[i]->setStyleSheet("background-color: black; color: white;");
-        }
-    }
-
-    // **새로운 미리보기 할당 - 메인 카메라 제외**
-    int previewLabelIndex = 0;
-    for (int i = 0; i < cameraInfos.size(); i++) {
-        if (i == cameraIndex) continue; // 메인 카메라 제외
-        
-        if (previewLabelIndex < cameraPreviewLabels.size() && cameraPreviewLabels[previewLabelIndex]) {
-            // **UUID로 할당 (인덱스가 아닌 UUID 기반)**
-            cameraPreviewLabels[previewLabelIndex]->setProperty("uniqueCameraId", cameraInfos[i].uniqueId);
-            cameraPreviewLabels[previewLabelIndex]->installEventFilter(this);
-            cameraPreviewLabels[previewLabelIndex]->setCursor(Qt::PointingHandCursor);
-            cameraPreviewLabels[previewLabelIndex]->setToolTip(QString("클릭하여 %1로 전환").arg(cameraInfos[i].name));
-            
-            previewLabelIndex++;
-        }
-    }
+    // 미리보기 오버레이는 updatePreviewFrames에서 자동 업데이트됨
     
     // **즉시 미리보기 업데이트**
     updatePreviewFrames();
