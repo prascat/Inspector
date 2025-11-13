@@ -1313,4 +1313,12 @@
         <ja>キャリブレーション用の実際の長さをmm単位で入力してください:</ja>
         <zh>请输入校准用的实际长度（毫米）:</zh>
     </String>
+    
+    <!-- 파일 메뉴 -->
+    <String key="SAVE_IMAGE">
+        <ko>이미지 저장</ko>
+        <en>Save Image</en>
+        <ja>画像を保存</ja>
+        <zh>保存图像</zh>
+    </String>
 </LanguageStrings>

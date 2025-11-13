@@ -236,6 +236,7 @@ private slots:
                         "이 프로그램은 KM DigiTech.의 소유입니다.\n"
                         "무단 복제 및 배포를 금지합니다.");
     }
+    void saveCurrentImage();
     void processGrabbedFrame(const cv::Mat& frame, int camIdx);
     void updateUIElements();
     void addPattern();
@@ -301,6 +302,7 @@ private:
     QMenu* helpMenu = nullptr;
     
     QAction* camModeAction = nullptr;
+    QAction* saveImageAction = nullptr;
     QAction* exitAction = nullptr;
     QAction* cameraSettingsAction = nullptr;
     QAction* languageSettingsAction = nullptr;

@@ -750,7 +750,11 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     // 파일 메뉴
     fileMenu = menuBar->addMenu(TR("FILE_MENU"));
 
-    // 종료 액션만 추가
+    // 이미지 저장 액션 추가
+    saveImageAction = fileMenu->addAction(TR("SAVE_IMAGE"));
+    fileMenu->addSeparator();
+    
+    // 종료 액션
     exitAction = fileMenu->addAction(TR("EXIT"));
 
     // === 레시피 메뉴 추가 ===
@@ -801,6 +805,7 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     aboutAction->setEnabled(true);  // 기본 활성화
 
     // 메뉴 액션 연결
+    connect(saveImageAction, &QAction::triggered, this, &TeachingWidget::saveCurrentImage);
     connect(exitAction, &QAction::triggered, this, &QWidget::close);
     connect(cameraSettingsAction, &QAction::triggered, this, &TeachingWidget::showCameraSettings);
     connect(languageSettingsAction, &QAction::triggered, this, &TeachingWidget::openLanguageSettings);
@@ -6673,6 +6678,48 @@ void TeachingWidget::stopCamera() {
     cameraInfos.clear();
     cameraIndex = -1;
     
+}
+
+void TeachingWidget::saveCurrentImage() {
+    // 현재 카메라 프레임 확인
+    if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
+        cameraFrames[cameraIndex].empty()) {
+        QMessageBox::warning(this, TR("SAVE_IMAGE"), 
+            "저장할 이미지가 없습니다.\n카메라를 시작하고 이미지를 캡처해주세요.");
+        return;
+    }
+    
+    // 저장 경로 선택 다이얼로그
+    QString defaultFileName = QString("image_%1.png")
+        .arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
+    
+    QString filePath = QFileDialog::getSaveFileName(
+        this,
+        "이미지 저장",
+        defaultFileName,
+        "PNG 이미지 (*.png);;JPEG 이미지 (*.jpg *.jpeg);;BMP 이미지 (*.bmp);;모든 파일 (*.*)"
+    );
+    
+    if (filePath.isEmpty()) {
+        return; // 사용자가 취소
+    }
+    
+    // 현재 프레임 저장
+    cv::Mat frameToSave = cameraFrames[cameraIndex].clone();
+    
+    try {
+        // OpenCV는 BGR 형식이므로 그대로 저장
+        if (cv::imwrite(filePath.toStdString(), frameToSave)) {
+            QMessageBox::information(this, TR("SAVE_IMAGE"), 
+                QString("이미지가 저장되었습니다:\n%1").arg(filePath));
+        } else {
+            QMessageBox::critical(this, TR("SAVE_IMAGE"), 
+                "이미지 저장에 실패했습니다.");
+        }
+    } catch (const std::exception& e) {
+        QMessageBox::critical(this, TR("SAVE_IMAGE"), 
+            QString("이미지 저장 중 오류 발생:\n%1").arg(e.what()));
+    }
 }
 
 void TeachingWidget::updateUITexts() {    
