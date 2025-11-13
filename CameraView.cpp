@@ -2468,6 +2468,12 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         avgLineCenter = (lineTopVP + lineBottomVP) / 2.0;
                         hasAvgLineCenter = true;
                         
+                        // EDGE 평균선 그리기 (노란색 점선)
+                        QPen avgLinePen(QColor(255, 255, 0), 2);  // 노란색, 2px
+                        avgLinePen.setStyle(Qt::DashLine);
+                        painter.setPen(avgLinePen);
+                        painter.drawLine(lineTopVP, lineBottomVP);
+                        
                         // ========== STRIP 탈피 길이 측정 선 ==========
                         // EDGE 평균선 중심점을 시작점으로 사용
                         if (result.stripLengthEndPoint.contains(patternId)) {

@@ -2733,24 +2733,68 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             double minX = absoluteEdgePoints[0].x();
             double maxX = absoluteEdgePoints[0].x();
             
-            // 선형 회귀로 평균선 구하기 (y = mx + b)
+            // EDGE 포인트들의 선형 회귀 계산 (거의 수직선이므로 Y를 독립변수로 사용)
             double sumY = 0.0;
             for (const QPoint& pt : absoluteEdgePoints) {
                 sumY += pt.y();
             }
             double avgY = sumY / absoluteEdgePoints.size();
             
-            double sumXY = 0.0, sumXX = 0.0;
+            // X의 분산과 Y의 분산을 비교하여 적절한 회귀 방향 선택
+            double varX = 0.0, varY = 0.0;
             for (const QPoint& pt : absoluteEdgePoints) {
                 double dx = pt.x() - edgeAvgX;
                 double dy = pt.y() - avgY;
-                sumXY += dx * dy;
-                sumXX += dx * dx;
+                varX += dx * dx;
+                varY += dy * dy;
             }
+            varX /= absoluteEdgePoints.size();
+            varY /= absoluteEdgePoints.size();
             
-            // 기울기 m 계산
-            double m = (sumXX > 0) ? (sumXY / sumXX) : 0.0;
-            double b = avgY - m * edgeAvgX;
+            double m = 0.0, b = 0.0;
+            
+            // Y 분산이 X 분산보다 크면 일반적인 y = mx + b 사용
+            // X 분산이 Y 분산보다 크면 x = my + c를 y = (1/m)x - c/m 형태로 변환
+            if (varY >= varX && varX > 0.001) {
+                // 일반적인 선형 회귀: y = mx + b
+                double sumXY = 0.0, sumXX = 0.0;
+                for (const QPoint& pt : absoluteEdgePoints) {
+                    double dx = pt.x() - edgeAvgX;
+                    double dy = pt.y() - avgY;
+                    sumXY += dx * dy;
+                    sumXX += dx * dx;
+                }
+                m = (sumXX > 0) ? (sumXY / sumXX) : 0.0;
+                b = avgY - m * edgeAvgX;
+            } else {
+                // 수직에 가까운 경우: x = m'y + c를 y = mx + b 형태로 변환
+                double sumXY = 0.0, sumYY = 0.0;
+                for (const QPoint& pt : absoluteEdgePoints) {
+                    double dx = pt.x() - edgeAvgX;
+                    double dy = pt.y() - avgY;
+                    sumXY += dx * dy;
+                    sumYY += dy * dy;
+                }
+                
+                if (sumYY > 0.001) {
+                    double m_prime = sumXY / sumYY;  // x = m'y + c에서의 기울기
+                    double c = edgeAvgX - m_prime * avgY;
+                    
+                    // y = mx + b 형태로 변환: x = m'y + c => y = (1/m')x - c/m'
+                    if (std::abs(m_prime) > 0.001) {
+                        m = 1.0 / m_prime;
+                        b = -c / m_prime;
+                    } else {
+                        // 완전 수직인 경우: x = 상수 (기울기 무한대)
+                        m = 1e6;  // 매우 큰 기울기로 근사
+                        b = avgY - m * edgeAvgX;
+                    }
+                } else {
+                    // 수평선인 경우
+                    m = 0.0;
+                    b = avgY;
+                }
+            }
             
             double minDistancePx = std::numeric_limits<double>::max();
             double sumDistancePx = 0.0;
@@ -2792,6 +2836,9 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             result.edgeRegressionSlope[pattern.id] = m;
             result.edgeRegressionIntercept[pattern.id] = b;
         }
+        
+        // EDGE 불량 판정: edgeOutlierCount가 edgeMaxOutliers 이상이면 불량
+        edgePassed = (edgeOutlierCount < pattern.edgeMaxOutliers);
         
         // EDGE 검사 결과 저장 (불량수와 편차는 mm 기준)
         result.edgeResults[pattern.id] = edgePassed;

@@ -1041,11 +1041,18 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                 }
                 
                 // 2. 카메라 및 프레임 확인 (시뮬레이션 모드 고려)
+                qDebug() << "[RUN 버튼 디버그] camOff:" << camOff << "cameraIndex:" << cameraIndex << "cameraFrames.size():" << cameraFrames.size();
+                if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
+                    qDebug() << "[RUN 버튼 디버그] cameraFrames[" << cameraIndex << "] empty:" << cameraFrames[cameraIndex].empty() 
+                             << "size:" << cameraFrames[cameraIndex].cols << "x" << cameraFrames[cameraIndex].rows;
+                }
+                
                 if (camOff) {
                     // 시뮬레이션 모드: 현재 카메라 프레임이 있는지 확인
                     
                     if (!cameraView || cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
                         cameraFrames[cameraIndex].empty()) {
+                        qDebug() << "[RUN 버튼] 시뮬레이션 모드 - 카메라 프레임 없음";
                         btn->blockSignals(true);
                         btn->setChecked(false);
                         btn->blockSignals(false);
@@ -1055,6 +1062,12 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                     // 실제 카메라 모드: 카메라 프레임 확인
                     if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
                         cameraFrames[cameraIndex].empty()) {
+                        qDebug() << "[RUN 버튼] 실제 카메라 모드 - 카메라 프레임 없음";
+                        qDebug() << "  cameraIndex < 0:" << (cameraIndex < 0);
+                        qDebug() << "  cameraIndex >= size:" << (cameraIndex >= static_cast<int>(cameraFrames.size()));
+                        if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
+                            qDebug() << "  cameraFrames[" << cameraIndex << "].empty():" << cameraFrames[cameraIndex].empty();
+                        }
                         btn->blockSignals(true);
                         btn->setChecked(false);
                         btn->blockSignals(false);
@@ -8356,8 +8369,9 @@ void TeachingWidget::resumeToLiveMode() {
             }
         }
         
-        // **camOff 모드에서는 티칭 이미지를 유지**
-        if (!camOff && cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
+        // **camOff 모드에서만 프레임을 비우고, 실제 카메라 모드에서는 프레임 유지**
+        // 실제 카메라 모드에서는 라이브 영상을 계속 유지해야 함
+        if (camOff && cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
             cameraFrames[cameraIndex] = cv::Mat();
         }
         

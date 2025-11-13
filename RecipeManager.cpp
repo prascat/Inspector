@@ -770,6 +770,8 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("edgeBoxHeight", QString::number(pattern.edgeBoxHeight));
     xml.writeAttribute("edgeMaxOutliers", QString::number(pattern.edgeMaxOutliers));
     xml.writeAttribute("edgeDistanceMax", QString::number(pattern.edgeDistanceMax, 'f', 2));
+    xml.writeAttribute("edgeStartPercent", QString::number(pattern.edgeStartPercent));
+    xml.writeAttribute("edgeEndPercent", QString::number(pattern.edgeEndPercent));
     
     // STRIP 길이 캘리브레이션 관련 속성 저장
     xml.writeAttribute("stripLengthConversionMm", QString::number(pattern.stripLengthConversionMm, 'f', 3));
@@ -779,11 +781,23 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("stripLengthMax", QString::number(pattern.stripLengthMax, 'f', 2));
     xml.writeAttribute("stripLengthEnabled", pattern.stripLengthEnabled ? "true" : "false");
     
+    // STRIP FRONT/REAR 활성화 여부 저장
+    xml.writeAttribute("stripFrontEnabled", pattern.stripFrontEnabled ? "true" : "false");
+    xml.writeAttribute("stripRearEnabled", pattern.stripRearEnabled ? "true" : "false");
+    
     // STRIP 두께 검사 관련 속성 저장
     xml.writeAttribute("stripThicknessMin", QString::number(pattern.stripThicknessMin, 'f', 2));
     xml.writeAttribute("stripThicknessMax", QString::number(pattern.stripThicknessMax, 'f', 2));
     xml.writeAttribute("stripRearThicknessMin", QString::number(pattern.stripRearThicknessMin, 'f', 2));
     xml.writeAttribute("stripRearThicknessMax", QString::number(pattern.stripRearThicknessMax, 'f', 2));
+    
+    // STRIP Gradient 시작/끝 지점 및 두께 박스 크기 저장
+    xml.writeAttribute("stripGradientStartPercent", QString::number(pattern.stripGradientStartPercent));
+    xml.writeAttribute("stripGradientEndPercent", QString::number(pattern.stripGradientEndPercent));
+    xml.writeAttribute("stripThicknessBoxWidth", QString::number(pattern.stripThicknessBoxWidth));
+    xml.writeAttribute("stripThicknessBoxHeight", QString::number(pattern.stripThicknessBoxHeight));
+    xml.writeAttribute("stripRearThicknessBoxWidth", QString::number(pattern.stripRearThicknessBoxWidth));
+    xml.writeAttribute("stripRearThicknessBoxHeight", QString::number(pattern.stripRearThicknessBoxHeight));
     
     if (!pattern.templateImage.isNull()) {
         QByteArray ba;
@@ -1390,6 +1404,16 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
         pattern.edgeDistanceMax = edgeDistanceMaxStr.toDouble();
     } // 비어있으면 CommonDefs.h의 기본값(10.0) 사용
     
+    QString edgeStartPercentStr = xml.attributes().value("edgeStartPercent").toString();
+    if (!edgeStartPercentStr.isEmpty()) {
+        pattern.edgeStartPercent = edgeStartPercentStr.toInt();
+    }
+    
+    QString edgeEndPercentStr = xml.attributes().value("edgeEndPercent").toString();
+    if (!edgeEndPercentStr.isEmpty()) {
+        pattern.edgeEndPercent = edgeEndPercentStr.toInt();
+    }
+    
     // STRIP 길이 캘리브레이션 관련 속성 읽기
     QString stripLengthConversionMmStr = xml.attributes().value("stripLengthConversionMm").toString();
     if (!stripLengthConversionMmStr.isEmpty()) {
@@ -1421,6 +1445,17 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
         pattern.stripLengthEnabled = (stripLengthEnabledStr == "true");
     }
     
+    // STRIP FRONT/REAR 활성화 여부 읽기
+    QString stripFrontEnabledStr = xml.attributes().value("stripFrontEnabled").toString();
+    if (!stripFrontEnabledStr.isEmpty()) {
+        pattern.stripFrontEnabled = (stripFrontEnabledStr == "true");
+    }
+    
+    QString stripRearEnabledStr = xml.attributes().value("stripRearEnabled").toString();
+    if (!stripRearEnabledStr.isEmpty()) {
+        pattern.stripRearEnabled = (stripRearEnabledStr == "true");
+    }
+    
     // STRIP 두께 검사 관련 속성 읽기
     QString stripThicknessMinStr = xml.attributes().value("stripThicknessMin").toString();
     if (!stripThicknessMinStr.isEmpty()) {
@@ -1440,6 +1475,37 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     QString stripRearThicknessMaxStr = xml.attributes().value("stripRearThicknessMax").toString();
     if (!stripRearThicknessMaxStr.isEmpty()) {
         pattern.stripRearThicknessMax = stripRearThicknessMaxStr.toDouble();
+    }
+    
+    // STRIP Gradient 시작/끝 지점 및 두께 박스 크기 읽기
+    QString stripGradientStartPercentStr = xml.attributes().value("stripGradientStartPercent").toString();
+    if (!stripGradientStartPercentStr.isEmpty()) {
+        pattern.stripGradientStartPercent = stripGradientStartPercentStr.toInt();
+    }
+    
+    QString stripGradientEndPercentStr = xml.attributes().value("stripGradientEndPercent").toString();
+    if (!stripGradientEndPercentStr.isEmpty()) {
+        pattern.stripGradientEndPercent = stripGradientEndPercentStr.toInt();
+    }
+    
+    QString stripThicknessBoxWidthStr = xml.attributes().value("stripThicknessBoxWidth").toString();
+    if (!stripThicknessBoxWidthStr.isEmpty()) {
+        pattern.stripThicknessBoxWidth = stripThicknessBoxWidthStr.toInt();
+    }
+    
+    QString stripThicknessBoxHeightStr = xml.attributes().value("stripThicknessBoxHeight").toString();
+    if (!stripThicknessBoxHeightStr.isEmpty()) {
+        pattern.stripThicknessBoxHeight = stripThicknessBoxHeightStr.toInt();
+    }
+    
+    QString stripRearThicknessBoxWidthStr = xml.attributes().value("stripRearThicknessBoxWidth").toString();
+    if (!stripRearThicknessBoxWidthStr.isEmpty()) {
+        pattern.stripRearThicknessBoxWidth = stripRearThicknessBoxWidthStr.toInt();
+    }
+    
+    QString stripRearThicknessBoxHeightStr = xml.attributes().value("stripRearThicknessBoxHeight").toString();
+    if (!stripRearThicknessBoxHeightStr.isEmpty()) {
+        pattern.stripRearThicknessBoxHeight = stripRearThicknessBoxHeightStr.toInt();
     }
     
     QString imageStr = xml.attributes().value("templateImage").toString();

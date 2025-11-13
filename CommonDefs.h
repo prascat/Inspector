@@ -217,7 +217,7 @@ struct PatternInfo {
     int edgeOffsetX = 75;                    // 패턴 왼쪽에서의 오프셋 (픽셀)
     int edgeBoxWidth = 90;                   // EDGE 검사 박스 너비 (픽셀)
     int edgeBoxHeight = 150;                 // EDGE 검사 박스 높이 (픽셀)
-    int edgeMaxOutliers = 5;                 // 허용 최대 불량 포인트 개수 (평균선 거리 기준)
+    int edgeMaxOutliers = 4;                 // 허용 최대 불량 포인트 개수 (평균선 거리 기준)
     int edgeStartPercent = 3;                // EDGE 시작 제외 퍼센트 (1-50%)
     int edgeEndPercent = 3;                  // EDGE 끝 제외 퍼센트 (1-50%)
     
