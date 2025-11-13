@@ -419,16 +419,15 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     QHBoxLayout *contentLayout = createContentLayout();
     mainLayout->addLayout(contentLayout);
     
-    // 왼쪽 패널 (카메라 뷰 및 컨트롤) 설정
+    // 왼쪽 패널 (카메라 뷰 및 컨트롤) 설정 - 전체 화면 사용
     QVBoxLayout *cameraLayout = createCameraLayout();
-    contentLayout->addLayout(cameraLayout, 2); // 2:1 비율로 왼쪽 패널이 더 크게
-    
-    // 오른쪽 패널 (패턴 및 필터 컨트롤) 설정
-    rightPanelLayout = createRightPanel();
-    contentLayout->addLayout(rightPanelLayout, 1);
+    contentLayout->addLayout(cameraLayout, 1);
     
     // 로그 오버레이 생성 (화면 하단)
     setupLogOverlay();
+    
+    // 오른쪽 패널 오버레이 생성
+    setupRightPanelOverlay();
     
     // 패턴 테이블 설정
     setupPatternTree();
@@ -1548,10 +1547,55 @@ void TeachingWidget::setupPreviewOverlay() {
 }
 
 
+void TeachingWidget::setupRightPanelOverlay() {
+    // 오른쪽 패널 오버레이 위젯 생성
+    rightPanelOverlay = new QWidget(this);
+    
+    // 반투명 배경 적용 (Qt::WA_TranslucentBackground 필요)
+    rightPanelOverlay->setAttribute(Qt::WA_TranslucentBackground, false); // QWidget은 이 속성 불필요
+    rightPanelOverlay->setAutoFillBackground(true);
+    
+    // 팔레트로 반투명 배경 설정
+    QPalette palette = rightPanelOverlay->palette();
+    palette.setColor(QPalette::Window, QColor(30, 30, 30, 200)); // 반투명 어두운 배경
+    rightPanelOverlay->setPalette(palette);
+    
+    rightPanelOverlay->setStyleSheet(
+        "QWidget#rightPanelOverlay {"
+        "  background-color: rgba(30, 30, 30, 200);" // 반투명 어두운 배경
+        "  border: 2px solid rgba(100, 100, 100, 150);"
+        "  border-radius: 10px;"
+        "}"
+        "QTreeWidget, QTextEdit, QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QCheckBox, QLabel {"
+        "  background-color: rgba(50, 50, 50, 230);" // 자식 위젯들은 약간 더 불투명
+        "  color: white;"
+        "}"
+    );
+    rightPanelOverlay->setObjectName("rightPanelOverlay");
+    
+    // 오버레이 내부 레이아웃
+    rightPanelLayout = new QVBoxLayout(rightPanelOverlay);
+    rightPanelLayout->setContentsMargins(10, 10, 10, 10);
+    rightPanelLayout->setSpacing(5);
+    
+    // 초기 위치는 updateLogOverlayPosition에서 설정됨
+    rightPanelOverlay->raise(); // 맨 위로
+    rightPanelOverlay->show();
+    
+    // 드래그 가능하도록 이벤트 필터 설치
+    rightPanelOverlay->installEventFilter(this);
+    rightPanelDragPos = QPoint();
+    rightPanelDragging = false;
+    
+    // 초기 위치 설정을 위해 updateLogOverlayPosition 호출
+    QTimer::singleShot(100, this, &TeachingWidget::updateLogOverlayPosition);
+}
+
 QVBoxLayout* TeachingWidget::createRightPanel() {
+    // 더미 레이아웃 반환 (기존 코드 호환성)
     QVBoxLayout *layout = new QVBoxLayout();
-    layout->setContentsMargins(5, 5, 5, 5); // 왼쪽 레이아웃과 동일한 마진 설정
-    layout->setSpacing(5); // 왼쪽 레이아웃과 동일한 간격 설정
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
     return layout;
 }
 
@@ -6404,6 +6448,24 @@ void TeachingWidget::updateLogOverlayPosition() {
     int y = cameraView->height() - logOverlayWidget->height() - bottomMargin;
     
     logOverlayWidget->move(x, y);
+    
+    // 오른쪽 패널 오버레이 위치 업데이트 (cameraView 기준)
+    if (rightPanelOverlay && cameraView) {
+        int leftMargin = 10;
+        int topMargin = 10;
+        int panelWidth = 320;
+        int panelHeight = cameraView->height() - topMargin * 2;
+        
+        // cameraView의 글로벌 좌표를 this 기준으로 변환
+        QPoint cameraViewPos = cameraView->mapTo(this, QPoint(0, 0));
+        
+        rightPanelOverlay->setGeometry(
+            cameraViewPos.x() + leftMargin,  // cameraView 왼쪽 상단 기준
+            cameraViewPos.y() + topMargin,
+            panelWidth,
+            panelHeight
+        );
+    }
 }
 
 void TeachingWidget::receiveLogMessage(const QString& message) {
@@ -7301,6 +7363,31 @@ void TeachingWidget::updateCameraFrame() {
 }
 
 bool TeachingWidget::eventFilter(QObject *watched, QEvent *event) {
+    // 오른쪽 패널 오버레이 드래그 처리
+    if (watched == rightPanelOverlay) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
+            if (mouseEvent->button() == Qt::LeftButton) {
+                rightPanelDragging = true;
+                rightPanelDragPos = mouseEvent->pos();
+                return true;
+            }
+        }
+        else if (event->type() == QEvent::MouseMove && rightPanelDragging) {
+            QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
+            QPoint delta = mouseEvent->pos() - rightPanelDragPos;
+            rightPanelOverlay->move(rightPanelOverlay->pos() + delta);
+            return true;
+        }
+        else if (event->type() == QEvent::MouseButtonRelease) {
+            QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
+            if (mouseEvent->button() == Qt::LeftButton) {
+                rightPanelDragging = false;
+                return true;
+            }
+        }
+    }
+    
     if (event->type() == QEvent::MouseButtonPress) {
         QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
         if (mouseEvent->button() == Qt::LeftButton) {

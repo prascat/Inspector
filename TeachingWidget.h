@@ -533,6 +533,7 @@ private:
     QHBoxLayout* createContentLayout();
     QVBoxLayout* createCameraLayout();
     QVBoxLayout* createRightPanel();
+    void setupRightPanelOverlay();
     QPushButton* createActionButton(const QString &text, const QString &color, const QFont &font);
     
     // ===== 이벤트 연결 함수 =====
@@ -603,6 +604,9 @@ private:
     CustomPatternTreeWidget* patternTree;
     QLabel *zoomValueLabel;
     QVBoxLayout *rightPanelLayout;
+    QWidget *rightPanelOverlay = nullptr;
+    QPoint rightPanelDragPos;
+    bool rightPanelDragging = false;
     FilterDialog* filterDialog;
     
     // 카메라 관련

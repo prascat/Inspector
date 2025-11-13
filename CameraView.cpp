@@ -2732,14 +2732,20 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         }
     }
     
-    // ========== PASS/NG 표시 ==========
+    // ========== PASS/NG 표시 (화면 상단 중앙) ==========
     QString resultText = lastInspectionPassed ? "PASS" : "NG";
     QColor textColor = lastInspectionPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
     QFont font("Arial", 28, QFont::Bold);
     painter.setFont(font);
     QFontMetrics fm(font);
     QRect bounds = fm.boundingRect("PASS");
-    QRect resultRect(10, 60, bounds.width() + 20, bounds.height() + 20);
+    
+    // 화면 중앙 정렬
+    int rectWidth = bounds.width() + 20;
+    int rectHeight = bounds.height() + 20;
+    int x = (viewport()->width() - rectWidth) / 2;  // 중앙
+    int y = 60;  // 상단 여백 유지
+    QRect resultRect(x, y, rectWidth, rectHeight);
     
     painter.fillRect(resultRect, QColor(0, 0, 0, 150));
     painter.setPen(textColor);
