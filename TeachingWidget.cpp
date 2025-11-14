@@ -6390,9 +6390,12 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat& frame, int camIdx) {
                 QPixmap pixmap = QPixmap::fromImage(image.copy());
                 
                 // UI 업데이트 - 메인 스레드에서 안전하게 실행
-                QMetaObject::invokeMethod(cameraView, [this, pixmap]() {
-                    cameraView->setBackgroundPixmap(pixmap);
-                    cameraView->update();
+                QPointer<CameraView> safeView = cameraView;
+                QMetaObject::invokeMethod(this, [safeView, pixmap]() {
+                    if (safeView) {
+                        safeView->setBackgroundPixmap(pixmap);
+                        safeView->update();
+                    }
                 }, Qt::QueuedConnection);
             }
         }
@@ -6673,12 +6676,19 @@ void TeachingWidget::updatePreviewFrames() {
 }
 
 void TeachingWidget::onTriggerSignalReceived(const cv::Mat& frame, int cameraIndex) {
+    // **이미 트리거 처리 중이면 무시 (중복 방지)**
+    if (triggerProcessing) {
+        qDebug() << "[Trigger] 이미 처리 중 - 무시";
+        return;
+    }
+    
     // **티칭 ON 상태면 무시**
     if (teachingEnabled) {
         return;
     }
     
     // **패턴이 없으면 무시**
+    if (!cameraView) return;
     QList<PatternInfo> patterns = cameraView->getPatterns();
     if (patterns.isEmpty()) {
         return;
@@ -6688,32 +6698,48 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat& frame, int cameraInd
         return;
     }
     
+    // **트리거 처리 시작**
+    triggerProcessing = true;
+    
     qDebug() << "[Trigger] 신호 수신 → 프레임 저장";
     
     // **프레임을 cameraFrames에 저장**
     processGrabbedFrame(frame, cameraIndex);
     
     // **RUN 버튼 상태 확인**
-    if (runStopButton) {
-        bool isRunning = runStopButton->isChecked();
+    if (!runStopButton) {
+        triggerProcessing = false;
+        return;
+    }
+    
+    bool isRunning = runStopButton->isChecked();
+    
+    if (!isRunning) {
+        // STOP 상태 → RUN으로 전환 (검사 시작)
+        qDebug() << "[Trigger] STOP 상태 → RUN 클릭";
+        QMetaObject::invokeMethod(runStopButton, "click", Qt::QueuedConnection);
         
-        if (!isRunning) {
-            // STOP 상태 → RUN으로 전환 (검사 시작)
-            qDebug() << "[Trigger] STOP 상태 → RUN 클릭";
-            QMetaObject::invokeMethod(runStopButton, "click", Qt::QueuedConnection);
-        } else {
-            // RUN 상태(검사 결과 표시 중) → STOP 클릭 → 다시 RUN 클릭
-            qDebug() << "[Trigger] RUN 상태 → STOP 클릭";
-            QMetaObject::invokeMethod(runStopButton, "click", Qt::QueuedConnection);
-            
-            // 100ms 후 다시 RUN 클릭
+        // 처리 완료 (200ms 후)
+        QTimer::singleShot(200, this, [this]() {
+            triggerProcessing = false;
+        });
+    } else {
+        // RUN 상태(검사 결과 표시 중) → STOP 클릭 → 다시 RUN 클릭
+        qDebug() << "[Trigger] RUN 상태 → STOP 클릭";
+        QMetaObject::invokeMethod(runStopButton, "click", Qt::QueuedConnection);
+        
+        // 100ms 후 다시 RUN 클릭 (QPointer로 안전하게 처리)
+        QPointer<QPushButton> safeButton = runStopButton;
+        QTimer::singleShot(100, this, [this, safeButton]() {
+            if (safeButton) {
+                qDebug() << "[Trigger] → RUN 클릭";
+                QMetaObject::invokeMethod(safeButton, "click", Qt::QueuedConnection);
+            }
+            // 처리 완료 (추가 100ms 후)
             QTimer::singleShot(100, this, [this]() {
-                if (runStopButton) {
-                    qDebug() << "[Trigger] → RUN 클릭";
-                    QMetaObject::invokeMethod(runStopButton, "click", Qt::QueuedConnection);
-                }
+                triggerProcessing = false;
             });
-        }
+        });
     }
 }
 

@@ -642,6 +642,7 @@ private:
     
     // 티칭 모드 관련
     bool teachingEnabled = false;  // 티칭 모드 활성화 상태
+    bool triggerProcessing = false;  // 트리거 처리 중 플래그
     
     // 패턴 스타일링 관련
     QVector<QColor> patternColors;
