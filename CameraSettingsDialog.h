@@ -36,6 +36,8 @@ public:
     CameraSettingsDialog(QWidget* parent = nullptr);
     ~CameraSettingsDialog();
     
+    int exec() override;
+    
     int getSelectedCameraIndex() const;
     
 #ifdef USE_SPINNAKER

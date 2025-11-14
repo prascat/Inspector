@@ -4,6 +4,11 @@
 
 FilterPropertyWidget::FilterPropertyWidget(int filterType, QWidget* parent)
     : QWidget(parent), filterType(filterType), adaptiveGroup(nullptr) {
+    // 필터 프로퍼티 위젯 스타일 설정 (흰색 배경, 검은색 글자)
+    setStyleSheet("QWidget { background-color: white; color: black; } "
+                  "QLabel { color: black; } "
+                  "QComboBox { background-color: white; color: black; } "
+                  "QSlider { background-color: white; }");
     setupUI();
 }
 

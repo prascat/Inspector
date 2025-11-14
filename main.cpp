@@ -81,6 +81,9 @@ void customMessageHandler(QtMsgType type, const QMessageLogContext &context, con
 }
 
 int main(int argc, char *argv[]) {
+    // Wayland에서 윈도우 위치 설정 문제 회피 - X11 강제 사용
+    qputenv("QT_QPA_PLATFORM", "xcb");
+    
     QApplication app(argc, argv);
     
     // 티칭 위젯 생성

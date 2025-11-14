@@ -14,6 +14,8 @@ public:
     LanguageSettingsDialog(QWidget* parent = nullptr);
     ~LanguageSettingsDialog();
     
+    int exec() override;
+    
 private slots:
     void onLanguageSelected(int index);
     void onApplyClicked();

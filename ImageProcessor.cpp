@@ -2191,11 +2191,22 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     
                     // roiImage가 이미 필터링된 이진 영상이므로 그대로 사용
                     cv::Mat binaryImageForEdge;
+                    if (roiImage.empty()) {
+                        qDebug() << "엣지 검사 오류: roiImage가 비어있음";
+                        return false;
+                    }
+                    
                     if (roiImage.channels() == 3) {
                         // 3채널이면 그레이스케일로 변환 (이진화된 경우 모든 채널 동일)
                         cv::cvtColor(roiImage, binaryImageForEdge, cv::COLOR_BGR2GRAY);
                     } else {
                         binaryImageForEdge = roiImage.clone();
+                    }
+                    
+                    // 변환 후 이미지 검증
+                    if (binaryImageForEdge.empty()) {
+                        qDebug() << "엣지 검사 오류: binaryImageForEdge 변환 실패";
+                        return false;
                     }
                     
                     // EDGE 검사 영역에서 절단면 분석 (Y별 수평 스캔)

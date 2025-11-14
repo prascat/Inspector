@@ -12,19 +12,24 @@ SerialSettingsDialog::SerialSettingsDialog(SerialCommunication* serialComm, QWid
     , serialComm(serialComm)
 {
     setWindowTitle("시리얼 통신 설정");
+    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
     setMinimumSize(500, 500);
     resize(500, 500);
     setStyleSheet(
-        "QDialog { background: #2b2b2b; color: white; }"
-        "QFrame { background: #3a3a3a; border: 1px solid #555; border-radius: 4px; }"
-        "QLabel { color: white; }"
-        "QPushButton { background: #4a4a4a; border: 1px solid #666; border-radius: 3px; "
-        "padding: 5px; color: white; }"
-        "QPushButton:hover { background: #5a5a5a; }"
-        "QComboBox, QLineEdit, QSpinBox { background: #1e1e1e; color: white; "
-        "border: 1px solid #666; padding: 3px; }"
-        "QTextEdit { background: #1e1e1e; color: white; border: 1px solid #666; }"
-        "QCheckBox { color: white; }"
+        "QDialog { background: white; color: black; }"
+        "QGroupBox { background: white; color: black; border: 1px solid #d0d0d0; border-radius: 4px; "
+        "padding-top: 10px; margin-top: 6px; }"
+        "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; "
+        "padding: 0 3px; color: black; }"
+        "QLabel { color: black; }"
+        "QPushButton { background: #f0f0f0; border: 1px solid #c0c0c0; border-radius: 3px; "
+        "padding: 5px; color: black; }"
+        "QPushButton:hover { background: #e0e0e0; }"
+        "QPushButton:pressed { background: #d0d0d0; }"
+        "QComboBox, QLineEdit, QSpinBox { background: white; color: black; "
+        "border: 1px solid #c0c0c0; padding: 3px; }"
+        "QTextEdit { background: white; color: black; border: 1px solid #c0c0c0; }"
+        "QCheckBox { color: black; }"
     );
     
     setupUI();
@@ -34,11 +39,25 @@ SerialSettingsDialog::SerialSettingsDialog(SerialCommunication* serialComm, QWid
     refreshPortList();
     updateConnectionStatus();
     tryAutoConnect(); // 저장된 설정으로 자동 연결 시도
-    
-    // 부모 위젯 중앙에 배치
-    if (parent) {
-        move(parent->geometry().center() - rect().center());
+}
+
+int SerialSettingsDialog::exec() {
+    // 부모 중심에 배치
+    if (parentWidget()) {
+        QWidget* topWindow = parentWidget()->window();
+        QRect parentRect = topWindow->frameGeometry();
+        
+        int x = parentRect.x() + (parentRect.width() - width()) / 2;
+        int y = parentRect.y() + (parentRect.height() - height()) / 2;
+        
+        // 타이틀바 높이만큼 보정
+        int titleBarHeight = topWindow->frameGeometry().height() - topWindow->geometry().height();
+        y -= titleBarHeight / 2;
+        
+        move(x, y);
     }
+    
+    return QDialog::exec();
 }
 
 void SerialSettingsDialog::setupUI()

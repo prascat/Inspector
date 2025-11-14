@@ -234,10 +234,10 @@ private slots:
             TR("GENERAL_SETTINGS_INFO"));
     }
     void showAboutDialog() {
-        QMessageBox::about(this, TR("ABOUT"), 
+        CustomMessageBox(this, CustomMessageBox::Information, TR("ABOUT"), 
                         "KM Inspector\n© 2025 KM DigiTech.\n\n"
                         "이 프로그램은 KM DigiTech.의 소유입니다.\n"
-                        "무단 복제 및 배포를 금지합니다.");
+                        "무단 복제 및 배포를 금지합니다.").exec();
     }
     void saveCurrentImage();
     void processGrabbedFrame(const cv::Mat& frame, int camIdx);

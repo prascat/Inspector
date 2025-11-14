@@ -38,7 +38,6 @@ public:
 
 private:
     void setupUI();
-    void centerOnScreen();
     
     QLabel* iconLabel;
     QLabel* titleLabel;
@@ -55,6 +54,7 @@ private:
     QMessageBox::StandardButtons buttonFlags;
     QMessageBox::StandardButton result;
     bool hasInputField;
+    QWidget* savedParent;
 };
 
 #endif // CUSTOMMESSAGEBOX_H

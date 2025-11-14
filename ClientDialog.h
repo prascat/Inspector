@@ -14,6 +14,8 @@ class ClientDialog : public QDialog {
 public:
     explicit ClientDialog(QWidget* parent = nullptr);
     ~ClientDialog();
+    
+    int exec() override;
 
     // 설정 값 가져오기
     QString getServerIp() const { return serverIp; }

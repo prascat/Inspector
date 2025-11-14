@@ -18,6 +18,7 @@ ClientDialog::ClientDialog(QWidget* parent)
     , isConnected(false)
 {
     setWindowTitle("서버 연결 설정");
+    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
     setMinimumWidth(500);
     setModal(true);
 
@@ -42,6 +43,23 @@ ClientDialog::~ClientDialog()
     if (testSocket->state() == QAbstractSocket::ConnectedState) {
         testSocket->disconnectFromHost();
     }
+}
+
+int ClientDialog::exec() {
+    if (parentWidget()) {
+        QWidget* topWindow = parentWidget()->window();
+        QRect parentRect = topWindow->frameGeometry();
+        
+        int x = parentRect.x() + (parentRect.width() - width()) / 2;
+        int y = parentRect.y() + (parentRect.height() - height()) / 2;
+        
+        int titleBarHeight = topWindow->frameGeometry().height() - topWindow->geometry().height();
+        y -= titleBarHeight / 2;
+        
+        move(x, y);
+    }
+    
+    return QDialog::exec();
 }
 
 void ClientDialog::setupUI()

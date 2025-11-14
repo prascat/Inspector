@@ -29,6 +29,8 @@ class SerialSettingsDialog : public QDialog
 
 public:
     explicit SerialSettingsDialog(SerialCommunication* serialComm, QWidget *parent = nullptr);
+    
+    int exec() override;
 
 private slots:
     void updateUITexts();

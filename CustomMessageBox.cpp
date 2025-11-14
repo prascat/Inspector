@@ -8,10 +8,12 @@
 #include <QPixmap>
 
 CustomMessageBox::CustomMessageBox(QWidget* parent)
-    : QDialog(parent), currentIcon(NoIcon), result(QMessageBox::NoButton), hasInputField(false) {
+    : QDialog(parent), currentIcon(NoIcon), result(QMessageBox::NoButton), hasInputField(false), savedParent(parent) {
     
-    // 다이얼로그 속성 설정 - 타이틀바 제거
+    // 다이얼로그 속성 설정
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    setWindowModality(Qt::WindowModal);
+    setAttribute(Qt::WA_DeleteOnClose, false);
     setStyleSheet(
         "QDialog {"
         "    background-color: white;"
@@ -56,10 +58,12 @@ CustomMessageBox::CustomMessageBox(QWidget* parent)
 
 CustomMessageBox::CustomMessageBox(QWidget* parent, IconType iconType, const QString& title,
                                    const QString& message, QMessageBox::StandardButtons buttons)
-    : QDialog(parent), currentIcon(NoIcon), result(QMessageBox::NoButton), hasInputField(false) {
+    : QDialog(parent), currentIcon(NoIcon), result(QMessageBox::NoButton), hasInputField(false), savedParent(parent) {
     
-    // 다이얼로그 속성 설정 - 타이틀바 제거
+    // 다이얼로그 속성 설정
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    setWindowModality(Qt::WindowModal);
+    setAttribute(Qt::WA_DeleteOnClose, false);
     setStyleSheet(
         "QDialog {"
         "    background-color: white;"
@@ -243,34 +247,24 @@ void CustomMessageBox::setButtons(QMessageBox::StandardButtons buttons) {
 }
 
 int CustomMessageBox::exec() {
-    centerOnScreen();
-    QDialog::exec();
-    return static_cast<int>(result);
-}
-
-void CustomMessageBox::centerOnScreen() {
-    // 부모 위젯이 있으면 부모 위젯 중앙에 배치
-    if (parentWidget()) {
-        QRect parentGeometry = parentWidget()->geometry();
-        QRect dialogGeometry = frameGeometry();
+    adjustSize();
+    
+    // 부모 중심에 배치
+    if (savedParent) {
+        QWidget* topWindow = savedParent->window();
+        QRect parentRect = topWindow->frameGeometry();
         
-        int x = parentGeometry.center().x() - dialogGeometry.width() / 2;
-        int y = parentGeometry.center().y() - dialogGeometry.height() / 2;
+        int x = parentRect.x() + (parentRect.width() - width()) / 2;
+        int y = parentRect.y() + (parentRect.height() - height()) / 2;
         
-        move(x, y);
-    } else {
-        // 부모가 없으면 화면 중앙에 배치
-        QScreen* screen = QApplication::primaryScreen();
-        if (!screen) return;
-        
-        QRect screenGeometry = screen->availableGeometry();
-        QRect dialogGeometry = frameGeometry();
-        
-        int x = screenGeometry.center().x() - dialogGeometry.width() / 2;
-        int y = screenGeometry.center().y() - dialogGeometry.height() / 2;
+        // 타이틀바 높이만큼 위로 보정 (frameGeometry에 타이틀바 포함되어 있으므로)
+        int titleBarHeight = topWindow->frameGeometry().height() - topWindow->geometry().height();
+        y -= titleBarHeight / 2;
         
         move(x, y);
     }
+    
+    return QDialog::exec();
 }
 
 void CustomMessageBox::setInputField(bool enabled, const QString& defaultText) {

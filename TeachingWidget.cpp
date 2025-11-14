@@ -1433,6 +1433,14 @@ void TeachingWidget::setupLogOverlay() {
         "  font-family: 'Courier New', monospace;"
         "  font-size: 12px;"
         "}"
+        "QMenu {"
+        "  background-color: white;"
+        "  color: black;"
+        "  border: 1px solid #c0c0c0;"
+        "}"
+        "QMenu::item:selected {"
+        "  background-color: #e0e0e0;"
+        "}"
     );
     logTextEdit->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     logTextEdit->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -1680,6 +1688,26 @@ void TeachingWidget::setupPatternTree() {
     patternTree->setSelectionBehavior(QAbstractItemView::SelectRows);
     patternTree->setSelectionMode(QAbstractItemView::SingleSelection);
     patternTree->setAlternatingRowColors(true);
+    
+    // 패턴 트리 스타일 설정 (흰색 배경, 검은색 글자)
+    patternTree->setStyleSheet(
+        "QTreeWidget { "
+        "   background-color: white; "
+        "   color: black; "
+        "} "
+        "QTreeWidget::item { "
+        "   color: black; "
+        "} "
+        "QTreeWidget::item:selected { "
+        "   background-color: #0078d7; "
+        "   color: white; "
+        "} "
+        "QHeaderView::section { "
+        "   background-color: #f0f0f0; "
+        "   color: black; "
+        "   border: 1px solid #d0d0d0; "
+        "}"
+    );
     
     // 헤더 텍스트 중앙 정렬 설정
     QHeaderView* header = patternTree->header();
@@ -3707,8 +3735,12 @@ void TeachingWidget::createPropertyPanels() {
     filterScrollArea->setWidgetResizable(true);
     filterScrollArea->setFrameShape(QFrame::NoFrame);
     
+    // 필터 스크롤 영역 스타일 설정 (흰색 배경)
+    filterScrollArea->setStyleSheet("QScrollArea { background-color: white; }");
+    
     // 필터 위젯이 여기에 추가됨
     filterPropertyContainer = new QWidget(filterScrollArea);
+    filterPropertyContainer->setStyleSheet("QWidget { background-color: white; color: black; }");
     QVBoxLayout* filterLayout = new QVBoxLayout(filterPropertyContainer);
     filterLayout->setContentsMargins(5, 5, 5, 5);
     
@@ -7082,8 +7114,8 @@ void TeachingWidget::saveCurrentImage() {
     // 현재 카메라 프레임 확인
     if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
         cameraFrames[cameraIndex].empty()) {
-        QMessageBox::warning(this, TR("SAVE_IMAGE"), 
-            "저장할 이미지가 없습니다.\n카메라를 시작하고 이미지를 캡처해주세요.");
+        CustomMessageBox(this, CustomMessageBox::Warning, TR("SAVE_IMAGE"), 
+            "저장할 이미지가 없습니다.\n카메라를 시작하고 이미지를 캡처해주세요.").exec();
         return;
     }
     
@@ -7091,12 +7123,20 @@ void TeachingWidget::saveCurrentImage() {
     QString defaultFileName = QString("image_%1.png")
         .arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
     
-    QString filePath = QFileDialog::getSaveFileName(
-        this,
-        "이미지 저장",
-        defaultFileName,
-        "PNG 이미지 (*.png);;JPEG 이미지 (*.jpg *.jpeg);;BMP 이미지 (*.bmp);;모든 파일 (*.*)"
-    );
+    QFileDialog dialog(this, "이미지 저장", defaultFileName,
+        "PNG 이미지 (*.png);;JPEG 이미지 (*.jpg *.jpeg);;BMP 이미지 (*.bmp);;모든 파일 (*.*)");
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+    dialog.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    dialog.resize(800, 500);
+    
+    QString filePath;
+    if (dialog.exec() == QDialog::Accepted) {
+        QStringList files = dialog.selectedFiles();
+        if (!files.isEmpty()) {
+            filePath = files.first();
+        }
+    }
     
     if (filePath.isEmpty()) {
         return; // 사용자가 취소
@@ -7108,15 +7148,15 @@ void TeachingWidget::saveCurrentImage() {
     try {
         // OpenCV는 BGR 형식이므로 그대로 저장
         if (cv::imwrite(filePath.toStdString(), frameToSave)) {
-            QMessageBox::information(this, TR("SAVE_IMAGE"), 
-                QString("이미지가 저장되었습니다:\n%1").arg(filePath));
+            CustomMessageBox(this, CustomMessageBox::Information, TR("SAVE_IMAGE"), 
+                QString("이미지가 저장되었습니다:\n%1").arg(filePath)).exec();
         } else {
-            QMessageBox::critical(this, TR("SAVE_IMAGE"), 
-                "이미지 저장에 실패했습니다.");
+            CustomMessageBox(this, CustomMessageBox::Critical, TR("SAVE_IMAGE"), 
+                "이미지 저장에 실패했습니다.").exec();
         }
     } catch (const std::exception& e) {
-        QMessageBox::critical(this, TR("SAVE_IMAGE"), 
-            QString("이미지 저장 중 오류 발생:\n%1").arg(e.what()));
+        CustomMessageBox(this, CustomMessageBox::Critical, TR("SAVE_IMAGE"), 
+            QString("이미지 저장 중 오류 발생:\n%1").arg(e.what())).exec();
     }
 }
 
@@ -9273,7 +9313,7 @@ bool TeachingWidget::loadRecipe(const QString &fileName, bool showMessageBox) {
         QStringList availableRecipes = recipeManager.getAvailableRecipes();
         if (availableRecipes.isEmpty()) {
             if (showMessageBox) {
-                QMessageBox::warning(this, tr("Warning"), tr("No recipes available"));
+                CustomMessageBox(this, CustomMessageBox::Warning, tr("Warning"), tr("No recipes available")).exec();
             }
             return false;
         }
@@ -10057,7 +10097,7 @@ void TeachingWidget::addPattern() {
             pattern.includeAllCamera = false;
         } 
         else if (currentPatternType == PatternType::FID) {
-            pattern.matchThreshold = 0.8;
+            pattern.matchThreshold = 75.0;
             pattern.useRotation = false;
             pattern.minAngle = -5.0;
             pattern.maxAngle = 5.0;
@@ -10940,10 +10980,10 @@ double TeachingWidget::normalizeAngle(double angle) {
 void TeachingWidget::newRecipe() {
     // 저장되지 않은 변경사항 확인
     if (hasUnsavedChanges) {
-        QMessageBox::StandardButton reply = QMessageBox::question(this, 
-            "새 레시피", 
-            "저장되지 않은 변경사항이 있습니다. 새 레시피를 생성하시겠습니까?",
-            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+        CustomMessageBox msgBox(this, CustomMessageBox::Question, "새 레시피", 
+            "저장되지 않은 변경사항이 있습니다. 새 레시피를 생성하시겠습니까?");
+        msgBox.setButtons(QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+        int reply = msgBox.exec();
         
         if (reply == QMessageBox::Cancel) {
             return;
@@ -10975,10 +11015,10 @@ void TeachingWidget::newRecipe() {
     // 중복 이름 확인
     QStringList existingRecipes = recipeManager->getAvailableRecipes();
     if (existingRecipes.contains(recipeName)) {
-        QMessageBox::StandardButton reply = QMessageBox::question(this,
-            "레시피 이름 중복",
-            QString("'%1' 레시피가 이미 존재합니다. 덮어쓰시겠습니까?").arg(recipeName),
-            QMessageBox::Yes | QMessageBox::No);
+        CustomMessageBox msgBox(this, CustomMessageBox::Question, "레시피 이름 중복",
+            QString("'%1' 레시피가 이미 존재합니다. 덮어쓰시겠습니까?").arg(recipeName));
+        msgBox.setButtons(QMessageBox::Yes | QMessageBox::No);
+        int reply = msgBox.exec();
         
         if (reply != QMessageBox::Yes) {
             return;
@@ -11023,8 +11063,8 @@ void TeachingWidget::newRecipe() {
         // 선택한 이미지를 카메라뷰에 로드
         QPixmap pixmap(imageFile);
         if (pixmap.isNull() || !cameraView) {
-            QMessageBox::warning(this, "이미지 로드 실패",
-                "선택한 이미지를 로드할 수 없습니다.");
+            CustomMessageBox(this, CustomMessageBox::Warning, "이미지 로드 실패",
+                "선택한 이미지를 로드할 수 없습니다.").exec();
             return;
         }
         
@@ -11078,7 +11118,7 @@ void TeachingWidget::newRecipe() {
         QStringList availableRecipes = recipeManager->getAvailableRecipes();
         
         if (availableRecipes.isEmpty()) {
-            QMessageBox::information(this, "레시피 없음", "사용 가능한 레시피가 없습니다.");
+            CustomMessageBox(this, CustomMessageBox::Information, "레시피 없음", "사용 가능한 레시피가 없습니다.").exec();
             return;
         }
         
@@ -11100,15 +11140,15 @@ void TeachingWidget::newRecipe() {
         cv::Mat mainCameraImage;
         QString cameraName;
         if (!recipeManager->loadMainCameraImage(selectedRecipe, mainCameraImage, cameraName)) {
-            QMessageBox::warning(this, "이미지 로드 실패",
+            CustomMessageBox(this, CustomMessageBox::Warning, "이미지 로드 실패",
                 QString("레시피 '%1'에서 이미지를 불러올 수 없습니다.\n오류: %2")
-                    .arg(selectedRecipe).arg(recipeManager->getLastError()));
+                    .arg(selectedRecipe).arg(recipeManager->getLastError())).exec();
             return;
         }
         
         if (mainCameraImage.empty()) {
-            QMessageBox::warning(this, "이미지 없음",
-                QString("레시피 '%1'에서 이미지를 찾을 수 없습니다.").arg(selectedRecipe));
+            CustomMessageBox(this, CustomMessageBox::Warning, "이미지 없음",
+                QString("레시피 '%1'에서 이미지를 찾을 수 없습니다.").arg(selectedRecipe)).exec();
             return;
         }
         
@@ -11189,10 +11229,10 @@ void TeachingWidget::saveRecipeAs() {
         // 같은 이름의 레시피가 있는지 확인
         QStringList existingRecipes = manager.getAvailableRecipes();
         if (existingRecipes.contains(recipeName)) {
-            QMessageBox::StandardButton reply = QMessageBox::question(this,
-                "레시피 저장",
-                QString("'%1' 레시피가 이미 존재합니다. 덮어쓰시겠습니까?").arg(recipeName),
-                QMessageBox::Yes | QMessageBox::No);
+            CustomMessageBox msgBox(this, CustomMessageBox::Question, "레시피 저장",
+                QString("'%1' 레시피가 이미 존재합니다. 덮어쓰시겠습니까?").arg(recipeName));
+            msgBox.setButtons(QMessageBox::Yes | QMessageBox::No);
+            int reply = msgBox.exec();
             
             if (reply != QMessageBox::Yes) {
                 return;
@@ -11213,8 +11253,8 @@ void TeachingWidget::saveRecipeAs() {
             CustomMessageBox(this, CustomMessageBox::Information, "레시피 저장",
                 QString("'%1' 레시피가 성공적으로 저장되었습니다.").arg(recipeName)).exec();
         } else {
-            QMessageBox::critical(this, "레시피 저장 실패", 
-                QString("레시피 저장에 실패했습니다:\n%1").arg(manager.getLastError()));
+            CustomMessageBox(this, CustomMessageBox::Critical, "레시피 저장 실패", 
+                QString("레시피 저장에 실패했습니다:\n%1").arg(manager.getLastError())).exec();
         }
     }
 }
@@ -11226,6 +11266,7 @@ void TeachingWidget::manageRecipes() {
     
     QDialog dialog(this);
     dialog.setWindowTitle("레시피 관리");
+    dialog.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
     dialog.setMinimumSize(400, 300);
     
     QVBoxLayout* layout = new QVBoxLayout(&dialog);
@@ -11279,10 +11320,10 @@ void TeachingWidget::manageRecipes() {
         QListWidgetItem* item = recipeList->currentItem();
         if (item) {
             QString recipeName = item->text();
-            QMessageBox::StandardButton reply = QMessageBox::question(&dialog,
-                "레시피 삭제",
-                QString("'%1' 레시피를 삭제하시겠습니까?").arg(recipeName),
-                QMessageBox::Yes | QMessageBox::No);
+            CustomMessageBox msgBox(&dialog, CustomMessageBox::Question, "레시피 삭제",
+                QString("'%1' 레시피를 삭제하시겠습니까?").arg(recipeName));
+            msgBox.setButtons(QMessageBox::Yes | QMessageBox::No);
+            int reply = msgBox.exec();
             
             if (reply == QMessageBox::Yes) {
                 if (manager.deleteRecipe(recipeName)) {
@@ -11343,6 +11384,14 @@ void TeachingWidget::manageRecipes() {
     });
     
     connect(closeButton, &QPushButton::clicked, &dialog, &QDialog::accept);
+    
+    // 중앙 배치
+    QRect parentRect = frameGeometry();
+    int x = parentRect.x() + (parentRect.width() - dialog.width()) / 2;
+    int y = parentRect.y() + (parentRect.height() - dialog.height()) / 2;
+    int titleBarHeight = frameGeometry().height() - geometry().height();
+    y -= titleBarHeight / 2;
+    dialog.move(x, y);
     
     dialog.exec();
 }

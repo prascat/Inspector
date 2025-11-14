@@ -10,12 +10,8 @@ LanguageSettingsDialog::LanguageSettingsDialog(QWidget* parent)
     : QDialog(parent)
 {
     setWindowTitle(TR("LANGUAGE_SETTINGS"));
+    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
     resize(400, 200);
-    
-    // 부모 위젯 중앙에 배치
-    if (parent) {
-        move(parent->geometry().center() - rect().center());
-    }
     
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
     
@@ -62,6 +58,23 @@ LanguageSettingsDialog::LanguageSettingsDialog(QWidget* parent)
 }
 
 LanguageSettingsDialog::~LanguageSettingsDialog() {
+}
+
+int LanguageSettingsDialog::exec() {
+    if (parentWidget()) {
+        QWidget* topWindow = parentWidget()->window();
+        QRect parentRect = topWindow->frameGeometry();
+        
+        int x = parentRect.x() + (parentRect.width() - width()) / 2;
+        int y = parentRect.y() + (parentRect.height() - height()) / 2;
+        
+        int titleBarHeight = topWindow->frameGeometry().height() - topWindow->geometry().height();
+        y -= titleBarHeight / 2;
+        
+        move(x, y);
+    }
+    
+    return QDialog::exec();
 }
 
 void LanguageSettingsDialog::updateUITexts() {

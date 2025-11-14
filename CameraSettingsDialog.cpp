@@ -17,17 +17,30 @@ CameraSettingsDialog::CameraSettingsDialog(QWidget* parent)
     , lastExposureCount(0)
 {
     setWindowTitle("카메라 UserSet 관리");
+    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
     setMinimumSize(700, 450);
     
     setupUI();
-    
-    // 부모 위젯 중앙에 배치
-    if (parent) {
-        move(parent->geometry().center() - rect().center());
-    }
 }
 
 CameraSettingsDialog::~CameraSettingsDialog() {
+}
+
+int CameraSettingsDialog::exec() {
+    if (parentWidget()) {
+        QWidget* topWindow = parentWidget()->window();
+        QRect parentRect = topWindow->frameGeometry();
+        
+        int x = parentRect.x() + (parentRect.width() - width()) / 2;
+        int y = parentRect.y() + (parentRect.height() - height()) / 2;
+        
+        int titleBarHeight = topWindow->frameGeometry().height() - topWindow->geometry().height();
+        y -= titleBarHeight / 2;
+        
+        move(x, y);
+    }
+    
+    return QDialog::exec();
 }
 
 void CameraSettingsDialog::showEvent(QShowEvent* event) {
