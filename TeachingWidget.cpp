@@ -736,10 +736,14 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
 
     // 이미지 저장 액션 추가
     saveImageAction = fileMenu->addAction(TR("SAVE_IMAGE"));
+    QAction* loadImageAction = fileMenu->addAction("이미지 추가");
     fileMenu->addSeparator();
     
     // 종료 액션
     exitAction = fileMenu->addAction(TR("EXIT"));
+    
+    // 이미지 추가 액션 연결
+    connect(loadImageAction, &QAction::triggered, this, &TeachingWidget::loadTeachingImage);
 
     // === 레시피 메뉴 추가 ===
     recipeMenu = menuBar->addMenu("레시피");
@@ -864,6 +868,14 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     modeToggleButton->setChecked(true); // 기본값 DRAW 모드
     setupHeaderButton(modeToggleButton);
     modeToggleButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_MOVE_COLOR, UIColors::BTN_DRAW_COLOR, true));
+
+    // Strip/Crimp 토글 버튼
+    stripCrimpButton = new QPushButton("STRIP", this);
+    stripCrimpButton->setObjectName("stripCrimpButton");
+    stripCrimpButton->setCheckable(true);
+    stripCrimpButton->setChecked(false); // 기본값 STRIP 모드
+    setupHeaderButton(stripCrimpButton);
+    stripCrimpButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, false));
 
     // TEACH ON/OFF 모드 토글 버튼
     teachModeButton = new QPushButton("TEACH OFF", this);
@@ -1004,6 +1016,10 @@ QVBoxLayout* TeachingWidget::createCameraLayout() {
     // 중앙 정렬을 위한 stretch 추가
     overlayLayout->addStretch(1);
     
+    // Strip/Crimp 토글 버튼 추가
+    overlayLayout->addWidget(stripCrimpButton);
+    overlayLayout->addSpacing(10);
+    
     // 5. 패턴 타입 버튼들 추가
     overlayLayout->addWidget(roiButton);
     overlayLayout->addWidget(fidButton);
@@ -1077,6 +1093,19 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
             }
         }
     });
+    
+    // Strip/Crimp 모드 토글 버튼 연결
+    if (stripCrimpButton) {
+        connect(stripCrimpButton, &QPushButton::toggled, this, [this](bool checked) {
+            int newMode = checked ? StripCrimpMode::CRIMP_MODE : StripCrimpMode::STRIP_MODE;
+            setStripCrimpMode(newMode);
+            
+            // 버튼 텍스트 업데이트
+            stripCrimpButton->setText(checked ? "CRIMP" : "STRIP");
+            stripCrimpButton->setStyleSheet(UIColors::overlayToggleButtonStyle(
+                UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, checked));
+        });
+    }
     
     connect(runStopButton, &QPushButton::toggled, this, [this](bool checked) {
         QPushButton* btn = qobject_cast<QPushButton*>(sender());
@@ -1621,9 +1650,39 @@ void TeachingWidget::setupRightPanelOverlay() {
         "  border: 2px solid rgba(100, 100, 100, 150);"
         "  border-radius: 10px;"
         "}"
-        "QTreeWidget, QTextEdit, QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QCheckBox, QLabel {"
-        "  background-color: rgba(50, 50, 50, 230);"
-        "  color: white;"
+        "QLineEdit {"
+        "  background-color: white;"
+        "  color: black;"
+        "  border: 1px solid #ccc;"
+        "  padding: 2px;"
+        "}"
+        "QSpinBox, QDoubleSpinBox {"
+        "  background-color: white;"
+        "  color: black;"
+        "  border: 1px solid #ccc;"
+        "  padding: 2px;"
+        "}"
+        "QSpinBox::up-button, QDoubleSpinBox::up-button {"
+        "  background-color: #e0e0e0;"
+        "}"
+        "QSpinBox::down-button, QDoubleSpinBox::down-button {"
+        "  background-color: #e0e0e0;"
+        "}"
+        "QComboBox {"
+        "  background-color: white;"
+        "  color: black;"
+        "  border: 1px solid #ccc;"
+        "  padding: 2px;"
+        "}"
+        "QComboBox QAbstractItemView {"
+        "  background-color: white;"
+        "  color: black;"
+        "  selection-background-color: #3399ff;"
+        "  selection-color: white;"
+        "}"
+        "QTreeWidget, QTextEdit {"
+        "  background-color: white;"
+        "  color: black;"
         "}"
         "QPushButton#collapseButton {"
         "  background-color: rgba(70, 70, 70, 200);"
@@ -2476,11 +2535,18 @@ void TeachingWidget::updatePatternTree() {
             qDebug() << QString("camOff 모드에서 cameraIndex를 0으로 설정, UUID: %1").arg(targetUuid);
         }
         
-        qDebug() << QString("패턴 필터링 체크: 패턴=%1, 패턴카메라UUID=%2, 현재카메라UUID=%3")
-                    .arg(pattern.name).arg(patternCameraUuid).arg(targetUuid);
+        qDebug() << QString("패턴 필터링 체크: 패턴=%1, 패턴카메라UUID=%2, 현재카메라UUID=%3, 패턴모드=%4, 현재모드=%5")
+                    .arg(pattern.name).arg(patternCameraUuid).arg(targetUuid)
+                    .arg(pattern.stripCrimpMode).arg(currentStripCrimpMode);
         
         if (!targetUuid.isEmpty() && patternCameraUuid != targetUuid) {
             qDebug() << QString("패턴 제외: %1 (카메라 불일치)").arg(pattern.name);
+            continue;
+        }
+        
+        // Strip/Crimp 모드 체크
+        if (pattern.stripCrimpMode != currentStripCrimpMode) {
+            qDebug() << QString("패턴 제외: %1 (모드 불일치)").arg(pattern.name);
             continue;
         }
         
@@ -5731,7 +5797,11 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                     break;
             }
             
-            patternTypeValue->setText(typeText);
+            // Strip/Crimp 모드 추가 표시
+            QString modeText = pattern->stripCrimpMode == StripCrimpMode::CRIMP_MODE ? "CRIMP" : "STRIP";
+            QString fullText = QString("%1 | %2").arg(typeText).arg(modeText);
+            
+            patternTypeValue->setText(fullText);
             patternTypeValue->setStyleSheet(QString("background-color: %1; color: %2; border-radius: 3px; padding: 2px 5px;")
                                    .arg(typeColor.name())
                                    .arg(UIColors::getTextColor(typeColor).name()));
@@ -9296,11 +9366,62 @@ void TeachingWidget::updateAllPatternTemplateImages() {
     }
 }
 
+void TeachingWidget::setStripCrimpMode(int mode) {
+    currentStripCrimpMode = mode;
+    
+    // CameraView에도 모드 전달
+    if (cameraView) {
+        cameraView->setStripCrimpMode(mode);
+    }
+    
+    // 모드에 따라 이미지 전환
+    cv::Mat* targetImage = (mode == StripCrimpMode::STRIP_MODE) ? &stripModeImage : &crimpModeImage;
+    
+    if (!targetImage->empty()) {
+        // OpenCV Mat를 QPixmap으로 변환
+        cv::Mat displayImage;
+        cv::cvtColor(*targetImage, displayImage, cv::COLOR_BGR2RGB);
+        QImage qImage(displayImage.data, displayImage.cols, displayImage.rows, 
+                     displayImage.step, QImage::Format_RGB888);
+        QPixmap pixmap = QPixmap::fromImage(qImage.copy());
+        
+        // CameraView 배경 이미지 업데이트
+        if (cameraView) {
+            cameraView->setBackgroundImage(pixmap);
+        }
+        
+        // cameraFrames도 업데이트
+        if (cameraFrames.size() > static_cast<size_t>(cameraIndex)) {
+            cameraFrames[cameraIndex] = targetImage->clone();
+        }
+    }
+    
+    // 현재 모드에 맞는 패턴만 보이도록 필터링
+    if (cameraView) {
+        QList<PatternInfo> allPatterns = cameraView->getPatterns();
+        for (PatternInfo& pattern : allPatterns) {
+            // 현재 모드와 일치하는 패턴만 활성화
+            pattern.enabled = (pattern.stripCrimpMode == mode);
+        }
+        cameraView->getPatterns() = allPatterns;
+        cameraView->update();
+    }
+    
+    // 패턴 트리도 업데이트
+    updatePatternTree();
+}
+
 void TeachingWidget::saveRecipe() {
    
+    qDebug() << "========== saveRecipe() 시작 ==========";
+    qDebug() << "currentRecipeName:" << currentRecipeName;
+    qDebug() << "cameraInfos 크기:" << cameraInfos.size();
+    qDebug() << "cameraIndex:" << cameraIndex;
+    
     // 현재 레시피 이름이 있으면 개별 파일로 저장, 없으면 사용자에게 물어봄
     if (currentRecipeName.isEmpty()) {
     
+        qDebug() << "레시피 이름 없음 - 새 레시피 생성 확인";
         // 사용자에게 새 레시피 생성 여부 묻기
         CustomMessageBox msgBox(this);
         msgBox.setIcon(CustomMessageBox::Question);
@@ -9311,10 +9432,27 @@ void TeachingWidget::saveRecipe() {
         if (msgBox.exec() == QMessageBox::Yes) {
             // 자동으로 타임스탬프 이름 생성
             QDateTime now = QDateTime::currentDateTime();
-            currentRecipeName = now.toString("yyyyMMdd_HHmmss_zzz");        
+            currentRecipeName = now.toString("yyyyMMdd_HHmmss_zzz");
+            qDebug() << "자동 생성된 레시피 이름:" << currentRecipeName;
         } else {
+            qDebug() << "저장 취소됨";
             return; // 저장 취소
         }
+    }
+    
+    // cameraInfos 검증
+    if (cameraInfos.isEmpty()) {
+        qDebug() << "❌ cameraInfos가 비어있음!";
+        CustomMessageBox(this, CustomMessageBox::Critical, "레시피 저장 실패",
+            "카메라 정보가 없습니다. 먼저 이미지를 추가하거나 카메라를 연결하세요.").exec();
+        return;
+    }
+    
+    qDebug() << "카메라 정보:";
+    for (int i = 0; i < cameraInfos.size(); i++) {
+        qDebug() << "  [" << i << "] name:" << cameraInfos[i].name 
+                 << ", UUID:" << cameraInfos[i].uniqueId
+                 << ", connected:" << cameraInfos[i].isConnected;
     }
     
     // 현재 편집 모드 저장 (저장 후 복원하기 위해)
@@ -9326,13 +9464,16 @@ void TeachingWidget::saveRecipe() {
     
     // 레시피 파일 경로 생성
     QString recipeFileName = QDir(manager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(currentRecipeName));
+    qDebug() << "저장할 레시피 파일 경로:" << recipeFileName;
     
     // 빈 시뮬레이션 이미지 패스와 빈 캘리브레이션 맵 (필요시 나중에 추가)
     QStringList simulationImagePaths;
     QMap<QString, CalibrationInfo> calibrationMap;
     
+    qDebug() << "RecipeManager::saveRecipe 호출...";
     // 기존 saveRecipe 함수 사용 (TeachingWidget 포인터 전달)
     if (manager.saveRecipe(recipeFileName, cameraInfos, cameraIndex, calibrationMap, cameraView, simulationImagePaths, -1, QStringList(), this)) {
+        qDebug() << "✅ 레시피 저장 성공!";
         hasUnsavedChanges = false;
         
         // 최근 사용한 레시피를 ConfigManager에 저장
@@ -9349,6 +9490,8 @@ void TeachingWidget::saveRecipe() {
         msgBox.setButtons(QMessageBox::Ok);
         msgBox.exec();
     } else {
+        qDebug() << "❌ 레시피 저장 실패!";
+        qDebug() << "에러 메시지:" << manager.getLastError();
         CustomMessageBox msgBoxCritical(this);
         msgBoxCritical.setIcon(CustomMessageBox::Critical);
         msgBoxCritical.setTitle("레시피 저장 실패");
@@ -10076,10 +10219,15 @@ void TeachingWidget::addFilter() {
 }
 
 void TeachingWidget::addPattern() {
+    qDebug() << "[TeachingWidget] addPattern() 호출됨";
+    
     // 티칭 모드가 비활성화되어 있으면 패턴 추가 금지
     if (!teachingEnabled) {
+        qDebug() << "[TeachingWidget] ❌ teachingEnabled=false - 패턴 추가 금지";
         return;
     }
+    
+    qDebug() << "[TeachingWidget] ✅ teachingEnabled=true - 패턴 추가 진행";
     
     // 시뮬레이션 모드 상태 디버깅 - cameraFrames 체크
     if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
@@ -10089,6 +10237,9 @@ void TeachingWidget::addPattern() {
     // 현재 그려진 사각형이 있는지 먼저 확인 (엔터키로 호출된 경우)
     QRect currentRect = cameraView->getCurrentRect();
     bool hasDrawnRect = (!currentRect.isNull() && currentRect.width() >= 10 && currentRect.height() >= 10);
+    
+    qDebug() << "[TeachingWidget] currentRect:" << currentRect;
+    qDebug() << "[TeachingWidget] hasDrawnRect:" << hasDrawnRect;
     
     // 선택된 아이템 확인
     QTreeWidgetItem* selectedItem = patternTree->currentItem();
@@ -10108,6 +10259,8 @@ void TeachingWidget::addPattern() {
     
     // 그려진 사각형이 있으면 무조건 새 패턴 생성 (필터 추가 방지)
     if (hasDrawnRect) {
+        qDebug() << "[TeachingWidget] 사각형 있음 - 패턴 이름 다이얼로그 표시";
+        
         // 패턴 이름 입력 받기
         CustomMessageBox msgBox(this);
         msgBox.setTitle("패턴 이름");
@@ -10115,8 +10268,17 @@ void TeachingWidget::addPattern() {
         msgBox.setInputField(true, "");
         msgBox.setButtons(QMessageBox::Ok | QMessageBox::Cancel);
         
-        if (msgBox.exec() != QMessageBox::Ok) return; // 취소 버튼 누름
+        qDebug() << "[TeachingWidget] CustomMessageBox exec() 호출 전";
+        int result = msgBox.exec();
+        qDebug() << "[TeachingWidget] CustomMessageBox 결과:" << result << "(Ok=" << QMessageBox::Ok << ")";
+        
+        if (result != QMessageBox::Ok) {
+            qDebug() << "[TeachingWidget] 취소 버튼 누름 - 패턴 추가 중단";
+            return; // 취소 버튼 누름
+        }
+        
         QString patternName = msgBox.getInputText();
+        qDebug() << "[TeachingWidget] 입력된 패턴 이름:" << patternName;
         
         // 이름이 비었으면 자동 생성
         if (patternName.isEmpty()) {
@@ -10141,6 +10303,9 @@ void TeachingWidget::addPattern() {
         pattern.rect = currentRect;
         pattern.name = patternName;
         pattern.type = currentPatternType;
+        
+        // 현재 Strip/Crimp 모드 저장
+        pattern.stripCrimpMode = currentStripCrimpMode;
         
         // 카메라 UUID 설정 (camOn/camOff 동일 처리)
         pattern.cameraUuid = getCameraInfo(cameraIndex).uniqueId;
@@ -11044,31 +11209,42 @@ double TeachingWidget::normalizeAngle(double angle) {
 // === 레시피 관리 함수들 구현 ===
 
 void TeachingWidget::newRecipe() {
+    qDebug() << "========== newRecipe() 함수 호출됨 ==========";
+    
     // 저장되지 않은 변경사항 확인
     if (hasUnsavedChanges) {
+        qDebug() << "저장되지 않은 변경사항 있음 - 확인 대화상자 표시";
         CustomMessageBox msgBox(this, CustomMessageBox::Question, "새 레시피", 
             "저장되지 않은 변경사항이 있습니다. 새 레시피를 생성하시겠습니까?");
         msgBox.setButtons(QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
         int reply = msgBox.exec();
         
         if (reply == QMessageBox::Cancel) {
+            qDebug() << "사용자가 취소 선택";
             return;
         } else if (reply == QMessageBox::Yes) {
+            qDebug() << "사용자가 저장 선택";
             saveRecipe();
         }
     }
     
     // **첫 번째: 새 레시피 이름 입력받기**
+    qDebug() << "레시피 이름 입력 대화상자 표시";
     CustomMessageBox nameBox(this);
     nameBox.setTitle("새 레시피 생성");
     nameBox.setMessage("레시피 이름을 입력하세요:\n(비어있으면 자동으로 생성됩니다)");
     nameBox.setInputField(true, "");
     nameBox.setButtons(QMessageBox::Ok | QMessageBox::Cancel);
     
-    if (nameBox.exec() != QMessageBox::Ok) {
+    int nameResult = nameBox.exec();
+    qDebug() << "이름 입력 대화상자 결과:" << nameResult;
+    
+    if (nameResult != QDialog::Accepted) {
+        qDebug() << "사용자가 이름 입력 취소";
         return; // 사용자가 취소
     }
     QString recipeName = nameBox.getInputText();
+    qDebug() << "입력된 레시피 이름:" << recipeName;
     
     // 이름이 비어있으면 자동 생성 (년월일시간초밀리초)
     if (recipeName.trimmed().isEmpty()) {
@@ -11092,39 +11268,89 @@ void TeachingWidget::newRecipe() {
     }
     
     // **두 번째 선택: "이미지 찾기" vs "레시피로 읽기"**
-    QMessageBox msgBox(this);
-    msgBox.setWindowTitle("새 레시피 생성");
-    msgBox.setText("영상을 어디서 가져오시겠습니까?");
-    QPushButton* imageButton = msgBox.addButton("이미지 찾기", QMessageBox::ActionRole);
-    QPushButton* recipeButton = msgBox.addButton("레시피로 읽기", QMessageBox::ActionRole);
-    QPushButton* cancelButton = msgBox.addButton("취소", QMessageBox::RejectRole);
+    qDebug() << "새 레시피 생성 - 이미지/레시피 선택 대화상자 표시";
+    CustomMessageBox msgBox(this);
+    msgBox.setTitle("새 레시피 생성");
+    msgBox.setMessage("영상을 어디서 가져오시겠습니까?");
+    msgBox.setButtons(QMessageBox::NoButton);  // 기본 버튼 없음
     
-    msgBox.exec();
+    // 커스텀 버튼 생성
+    QPushButton* imageButton = new QPushButton("이미지 찾기");
+    QPushButton* recipeButton = new QPushButton("레시피로 읽기");
+    QPushButton* cancelButton = new QPushButton("취소");
+    
+    // 버튼을 대화상자 레이아웃에 추가
+    QHBoxLayout* buttonLayout = new QHBoxLayout();
+    buttonLayout->addWidget(imageButton);
+    buttonLayout->addWidget(recipeButton);
+    buttonLayout->addWidget(cancelButton);
+    
+    QVBoxLayout* mainLayout = qobject_cast<QVBoxLayout*>(msgBox.layout());
+    if (mainLayout) {
+        mainLayout->addLayout(buttonLayout);
+    }
     
     bool useImage = false;
     bool useRecipe = false;
+    QPushButton* clickedBtn = nullptr;
     
-    if (msgBox.clickedButton() == imageButton) {
+    connect(imageButton, &QPushButton::clicked, [&]() {
+        clickedBtn = imageButton;
+        msgBox.accept();
+    });
+    connect(recipeButton, &QPushButton::clicked, [&]() {
+        clickedBtn = recipeButton;
+        msgBox.accept();
+    });
+    connect(cancelButton, &QPushButton::clicked, [&]() {
+        clickedBtn = cancelButton;
+        msgBox.reject();
+    });
+    
+    int result = msgBox.exec();
+    qDebug() << "대화상자 결과:" << result;
+    
+    qDebug() << "클릭된 버튼:" << clickedBtn;
+    
+    if (clickedBtn == imageButton) {
+        qDebug() << "이미지 찾기 선택됨";
         useImage = true;
-    } else if (msgBox.clickedButton() == recipeButton) {
+    } else if (clickedBtn == recipeButton) {
+        qDebug() << "레시피로 읽기 선택됨";
         useRecipe = true;
     } else {
+        qDebug() << "취소됨";
         return; // 취소
     }
     
     // **세 번째: 이미지 찾기 또는 레시피로 읽기**
     if (useImage) {
-        // 이미지 파일 선택
-        QString imageFile = QFileDialog::getOpenFileName(this,
-            "티칭용 이미지 선택",
+        // STRIP 이미지 파일 선택
+        QString stripImageFile = QFileDialog::getOpenFileName(this,
+            "STRIP 티칭용 이미지 선택",
             "",
             "이미지 파일 (*.jpg *.jpeg *.png *.bmp *.tiff *.tif)");
         
-        if (imageFile.isEmpty()) {
+        if (stripImageFile.isEmpty()) {
             CustomMessageBox(this, CustomMessageBox::Information, "알림",
-                "이미지가 선택되지 않았습니다.").exec();
+                "STRIP 이미지가 선택되지 않았습니다.").exec();
             return;
         }
+        
+        // CRIMP 이미지 파일 선택
+        QString crimpImageFile = QFileDialog::getOpenFileName(this,
+            "CRIMP 티칭용 이미지 선택",
+            "",
+            "이미지 파일 (*.jpg *.jpeg *.png *.bmp *.tiff *.tif)");
+        
+        if (crimpImageFile.isEmpty()) {
+            CustomMessageBox(this, CustomMessageBox::Information, "알림",
+                "CRIMP 이미지가 선택되지 않았습니다.").exec();
+            return;
+        }
+        
+        // 현재 모드에 따라 이미지 로드
+        QString imageFile = (currentStripCrimpMode == StripCrimpMode::STRIP_MODE) ? stripImageFile : crimpImageFile;
         
         // 선택한 이미지를 카메라뷰에 로드
         QPixmap pixmap(imageFile);
@@ -11152,31 +11378,54 @@ void TeachingWidget::newRecipe() {
         }
         cameraFrames[cameraIndex] = loadedImage.clone();
         
-        // 이미지 파일명(확장자 제외)을 카메라 이름으로 설정
-        QFileInfo fileInfo(imageFile);
-        QString imageName = fileInfo.baseName(); // 확장자 제외한 파일명
-        cameraView->setCurrentCameraName(imageName);
-        cameraView->setCurrentCameraUuid(imageName); // UUID도 같은 이름으로 설정
+        // STRIP/CRIMP 이미지를 별도로 저장 (모드 전환 시 사용)
+        QPixmap stripPixmap(stripImageFile);
+        QPixmap crimpPixmap(crimpImageFile);
+        
+        // STRIP 이미지 변환 및 저장
+        QImage stripQImage = stripPixmap.toImage();
+        if (stripQImage.format() != QImage::Format_RGB888) {
+            stripQImage = stripQImage.convertToFormat(QImage::Format_RGB888);
+        }
+        stripModeImage = cv::Mat(stripQImage.height(), stripQImage.width(), CV_8UC3,
+                                (void*)stripQImage.constBits(), stripQImage.bytesPerLine()).clone();
+        cv::cvtColor(stripModeImage, stripModeImage, cv::COLOR_RGB2BGR);
+        
+        // CRIMP 이미지 변환 및 저장
+        QImage crimpQImage = crimpPixmap.toImage();
+        if (crimpQImage.format() != QImage::Format_RGB888) {
+            crimpQImage = crimpQImage.convertToFormat(QImage::Format_RGB888);
+        }
+        crimpModeImage = cv::Mat(crimpQImage.height(), crimpQImage.width(), CV_8UC3,
+                                (void*)crimpQImage.constBits(), crimpQImage.bytesPerLine()).clone();
+        cv::cvtColor(crimpModeImage, crimpModeImage, cv::COLOR_RGB2BGR);
+        
+        qDebug() << "STRIP 이미지 저장 완료:" << stripImageFile;
+        qDebug() << "CRIMP 이미지 저장 완료:" << crimpImageFile;
+        
+        // 생성 날짜를 카메라 이름으로 설정 (레시피 이름과 동일)
+        QString cameraName = recipeName; // 레시피 이름(타임스탬프)을 카메라 이름으로 사용
+        cameraView->setCurrentCameraName(cameraName);
+        cameraView->setCurrentCameraUuid(cameraName); // UUID도 같은 이름으로 설정
         
         // 가상 카메라 정보 생성 (레시피 저장을 위해 필요)
-        if (cameraInfos.empty() || cameraIndex >= cameraInfos.size()) {
-            CameraInfo virtualCamera;
-            virtualCamera.name = imageName;
-            virtualCamera.uniqueId = imageName; // 이미지 이름을 유니크 ID로 사용
-            virtualCamera.index = 0;
-            virtualCamera.isConnected = false;
-            
-            if (cameraInfos.empty()) {
-                cameraInfos.append(virtualCamera);
-            } else {
-                cameraInfos[cameraIndex] = virtualCamera;
-            }
-            
-            qDebug() << "가상 카메라 정보 생성 완료 - 이름:" << imageName << ", UUID:" << imageName;
-        }
+        CameraInfo virtualCamera;
+        virtualCamera.name = cameraName;
+        virtualCamera.uniqueId = cameraName;
+        virtualCamera.index = 0;
+        virtualCamera.videoDeviceIndex = 0;
+        virtualCamera.isConnected = true; // 시뮬레이션 모드에서는 연결된 것으로 표시
+        virtualCamera.serialNumber = "SIM_SERIAL";
+        
+        // cameraInfos 초기화 및 설정
+        cameraInfos.clear();
+        cameraInfos.append(virtualCamera);
+        cameraIndex = 0;
+        
+        qDebug() << "시뮬레이션 카메라 정보 생성 완료 - 이름:" << cameraName << ", UUID:" << cameraName;
         
         qDebug() << "티칭용 이미지 로드 성공:" << imageFile;
-        qDebug() << "카메라 이름 설정:" << imageName;
+        qDebug() << "카메라 이름 설정:" << cameraName;
         qDebug() << "cameraFrames[" << cameraIndex << "]에 이미지 설정 완료 - 크기:" << loadedImage.cols << "x" << loadedImage.rows;
         
     } else if (useRecipe) {
@@ -11275,6 +11524,72 @@ void TeachingWidget::newRecipe() {
     setWindowTitle(QString("KM Inspector - %1").arg(recipeName));
     
     qDebug() << QString("새 레시피 '%1' 준비 완료 (저장 대기)").arg(recipeName);
+}
+
+void TeachingWidget::loadTeachingImage() {
+    // 이미지 파일 선택
+    QString imageFile = QFileDialog::getOpenFileName(this,
+        "티칭용 이미지 선택",
+        "",
+        "이미지 파일 (*.jpg *.jpeg *.png *.bmp *.tiff *.tif)");
+    
+    if (imageFile.isEmpty()) {
+        return;
+    }
+    
+    // 현재 모드 확인
+    QString modeName = (currentStripCrimpMode == StripCrimpMode::STRIP_MODE) ? "STRIP" : "CRIMP";
+    
+    // 확인 대화상자
+    CustomMessageBox confirmBox(this, CustomMessageBox::Question, "이미지 교체 확인",
+        QString("%1 모드 티칭 이미지로 바꾸시겠습니까?").arg(modeName));
+    confirmBox.setButtons(QMessageBox::Yes | QMessageBox::No);
+    
+    if (confirmBox.exec() != QDialog::Accepted) {
+        return;
+    }
+    
+    // 이미지 로드
+    QPixmap pixmap(imageFile);
+    if (pixmap.isNull() || !cameraView) {
+        CustomMessageBox(this, CustomMessageBox::Warning, "이미지 로드 실패",
+            "선택한 이미지를 로드할 수 없습니다.").exec();
+        return;
+    }
+    
+    // cv::Mat으로 변환
+    cv::Mat loadedImage;
+    QImage qImage = pixmap.toImage();
+    if (qImage.format() != QImage::Format_RGB888) {
+        qImage = qImage.convertToFormat(QImage::Format_RGB888);
+    }
+    loadedImage = cv::Mat(qImage.height(), qImage.width(), CV_8UC3, 
+                        (void*)qImage.constBits(), qImage.bytesPerLine()).clone();
+    cv::cvtColor(loadedImage, loadedImage, cv::COLOR_RGB2BGR);
+    
+    // 현재 모드에 따라 이미지 저장
+    if (currentStripCrimpMode == StripCrimpMode::STRIP_MODE) {
+        stripModeImage = loadedImage.clone();
+    } else {
+        crimpModeImage = loadedImage.clone();
+    }
+    
+    // cameraFrames에도 저장
+    if (cameraFrames.size() <= static_cast<size_t>(cameraIndex)) {
+        cameraFrames.resize(cameraIndex + 1);
+    }
+    cameraFrames[cameraIndex] = loadedImage.clone();
+    
+    // 화면에 표시
+    cameraView->setBackgroundImage(pixmap);
+    
+    // 변경사항 플래그 설정
+    hasUnsavedChanges = true;
+    
+    qDebug() << QString("%1 모드 티칭 이미지 교체 완료: %2x%3")
+        .arg(modeName)
+        .arg(loadedImage.cols)
+        .arg(loadedImage.rows);
 }
 
 void TeachingWidget::saveRecipeAs() {
@@ -11593,25 +11908,8 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
         ConfigManager::instance()->saveConfig();
         qDebug() << QString("레시피 로드 완료: %1").arg(recipeName);
         
-        // **기존 레시피에서 메인 카메라 이미지 로드**
-        if (camOff) {  // 시뮬레이션 모드일 때만
-            cv::Mat mainCameraImage;
-            QString cameraName;
-            if (manager.loadMainCameraImage(recipeName, mainCameraImage, cameraName)) {
-                if (!mainCameraImage.empty()) {
-                    // cameraFrames에 첫 번째 이미지로 설정
-                    if (cameraFrames.empty()) {
-                        cameraFrames.push_back(mainCameraImage);
-                    } else {
-                        cameraFrames[0] = mainCameraImage;
-                    }
-                    qDebug() << QString("기존 레시피에서 메인 카메라 이미지 로드 완료: %1 (%2x%3)")
-                                .arg(cameraName).arg(mainCameraImage.cols).arg(mainCameraImage.rows);
-                }
-            } else {
-                qDebug() << QString("기존 레시피에서 메인 카메라 이미지 로드 실패: %1").arg(manager.getLastError());
-            }
-        }
+        // **STRIP/CRIMP 이미지는 이미 loadRecipe에서 로드되었으므로 추가 로드 불필요**
+        // loadMainCameraImage는 첫 번째 TeachingImage만 읽어서 현재 모드를 무시하므로 제거
         
         // TODO: 현재 연결된 카메라의 패턴만 필터링하는 기능 추가 예정
         

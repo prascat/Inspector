@@ -157,6 +157,9 @@ struct PatternInfo {
     
     // 회전 각도(도 단위) 추가
     double angle = 0.0;
+    
+    // Strip/Crimp 모드 구분 (0: STRIP, 1: CRIMP)
+    int stripCrimpMode = 0;  // 기본값: STRIP
 
     // 패턴 계층 구조를 위한 필드
     QUuid parentId;  // 부모 패턴의 ID (없으면 null)
@@ -348,6 +351,12 @@ namespace InspectionMethod {
     const int COUNT = 5;
 }
 
+// Strip/Crimp 모드 정의
+namespace StripCrimpMode {
+    const int STRIP_MODE = 0;   // Strip 모드
+    const int CRIMP_MODE = 1;   // Crimp 모드
+}
+
 namespace UIColors {
     // 패턴 타입별 색상 - 더 부드러운 색상으로 변경
     const QColor ROI_COLOR = QColor("#E6C27C");      // 연한 노란색 (ROI)
@@ -376,11 +385,11 @@ namespace UIColors {
     const QColor BTN_DRAW_COLOR = QColor("#FF8A65");     // 연한 주황색(DRAW)
     const QColor BTN_MOVE_COLOR = QColor("#7986CB");     // 연한 블루바이올렛(MOVE)
 
-    // 버튼 색상을 흰색으로 통일
-    const QColor BTN_SAVE_COLOR = QColor("#FFFFFF");    // 흰색 - 저장
-    const QColor BTN_ADD_COLOR = QColor("#FFFFFF");     // 흰색 - 추가
-    const QColor BTN_REMOVE_COLOR = QColor("#FFFFFF");  // 흰색 - 삭제
-    const QColor BTN_FILTER_COLOR = QColor("#FFFFFF");  // 흰색 - 필터
+    // 버튼 색상 - 연한 회색 40% alpha
+    const QColor BTN_SAVE_COLOR = QColor(200, 200, 200, 102);      // 연한 회색 40% alpha - 저장
+    const QColor BTN_ADD_COLOR = QColor(200, 200, 200, 102);       // 연한 회색 40% alpha - 추가
+    const QColor BTN_REMOVE_COLOR = QColor(200, 200, 200, 102);    // 연한 회색 40% alpha - 삭제
+    const QColor BTN_FILTER_COLOR = QColor(200, 200, 200, 102);    // 연한 회색 40% alpha - 필터
     
     // 슬라이더 색상
     const QColor SLIDER_HANDLE_COLOR = QColor("#64B5F6");   // 연한 파란색 - 슬라이더 핸들
@@ -540,7 +549,7 @@ namespace UIColors {
             "  margin: 0px;"
             "}"
             "QPushButton:pressed {"
-            "  background-color: rgba(%1, %2, %3, 0.8);"
+            "  background-color: rgba(%1, %2, %3, 1.0);"
             "  margin: 0px;"
             "}"
         )

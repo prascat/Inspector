@@ -210,6 +210,16 @@ public:
     // 레시피 로드 상태 확인
     bool hasLoadedRecipe() const;
     
+    // Strip/Crimp 모드 관련
+    int getStripCrimpMode() const { return currentStripCrimpMode; }
+    void setStripCrimpMode(int mode);
+    
+    // STRIP/CRIMP 이미지 접근자
+    const cv::Mat& getStripModeImage() const { return stripModeImage; }
+    const cv::Mat& getCrimpModeImage() const { return crimpModeImage; }
+    void setStripModeImage(const cv::Mat& image) { stripModeImage = image.clone(); }
+    void setCrimpModeImage(const cv::Mat& image) { crimpModeImage = image.clone(); }
+    
     // === 레시피 관리 함수들 (camOff에서도 사용) ===
     void newRecipe();
     void openRecipe(bool autoMode = false);
@@ -240,6 +250,7 @@ private slots:
                         "무단 복제 및 배포를 금지합니다.").exec();
     }
     void saveCurrentImage();
+    void loadTeachingImage();
     void processGrabbedFrame(const cv::Mat& frame, int camIdx);
     void updateUIElements();
     void addPattern();
@@ -291,6 +302,13 @@ private:
     // 패턴 업데이트 중 UI 업데이트 방지 플래그
     bool isUpdatingPattern = false;
     
+    // Strip/Crimp 모드 (기본값: STRIP)
+    int currentStripCrimpMode = 0;  // 0: STRIP, 1: CRIMP
+    
+    // Strip/Crimp 이미지 저장 (모드 전환 시 사용)
+    cv::Mat stripModeImage;
+    cv::Mat crimpModeImage;
+    
     // 선택된 필터 정보 (티칭 모드 필터 표시용)
     QUuid selectedPatternId;
     int selectedFilterIndex = -1;
@@ -329,6 +347,7 @@ private:
     QPushButton* roiButton = nullptr;
     QPushButton* fidButton = nullptr;
     QPushButton* insButton = nullptr;
+    QPushButton* stripCrimpButton = nullptr;
     
     // 패널 및 라벨 멤버 변수들
     QLabel* emptyPanelLabel = nullptr;

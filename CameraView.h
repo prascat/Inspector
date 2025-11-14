@@ -42,6 +42,10 @@ public:
     void updateInspectionResult(bool passed, const InspectionResult& result);
     bool getInspectionMode() const { return isInspectionMode; }
     
+    // Strip/Crimp 모드 설정/획득
+    void setStripCrimpMode(int mode) { currentStripCrimpMode = mode; }
+    int getStripCrimpMode() const { return currentStripCrimpMode; }
+    
     // 검사 결과 필터링
     void setSelectedInspectionPatternId(const QUuid& id) {
         selectedInspectionPatternId = id;
@@ -254,6 +258,7 @@ private:
     bool isInspectionMode = false;
     bool hasInspectionResult = false;
     bool lastInspectionPassed = false;
+    int currentStripCrimpMode = 0;  // 0: STRIP, 1: CRIMP
 
     InspectionResult lastInspectionResult;
     QUuid selectedInspectionPatternId; // 선택된 검사 결과 패턴 필터링

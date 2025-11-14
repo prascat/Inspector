@@ -162,21 +162,27 @@ void CustomMessageBox::setupUI() {
     cancelButton = new QPushButton("Cancel");
     
     connect(okButton, &QPushButton::clicked, [this]() {
+        qDebug() << "[CustomMessageBox] OK 버튼 클릭됨";
         result = QMessageBox::Ok;
+        qDebug() << "[CustomMessageBox] result 설정:" << result;
+        qDebug() << "[CustomMessageBox] accept() 호출";
         accept();
     });
     
     connect(yesButton, &QPushButton::clicked, [this]() {
+        qDebug() << "[CustomMessageBox] Yes 버튼 클릭됨";
         result = QMessageBox::Yes;
         accept();
     });
     
     connect(noButton, &QPushButton::clicked, [this]() {
+        qDebug() << "[CustomMessageBox] No 버튼 클릭됨";
         result = QMessageBox::No;
         reject();
     });
     
     connect(cancelButton, &QPushButton::clicked, [this]() {
+        qDebug() << "[CustomMessageBox] Cancel 버튼 클릭됨";
         result = QMessageBox::Cancel;
         reject();
     });
@@ -247,6 +253,7 @@ void CustomMessageBox::setButtons(QMessageBox::StandardButtons buttons) {
 }
 
 int CustomMessageBox::exec() {
+    qDebug() << "[CustomMessageBox] exec() 호출됨";
     adjustSize();
     
     // 부모 중심에 배치
@@ -264,7 +271,10 @@ int CustomMessageBox::exec() {
         move(x, y);
     }
     
-    return QDialog::exec();
+    qDebug() << "[CustomMessageBox] QDialog::exec() 호출";
+    int dialogResult = QDialog::exec();
+    qDebug() << "[CustomMessageBox] QDialog::exec() 반환값:" << dialogResult << ", result 멤버:" << result;
+    return result;  // QDialog::exec() 대신 저장한 result 반환
 }
 
 void CustomMessageBox::setInputField(bool enabled, const QString& defaultText) {

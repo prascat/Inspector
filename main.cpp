@@ -81,8 +81,12 @@ void customMessageHandler(QtMsgType type, const QMessageLogContext &context, con
 }
 
 int main(int argc, char *argv[]) {
-    // Wayland에서 윈도우 위치 설정 문제 회피 - X11 강제 사용
+    // OS별 Qt 플랫폼 플러그인 설정
+#ifdef Q_OS_LINUX
+    // Linux(Ubuntu)에서는 X11 사용
     qputenv("QT_QPA_PLATFORM", "xcb");
+#endif
+    // macOS에서는 기본 cocoa 플러그인 사용 (명시적 설정 불필요)
     
     QApplication app(argc, argv);
     

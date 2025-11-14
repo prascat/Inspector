@@ -73,13 +73,23 @@ void CameraView::updateUITexts() {
 }
 
 void CameraView::keyPressEvent(QKeyEvent* event) {
+    qDebug() << "[CameraView] keyPressEvent 호출 - Key:" << event->key();
+    
     if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+        qDebug() << "[CameraView] Enter/Return 키 감지";
+        qDebug() << "[CameraView] currentRect:" << currentRect;
+        qDebug() << "[CameraView] currentRect.width():" << currentRect.width();
+        qDebug() << "[CameraView] currentRect.height():" << currentRect.height();
+        
         // 엔터 키가 눌렸고, 현재 유효한 사각형이 그려져 있는 경우
         if (!currentRect.isNull() && currentRect.width() > 10 && currentRect.height() > 10) {
+            qDebug() << "[CameraView] ✅ enterKeyPressed 시그널 발생";
             // 엔터키 시그널 발생
             emit enterKeyPressed(currentRect);
             event->accept();
             return;
+        } else {
+            qDebug() << "[CameraView] ❌ 유효한 사각형 없음 - 시그널 발생 안함";
         }
     }
     
@@ -987,6 +997,7 @@ void CameraView::showContextMenu(const QPoint& pos) {
                 newPattern.enabled = true;
                 newPattern.cameraUuid = currentCameraUuid;
                 newPattern.includeAllCamera = false;
+                newPattern.stripCrimpMode = currentStripCrimpMode;
                 
                 addPattern(newPattern);
                 setSelectedPatternId(newPattern.id);
@@ -1012,6 +1023,7 @@ void CameraView::showContextMenu(const QPoint& pos) {
                 
                 newPattern.maxAngle = 360.0;
                 newPattern.angleStep = 1.0;
+                newPattern.stripCrimpMode = currentStripCrimpMode;
                 
                 addPattern(newPattern);
                 setSelectedPatternId(newPattern.id);
@@ -1037,6 +1049,7 @@ void CameraView::showContextMenu(const QPoint& pos) {
                 
                 newPattern.lowerThreshold = 0.0;
                 newPattern.upperThreshold = 1.0;
+                newPattern.stripCrimpMode = currentStripCrimpMode;
                 
                 addPattern(newPattern);
                 setSelectedPatternId(newPattern.id);
@@ -3449,10 +3462,10 @@ void CameraView::setBackgroundPixmap(const QPixmap &pixmap) {
         // 이미지를 화면에 맞추기 위한 초기 줌 계산
         if (imgRatio > viewRatio) {
             // 너비에 맞춤
-            zoomFactor = (double)viewSize.width() / pixmap.width() * 0.95; // 95%로 맞추기
+            zoomFactor = (double)viewSize.width() / pixmap.width() * 0.70; // 70%로 맞추기
         } else {
             // 높이에 맞춤
-            zoomFactor = (double)viewSize.height() / pixmap.height() * 0.95;
+            zoomFactor = (double)viewSize.height() / pixmap.height() * 0.70;
         }
         
         // 뷰 맞추기
