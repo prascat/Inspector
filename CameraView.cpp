@@ -779,7 +779,7 @@ void CameraView::showContextMenu(const QPoint& pos) {
                 fidPattern.cameraUuid = pattern->cameraUuid;
                 fidPattern.runInspection = true;
                 fidPattern.fidMatchMethod = 0;
-                fidPattern.matchThreshold = 0.8;
+                fidPattern.matchThreshold = 75.0;  // 75%
                 
                 // 부모-자식 관계 설정
                 fidPattern.parentId = pattern->id;  // FID의 부모를 ROI로 설정
@@ -997,7 +997,7 @@ void CameraView::showContextMenu(const QPoint& pos) {
                 newPattern.cameraUuid = currentCameraUuid;
                 newPattern.runInspection = true;
                 newPattern.fidMatchMethod = 0;
-                newPattern.matchThreshold = 0.8;
+                newPattern.matchThreshold = 75.0;  // 75%
                 newPattern.useRotation = false;
                 newPattern.minAngle = 0.0;
                 newPattern.angle = 0.0;  // 각도 명시적으로 0으로 설정
@@ -1023,7 +1023,7 @@ void CameraView::showContextMenu(const QPoint& pos) {
                 newPattern.cameraUuid = currentCameraUuid;
                 newPattern.runInspection = true;
                 newPattern.inspectionMethod = InspectionMethod::COLOR;
-                newPattern.passThreshold = 0.8;
+                newPattern.passThreshold = 80.0;  // 80%
                 newPattern.compareMethod = 0;
                 newPattern.angle = 0.0;  // 각도 명시적으로 0으로 설정
                 

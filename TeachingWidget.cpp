@@ -1569,13 +1569,68 @@ void TeachingWidget::setupRightPanelOverlay() {
         "  background-color: rgba(50, 50, 50, 230);"
         "  color: white;"
         "}"
+        "QPushButton#collapseButton {"
+        "  background-color: rgba(70, 70, 70, 200);"
+        "  color: white;"
+        "  border: 1px solid rgba(100, 100, 100, 150);"
+        "  border-radius: 3px;"
+        "  padding: 2px 5px;"
+        "  font-weight: bold;"
+        "}"
+        "QPushButton#collapseButton:hover {"
+        "  background-color: rgba(90, 90, 90, 220);"
+        "}"
     );
     rightPanelOverlay->setObjectName("rightPanelOverlay");
     
-    // 오버레이 내부 레이아웃
-    rightPanelLayout = new QVBoxLayout(rightPanelOverlay);
-    rightPanelLayout->setContentsMargins(10, 10, 10, 10);
+    // 메인 레이아웃
+    QVBoxLayout *mainLayout = new QVBoxLayout(rightPanelOverlay);
+    mainLayout->setContentsMargins(5, 5, 5, 5);
+    mainLayout->setSpacing(0);
+    
+    // 상단 헤더 (접기/펼치기 버튼)
+    QHBoxLayout *headerLayout = new QHBoxLayout();
+    headerLayout->setContentsMargins(5, 5, 5, 5);
+    
+    QLabel *titleLabel = new QLabel("Properties");
+    titleLabel->setStyleSheet("color: white; font-weight: bold; font-size: 12px;");
+    
+    rightPanelCollapseButton = new QPushButton("▼");
+    rightPanelCollapseButton->setObjectName("collapseButton");
+    rightPanelCollapseButton->setFixedSize(24, 24);
+    rightPanelCollapseButton->setToolTip("접기/펼치기");
+    
+    headerLayout->addWidget(titleLabel);
+    headerLayout->addStretch();
+    headerLayout->addWidget(rightPanelCollapseButton);
+    
+    mainLayout->addLayout(headerLayout);
+    
+    // 컨텐츠 영역 (접기 가능)
+    rightPanelContent = new QWidget();
+    rightPanelLayout = new QVBoxLayout(rightPanelContent);
+    rightPanelLayout->setContentsMargins(5, 5, 5, 5);
     rightPanelLayout->setSpacing(5);
+    
+    mainLayout->addWidget(rightPanelContent);
+    
+    // 접기 버튼 연결
+    connect(rightPanelCollapseButton, &QPushButton::clicked, this, [this]() {
+        rightPanelCollapsed = !rightPanelCollapsed;
+        rightPanelContent->setVisible(!rightPanelCollapsed);
+        rightPanelCollapseButton->setText(rightPanelCollapsed ? "▲" : "▼");
+        
+        if (rightPanelCollapsed) {
+            // 접을 때: 현재 높이 저장 후 최소 높이로
+            rightPanelExpandedHeight = rightPanelOverlay->height();
+            rightPanelOverlay->setFixedHeight(40);
+        } else {
+            // 펼칠 때: 저장된 높이로 복원
+            rightPanelOverlay->setMinimumHeight(200);
+            rightPanelOverlay->setMaximumHeight(QWIDGETSIZE_MAX);
+            rightPanelOverlay->resize(rightPanelOverlay->width(), rightPanelExpandedHeight);
+        }
+    });
     
     // 초기 크기 설정 (너비 400px로 증가)
     rightPanelOverlay->setMinimumWidth(250);
@@ -1590,6 +1645,7 @@ void TeachingWidget::setupRightPanelOverlay() {
     rightPanelDragging = false;
     rightPanelResizing = false;
     rightPanelResizeEdge = ResizeEdge::None;
+    rightPanelCollapsed = false;
     
     // 마우스 추적 활성화 (리사이즈 커서 변경용)
     rightPanelOverlay->setMouseTracking(true);
@@ -2992,9 +3048,10 @@ void TeachingWidget::createPropertyPanels() {
     QHBoxLayout* fidMatchThreshLayout = new QHBoxLayout();
     fidMatchThreshLabel = new QLabel("매칭 임계값:", fidPropWidget);
     fidMatchThreshSpin = new QDoubleSpinBox(fidPropWidget);
-    fidMatchThreshSpin->setRange(0.1, 1.0);
-    fidMatchThreshSpin->setSingleStep(0.05);
-    fidMatchThreshSpin->setValue(0.7);
+    fidMatchThreshSpin->setRange(10.0, 100.0);
+    fidMatchThreshSpin->setSingleStep(5.0);
+    fidMatchThreshSpin->setValue(75.0);
+    fidMatchThreshSpin->setSuffix("%");
     fidMatchThreshLayout->addWidget(fidMatchThreshLabel);
     fidMatchThreshLayout->addWidget(fidMatchThreshSpin);
     fidMatchThreshLayout->addStretch();
@@ -3095,9 +3152,10 @@ void TeachingWidget::createPropertyPanels() {
     insPassThreshLabel = new QLabel("합격 임계값:", basicInspectionGroup);
     insPassThreshSpin = new QDoubleSpinBox(basicInspectionGroup);
     insPassThreshSpin->setFixedHeight(22);
-    insPassThreshSpin->setRange(0.1, 1.0);
-    insPassThreshSpin->setSingleStep(0.05);
-    insPassThreshSpin->setValue(0.9);
+    insPassThreshSpin->setRange(10.0, 100.0);
+    insPassThreshSpin->setSingleStep(5.0);
+    insPassThreshSpin->setValue(90.0);
+    insPassThreshSpin->setSuffix("%");
     basicInspectionLayout->addRow(insPassThreshLabel, insPassThreshSpin);
 
     // 결과 반전
@@ -3134,9 +3192,10 @@ void TeachingWidget::createPropertyPanels() {
     // 합격 기준
     insThresholdLabel = new QLabel("합격 기준:", insBinaryPanel);
     insThresholdSpin = new QDoubleSpinBox(insBinaryPanel);
-    insThresholdSpin->setRange(0.0, 1.0);
-    insThresholdSpin->setSingleStep(0.01);
-    insThresholdSpin->setValue(0.5);
+    insThresholdSpin->setRange(0.0, 100.0);
+    insThresholdSpin->setSingleStep(1.0);
+    insThresholdSpin->setValue(50.0);
+    insThresholdSpin->setSuffix("%");
     insBinaryLayout->addRow(insThresholdLabel, insThresholdSpin);
 
     // 범위 설정 (범위 내 옵션용)
@@ -4336,7 +4395,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::FID) {
-                        pattern->matchThreshold = value;
+                        pattern->matchThreshold = value;  // 100% 단위 그대로 저장
                         cameraView->updatePatternById(patternId, *pattern);
                     }
                 }
@@ -4425,7 +4484,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->passThreshold = value;
+                        pattern->passThreshold = value;  // 100% 단위 그대로 저장
                         cameraView->updatePatternById(patternId, *pattern);
                     }
                 }
@@ -5638,7 +5697,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         fidMatchCheckBox->setChecked(pattern->runInspection);
                     }
                     if (fidMatchThreshSpin) {
-                        fidMatchThreshSpin->setValue(pattern->matchThreshold);
+                        fidMatchThreshSpin->setValue(pattern->matchThreshold);  // 100% 단위 그대로 표시
                     }
           
                     if (fidRotationCheck) {
@@ -7413,6 +7472,7 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event) {
                 return true;
             } else if (rightPanelDragging) {
                 // 드래그 중
+                rightPanelOverlay->setCursor(Qt::ClosedHandCursor);
                 QPoint delta = mouseEvent->pos() - rightPanelDragPos;
                 rightPanelOverlay->move(rightPanelOverlay->pos() + delta);
                 return true;
@@ -7451,16 +7511,19 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event) {
         }
         else if (event->type() == QEvent::MouseButtonPress) {
             if (mouseEvent->button() == Qt::LeftButton) {
+                // 경계에 있으면 리사이즈
                 if (rightPanelResizeEdge != ResizeEdge::None) {
                     rightPanelResizing = true;
                     rightPanelDragPos = mouseEvent->globalPos();
                     return true;
                 } else {
-                    // 자식 위젯이 아닌 경우에만 드래그
+                    // 경계가 아니면 드래그 가능 (자식 위젯이 아닌 경우)
                     QWidget* childWidget = rightPanelOverlay->childAt(mouseEvent->pos());
                     if (!childWidget) {
+                        // 빈 공간 클릭 - 드래그 시작
                         rightPanelDragging = true;
                         rightPanelDragPos = mouseEvent->pos();
+                        rightPanelOverlay->setCursor(Qt::ClosedHandCursor);
                         return true;
                     }
                 }
@@ -9980,7 +10043,7 @@ void TeachingWidget::addPattern() {
             }
         } 
         else if (currentPatternType == PatternType::INS) {
-            pattern.passThreshold = 0.9;
+            pattern.passThreshold = 90.0;  // 90%
             pattern.invertResult = false;
             pattern.inspectionMethod = 0;
             pattern.binaryThreshold = 128;

@@ -500,7 +500,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                     .arg(pattern.name)
                     .arg(insResultText)
                     .arg(QString::number(inspScore, 'f', 2))
-                    .arg(QString::number(pattern.passThreshold, 'f', 2)));
+                    .arg(QString::number(pattern.passThreshold, 'f', 1)));
             
             // 전체 결과 갱신
             result.isPassed = result.isPassed && inspPassed;
@@ -521,8 +521,8 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             // FID는 매칭 실패 시 FAIL
             QString fidResult = fidPassed ? "PASS" : "FAIL";
             fidDetails.append(QString("%1 %2/%3").arg(fidResult)
-                                                  .arg(QString::number(score, 'f', 2))
-                                                  .arg(QString::number(threshold, 'f', 2)));
+                                                  .arg(QString::number(score * 100.0, 'f', 1))
+                                                  .arg(QString::number(threshold, 'f', 1)));
         }
     }
     
@@ -696,7 +696,7 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
         }
         
         // 매칭 임계값과 비교
-        if (matched && score >= pattern.matchThreshold) {
+        if (matched && (score * 100.0) >= pattern.matchThreshold) {  // score(0-1)를 100% 단위로 변환하여 비교
             return true;
         } else {
             // 매칭은 실패했지만 검출된 각도는 적용 (matchAngle은 이미 설정됨)
@@ -1377,10 +1377,10 @@ bool InsProcessor::checkColor(const cv::Mat& image, const PatternInfo& pattern, 
         result.insProcessedImages[pattern.id] = diffImage;
         result.insMethodTypes[pattern.id] = InspectionMethod::COLOR;
         
-        logDebug(QString("색상 검사 결과 - 패턴: '%1', 유사도: %2, 임계값: %3, 결과: %4")
+        logDebug(QString("색상 검사 결과 - 패턴: '%1', 유사도: %2%, 임계값: %3%, 결과: %4")
                 .arg(pattern.name)
-                .arg(score, 0, 'f', 2)
-                .arg(pattern.passThreshold, 0, 'f', 2)
+                .arg(score * 100.0, 0, 'f', 1)
+                .arg(pattern.passThreshold, 0, 'f', 1)
                 .arg(passed ? "합격" : "불합격"));
         
         return passed;
@@ -1476,26 +1476,26 @@ bool InsProcessor::checkBinary(const cv::Mat& image, const PatternInfo& pattern,
             bool passed = false;
             switch (pattern.compareMethod) {
                 case 0: // 이상 (>=)
-                    passed = (score >= pattern.passThreshold);
+                    passed = ((score * 100.0) >= pattern.passThreshold);
                     break;
                 case 1: // 이하 (<=)
-                    passed = (score <= pattern.passThreshold);
+                    passed = ((score * 100.0) <= pattern.passThreshold);
                     break;
                 case 2: // 범위 내
-                    passed = (score >= pattern.lowerThreshold && score <= pattern.upperThreshold);
+                    passed = ((score * 100.0) >= pattern.lowerThreshold && (score * 100.0) <= pattern.upperThreshold);
                     break;
                 default:
-                    passed = (score >= pattern.passThreshold);
+                    passed = ((score * 100.0) >= pattern.passThreshold);
             }
             
             // 결과 이미지 저장
             result.insProcessedImages[pattern.id] = tempResult.clone();  // RGB 형식 그대로 저장
             result.insMethodTypes[pattern.id] = InspectionMethod::BINARY;
             
-            logDebug(QString("이진화 검사 결과 (비율): 패턴 '%1', 비율: %2, 임계값: %3, 타입: %4, 결과: %5")
+            logDebug(QString("이진화 검사 결과 (비율): 패턴 '%1', 비율: %2%, 임계값: %3%, 타입: %4, 결과: %5")
                     .arg(pattern.name)
-                    .arg(ratio, 0, 'f', 4)
-                    .arg(pattern.passThreshold, 0, 'f', 4)
+                    .arg(ratio * 100.0, 0, 'f', 2)
+                    .arg(pattern.passThreshold, 0, 'f', 1)
                     .arg(thresholdType)
                     .arg(passed ? "합격" : "불합격"));
                     
@@ -1651,12 +1651,12 @@ bool InsProcessor::checkBinary(const cv::Mat& image, const PatternInfo& pattern,
                 break;
         }
         
-        logDebug(QString("이진화 검사 결과 - 패턴: '%1', 전체 일치율: %2, 흰색 일치율: %3, 최종 점수: %4, 임계값: %5, 타입: %6, 결과: %7")
+        logDebug(QString("이진화 검사 결과 - 패턴: '%1', 전체 일치율: %2%, 흰색 일치율: %3%, 최종 점수: %4%, 임계값: %5%, 타입: %6, 결과: %7")
         .arg(pattern.name)
-        .arg(matchRatio, 0, 'f', 4)
-        .arg(whiteMatchRatio, 0, 'f', 4)
-        .arg(score, 0, 'f', 4)
-        .arg(pattern.passThreshold, 0, 'f', 4)
+        .arg(matchRatio * 100.0, 0, 'f', 2)
+        .arg(whiteMatchRatio * 100.0, 0, 'f', 2)
+        .arg(score * 100.0, 0, 'f', 2)
+        .arg(pattern.passThreshold, 0, 'f', 1)
         .arg(thresholdType)
         .arg(passed ? "합격" : "불합격"));
 

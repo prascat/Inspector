@@ -607,6 +607,10 @@ private:
     
 public:
     QWidget *rightPanelOverlay = nullptr;
+    bool rightPanelCollapsed = false;
+    int rightPanelExpandedHeight = 600;
+    QWidget *rightPanelContent = nullptr;
+    QPushButton *rightPanelCollapseButton = nullptr;
     
 private:
     QPoint rightPanelDragPos;

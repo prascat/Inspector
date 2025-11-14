@@ -240,8 +240,16 @@ bool RecipeManager::saveRecipe(const QString& fileName,
         xml.writeAttribute("propertyY", QString::number(geo.y()));
         xml.writeAttribute("propertyWidth", QString::number(geo.width()));
         xml.writeAttribute("propertyHeight", QString::number(geo.height()));
-        qDebug() << QString("프로퍼티 오버레이 저장: x=%1, y=%2, w=%3, h=%4")
-                    .arg(geo.x()).arg(geo.y()).arg(geo.width()).arg(geo.height());
+        
+        // 접기 상태와 펼쳐진 높이도 저장
+        bool collapsed = teachingWidget->rightPanelCollapsed;
+        int expandedHeight = teachingWidget->rightPanelExpandedHeight;
+        xml.writeAttribute("propertyCollapsed", collapsed ? "true" : "false");
+        xml.writeAttribute("propertyExpandedHeight", QString::number(expandedHeight));
+        
+        qDebug() << QString("프로퍼티 오버레이 저장: x=%1, y=%2, w=%3, h=%4, collapsed=%5, expandedH=%6")
+                    .arg(geo.x()).arg(geo.y()).arg(geo.width()).arg(geo.height())
+                    .arg(collapsed).arg(expandedHeight);
     }
     
     // 카메라들 컨테이너
@@ -456,9 +464,35 @@ bool RecipeManager::loadRecipe(const QString& fileName,
                 int width = attrs.value("propertyWidth").toInt();
                 int height = attrs.value("propertyHeight").toInt();
                 
-                teachingWidget->rightPanelOverlay->setGeometry(x, y, width, height);
-                qDebug() << QString("프로퍼티 오버레이 복원: x=%1, y=%2, w=%3, h=%4")
-                            .arg(x).arg(y).arg(width).arg(height);
+                // 접기 상태 읽기
+                bool collapsed = (attrs.value("propertyCollapsed").toString() == "true");
+                int expandedHeight = attrs.hasAttribute("propertyExpandedHeight") ? 
+                                    attrs.value("propertyExpandedHeight").toInt() : height;
+                
+                teachingWidget->rightPanelCollapsed = collapsed;
+                teachingWidget->rightPanelExpandedHeight = expandedHeight;
+                
+                // 접힌 상태면 헤더만 표시
+                if (collapsed) {
+                    teachingWidget->rightPanelOverlay->setGeometry(x, y, width, 40);
+                    if (teachingWidget->rightPanelContent) {
+                        teachingWidget->rightPanelContent->setVisible(false);
+                    }
+                    if (teachingWidget->rightPanelCollapseButton) {
+                        teachingWidget->rightPanelCollapseButton->setText("▲");
+                    }
+                } else {
+                    teachingWidget->rightPanelOverlay->setGeometry(x, y, width, height);
+                    if (teachingWidget->rightPanelContent) {
+                        teachingWidget->rightPanelContent->setVisible(true);
+                    }
+                    if (teachingWidget->rightPanelCollapseButton) {
+                        teachingWidget->rightPanelCollapseButton->setText("▼");
+                    }
+                }
+                
+                qDebug() << QString("프로퍼티 오버레이 복원: x=%1, y=%2, w=%3, h=%4, collapsed=%5, expandedH=%6")
+                            .arg(x).arg(y).arg(width).arg(height).arg(collapsed).arg(expandedHeight);
             }
         }
         

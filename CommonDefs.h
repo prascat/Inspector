@@ -167,7 +167,7 @@ struct PatternInfo {
     bool includeAllCamera = false;
     
     // Fiducial 속성
-    double matchThreshold = 0.8;
+    double matchThreshold = 75.0;  // 매칭 임계값 (0-100%)
     bool useRotation = false;
     double minAngle = -15.0;
     double maxAngle = 15.0;
