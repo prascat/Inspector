@@ -519,6 +519,36 @@ namespace UIColors {
         .arg(color.darker(120).name());
     }
 
+    inline QString overlayButtonStyle(const QColor& color) {
+        return QString(
+            "QPushButton {"
+            "  background-color: rgba(%1, %2, %3, 0.4);"
+            "  color: %4;"
+            "  border: 2px solid %4;"
+            "  border-radius: 4px;"
+            "  padding: 5px 10px;"
+            "  margin: 0px;"
+            "  min-width: 60px;"
+            "  min-height: 32px;"
+            "  font-weight: bold;"
+            "}"
+            "QPushButton:hover {"
+            "  background-color: rgba(%1, %2, %3, 0.6);"
+            "  border: 2px solid %5;"
+            "  margin: 0px;"
+            "}"
+            "QPushButton:pressed {"
+            "  background-color: rgba(%1, %2, %3, 0.8);"
+            "  margin: 0px;"
+            "}"
+        )
+        .arg(color.red())
+        .arg(color.green())
+        .arg(color.blue())
+        .arg(color.name())
+        .arg(color.lighter(120).name());
+    }
+
     inline QString toggleButtonStyle(const QColor& uncheckedColor, const QColor& checkedColor, bool isChecked = false) {
         QColor uncheckedTextColor = getTextColor(uncheckedColor);
         QColor checkedTextColor = getTextColor(checkedColor);
@@ -567,6 +597,58 @@ namespace UIColors {
         .arg(checkedTextColor.name())
         .arg(checkedColor.darker(110).name())
         .arg(checkedColor.darker(120).name());
+    
+        return style;
+    }
+
+    inline QString overlayToggleButtonStyle(const QColor& uncheckedColor, const QColor& checkedColor, bool isChecked = false) {
+        QString style = QString(
+            "QPushButton {"
+            "  background-color: rgba(%1, %2, %3, 0.4);"
+            "  color: %4;"
+            "  border: 2px solid %4;"
+            "  border-radius: 4px;"
+            "  padding: 5px 10px;"
+            "  margin: 0px;"
+            "  min-width: 60px;"
+            "  min-height: 32px;"
+            "  font-weight: bold;"
+            "}"
+            "QPushButton:hover {"
+            "  background-color: rgba(%1, %2, %3, 0.6);"
+            "  border: 2px solid %5;"
+            "}"
+            "QPushButton:pressed {"
+            "  background-color: rgba(%1, %2, %3, 0.8);"
+            "}"
+            "QPushButton:checked {"
+            "  background-color: rgba(%6, %7, %8, 0.4);"
+            "  color: %9;"
+            "  border: 2px solid %9;"
+            "  padding: 5px 10px;"
+            "  margin: 0px;"
+            "  min-width: 60px;"
+            "  min-height: 32px;"
+            "  font-weight: bold;"
+            "}"
+            "QPushButton:checked:hover {"
+            "  background-color: rgba(%6, %7, %8, 0.6);"
+            "  border: 2px solid %10;"
+            "}"
+            "QPushButton:checked:pressed {"
+            "  background-color: rgba(%6, %7, %8, 0.8);"
+            "}"
+        )
+        .arg(uncheckedColor.red())
+        .arg(uncheckedColor.green())
+        .arg(uncheckedColor.blue())
+        .arg(uncheckedColor.name())
+        .arg(uncheckedColor.lighter(120).name())
+        .arg(checkedColor.red())
+        .arg(checkedColor.green())
+        .arg(checkedColor.blue())
+        .arg(checkedColor.name())
+        .arg(checkedColor.lighter(120).name());
     
         return style;
     }

@@ -831,10 +831,10 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     setupHeaderButton(fidButton);
     setupHeaderButton(insButton);
     
-    // 스타일시트 적용
-    roiButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::ROI_COLOR, UIColors::ROI_COLOR, roiButton->isChecked()));
-    fidButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::FIDUCIAL_COLOR, UIColors::FIDUCIAL_COLOR, fidButton->isChecked()));
-    insButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::INSPECTION_COLOR, UIColors::INSPECTION_COLOR, insButton->isChecked()));
+    // 스타일시트 적용 - 오버레이 스타일
+    roiButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::ROI_COLOR, UIColors::ROI_COLOR, roiButton->isChecked()));
+    fidButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::FIDUCIAL_COLOR, UIColors::FIDUCIAL_COLOR, fidButton->isChecked()));
+    insButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::INSPECTION_COLOR, UIColors::INSPECTION_COLOR, insButton->isChecked()));
         
     // 버튼 그룹으로 묶기
     patternButtonGroup = new QButtonGroup(this);
@@ -863,7 +863,7 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     modeToggleButton->setCheckable(true);
     modeToggleButton->setChecked(true); // 기본값 DRAW 모드
     setupHeaderButton(modeToggleButton);
-    modeToggleButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_MOVE_COLOR, UIColors::BTN_DRAW_COLOR, true));
+    modeToggleButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_MOVE_COLOR, UIColors::BTN_DRAW_COLOR, true));
 
     // TEACH ON/OFF 모드 토글 버튼
     teachModeButton = new QPushButton("TEACH OFF", this);
@@ -871,20 +871,20 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     teachModeButton->setCheckable(true);
     teachModeButton->setChecked(false); // 기본값 TEACH OFF
     setupHeaderButton(teachModeButton);
-    teachModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, false));
+    teachModeButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, false));
 
     // CAM START/STOP 버튼
     startCameraButton = new QPushButton("CAM OFF", this);
     startCameraButton->setCheckable(true);
     setupHeaderButton(startCameraButton);
-    startCameraButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_CAM_OFF_COLOR, UIColors::BTN_CAM_ON_COLOR, false));
+    startCameraButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_CAM_OFF_COLOR, UIColors::BTN_CAM_ON_COLOR, false));
 
     // RUN 버튼 - 일반 푸시 버튼으로 변경
     runStopButton = new QPushButton("RUN", this);
     runStopButton->setObjectName("runStopButton");
     runStopButton->setCheckable(true); // 토글 버튼으로 변경
     setupHeaderButton(runStopButton);
-    runStopButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
+    runStopButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
     
     // 토글 버튼 레이아웃에 추가
     toggleButtonLayout->addWidget(modeToggleButton);
@@ -901,29 +901,29 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     saveRecipeButton = new QPushButton("SAVE", this);
     saveRecipeButton->setObjectName("saveRecipeButton");
     setupHeaderButton(saveRecipeButton);
-    saveRecipeButton->setStyleSheet(UIColors::buttonStyle(UIColors::BTN_SAVE_COLOR));
+    saveRecipeButton->setStyleSheet(UIColors::overlayButtonStyle(UIColors::BTN_SAVE_COLOR));
     
     // 패턴 추가 버튼
     QPushButton* addPatternButton = new QPushButton("ADD", this);
     addPatternButton->setObjectName("addPatternButton");
     setupHeaderButton(addPatternButton);
-    addPatternButton->setStyleSheet(UIColors::buttonStyle(UIColors::BTN_ADD_COLOR));
+    addPatternButton->setStyleSheet(UIColors::overlayButtonStyle(UIColors::BTN_ADD_COLOR));
     
     // 필터 추가 버튼
     addFilterButton = new QPushButton("FILTER", this);
     addFilterButton->setObjectName("addFilterButton");
     setupHeaderButton(addFilterButton);
-    addFilterButton->setStyleSheet(UIColors::buttonStyle(UIColors::BTN_FILTER_COLOR));
+    addFilterButton->setStyleSheet(UIColors::overlayButtonStyle(UIColors::BTN_FILTER_COLOR));
 
     // 패턴 삭제 버튼
     removeButton = new QPushButton("DELETE", this);
     removeButton->setObjectName("removeButton");
     removeButton->setEnabled(false);
     setupHeaderButton(removeButton);
-    removeButton->setStyleSheet(UIColors::buttonStyle(UIColors::BTN_REMOVE_COLOR));
+    removeButton->setStyleSheet(UIColors::overlayButtonStyle(UIColors::BTN_REMOVE_COLOR));
     
     if (!removeButton->isEnabled()) {
-        removeButton->setStyleSheet(UIColors::buttonStyle(UIColors::BTN_REMOVE_COLOR));
+        removeButton->setStyleSheet(UIColors::overlayButtonStyle(UIColors::BTN_REMOVE_COLOR));
     }
     
     // 액션 버튼 레이아웃에 추가
@@ -950,21 +950,17 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     if (addFilterButton) addFilterButton->setEnabled(false);
     if (removeButton) removeButton->setEnabled(false);
     
-    // 헤더 레이아웃을 메인 레이아웃에 추가
-    layout->addLayout(headerLayout);
+    // 헤더 레이아웃을 메인 레이아웃에 추가하지 않음 (오버레이로 이동)
+    // layout->addLayout(headerLayout);
     
-    // 구분선 전에 공간 추가 - 버튼과 구분선 사이 여백
-    layout->addSpacing(15);
-    
-    // 구분선 추가
-    QFrame* line = new QFrame(this);
-    line->setFrameShape(QFrame::HLine);
-    line->setFrameShadow(QFrame::Sunken);
-    line->setMinimumHeight(2); // 구분선 높이 설정
-    layout->addWidget(line);
-    
-    // 구분선 아래 여백 추가
-    layout->addSpacing(10);
+    // 구분선 제거
+    // layout->addSpacing(15);
+    // QFrame* line = new QFrame(this);
+    // line->setFrameShape(QFrame::HLine);
+    // line->setFrameShadow(QFrame::Sunken);
+    // line->setMinimumHeight(2);
+    // layout->addWidget(line);
+    // layout->addSpacing(10);
     
     // contentLayout 추가 (이 부분은 나중에 외부에서 처리)
     // 임시로 반환
@@ -979,16 +975,66 @@ QHBoxLayout* TeachingWidget::createContentLayout() {
 
 QVBoxLayout* TeachingWidget::createCameraLayout() {
     QVBoxLayout *cameraLayout = new QVBoxLayout();
-    cameraLayout->setSpacing(5);
+    cameraLayout->setSpacing(0);
+    cameraLayout->setContentsMargins(0, 0, 0, 0);
     
-    // 1. 카메라 뷰 초기화 및 추가
-    cameraView = new CameraView(this);
-    cameraLayout->addWidget(cameraView); // 카메라 뷰 추가
+    // 1. 카메라 뷰를 담을 컨테이너 위젯 생성
+    QWidget* cameraContainer = new QWidget(this);
+    cameraContainer->setObjectName("cameraContainer");
+    cameraContainer->setStyleSheet("background-color: black;");
+    cameraContainer->setMinimumSize(640, 480);
     
-    // 2. 패턴 타입 버튼 추가
-    setupPatternTypeButtons(cameraLayout);
+    // 2. 카메라 뷰 초기화
+    cameraView = new CameraView(cameraContainer);
+    cameraView->setGeometry(0, 0, 640, 480);
     
-    // 3. 메인 화면 오른쪽 상단에 미리보기 오버레이 추가
+    // 3. 버튼 오버레이 위젯 생성
+    QWidget* buttonOverlay = new QWidget(cameraContainer);
+    buttonOverlay->setObjectName("buttonOverlay");
+    buttonOverlay->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+    buttonOverlay->setStyleSheet("background-color: transparent;");
+    buttonOverlay->setGeometry(0, 0, 640, 60);
+    buttonOverlay->raise(); // 맨 위로 올리기
+    
+    // 4. 버튼 오버레이 레이아웃
+    QHBoxLayout* overlayLayout = new QHBoxLayout(buttonOverlay);
+    overlayLayout->setContentsMargins(10, 10, 10, 10);
+    overlayLayout->setSpacing(10);
+    
+    // 중앙 정렬을 위한 stretch 추가
+    overlayLayout->addStretch(1);
+    
+    // 5. 패턴 타입 버튼들 추가
+    overlayLayout->addWidget(roiButton);
+    overlayLayout->addWidget(fidButton);
+    overlayLayout->addWidget(insButton);
+    overlayLayout->addSpacing(10);
+    
+    // 6. 토글 버튼들 추가
+    overlayLayout->addWidget(modeToggleButton);
+    overlayLayout->addWidget(teachModeButton);
+    overlayLayout->addWidget(startCameraButton);
+    overlayLayout->addWidget(runStopButton);
+    overlayLayout->addSpacing(10);
+    
+    // 7. 액션 버튼들 추가
+    overlayLayout->addWidget(saveRecipeButton);
+    QPushButton* addPatternButton = findChild<QPushButton*>("addPatternButton");
+    if (addPatternButton) overlayLayout->addWidget(addPatternButton);
+    overlayLayout->addWidget(addFilterButton);
+    overlayLayout->addWidget(removeButton);
+    
+    overlayLayout->addStretch(1);
+    
+    // 8. 컨테이너의 resizeEvent에서 위젯 크기 조정
+    cameraContainer->installEventFilter(this);
+    
+    cameraLayout->addWidget(cameraContainer);
+    
+    // 9. 패턴 타입 버튼 초기화
+    setupPatternTypeButtons(nullptr);
+    
+    // 10. 메인 화면 오른쪽 상단에 미리보기 오버레이 추가
     setupPreviewOverlay();
     
     return cameraLayout;
@@ -1022,12 +1068,12 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                 // DRAW 모드
                 modeToggleButton->setText(TR("DRAW"));
                 // 오렌지색(DRAW)과 블루바이올렛(MOVE) 색상 사용 - DRAW 모드에서는 오렌지색이 적용됨
-                modeToggleButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_MOVE_COLOR, UIColors::BTN_DRAW_COLOR, true));
+                modeToggleButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_MOVE_COLOR, UIColors::BTN_DRAW_COLOR, true));
             } else {
                 // MOVE 모드
                 modeToggleButton->setText(TR("MOVE"));
                 // 오렌지색(DRAW)과 블루바이올렛(MOVE) 색상 사용 - MOVE 모드에서는 블루바이올렛이 적용됨
-                modeToggleButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_MOVE_COLOR, UIColors::BTN_DRAW_COLOR, false));
+                modeToggleButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_MOVE_COLOR, UIColors::BTN_DRAW_COLOR, false));
             }
         }
     });
@@ -1191,7 +1237,7 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                     
                     // **8. 버튼 상태 업데이트**
                     btn->setText(TR("STOP"));
-                    btn->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_REMOVE_COLOR, QColor("#FF5722"), true));
+                    btn->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_REMOVE_COLOR, QColor("#FF5722"), true));
                     
                 } catch (const std::exception& e) {
                     // 오류 발생 시 라이브 모드로 복귀
@@ -1227,7 +1273,7 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                     
                     // 버튼 상태 복원
                     btn->setText(TR("RUN"));
-                    btn->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
+                    btn->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
                     
                     
                 } catch (const std::exception& e) {
@@ -1272,9 +1318,9 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
         currentPatternType = static_cast<PatternType>(id);
         
         // 버튼 스타일 업데이트
-        roiButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::ROI_COLOR, UIColors::ROI_COLOR, roiButton->isChecked()));
-        fidButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::FIDUCIAL_COLOR, UIColors::FIDUCIAL_COLOR, fidButton->isChecked()));
-        insButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::INSPECTION_COLOR, UIColors::INSPECTION_COLOR, insButton->isChecked()));
+        roiButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::ROI_COLOR, UIColors::ROI_COLOR, roiButton->isChecked()));
+        fidButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::FIDUCIAL_COLOR, UIColors::FIDUCIAL_COLOR, fidButton->isChecked()));
+        insButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::INSPECTION_COLOR, UIColors::INSPECTION_COLOR, insButton->isChecked()));
         
         // 디버깅: 패턴 버튼 클릭 확인
         QString typeName;
@@ -1543,8 +1589,8 @@ void TeachingWidget::setupPreviewOverlay() {
     previewOverlayLabel->setCursor(Qt::PointingHandCursor);  // 클릭 가능 커서
     previewOverlayLabel->raise();  // 최상단에 표시
     
-    // 오른쪽 상단 위치로 이동 (10px 마진)
-    previewOverlayLabel->move(cameraView->width() - previewOverlayLabel->width() - 10, 10);
+    // 오른쪽 상단 위치로 이동 (10px 마진, 버튼 오버레이 아래)
+    previewOverlayLabel->move(cameraView->width() - previewOverlayLabel->width() - 10, 70);
     
     // 클릭 이벤트 처리를 위한 이벤트 필터 설치
     previewOverlayLabel->installEventFilter(this);
@@ -6559,19 +6605,19 @@ void TeachingWidget::updateStatusPanelPosition() {
 void TeachingWidget::updateLogOverlayPosition() {
     if (!logOverlayWidget || !cameraView) return;
     
-    int bottomMargin = 10;
-    int rightMargin = 10;
+    int bottomMargin = 0;  // 하단에 딱 붙임
+    int rightMargin = 0;   // 오른쪽에 딱 붙임
     
-    // 화면 하단 오른쪽에 배치 (프로퍼티 패널과 겹치지 않도록)
+    // 화면 하단 오른쪽 끝에 배치
     int x = cameraView->width() - logOverlayWidget->width() - rightMargin;
     int y = cameraView->height() - logOverlayWidget->height() - bottomMargin;
     
     logOverlayWidget->move(x, y);
     
-    // 오른쪽 패널 오버레이 위치 업데이트 (cameraView 기준)
+    // 오른쪽 패널 오버레이 위치 업데이트 (cameraView 기준, 버튼 아래)
     if (rightPanelOverlay && cameraView) {
         int leftMargin = 10;
-        int topMargin = 10;
+        int topMargin = 70;  // 버튼 오버레이(60px) + 여백(10px)
         
         // cameraView의 글로벌 좌표를 this 기준으로 변환
         QPoint cameraViewPos = cameraView->mapTo(this, QPoint(0, 0));
@@ -6972,12 +7018,12 @@ void TeachingWidget::updateCameraButtonState(bool isStarted) {
         // 카메라 시작됨 - 영상 스트리밍 중
         startCameraButton->setChecked(true);
         startCameraButton->setText(TR("CAM ON"));  // 또는 "STREAMING"
-        startCameraButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_CAM_OFF_COLOR, UIColors::BTN_CAM_ON_COLOR, true));
+        startCameraButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_CAM_OFF_COLOR, UIColors::BTN_CAM_ON_COLOR, true));
     } else {
         // 카메라 중지됨 - 영상 없음
         startCameraButton->setChecked(false);
         startCameraButton->setText(TR("CAM OFF"));  // 또는 "NO VIDEO"
-        startCameraButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_CAM_OFF_COLOR, UIColors::BTN_CAM_ON_COLOR, false));
+        startCameraButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_CAM_OFF_COLOR, UIColors::BTN_CAM_ON_COLOR, false));
     }
     
     startCameraButton->blockSignals(false);
@@ -7100,7 +7146,7 @@ void TeachingWidget::stopCamera() {
         runStopButton->blockSignals(true);
         runStopButton->setChecked(false);
         runStopButton->setText("RUN");
-        runStopButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
+        runStopButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
         runStopButton->blockSignals(false);
     }
     
@@ -7525,6 +7571,21 @@ void TeachingWidget::updateCameraFrame() {
 }
 
 bool TeachingWidget::eventFilter(QObject *watched, QEvent *event) {
+    // 카메라 컨테이너 리사이즈 이벤트 처리
+    if (watched->objectName() == "cameraContainer" && event->type() == QEvent::Resize) {
+        QWidget* container = qobject_cast<QWidget*>(watched);
+        if (container && cameraView) {
+            // CameraView 크기 조정
+            cameraView->setGeometry(0, 0, container->width(), container->height());
+            
+            // 버튼 오버레이 크기 조정
+            QWidget* buttonOverlay = container->findChild<QWidget*>("buttonOverlay");
+            if (buttonOverlay) {
+                buttonOverlay->setGeometry(0, 0, container->width(), 60);
+            }
+        }
+    }
+    
     // 오른쪽 패널 오버레이 드래그 및 리사이즈 처리
     if (watched == rightPanelOverlay) {
         QMouseEvent *mouseEvent = nullptr;
@@ -7730,6 +7791,11 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event) {
     if (watched == cameraView && event->type() == QEvent::Resize) {
         updateStatusPanelPosition();
         updateLogOverlayPosition();
+        
+        // 프리뷰 오버레이 위치도 업데이트
+        if (previewOverlayLabel) {
+            previewOverlayLabel->move(cameraView->width() - previewOverlayLabel->width() - 10, 70);
+        }
     }
     
     return QWidget::eventFilter(watched, event);
@@ -8825,7 +8891,7 @@ void TeachingWidget::resumeToLiveMode() {
             runStopButton->blockSignals(true);
             runStopButton->setChecked(false);
             runStopButton->setText("RUN");
-            runStopButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
+            runStopButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
             runStopButton->blockSignals(false);
         }
         
@@ -8899,7 +8965,7 @@ void TeachingWidget::resumeToLiveMode() {
             runStopButton->blockSignals(true);
             runStopButton->setChecked(false);
             runStopButton->setText("RUN");
-            runStopButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
+            runStopButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
             runStopButton->blockSignals(false);
         }
     } catch (...) {
@@ -8913,7 +8979,7 @@ void TeachingWidget::resumeToLiveMode() {
             runStopButton->blockSignals(true);
             runStopButton->setChecked(false);
             runStopButton->setText("RUN");
-            runStopButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
+            runStopButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
             runStopButton->blockSignals(false);
         }
     }
@@ -9298,10 +9364,10 @@ void TeachingWidget::saveRecipe() {
     // 버튼 텍스트와 스타일도 복원
     if (currentMode == CameraView::EditMode::Draw) {
         modeToggleButton->setText("DRAW");
-        modeToggleButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_MOVE_COLOR, UIColors::BTN_DRAW_COLOR, true));
+        modeToggleButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_MOVE_COLOR, UIColors::BTN_DRAW_COLOR, true));
     } else {
         modeToggleButton->setText("MOVE");
-        modeToggleButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_DRAW_COLOR, UIColors::BTN_MOVE_COLOR, false));
+        modeToggleButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_DRAW_COLOR, UIColors::BTN_MOVE_COLOR, false));
     }
 }
 
@@ -10490,7 +10556,7 @@ void TeachingWidget::stopSingleInspection() {
             runStopButton->blockSignals(true);
             runStopButton->setChecked(false);
             runStopButton->setText("RUN");
-            runStopButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
+            runStopButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
             runStopButton->blockSignals(false);
         }
         
@@ -10522,7 +10588,7 @@ void TeachingWidget::stopSingleInspection() {
             runStopButton->blockSignals(true);
             runStopButton->setChecked(false);
             runStopButton->setText("RUN");
-            runStopButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
+            runStopButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_RUN_OFF_COLOR, UIColors::BTN_RUN_ON_COLOR, false));
             runStopButton->blockSignals(false);
         }
         
@@ -10539,7 +10605,7 @@ void TeachingWidget::updateMainCameraUI(const InspectionResult& result, const cv
         runStopButton->blockSignals(true);
         runStopButton->setChecked(true);
         runStopButton->setText("STOP");
-        runStopButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_REMOVE_COLOR, QColor("#FF5722"), true));
+        runStopButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_REMOVE_COLOR, QColor("#FF5722"), true));
         runStopButton->blockSignals(false);
     }
     
@@ -11683,13 +11749,13 @@ void TeachingWidget::onTeachModeToggled(bool checked) {
     
     if (checked) {
         teachModeButton->setText("TEACH ON");
-        teachModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, true));
+        teachModeButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, true));
         
         // TEACH ON 상태일 때 Save 버튼 활성화
         if (saveRecipeButton) saveRecipeButton->setEnabled(true);
     } else {
         teachModeButton->setText("TEACH OFF");
-        teachModeButton->setStyleSheet(UIColors::toggleButtonStyle(UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, false));
+        teachModeButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, false));
         
         // TEACH OFF 상태일 때 Save 버튼 비활성화
         if (saveRecipeButton) saveRecipeButton->setEnabled(false);
