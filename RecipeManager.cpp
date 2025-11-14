@@ -291,6 +291,7 @@ bool RecipeManager::saveRecipe(const QString& fileName,
         xml.writeStartElement("Camera");
         xml.writeAttribute("uuid", actualCameraInfos[camIdx].uniqueId);
         xml.writeAttribute("name", actualCameraInfos[camIdx].name);
+        xml.writeAttribute("imageIndex", QString::number(actualCameraInfos[camIdx].imageIndex));
         
         // 먼저 width, height 속성 추가 (이미지 크기 정보)
         cv::Mat sizeCheckImage;
@@ -958,6 +959,8 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                                      std::function<void(const QStringList&)> trainingImageCallback,
                                      TeachingWidget* teachingWidget) {
     QString cameraUuid = xml.attributes().value("uuid").toString();
+    QString imageIndexAttr = xml.attributes().value("imageIndex").toString();
+    int imageIndex = imageIndexAttr.isEmpty() ? 0 : imageIndexAttr.toInt();
     
     if (cameraUuid.isEmpty()) {
         xml.skipCurrentElement();
@@ -983,6 +986,7 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
         CameraInfo newCameraInfo;
         newCameraInfo.uniqueId = cameraUuid;
         newCameraInfo.name = cameraName;
+        newCameraInfo.imageIndex = imageIndex;  // 이미지 인덱스 설정
         
         // 인덱스 설정 - cameraInfos의 현재 크기를 사용
         newCameraInfo.index = cameraInfos.size();
@@ -1734,6 +1738,7 @@ bool RecipeManager::saveSimulationRecipe(const QString& fileName,
     cameraElement.setAttribute("name", cameraDisplayName);
     cameraElement.setAttribute("uuid", simulationCameraUuid);
     cameraElement.setAttribute("type", "simulation");
+    cameraElement.setAttribute("imageIndex", "0");  // 기본 이미지 인덱스
     
     // 시뮬레이션 카메라 설정
     QDomElement videoDeviceIndex = doc.createElement("videoDeviceIndex");
