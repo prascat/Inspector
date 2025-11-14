@@ -1268,7 +1268,7 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
     });
         
     // 패턴 타입 버튼 그룹 이벤트
-    connect(patternButtonGroup, &QButtonGroup::idClicked, this, [this](int id) {
+    connect(patternButtonGroup, &QButtonGroup::idClicked, this, [this, modeToggleButton = modeToggleButton](int id) {
         currentPatternType = static_cast<PatternType>(id);
         
         // 버튼 스타일 업데이트
@@ -1303,8 +1303,10 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
         }
         cameraView->setCurrentDrawColor(drawColor);
         
-        // 패턴 버튼이 클릭되면 CameraView를 Draw 모드로 전환
-        cameraView->setEditMode(CameraView::EditMode::Draw);
+        // 패턴 버튼이 클릭되면 CameraView를 Draw 모드로 전환 (단, 현재 Move 모드가 아닐 때만)
+        if (modeToggleButton->isChecked()) {
+            cameraView->setEditMode(CameraView::EditMode::Draw);
+        }
     });
     
 
@@ -2871,6 +2873,7 @@ void TeachingWidget::createPropertyPanels() {
     scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     QWidget* scrollContent = new QWidget();
+    scrollContent->setStyleSheet("QWidget { background-color: white; color: black; } QLabel { color: black; }");
     QVBoxLayout* mainContentLayout = new QVBoxLayout(scrollContent);
     mainContentLayout->setContentsMargins(5, 5, 5, 5);
     mainContentLayout->setSpacing(8);
@@ -2878,7 +2881,7 @@ void TeachingWidget::createPropertyPanels() {
     // === 공통 기본 정보 그룹 ===
     QGroupBox* basicInfoGroup = new QGroupBox("기본 정보", scrollContent);
     basicInfoGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; }"
+        "QGroupBox { font-weight: bold; color: black; background-color: white; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* basicInfoLayout = new QFormLayout(basicInfoGroup);
@@ -2887,19 +2890,22 @@ void TeachingWidget::createPropertyPanels() {
     
     // 패턴 ID
     patternIdLabel = new QLabel("ID:", basicInfoGroup);
+    patternIdLabel->setStyleSheet("color: black;");
     patternIdValue = new QLabel(basicInfoGroup);
     patternIdValue->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    patternIdValue->setStyleSheet("color: #666; font-family: monospace;");
+    patternIdValue->setStyleSheet("color: #666; font-family: monospace; background-color: white;");
     basicInfoLayout->addRow(patternIdLabel, patternIdValue);
     
     // 패턴 이름
     patternNameLabel = new QLabel("이름:", basicInfoGroup);
+    patternNameLabel->setStyleSheet("color: black;");
     patternNameEdit = new QLineEdit(basicInfoGroup);
     patternNameEdit->setFixedHeight(24);
     basicInfoLayout->addRow(patternNameLabel, patternNameEdit);
     
     // 패턴 타입 (동적 색상 적용)
     patternTypeLabel = new QLabel("타입:", basicInfoGroup);
+    patternTypeLabel->setStyleSheet("color: black;");
     patternTypeValue = new QLabel(basicInfoGroup);
     patternTypeValue->setAlignment(Qt::AlignCenter);
     patternTypeValue->setFixedHeight(24);
@@ -2916,8 +2922,9 @@ void TeachingWidget::createPropertyPanels() {
     
     // 카메라 이름
     patternCameraLabel = new QLabel("카메라:", basicInfoGroup);
+    patternCameraLabel->setStyleSheet("color: black;");
     patternCameraValue = new QLabel(basicInfoGroup);
-    patternCameraValue->setStyleSheet("color: #aaa;");
+    patternCameraValue->setStyleSheet("color: #666; background-color: white;");
     basicInfoLayout->addRow(patternCameraLabel, patternCameraValue);
 
     mainContentLayout->addWidget(basicInfoGroup);
@@ -2925,7 +2932,7 @@ void TeachingWidget::createPropertyPanels() {
     // === 위치 및 크기 그룹 ===
     QGroupBox* positionSizeGroup = new QGroupBox("위치 및 크기", scrollContent);
     positionSizeGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; }"
+        "QGroupBox { font-weight: bold; color: black; background-color: white; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* positionSizeLayout = new QFormLayout(positionSizeGroup);
@@ -2934,6 +2941,7 @@ void TeachingWidget::createPropertyPanels() {
     
     // 좌표 설정
     positionLabel = new QLabel("좌표:", positionSizeGroup);
+    positionLabel->setStyleSheet("color: black;");
     QWidget* posWidget = new QWidget(positionSizeGroup);
     QHBoxLayout* posLayout = new QHBoxLayout(posWidget);
     posLayout->setContentsMargins(0, 0, 0, 0);
@@ -2942,11 +2950,13 @@ void TeachingWidget::createPropertyPanels() {
     QLabel* xLabel = new QLabel("X:", posWidget);
     xLabel->setFixedWidth(15);
     xLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    xLabel->setStyleSheet("color: black;");
     patternXSpin = new QSpinBox(posWidget);
     patternXSpin->setFixedHeight(24);
     patternXSpin->setRange(0, 9999);
     
     QLabel* yLabel = new QLabel("Y:", posWidget);
+    yLabel->setStyleSheet("color: black;");
     yLabel->setFixedWidth(15);
     yLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     patternYSpin = new QSpinBox(posWidget);
@@ -2961,6 +2971,7 @@ void TeachingWidget::createPropertyPanels() {
     
     // 크기 설정
     sizeLabel = new QLabel("크기:", positionSizeGroup);
+    sizeLabel->setStyleSheet("color: black;");
     QWidget* sizeWidget = new QWidget(positionSizeGroup);
     QHBoxLayout* sizeLayout = new QHBoxLayout(sizeWidget);
     sizeLayout->setContentsMargins(0, 0, 0, 0);
@@ -2969,6 +2980,7 @@ void TeachingWidget::createPropertyPanels() {
     QLabel* wLabel = new QLabel("W:", sizeWidget);
     wLabel->setFixedWidth(15);
     wLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    wLabel->setStyleSheet("color: black;");
     patternWSpin = new QSpinBox(sizeWidget);
     patternWSpin->setFixedHeight(24);
     patternWSpin->setRange(1, 9999);
@@ -2976,6 +2988,7 @@ void TeachingWidget::createPropertyPanels() {
     QLabel* hLabel = new QLabel("H:", sizeWidget);
     hLabel->setFixedWidth(15);
     hLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    hLabel->setStyleSheet("color: black;");
     patternHSpin = new QSpinBox(sizeWidget);
     patternHSpin->setFixedHeight(24);
     patternHSpin->setRange(1, 9999);
@@ -2988,6 +3001,7 @@ void TeachingWidget::createPropertyPanels() {
 
     // 회전 각도
     angleLabel = new QLabel("각도:", positionSizeGroup);
+    angleLabel->setStyleSheet("color: black;");
     QWidget* angleWidget = new QWidget(positionSizeGroup);
     QHBoxLayout* angleLayout = new QHBoxLayout(angleWidget);
     angleLayout->setContentsMargins(0, 0, 0, 0);
@@ -2999,6 +3013,7 @@ void TeachingWidget::createPropertyPanels() {
     angleEdit->setPlaceholderText("0.0");
     
     QLabel* degreeLabel = new QLabel("°", angleWidget);
+    degreeLabel->setStyleSheet("color: black;");
     
     angleLayout->addWidget(angleEdit, 1);
     angleLayout->addWidget(degreeLabel);
@@ -3034,6 +3049,7 @@ void TeachingWidget::createPropertyPanels() {
 
     // FID 패턴에서 매칭 방법 및 매칭 검사 옵션 추가
     fidMatchMethodLabel = new QLabel("매칭 방법:", fidPropWidget);
+    fidMatchMethodLabel->setStyleSheet("color: black;");
     fidMatchMethodCombo = new QComboBox(fidPropWidget);
     fidMatchMethodCombo->addItem("Coefficient", 0);
     fidMatchMethodCombo->addItem("Correlation", 1);
@@ -6537,6 +6553,14 @@ void TeachingWidget::updateLogOverlayPosition() {
 }
 
 void TeachingWidget::receiveLogMessage(const QString& message) {
+    // 메인 스레드가 아니면 QueuedConnection으로 재호출
+    if (QThread::currentThread() != this->thread()) {
+        QMetaObject::invokeMethod(this, "receiveLogMessage", 
+                                 Qt::QueuedConnection,
+                                 Q_ARG(QString, message));
+        return;
+    }
+    
     if (!logTextEdit || !logOverlayWidget) return;
     
     // 현재 커서를 끝으로 이동
@@ -6678,7 +6702,6 @@ void TeachingWidget::updatePreviewFrames() {
 void TeachingWidget::onTriggerSignalReceived(const cv::Mat& frame, int cameraIndex) {
     // **이미 트리거 처리 중이면 무시 (중복 방지)**
     if (triggerProcessing) {
-        qDebug() << "[Trigger] 이미 처리 중 - 무시";
         return;
     }
     
@@ -10777,13 +10800,15 @@ void TeachingWidget::enablePatternEditingFeatures() {
         cameraView->setFocusPolicy(Qt::StrongFocus);
         cameraView->setAttribute(Qt::WA_AcceptTouchEvents, true);
         
-        // 현재 선택된 패턴 버튼에 따라 Edit 모드 설정
-        if (roiButton && roiButton->isChecked()) {
-            cameraView->setEditMode(CameraView::EditMode::Draw);
-        } else if (fidButton && fidButton->isChecked()) {
-            cameraView->setEditMode(CameraView::EditMode::Draw);
-        } else if (insButton && insButton->isChecked()) {
-            cameraView->setEditMode(CameraView::EditMode::Draw);
+        // 현재 선택된 패턴 버튼에 따라 Edit 모드 설정 (단, 현재 Move 모드가 아닐 때만)
+        if (modeToggleButton && modeToggleButton->isChecked()) {
+            if (roiButton && roiButton->isChecked()) {
+                cameraView->setEditMode(CameraView::EditMode::Draw);
+            } else if (fidButton && fidButton->isChecked()) {
+                cameraView->setEditMode(CameraView::EditMode::Draw);
+            } else if (insButton && insButton->isChecked()) {
+                cameraView->setEditMode(CameraView::EditMode::Draw);
+            }
         }
         
         cameraView->update();

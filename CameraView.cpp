@@ -283,7 +283,11 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
             QGraphicsView::mousePressEvent(event);
             return;
         }
-        if (m_editMode == EditMode::Draw) {
+        
+        // MOVE 모드일 때는 Draw 기능 비활성화
+        if (m_editMode == EditMode::Move) {
+            // Draw 모드 관련 처리 건너뛰기
+        } else if (m_editMode == EditMode::Draw) {
             isDrawing = true;
             startPoint = originalPos;
             currentRect = QRect();
@@ -437,17 +441,21 @@ void CameraView::mouseMoveEvent(QMouseEvent* event) {
     QPoint pos = event->pos();
     QPoint originalPos = displayToOriginal(pos);
 
-    // DRAW 모드에서는 항상 기본 커서
-    if (m_editMode == EditMode::Draw) {
+    // DRAW 모드에서만 그리기 처리
+    if (m_editMode == EditMode::Draw && isDrawing) {
         setCursor(Qt::ArrowCursor);
-        if (isDrawing) {
-            dragEndPoint = originalPos;
-            QRect newRect = QRect(startPoint, originalPos).normalized();
-            if (newRect.width() > 5 || newRect.height() > 5) {
-                currentRect = newRect;
-                update();
-            }
+        dragEndPoint = originalPos;
+        QRect newRect = QRect(startPoint, originalPos).normalized();
+        if (newRect.width() > 5 || newRect.height() > 5) {
+            currentRect = newRect;
+            update();
         }
+        QGraphicsView::mouseMoveEvent(event);
+        return;
+    }
+    
+    // MOVE 모드가 아니면 기본 처리
+    if (m_editMode != EditMode::Move) {
         QGraphicsView::mouseMoveEvent(event);
         return;
     }

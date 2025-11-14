@@ -179,7 +179,7 @@ void CameraSettingsDialog::showEvent(QShowEvent* event) {
                     // Convert once using the prepared processor
                     Spinnaker::ImagePtr convertedImage;
                     try {
-                        convertedImage = processor.Convert(pImage, Spinnaker::PixelFormat_RGB8);
+                        convertedImage = processor.Convert(pImage, Spinnaker::PixelFormat_BGR8);
                     } catch (...) {
                         convertedImage = pImage; // fallback: try using original
                     }
@@ -1302,7 +1302,7 @@ void CameraSettingsDialog::onLoadUserSet0() {
                         height = pImage->GetHeight();
                     } else {
                         // 변환 필요하면
-                        Spinnaker::ImagePtr convertedImage = processor.Convert(pImage, Spinnaker::PixelFormat_RGB8);
+                        Spinnaker::ImagePtr convertedImage = processor.Convert(pImage, Spinnaker::PixelFormat_BGR8);
                         if (convertedImage && !convertedImage->IsIncomplete()) {
                             buffer = static_cast<unsigned char*>(convertedImage->GetData());
                             width = convertedImage->GetWidth();
@@ -1675,8 +1675,8 @@ void CameraSettingsDialog::updateTriggerTestStatus() {
                 Spinnaker::ImageProcessor processor;
                 processor.SetColorProcessing(Spinnaker::SPINNAKER_COLOR_PROCESSING_ALGORITHM_DIRECTIONAL_FILTER);
                 
-                // RGB8로 변환
-                Spinnaker::ImagePtr convertedImage = processor.Convert(pImage, Spinnaker::PixelFormat_RGB8);
+                // BGR8로 변환 (OpenCV는 BGR 순서 사용)
+                Spinnaker::ImagePtr convertedImage = processor.Convert(pImage, Spinnaker::PixelFormat_BGR8);
                 
                 if (convertedImage && !convertedImage->IsIncomplete()) {
                     unsigned char* buffer = static_cast<unsigned char*>(convertedImage->GetData());
