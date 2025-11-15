@@ -375,7 +375,7 @@ private:
     QCheckBox* includeAllCameraCheck = nullptr;
     
     // FID 속성
-    QCheckBox* fidMatchCheckBox = nullptr;
+    QGroupBox* fidMatchCheckBox = nullptr;  // GroupBox를 체크박스로 사용
     QLabel* fidMatchMethodLabel = nullptr;
     QComboBox* fidMatchMethodCombo = nullptr;
     QLabel* fidMatchThreshLabel = nullptr;
@@ -429,7 +429,7 @@ private:
     
     // STRIP 두께 측정 관련 컨트롤
     // FRONT 두께 측정 관련 위젯들
-    QCheckBox* insStripFrontEnabledCheck = nullptr;
+    QGroupBox* insStripFrontEnabledCheck = nullptr;  // GroupBox를 체크박스로 사용
     QLabel* insStripThicknessWidthLabel = nullptr;
     QSlider* insStripThicknessWidthSlider = nullptr;
     QLabel* insStripThicknessWidthValueLabel = nullptr;
@@ -442,7 +442,7 @@ private:
     QLineEdit* insStripThicknessMaxEdit = nullptr;
 
     // REAR 두께 측정 관련 위젯들
-    QCheckBox* insStripRearEnabledCheck = nullptr;
+    QGroupBox* insStripRearEnabledCheck = nullptr;  // GroupBox를 체크박스로 사용
     QLabel* insStripRearThicknessWidthLabel = nullptr;
     QSlider* insStripRearThicknessWidthSlider = nullptr;
     QLabel* insStripRearThicknessWidthValueLabel = nullptr;
@@ -455,7 +455,7 @@ private:
     QLineEdit* insStripRearThicknessMaxEdit = nullptr;
 
     // EDGE 검사 관련 위젯들
-    QCheckBox* insEdgeEnabledCheck = nullptr;
+    QGroupBox* insEdgeEnabledCheck = nullptr;  // GroupBox를 체크박스로 사용
     QLabel* insEdgeOffsetXLabel = nullptr;
     QSlider* insEdgeOffsetXSlider = nullptr;
     QLabel* insEdgeOffsetXValueLabel = nullptr;

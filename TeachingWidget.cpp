@@ -3212,23 +3212,21 @@ void TeachingWidget::createPropertyPanels() {
     fidLayout->setSpacing(8);
 
     // FID 매칭 설정 그룹
-    QGroupBox* fidMatchGroup = new QGroupBox("FID 매칭 설정", fidPropWidget);
+    QGroupBox* fidMatchGroup = new QGroupBox("FID 매칭 검사 활성화", fidPropWidget);
+    fidMatchGroup->setCheckable(true);
+    fidMatchGroup->setChecked(true);
     fidMatchGroup->setStyleSheet(
         "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
+        "QGroupBox::indicator { width: 13px; height: 13px; }"
+        "QGroupBox::indicator:unchecked { background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150); }"
+        "QGroupBox::indicator:checked { background-color: #4CAF50; border: 1px solid #45a049; }"
     );
+    fidMatchCheckBox = fidMatchGroup;  // GroupBox 자체를 체크박스로 사용
     QVBoxLayout* fidMatchLayout = new QVBoxLayout(fidMatchGroup);
     fidMatchLayout->setContentsMargins(10, 15, 10, 10);
     fidMatchLayout->setSpacing(5);
     fidMatchLayout->setAlignment(Qt::AlignCenter);
-
-    // 매칭 검사 활성화 체크박스
-    fidMatchCheckBox = new QCheckBox("매칭 검사 활성화", fidMatchGroup);
-    QHBoxLayout* fidCheckLayout = new QHBoxLayout();
-    fidCheckLayout->addStretch();
-    fidCheckLayout->addWidget(fidMatchCheckBox);
-    fidCheckLayout->addStretch();
-    fidMatchLayout->addLayout(fidCheckLayout);
 
     // FID 패턴에서 매칭 방법 및 매칭 검사 옵션 추가
     fidMatchMethodLabel = new QLabel("매칭 방법:", fidMatchGroup);
@@ -3621,20 +3619,22 @@ void TeachingWidget::createPropertyPanels() {
     insMainLayout->addWidget(insStripLengthGroup);
 
     // === FRONT 두께 검사 그룹 ===
-    QGroupBox* insStripFrontGroup = new QGroupBox("FRONT 두께 검사", insPropWidget);
+    QGroupBox* insStripFrontGroup = new QGroupBox("FRONT 두께 검사 활성화", insPropWidget);
+    insStripFrontGroup->setCheckable(true);
+    insStripFrontGroup->setChecked(true);
     insStripFrontGroup->setStyleSheet(
         "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
+        "QGroupBox::indicator { width: 13px; height: 13px; }"
+        "QGroupBox::indicator:unchecked { background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150); }"
+        "QGroupBox::indicator:checked { background-color: #4CAF50; border: 1px solid #45a049; }"
     );
+    insStripFrontEnabledCheck = insStripFrontGroup;  // GroupBox 자체를 체크박스로 사용
     QFormLayout* stripFrontLayout = new QFormLayout(insStripFrontGroup);
     stripFrontLayout->setVerticalSpacing(5);
     stripFrontLayout->setContentsMargins(10, 15, 10, 10);
     stripFrontLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
     stripFrontLayout->setFormAlignment(Qt::AlignCenter);
-    
-    // FRONT 두께 검사 체크박스
-    insStripFrontEnabledCheck = new QCheckBox("FRONT 두께 검사 활성화", insStripFrontGroup);
-    stripFrontLayout->addRow("", insStripFrontEnabledCheck);
     
     // STRIP 두께 측정 관련 컨트롤들 - 슬라이더 + SpinBox 조합
     
@@ -3700,20 +3700,22 @@ void TeachingWidget::createPropertyPanels() {
     insMainLayout->addWidget(insStripFrontGroup);
 
     // === REAR 두께 검사 그룹 ===
-    QGroupBox* insStripRearGroup = new QGroupBox("REAR 두께 검사", insPropWidget);
+    QGroupBox* insStripRearGroup = new QGroupBox("REAR 두께 검사 활성화", insPropWidget);
+    insStripRearGroup->setCheckable(true);
+    insStripRearGroup->setChecked(true);
     insStripRearGroup->setStyleSheet(
         "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
+        "QGroupBox::indicator { width: 13px; height: 13px; }"
+        "QGroupBox::indicator:unchecked { background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150); }"
+        "QGroupBox::indicator:checked { background-color: #4CAF50; border: 1px solid #45a049; }"
     );
+    insStripRearEnabledCheck = insStripRearGroup;  // GroupBox 자체를 체크박스로 사용
     QFormLayout* stripRearLayout = new QFormLayout(insStripRearGroup);
     stripRearLayout->setVerticalSpacing(5);
     stripRearLayout->setContentsMargins(10, 15, 10, 10);
     stripRearLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
     stripRearLayout->setFormAlignment(Qt::AlignCenter);
-
-    // REAR 두께 검사 체크박스
-    insStripRearEnabledCheck = new QCheckBox("REAR 두께 검사 활성화", insStripRearGroup);
-    stripRearLayout->addRow("", insStripRearEnabledCheck);
     
     // REAR 두께 측정 박스 크기 설정
     insStripRearThicknessWidthLabel = new QLabel("너비:", insStripRearGroup);
@@ -3777,20 +3779,22 @@ void TeachingWidget::createPropertyPanels() {
     insMainLayout->addWidget(insStripRearGroup);
 
     // === EDGE 검사 그룹 ===
-    QGroupBox* insEdgeGroup = new QGroupBox("EDGE 검사", insPropWidget);
+    QGroupBox* insEdgeGroup = new QGroupBox("EDGE 검사 활성화", insPropWidget);
+    insEdgeGroup->setCheckable(true);
+    insEdgeGroup->setChecked(true);
     insEdgeGroup->setStyleSheet(
         "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
+        "QGroupBox::indicator { width: 13px; height: 13px; }"
+        "QGroupBox::indicator:unchecked { background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150); }"
+        "QGroupBox::indicator:checked { background-color: #4CAF50; border: 1px solid #45a049; }"
     );
+    insEdgeEnabledCheck = insEdgeGroup;  // GroupBox 자체를 체크박스로 사용
     QFormLayout* edgeLayout = new QFormLayout(insEdgeGroup);
     edgeLayout->setVerticalSpacing(5);
     edgeLayout->setContentsMargins(10, 15, 10, 10);
     edgeLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
     edgeLayout->setFormAlignment(Qt::AlignCenter);
-
-    insEdgeEnabledCheck = new QCheckBox("EDGE 검사 활성화", insEdgeGroup);
-    insEdgeEnabledCheck->setChecked(true);  // CommonDefs.h의 기본값과 일치
-    edgeLayout->addRow("", insEdgeEnabledCheck);
     
     insEdgeOffsetXLabel = new QLabel("패턴 왼쪽 오프셋:", insEdgeGroup);
     insEdgeOffsetXSlider = new QSlider(Qt::Horizontal, insEdgeGroup);
@@ -4624,7 +4628,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
     
     // FID 매칭 검사 활성화 체크박스
     if (fidMatchCheckBox) {
-        connect(fidMatchCheckBox, &QCheckBox::toggled, [this](bool checked) {
+        connect(fidMatchCheckBox, &QGroupBox::toggled, [this](bool checked) {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
@@ -5509,7 +5513,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
     
     // FRONT 두께 검사 활성화
     if (insStripFrontEnabledCheck) {
-        connect(insStripFrontEnabledCheck, &QCheckBox::toggled, [this](bool enabled) {
+        connect(insStripFrontEnabledCheck, &QGroupBox::toggled, [this](bool enabled) {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
@@ -5534,7 +5538,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
     
     // REAR 두께 검사 활성화
     if (insStripRearEnabledCheck) {
-        connect(insStripRearEnabledCheck, &QCheckBox::toggled, [this](bool enabled) {
+        connect(insStripRearEnabledCheck, &QGroupBox::toggled, [this](bool enabled) {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
@@ -5559,7 +5563,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
     
     // EDGE 검사 활성화
     if (insEdgeEnabledCheck) {
-        connect(insEdgeEnabledCheck, &QCheckBox::toggled, [this](bool enabled) {
+        connect(insEdgeEnabledCheck, &QGroupBox::toggled, [this](bool enabled) {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
