@@ -231,6 +231,9 @@ signals:
     void frameProcessed(const cv::Mat& frame);
     void goBack();
     void patternSelectionChanged(int patternIndex);
+    void serverConnected();
+    void serverDisconnected();
+    void messageReceived(const QString& message);
     
 private slots:
     void onTriggerSignalReceived(const cv::Mat& frame, int cameraIndex);

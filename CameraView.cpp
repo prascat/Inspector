@@ -73,23 +73,13 @@ void CameraView::updateUITexts() {
 }
 
 void CameraView::keyPressEvent(QKeyEvent* event) {
-    qDebug() << "[CameraView] keyPressEvent 호출 - Key:" << event->key();
-    
-    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
-        qDebug() << "[CameraView] Enter/Return 키 감지";
-        qDebug() << "[CameraView] currentRect:" << currentRect;
-        qDebug() << "[CameraView] currentRect.width():" << currentRect.width();
-        qDebug() << "[CameraView] currentRect.height():" << currentRect.height();
-        
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) { 
         // 엔터 키가 눌렸고, 현재 유효한 사각형이 그려져 있는 경우
         if (!currentRect.isNull() && currentRect.width() > 10 && currentRect.height() > 10) {
-            qDebug() << "[CameraView] ✅ enterKeyPressed 시그널 발생";
             // 엔터키 시그널 발생
             emit enterKeyPressed(currentRect);
             event->accept();
             return;
-        } else {
-            qDebug() << "[CameraView] ❌ 유효한 사각형 없음 - 시그널 발생 안함";
         }
     }
     
@@ -1061,7 +1051,7 @@ void CameraView::showContextMenu(const QPoint& pos) {
             return;
         }
         
-        // 패턴 분류
+        // 패턴 분류 (현재 Strip/Crimp 모드의 패턴만)
         QList<QUuid> roiPatternIds;
         QList<QUuid> fidPatternIds;
         QList<QUuid> groupedFidPatternIds;
@@ -1072,6 +1062,9 @@ void CameraView::showContextMenu(const QPoint& pos) {
         for (const QUuid& id : selectedPatterns) {
             PatternInfo* pattern = getPatternById(id);
             if (!pattern) continue;
+            
+            // 현재 Strip/Crimp 모드와 다른 패턴은 제외
+            if (pattern->stripCrimpMode != currentStripCrimpMode) continue;
             
             if (pattern->type == PatternType::ROI) {
                 roiPatternIds.append(id);
@@ -2791,9 +2784,16 @@ void CameraView::paintEvent(QPaintEvent *event) {
             if (pattern.id == selectedPatternId) continue;
             if (!pattern.enabled) continue;
             
-        if (!pattern.cameraUuid.isEmpty() && !currentCameraUuid.isEmpty() && pattern.cameraUuid != currentCameraUuid) {
-            continue;
-        }            // Scene 좌표를 viewport 좌표로 변환 (고정된 뷰포트에 그리기)
+            if (!pattern.cameraUuid.isEmpty() && !currentCameraUuid.isEmpty() && pattern.cameraUuid != currentCameraUuid) {
+                continue;
+            }
+            
+            // Strip/Crimp 모드 체크
+            if (pattern.stripCrimpMode != currentStripCrimpMode) {
+                continue;
+            }
+            
+            // Scene 좌표를 viewport 좌표로 변환 (고정된 뷰포트에 그리기)
             QPointF topLeft = mapFromScene(pattern.rect.topLeft());
             QPointF bottomRight = mapFromScene(pattern.rect.bottomRight());
             QRectF displayRect(topLeft, bottomRight);
@@ -2836,6 +2836,11 @@ void CameraView::paintEvent(QPaintEvent *event) {
         // 선택된 패턴은 마지막에 그림 (40% 투명도로 채우기)
         for (const PatternInfo& pattern : patterns) {
             if (pattern.id != selectedPatternId) continue;
+            
+            // Strip/Crimp 모드 체크
+            if (pattern.stripCrimpMode != currentStripCrimpMode) {
+                continue;
+            }
             
             QPointF topLeft = mapFromScene(pattern.rect.topLeft());
             QPointF bottomRight = mapFromScene(pattern.rect.bottomRight());

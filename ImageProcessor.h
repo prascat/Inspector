@@ -80,7 +80,8 @@ public:
                                      std::vector<cv::Point>* frontThicknessPoints = nullptr,
                                      std::vector<cv::Point>* rearThicknessPoints = nullptr,
                                      std::vector<cv::Point>* frontBlackRegionPoints = nullptr,
-                                     std::vector<cv::Point>* rearBlackRegionPoints = nullptr);
+                                     std::vector<cv::Point>* rearBlackRegionPoints = nullptr,
+                                     double* stripMeasuredLengthPx = nullptr);
 };
 
 #endif // IMAGEPROCESSOR_H

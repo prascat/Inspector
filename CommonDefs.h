@@ -125,7 +125,8 @@ struct InspectionResult {
     
     // STRIP 길이 검사 결과
     QMap<QUuid, bool> stripLengthResults;          // STRIP 길이 검사 통과 여부 (패턴 ID -> 통과 여부)
-    QMap<QUuid, double> stripMeasuredLength;       // 측정된 STRIP 길이 (패턴 ID -> 길이)
+    QMap<QUuid, double> stripMeasuredLength;       // 측정된 STRIP 길이 (패턴 ID -> 길이, mm 또는 px)
+    QMap<QUuid, double> stripMeasuredLengthPx;     // 측정된 STRIP 길이 픽셀값 원본 (패턴 ID -> 픽셀)
     QMap<QUuid, QPoint> stripLengthStartPoint;     // 길이 측정 시작점 (EDGE 평균선 중점)
     QMap<QUuid, QPoint> stripLengthEndPoint;       // 길이 측정 끝점 (P3,P4 중점)
 };

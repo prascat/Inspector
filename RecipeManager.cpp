@@ -472,9 +472,6 @@ bool RecipeManager::loadRecipe(const QString& fileName,
                               QTreeWidget* patternTree,
                               std::function<void(const QStringList&)> trainingImageCallback,
                               TeachingWidget* teachingWidget) {
-    qDebug() << QString("loadRecipe 시작: %1").arg(fileName);
-    qDebug() << QString("파일 존재 여부: %1").arg(QFile::exists(fileName) ? "true" : "false");
-    
     QFile file(fileName);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QString errorMsg = QString("레시피 파일을 열 수 없습니다: %1 (에러: %2)").arg(fileName).arg(file.errorString());
@@ -483,7 +480,6 @@ bool RecipeManager::loadRecipe(const QString& fileName,
         return false;
     }
     
-    qDebug() << QString("파일 열기 성공, XML 파싱 시작: %1").arg(fileName);
     QXmlStreamReader xml(&file);
     
     // 기존 패턴 삭제 (UI 구성요소가 있는 경우에만)
@@ -506,18 +502,14 @@ bool RecipeManager::loadRecipe(const QString& fileName,
     QString loadedCameraNames;
     
     try {
-        // XML 루트 요소 확인 - 새 구조는 Recipe
-        qDebug() << QString("XML 루트 요소 읽기 시도...");
+        // XML 루트 요소 확인
         if (!xml.readNextStartElement()) {
             throw QString("XML 문서가 비어있거나 유효하지 않습니다.");
         }
         
-        qDebug() << QString("루트 요소 이름: %1").arg(xml.name().toString());
         if (xml.name() != QLatin1String("Recipe")) {
             throw QString(QString("유효하지 않은 레시피 파일 형식입니다. 루트 요소: %1").arg(xml.name().toString()));
         }
-        
-        qDebug() << QString("Recipe 루트 요소 확인 완료");
         
         // 프로퍼티 오버레이 위치와 크기 읽기
         if (teachingWidget && teachingWidget->rightPanelOverlay) {
@@ -555,9 +547,6 @@ bool RecipeManager::loadRecipe(const QString& fileName,
                         teachingWidget->rightPanelCollapseButton->setText("▼");
                     }
                 }
-                
-                qDebug() << QString("프로퍼티 오버레이 복원: x=%1, y=%2, w=%3, h=%4, collapsed=%5, expandedH=%6")
-                            .arg(x).arg(y).arg(width).arg(height).arg(collapsed).arg(expandedHeight);
             }
         }
         
@@ -1474,19 +1463,13 @@ PatternInfo RecipeManager::readPattern(QXmlStreamReader& xml, const QString& cam
                 readPatternDetails(xml, pattern);
             }
             else if (xml.name() == QLatin1String("FIDDetails")) {
-                qDebug() << QString("==> FIDDetails 직접 처리 시작: %1").arg(pattern.name);
                 readFIDDetails(xml, pattern);
-                qDebug() << QString("==> FIDDetails 직접 처리 완료: %1").arg(pattern.name);
             }
             else if (xml.name() == QLatin1String("INSDetails")) {
-                qDebug() << QString("==> INSDetails 직접 처리 시작: %1").arg(pattern.name);
                 readINSDetails(xml, pattern);
-                qDebug() << QString("==> INSDetails 직접 처리 완료: %1").arg(pattern.name);
             }
             else if (xml.name() == QLatin1String("ROIDetails")) {
-                qDebug() << QString("==> ROIDetails 직접 처리 시작: %1").arg(pattern.name);
                 readROIDetails(xml, pattern);
-                qDebug() << QString("==> ROIDetails 직접 처리 완료: %1").arg(pattern.name);
             }
             else if (xml.name() == QLatin1String("Filters")) {
                 readPatternFilters(xml, pattern);

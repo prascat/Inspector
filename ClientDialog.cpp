@@ -10,11 +10,23 @@
 #include <QIntValidator>
 #include <QDebug>
 
+ClientDialog* ClientDialog::m_instance = nullptr;
+
+ClientDialog* ClientDialog::instance(QWidget* parent) {
+    if (!m_instance) {
+        m_instance = new ClientDialog(parent);
+    }
+    return m_instance;
+}
+
 ClientDialog::ClientDialog(QWidget* parent)
     : QDialog(parent)
     , serverIp("127.0.0.1")
     , serverPort(5000)
     , autoConnect(false)
+    , reconnectInterval(10)
+    , reconnectThread(nullptr)
+    , shouldReconnect(false)
     , isConnected(false)
 {
     setWindowTitle("서버 연결 설정");
@@ -29,6 +41,7 @@ ClientDialog::ClientDialog(QWidget* parent)
     connect(testSocket, &QTcpSocket::disconnected, this, &ClientDialog::onSocketDisconnected);
     connect(testSocket, QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::errorOccurred),
             this, &ClientDialog::onSocketError);
+    connect(testSocket, &QTcpSocket::readyRead, this, &ClientDialog::onDataReceived);
     connect(statusTimer, &QTimer::timeout, this, &ClientDialog::updateConnectionStatus);
     
     statusTimer->start(1000); // 1초마다 상태 업데이트
@@ -40,9 +53,13 @@ ClientDialog::ClientDialog(QWidget* parent)
 
 ClientDialog::~ClientDialog()
 {
+    stopReconnectThread();
+    
     if (testSocket->state() == QAbstractSocket::ConnectedState) {
         testSocket->disconnectFromHost();
     }
+    
+    m_instance = nullptr;
 }
 
 int ClientDialog::exec() {
@@ -83,6 +100,16 @@ void ClientDialog::setupUI()
     portEdit->setPlaceholderText("예: 5000");
     portEdit->setValidator(new QIntValidator(1, 65535, this));
     formLayout->addRow("포트:", portEdit);
+
+    // 재연결 간격 입력
+    reconnectIntervalEdit = new QLineEdit(this);
+    reconnectIntervalEdit->setPlaceholderText("예: 10");
+    reconnectIntervalEdit->setValidator(new QIntValidator(1, 300, this));
+    formLayout->addRow("재연결 간격(초):", reconnectIntervalEdit);
+    
+    // 자동 연결 체크박스
+    autoConnectCheckBox = new QCheckBox("프로그램 시작 시 자동 연결", this);
+    formLayout->addRow("", autoConnectCheckBox);
 
     serverGroup->setLayout(formLayout);
     mainLayout->addWidget(serverGroup);
@@ -136,25 +163,33 @@ void ClientDialog::loadSettings()
     serverIp = config->getServerIp();
     serverPort = config->getServerPort();
     autoConnect = config->getAutoConnect();
+    reconnectInterval = config->getReconnectInterval();
     
     ipEdit->setText(serverIp);
     portEdit->setText(QString::number(serverPort));
+    reconnectIntervalEdit->setText(QString::number(reconnectInterval));
+    autoConnectCheckBox->setChecked(autoConnect);
     
-    qDebug() << "서버 설정 로드됨 - IP:" << serverIp << "Port:" << serverPort;
+    qDebug() << QString("서버 설정 로드됨 - IP: %1 Port: %2 재연결 간격: %3 초")
+                .arg(serverIp).arg(serverPort).arg(reconnectInterval);
 }
 
 void ClientDialog::saveSettings()
 {
     serverIp = ipEdit->text().trimmed();
     serverPort = portEdit->text().toInt();
+    reconnectInterval = reconnectIntervalEdit->text().toInt();
+    if (reconnectInterval < 1) reconnectInterval = 10;
+    autoConnect = autoConnectCheckBox->isChecked();
     
     ConfigManager* config = ConfigManager::instance();
     config->setServerIp(serverIp);
     config->setServerPort(serverPort);
     config->setAutoConnect(autoConnect);
+    config->setReconnectInterval(reconnectInterval);
     config->saveConfig();
     
-    qDebug() << "서버 설정 저장됨 - IP:" << serverIp << "Port:" << serverPort;
+    qDebug() << "서버 설정 저장됨 - IP:" << serverIp << "Port:" << serverPort << "재연결 간격:" << reconnectInterval << "초";
 }
 
 void ClientDialog::setServerIp(const QString& ip)
@@ -172,6 +207,17 @@ void ClientDialog::setServerPort(int port)
 void ClientDialog::setAutoConnect(bool enable)
 {
     autoConnect = enable;
+    if (autoConnectCheckBox) {
+        autoConnectCheckBox->setChecked(enable);
+    }
+}
+
+void ClientDialog::setReconnectInterval(int seconds)
+{
+    reconnectInterval = seconds;
+    if (reconnectIntervalEdit) {
+        reconnectIntervalEdit->setText(QString::number(seconds));
+    }
 }
 
 void ClientDialog::onTestConnection()
@@ -228,6 +274,13 @@ void ClientDialog::onTestConnection()
 void ClientDialog::onSocketConnected()
 {
     isConnected = true;
+    
+    // 연결 성공 시 재연결 스레드 중지
+    if (reconnectThread && reconnectThread->isRunning()) {
+        qDebug() << "[재연결] 연결 성공 - 재연결 스레드 중지";
+        stopReconnectThread();
+    }
+    
     statusLabel->setText(QString("서버에 연결되었습니다: %1:%2")
                         .arg(testSocket->peerAddress().toString())
                         .arg(testSocket->peerPort()));
@@ -236,12 +289,7 @@ void ClientDialog::onSocketConnected()
     testButton->setEnabled(true);
     testButton->setText("연결 해제");
     
-    CustomMessageBox msgBox(this);
-    msgBox.setIcon(CustomMessageBox::Information);
-    msgBox.setTitle("연결 성공");
-    msgBox.setMessage("서버에 성공적으로 연결되었습니다.");
-    msgBox.setButtons(QMessageBox::Ok);
-    msgBox.exec();
+    qDebug() << "[TCP 서버] 서버에 성공적으로 연결되었습니다.";
 }
 
 void ClientDialog::onSocketDisconnected()
@@ -252,6 +300,12 @@ void ClientDialog::onSocketDisconnected()
     connectionStatusLabel->setStyleSheet("QLabel { padding: 10px; background-color: #f0f0f0; border-radius: 5px; }");
     testButton->setEnabled(true);
     testButton->setText("연결 테스트");
+    
+    // 자동 연결이 활성화된 경우만 재연결 스레드 시작
+    if (autoConnect) {
+        qDebug() << "[재연결] 연결 해제됨 - 재연결 스레드 시작";
+        startReconnectThread();
+    }
 }
 
 void ClientDialog::onSocketError(QAbstractSocket::SocketError error)
@@ -265,12 +319,26 @@ void ClientDialog::onSocketError(QAbstractSocket::SocketError error)
     testButton->setEnabled(true);
     testButton->setText("연결 테스트");
     
-    CustomMessageBox msgBox(this);
-    msgBox.setIcon(CustomMessageBox::Critical);
-    msgBox.setTitle("연결 오류");
-    msgBox.setMessage(QString("서버 연결에 실패했습니다:\n%1").arg(errorMsg));
-    msgBox.setButtons(QMessageBox::Ok);
-    msgBox.exec();
+    qDebug() << QString("[TCP 서버] 서버 연결에 실패했습니다: %1").arg(errorMsg);
+}
+
+void ClientDialog::onDataReceived()
+{
+    QByteArray data = testSocket->readAll();
+    QString message = QString::fromUtf8(data).trimmed();
+    
+    if (!message.isEmpty()) {
+        qDebug() << QString("[TCP 서버] 수신: %1").arg(message);
+        
+        // STRIP/CRIMP 모드 전환 처리
+        if (message.toUpper() == "STRIP") {
+            qDebug() << "[TCP 서버] STRIP 모드로 전환";
+            emit stripCrimpModeChanged(0);
+        } else if (message.toUpper() == "CRIMP") {
+            qDebug() << "[TCP 서버] CRIMP 모드로 전환";
+            emit stripCrimpModeChanged(1);
+        }
+    }
 }
 
 void ClientDialog::updateConnectionStatus()
@@ -289,12 +357,16 @@ void ClientDialog::onSaveSettings()
     saveSettings();
     emit settingsChanged();
     
-    CustomMessageBox msgBox(this);
-    msgBox.setIcon(CustomMessageBox::Information);
-    msgBox.setTitle("저장 완료");
-    msgBox.setMessage("서버 설정이 저장되었습니다.");
-    msgBox.setButtons(QMessageBox::Ok);
-    msgBox.exec();
+    // 상태 라벨에 저장 완료 메시지 표시
+    statusLabel->setText("✓ 서버 설정이 저장되었습니다.");
+    statusLabel->setStyleSheet("QLabel { color: #155724; font-size: 11px; }");
+    
+    // 3초 후 메시지 지우기
+    QTimer::singleShot(3000, this, [this]() {
+        if (statusLabel->text() == "✓ 서버 설정이 저장되었습니다.") {
+            statusLabel->setText("");
+        }
+    });
     
     accept();
 }
@@ -303,4 +375,80 @@ void ClientDialog::updateLanguage()
 {
     // 언어 변경 시 UI 텍스트 업데이트
     setWindowTitle("서버 연결 설정");
+}
+
+void ClientDialog::initialize()
+{
+    // 설정 로드
+    loadSettings();
+    
+    // 자동 연결이 활성화된 경우 재연결 스레드 시작
+    if (autoConnect) {
+        startReconnectThread();
+    }
+}
+
+void ClientDialog::startReconnectThread()
+{
+    // 기존 스레드가 실행 중이면 먼저 종료
+    if (reconnectThread && reconnectThread->isRunning()) {
+        qDebug() << "[재연결 스레드] 기존 스레드 종료 중...";
+        stopReconnectThread();
+    }
+    
+    shouldReconnect = true;
+    
+    reconnectThread = QThread::create([this]() {
+        qDebug() << "[재연결 스레드] 루프 시작";
+        while (shouldReconnect) {
+            if (testSocket->state() != QAbstractSocket::ConnectedState) {
+                qDebug() << "[재연결] 서버 연결 시도 중..." << serverIp << ":" << serverPort;
+                QMetaObject::invokeMethod(this, "tryReconnect", Qt::QueuedConnection);
+            }
+            
+            // reconnectInterval 초 대기
+            for (int i = 0; i < reconnectInterval && shouldReconnect; ++i) {
+                QThread::sleep(1);
+            }
+        }
+        qDebug() << "[재연결 스레드] 루프 종료";
+    });
+    
+    reconnectThread->start();
+    qDebug() << "[재연결 스레드] 시작됨 - 간격:" << reconnectInterval << "초";
+}
+
+void ClientDialog::stopReconnectThread()
+{
+    qDebug() << "[재연결 스레드] 종료 요청";
+    shouldReconnect = false;
+    
+    if (reconnectThread) {
+        if (reconnectThread->isRunning()) {
+            qDebug() << "[재연결 스레드] 종료 대기 중...";
+            if (!reconnectThread->wait(5000)) {
+                qDebug() << "[재연결 스레드] 강제 종료";
+                reconnectThread->terminate();
+                reconnectThread->wait();
+            }
+        }
+        delete reconnectThread;
+        reconnectThread = nullptr;
+        qDebug() << "[재연결 스레드] 종료 완료";
+    }
+}
+
+void ClientDialog::tryReconnect()
+{
+    if (testSocket->state() == QAbstractSocket::ConnectedState) {
+        return; // 이미 연결됨
+    }
+    
+    // 소켓이 연결 해제 상태가 아니면 강제 종료
+    if (testSocket->state() != QAbstractSocket::UnconnectedState) {
+        testSocket->abort();
+    }
+    
+    qDebug() << "[재연결] 연결 시도:" << serverIp << ":" << serverPort;
+    testSocket->connectToHost(serverIp, serverPort);
 }

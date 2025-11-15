@@ -19,7 +19,7 @@ InsProcessor::~InsProcessor() {
     logDebug("InsProcessor 소멸됨");
 }
 
-InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QList<PatternInfo>& patterns) {
+InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QList<PatternInfo>& patterns, int stripCrimpMode) {
     InspectionResult result;
     
     if (image.empty() || patterns.isEmpty()) {
@@ -27,15 +27,24 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
         return result;
     }
     
-    // 검사 시작 로그
-    logDebug("검사 시작");
+    // 검사 시작 로그 (모드 정보 포함)
+    QString modeName = (stripCrimpMode == 0) ? "STRIP" : "CRIMP";
+    logDebug(QString("검사 시작 - %1").arg(modeName));
     
     result.isPassed = true;
+    
+    qDebug() << "[검사 초기] result.isPassed =" << result.isPassed;
     
     // 1. 활성화된 패턴들을 유형별로 분류
     QList<PatternInfo> roiPatterns, fidPatterns, insPatterns;
     for (const PatternInfo& pattern : patterns) {
         if (!pattern.enabled) continue;
+        
+        // Strip/Crimp 모드 체크
+        if (pattern.stripCrimpMode != stripCrimpMode) {
+            qDebug() << "[모드 불일치] 패턴" << pattern.name << "제외 (패턴모드:" << pattern.stripCrimpMode << "현재모드:" << stripCrimpMode << ")";
+            continue;
+        }
         
         switch (pattern.type) {
             case PatternType::ROI:
@@ -210,6 +219,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             
             // 전체 결과 갱신
             result.isPassed = result.isPassed && fidMatched;
+            qDebug() << "[FID 검사]" << pattern.name << "결과:" << fidMatched << "→ 전체 result.isPassed =" << result.isPassed;
         }
     }
     
@@ -504,11 +514,14 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             
             // 전체 결과 갱신
             result.isPassed = result.isPassed && inspPassed;
+            qDebug() << "[INS 검사]" << pattern.name << "결과:" << inspPassed << "→ 전체 result.isPassed =" << result.isPassed;
         }
     }
     
     // 전체 검사 결과 로그
     QString resultText = result.isPassed ? "PASS" : "NG";
+    
+    qDebug() << "[검사 최종] result.isPassed =" << result.isPassed << "→" << resultText;
     
     // FID 결과 수집 (개별 PASS/FAIL 판정 포함)
     QStringList fidDetails;
@@ -532,7 +545,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             .arg(resultText)
             .arg(fidInfo));
     
-    logDebug("검사 종료");
+    logDebug(QString("검사 종료 - %1").arg(modeName));
             
     return result;
 }
@@ -2245,6 +2258,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         // STRIP 길이 검사 결과 변수들
         bool stripLengthPassed = true;
         double stripMeasuredLength = 0.0;
+        double stripMeasuredLengthPx = 0.0;  // 픽셀 원본값
         cv::Point stripLengthStartPoint;
         cv::Point stripLengthEndPoint;
                 
@@ -2256,7 +2270,8 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                                   score, startPoint, maxGradientPoint, gradientPoints, resultImage, &edgePoints,
                                   &stripLengthPassed, &stripMeasuredLength, &stripLengthStartPoint, &stripLengthEndPoint,
                                   &frontThicknessPoints, &rearThicknessPoints,
-                                  &frontBlackRegionPoints, &rearBlackRegionPoints);
+                                  &frontBlackRegionPoints, &rearBlackRegionPoints,
+                                  &stripMeasuredLengthPx);
     
     // FRONT 두께 통계 계산 (ImageProcessor에서 받은 픽셀 데이터로부터)
     if (!frontThicknessPoints.empty()) {
@@ -2452,6 +2467,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     // STRIP 길이 검사 결과 저장
     result.stripLengthResults[pattern.id] = stripLengthPassed;
     result.stripMeasuredLength[pattern.id] = stripMeasuredLength;
+    result.stripMeasuredLengthPx[pattern.id] = stripMeasuredLengthPx;  // 픽셀 원본값 저장
     
     // STRIP 길이 측정 점들을 절대 좌표로 변환
     QPoint absStripLengthStart = QPoint(stripLengthStartPoint.x + offset.x, stripLengthStartPoint.y + offset.y);
@@ -2506,6 +2522,14 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     
     // 모든 검사 항목을 AND 연산으로 최종 판정
     bool allTestsPassed = isPassed && stripLengthPassed && frontThicknessPassed && rearThicknessPassed && edgeTestPassed;
+    
+    qDebug() << "[STRIP 최종 판정]" << pattern.name
+             << "isPassed:" << isPassed
+             << "stripLength:" << stripLengthPassed
+             << "front:" << frontThicknessPassed
+             << "rear:" << rearThicknessPassed
+             << "edge:" << edgeTestPassed
+             << "→ allTestsPassed:" << allTestsPassed;
     
     if (allTestsPassed) {
         // 좌표 변환 적용

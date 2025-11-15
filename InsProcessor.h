@@ -11,7 +11,7 @@ public:
     InsProcessor(QObject* parent = nullptr);
     ~InsProcessor();
   
-    InspectionResult performInspection(const cv::Mat& image, const QList<PatternInfo>& patterns);
+    InspectionResult performInspection(const cv::Mat& image, const QList<PatternInfo>& patterns, int stripCrimpMode = 0);
     static QImage matToQImage(const cv::Mat& mat);   
  
     // FID 패턴 매칭 기능

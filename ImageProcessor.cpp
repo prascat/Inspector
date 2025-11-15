@@ -657,7 +657,8 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                                            std::vector<cv::Point>* frontThicknessPoints,
                                            std::vector<cv::Point>* rearThicknessPoints,
                                            std::vector<cv::Point>* frontBlackRegionPoints,
-                                           std::vector<cv::Point>* rearBlackRegionPoints) {
+                                           std::vector<cv::Point>* rearBlackRegionPoints,
+                                           double* stripMeasuredLengthPx) {
     
     // 결과 이미지용으로 원본의 깨끗한 복사본 생성 (마스킹 제거)
     cv::Mat cleanOriginal;
@@ -1614,7 +1615,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         
         // 최소 1개 이상의 변화율 피크가 있어야 통과
         bool hasMinimumFeatures = gradientPoints.size() >= 1;
-        bool isPassed = hasMinimumFeatures && (score >= passThreshold);
+        bool isPassed = hasMinimumFeatures && (score >= (passThreshold / 100.0));
         
 
         
@@ -2143,6 +2144,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             // 결과 저장
             if (stripLengthPassed) *stripLengthPassed = lengthInRange;
             if (stripMeasuredLength) *stripMeasuredLength = lengthDistance;
+            if (stripMeasuredLengthPx) *stripMeasuredLengthPx = lengthDistancePx;  // 픽셀 원본값 저장
             if (stripLengthStartPoint) *stripLengthStartPoint = edgeStartPoint;
             if (stripLengthEndPoint) *stripLengthEndPoint = p34MidPoint;
             

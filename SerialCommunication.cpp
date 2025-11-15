@@ -1,5 +1,6 @@
 #include "SerialCommunication.h"
 #include "TeachingWidget.h"
+#include "ConfigManager.h"
 #include <QApplication>
 #include <QThread>
 #include <QSerialPortInfo>
@@ -60,6 +61,28 @@ void SerialCommunication::disconnectPort()
 bool SerialCommunication::isConnected() const
 {
     return serialPort && serialPort->isOpen();
+}
+
+void SerialCommunication::tryAutoConnect()
+{
+    ConfigManager* config = ConfigManager::instance();
+    QString savedPort = config->getSerialPort();
+    int savedBaudRate = config->getSerialBaudRate();
+    
+    // 저장된 포트가 있고, "사용 가능한 포트 없음"이 아닌 경우
+    if (!savedPort.isEmpty() && savedPort != "사용 가능한 포트 없음") {
+        // 사용 가능한 포트 목록 가져오기
+        QStringList availablePorts = getAvailableSerialPorts();
+        
+        // 저장된 포트가 사용 가능한지 확인
+        for (const QString& port : availablePorts) {
+            if (port.startsWith(savedPort) || port.contains(savedPort)) {
+                // 자동 연결 시도
+                connectToPort(savedPort, savedBaudRate);
+                break;
+            }
+        }
+    }
 }
 
 QStringList SerialCommunication::getAvailableSerialPorts()

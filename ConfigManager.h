@@ -44,6 +44,9 @@ public:
     bool getAutoConnect() const;
     void setAutoConnect(bool enable);
     
+    int getReconnectInterval() const;
+    void setReconnectInterval(int seconds);
+    
 signals:
     void configChanged();
     void languageChanged(const QString& newLanguage);
@@ -63,6 +66,7 @@ private:
     QString m_serverIp;
     int m_serverPort;
     bool m_autoConnect;
+    int m_reconnectInterval;
     
     // 설정 파일 경로
     QString getConfigFilePath() const;

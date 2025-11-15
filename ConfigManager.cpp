@@ -26,6 +26,7 @@ ConfigManager::ConfigManager(QObject* parent) : QObject(parent) {
     m_serverIp = "127.0.0.1";  // 기본 서버 IP
     m_serverPort = 5000;  // 기본 서버 포트
     m_autoConnect = false;  // 기본 자동 연결 비활성화
+    m_reconnectInterval = 10;  // 기본 재연결 간격 10초
 }
 
 ConfigManager::~ConfigManager() {
@@ -92,6 +93,10 @@ bool ConfigManager::loadConfig() {
                 QString value = xml.readElementText();
                 m_autoConnect = (value.toLower() == "true");
                 qDebug() << "[ConfigManager] 자동 연결 설정 로드됨:" << m_autoConnect;
+            } else if (xml.name() == QLatin1String("ReconnectInterval")) {
+                m_reconnectInterval = xml.readElementText().toInt();
+                if (m_reconnectInterval < 1) m_reconnectInterval = 10;
+                qDebug() << "[ConfigManager] 재연결 간격 로드됨:" << m_reconnectInterval << "초";
             } else {
                 xml.skipCurrentElement();
             }
@@ -155,6 +160,7 @@ bool ConfigManager::saveConfig() {
     xml.writeTextElement("ServerIp", m_serverIp);
     xml.writeTextElement("ServerPort", QString::number(m_serverPort));
     xml.writeTextElement("AutoConnect", m_autoConnect ? "true" : "false");
+    xml.writeTextElement("ReconnectInterval", QString::number(m_reconnectInterval));
     
     xml.writeEndElement(); // Config
     xml.writeEndDocument();
@@ -264,5 +270,17 @@ void ConfigManager::setAutoConnect(bool enable) {
         m_autoConnect = enable;
         emit configChanged();
         qDebug() << "[ConfigManager] 자동 연결 설정 변경됨:" << enable;
+    }
+}
+
+int ConfigManager::getReconnectInterval() const {
+    return m_reconnectInterval;
+}
+
+void ConfigManager::setReconnectInterval(int seconds) {
+    if (m_reconnectInterval != seconds && seconds >= 1) {
+        m_reconnectInterval = seconds;
+        emit configChanged();
+        qDebug() << "[ConfigManager] 재연결 간격 변경됨:" << seconds << "초";
     }
 }

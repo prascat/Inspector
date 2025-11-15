@@ -27,6 +27,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QLocale>
+#include <QTcpSocket>
 #include <chrono>
 #include <thread>
 
@@ -489,6 +490,15 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     
     // UI 텍스트 초기 갱신
     QTimer::singleShot(100, this, &TeachingWidget::updateUITexts);
+    
+    // ClientDialog 초기화 (자동 연결 처리)
+    QTimer::singleShot(1500, this, []() {
+        ClientDialog::instance()->initialize();
+    });
+    
+    // ClientDialog의 STRIP/CRIMP 모드 변경 시그널 연결
+    connect(ClientDialog::instance(), &ClientDialog::stripCrimpModeChanged,
+            this, &TeachingWidget::setStripCrimpMode);
 }
 
 
@@ -1521,10 +1531,6 @@ void TeachingWidget::setupLogOverlay() {
     logTextEdit->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     logLayout->addWidget(logTextEdit);
     
-    // 초기 메시지 추가
-    logMessages.append("프로그램이 시작되었습니다.");
-    logTextEdit->append("프로그램이 시작되었습니다.");
-    
     // 오버레이 표시
     logOverlayWidget->show();
     logOverlayWidget->raise();
@@ -2535,22 +2541,15 @@ void TeachingWidget::updatePatternTree() {
             qDebug() << QString("camOff 모드에서 cameraIndex를 0으로 설정, UUID: %1").arg(targetUuid);
         }
         
-        qDebug() << QString("패턴 필터링 체크: 패턴=%1, 패턴카메라UUID=%2, 현재카메라UUID=%3, 패턴모드=%4, 현재모드=%5")
-                    .arg(pattern.name).arg(patternCameraUuid).arg(targetUuid)
-                    .arg(pattern.stripCrimpMode).arg(currentStripCrimpMode);
-        
         if (!targetUuid.isEmpty() && patternCameraUuid != targetUuid) {
-            qDebug() << QString("패턴 제외: %1 (카메라 불일치)").arg(pattern.name);
             continue;
         }
         
         // Strip/Crimp 모드 체크
         if (pattern.stripCrimpMode != currentStripCrimpMode) {
-            qDebug() << QString("패턴 제외: %1 (모드 불일치)").arg(pattern.name);
             continue;
         }
         
-        qDebug() << QString("패턴 포함: %1").arg(pattern.name);
         currentCameraPatterns.append(pattern);
     }
     
@@ -5368,13 +5367,17 @@ void TeachingWidget::connectPropertyPanelEvents() {
                     if (pattern && pattern->type == PatternType::INS) {
                         // 마지막 검사 결과에서 측정된 길이 가져오기
                         const InspectionResult& result = cameraView->getLastInspectionResult();
-                        if (result.stripMeasuredLength.contains(patternId)) {
-                            double pixelLength = result.stripMeasuredLength[patternId];
+                        if (result.stripMeasuredLengthPx.contains(patternId)) {
+                            double pixelLength = result.stripMeasuredLengthPx[patternId];  // 픽셀 원본값 사용
                             double mmLength = pattern->stripLengthConversionMm;
+                            
+                            qDebug() << "[캘리브레이션 버튼] 이전 stripLengthCalibrationPx:" << pattern->stripLengthCalibrationPx;
                             
                             // 캘리브레이션 값 저장
                             pattern->stripLengthCalibrationPx = pixelLength;
                             pattern->stripLengthCalibrated = true;
+                            
+                            qDebug() << "[캘리브레이션 버튼] 새로운 stripLengthCalibrationPx:" << pattern->stripLengthCalibrationPx;
                             
                             // 변환 비율 계산: pixel/mm
                             double conversionRatio = pixelLength / mmLength;
@@ -6575,26 +6578,42 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat& frame, int camIdx) {
 void TeachingWidget::updateStatusPanel() {
     if (!serverStatusLabel || !serialStatusLabel || !diskSpaceLabel) return;
     
-    // 서버 연결 상태 업데이트
+    // 서버 연결 상태 업데이트 (ClientDialog에서 상태 읽기)
     ConfigManager* config = ConfigManager::instance();
     QString serverIp = config->getServerIp();
     int serverPort = config->getServerPort();
     
-    // TODO: 실제 서버 연결 상태 확인
-    serverStatusLabel->setText(QString("🌐 서버: 미연결 (%1:%2)").arg(serverIp).arg(serverPort));
-    serverStatusLabel->setStyleSheet(
-        "QLabel {"
-        "  background-color: rgba(0, 0, 0, 180);"
-        "  color: #ff9800;"  // 주황색 (미연결)
-        "  border: 1px solid #555;"
-        "  border-radius: 3px;"
-        "  padding-left: 8px;"
-        "  font-size: 12px;"
-        "}"
-    );
+    if (ClientDialog::instance()->isServerConnected()) {
+        // 연결됨 - 녹색
+        serverStatusLabel->setText(QString("🌐 서버: 연결됨 (%1:%2)").arg(serverIp).arg(serverPort));
+        serverStatusLabel->setStyleSheet(
+            "QLabel {"
+            "  background-color: rgba(0, 100, 0, 180);"
+            "  color: white;"
+            "  border: 1px solid #555;"
+            "  border-radius: 3px;"
+            "  padding-left: 8px;"
+            "  font-size: 12px;"
+            "}"
+        );
+    } else {
+        // 미연결 - 회색
+        serverStatusLabel->setText(QString("🌐 서버: 미연결 (%1:%2)").arg(serverIp).arg(serverPort));
+        serverStatusLabel->setStyleSheet(
+            "QLabel {"
+            "  background-color: rgba(0, 0, 0, 180);"
+            "  color: white;"
+            "  border: 1px solid #555;"
+            "  border-radius: 3px;"
+            "  padding-left: 8px;"
+            "  font-size: 12px;"
+            "}"
+        );
+    }
     
     // 시리얼 연결 상태 업데이트
     if (serialCommunication && serialCommunication->isConnected()) {
+        ConfigManager* config = ConfigManager::instance();
         QString portName = config->getSerialPort();
         serialStatusLabel->setText(QString("📡 시리얼: 연결됨 (%1)").arg(portName));
         serialStatusLabel->setStyleSheet(
@@ -7459,17 +7478,8 @@ void TeachingWidget::setSerialCommunication(SerialCommunication* serialComm) {
 }
 
 void TeachingWidget::showServerSettings() {
-    // 서버 설정 다이얼로그가 없으면 생성
-    if (!clientDialog) {
-        clientDialog = new ClientDialog(this);
-        connect(clientDialog, &ClientDialog::settingsChanged, this, [this]() {
-            qDebug() << "서버 설정이 변경되었습니다.";
-            // 필요시 서버 재연결 로직 추가
-        });
-    }
-    
-    // 다이얼로그 표시
-    clientDialog->exec();
+    // 서버 설정 다이얼로그 표시
+    ClientDialog::instance(this)->exec();
 }
 
 void TeachingWidget::showSerialSettings() {
@@ -7671,7 +7681,7 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event) {
         if (event->type() == QEvent::MouseMove) {
             if (rightPanelResizing) {
                 // 리사이즈 중
-                QPoint globalDelta = mouseEvent->globalPos() - rightPanelDragPos;
+                QPoint globalDelta = mouseEvent->globalPosition().toPoint() - rightPanelDragPos;
                 QRect geo = rightPanelOverlay->geometry();
                 
                 if (rightPanelResizeEdge == ResizeEdge::Right || rightPanelResizeEdge == ResizeEdge::BottomRight) {
@@ -7688,7 +7698,7 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event) {
                 }
                 
                 rightPanelOverlay->setGeometry(geo);
-                rightPanelDragPos = mouseEvent->globalPos();
+                rightPanelDragPos = mouseEvent->globalPosition().toPoint();
                 return true;
             } else if (rightPanelDragging) {
                 // 드래그 중
@@ -7734,7 +7744,7 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event) {
                 // 경계에 있으면 리사이즈
                 if (rightPanelResizeEdge != ResizeEdge::None) {
                     rightPanelResizing = true;
-                    rightPanelDragPos = mouseEvent->globalPos();
+                    rightPanelDragPos = mouseEvent->globalPosition().toPoint();
                     return true;
                 } else {
                     // 경계가 아니면 드래그 가능 (자식 위젯이 아닌 경우)
@@ -8843,7 +8853,7 @@ bool TeachingWidget::runInspect(const cv::Mat& frame, int specificCameraIndex) {
     }
 
     try {
-        InspectionResult result = insProcessor->performInspection(frame, cameraPatterns);
+        InspectionResult result = insProcessor->performInspection(frame, cameraPatterns, currentStripCrimpMode);
         
         // **추가**: 검사 결과를 기반으로 패턴들을 FID 중심으로 그룹 회전
         if (!result.angles.isEmpty()) {
@@ -9368,6 +9378,17 @@ void TeachingWidget::updateAllPatternTemplateImages() {
 
 void TeachingWidget::setStripCrimpMode(int mode) {
     currentStripCrimpMode = mode;
+    
+    // Strip/Crimp 버튼 상태 업데이트
+    if (stripCrimpButton) {
+        stripCrimpButton->blockSignals(true);
+        stripCrimpButton->setChecked(mode == StripCrimpMode::CRIMP_MODE);
+        stripCrimpButton->setText(mode == StripCrimpMode::CRIMP_MODE ? "CRIMP" : "STRIP");
+        stripCrimpButton->setStyleSheet(UIColors::overlayToggleButtonStyle(
+            UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, 
+            mode == StripCrimpMode::CRIMP_MODE));
+        stripCrimpButton->blockSignals(false);
+    }
     
     // CameraView에도 모드 전달
     if (cameraView) {
@@ -10698,7 +10719,7 @@ InspectionResult TeachingWidget::runSingleInspection(int specificCameraIndex) {
             if (!cameraPatterns.isEmpty()) {
                 // 직접 검사 수행
                 InsProcessor processor;
-                result = processor.performInspection(inspectionFrame, cameraPatterns);
+                result = processor.performInspection(inspectionFrame, cameraPatterns, currentStripCrimpMode);
                 
                 // **UI 업데이트 (메인 카메라인 경우 또는 시뮬레이션 모드)**
                 if (specificCameraIndex == cameraIndex || camOff) {
@@ -11814,7 +11835,7 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
         qDebug() << QString("🎯 [레시피 로드] camOff 모드 - cameraInfos 초기화");
         cameraInfos.clear();
     } else {
-        qDebug() << QString("🎯 [레시피 로드] camOn 모드 - cameraInfos 유지");
+        // camOn 모드에서는 기존 cameraInfos 유지
     }
     
     // 티칭 이미지 콜백 함수 정의 (camOn/camOff 공통)
@@ -12008,26 +12029,11 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
             }
         }
             
-        // cameraInfos 상세 정보 출력
-            qDebug() << QString("=== 레시피 로드 후 cameraInfos 상세 정보 ===");
-            qDebug() << QString("cameraInfos 총 개수: %1").arg(cameraInfos.size());
-            for (int i = 0; i < cameraInfos.size(); ++i) {
-                const auto& info = cameraInfos[i];
-                qDebug() << QString("카메라 %1:").arg(i);
-                qDebug() << QString("  - index: %1").arg(info.index);
-                qDebug() << QString("  - videoDeviceIndex: %1").arg(info.videoDeviceIndex);
-                qDebug() << QString("  - uniqueId: '%1'").arg(info.uniqueId);
-                qDebug() << QString("  - name: '%1'").arg(info.name);
-                qDebug() << QString("  - locationId: '%1'").arg(info.locationId);
-                qDebug() << QString("  - serialNumber: '%1'").arg(info.serialNumber);
-                qDebug() << QString("  - vendorId: '%1'").arg(info.vendorId);
-                qDebug() << QString("  - productId: '%1'").arg(info.productId);
-                qDebug() << QString("  - isConnected: %1").arg(info.isConnected ? "true" : "false");
-                qDebug() << QString("  - capture: %1").arg(info.capture ? "valid" : "null");
-            }
-            qDebug() << QString("현재 cameraIndex: %1").arg(cameraIndex);
-            qDebug() << QString("camOff 상태: %1").arg(camOff ? "true" : "false");
-            qDebug() << QString("=== cameraInfos 정보 끝 ===");
+        // cameraInfos 요약 정보 출력
+            qDebug() << QString("레시피 로드 완료 - 카메라: %1개, 현재: %2, camOff: %3")
+                        .arg(cameraInfos.size())
+                        .arg(cameraIndex)
+                        .arg(camOff ? "ON" : "OFF");
 
     } else {
         QString errorMsg = manager.getLastError();

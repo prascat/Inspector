@@ -21,6 +21,7 @@ public:
     // 시리얼 포트 연결/해제
     bool connectToPort(const QString &portName, int baudRate = 9600);
     bool autoConnectToAvailablePort(int baudRate = 9600);
+    void tryAutoConnect();  // 저장된 설정으로 자동 연결 시도
     QStringList getAvailableSerialPorts();
     void disconnectPort();
     bool isConnected() const;
