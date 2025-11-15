@@ -3564,7 +3564,7 @@ void TeachingWidget::createPropertyPanels() {
     insMainLayout->addWidget(insStripPanel);
 
     // === STRIP 길이 검사 그룹 ===
-    QGroupBox* insStripLengthGroup = new QGroupBox("STRIP 길이 검사", insPropWidget);
+    insStripLengthGroup = new QGroupBox("STRIP 길이 검사", insPropWidget);
     insStripLengthGroup->setStyleSheet(
         "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
@@ -3619,7 +3619,7 @@ void TeachingWidget::createPropertyPanels() {
     insMainLayout->addWidget(insStripLengthGroup);
 
     // === FRONT 두께 검사 그룹 ===
-    QGroupBox* insStripFrontGroup = new QGroupBox("FRONT 두께 검사 활성화", insPropWidget);
+    insStripFrontGroup = new QGroupBox("FRONT 두께 검사 활성화", insPropWidget);
     insStripFrontGroup->setCheckable(true);
     insStripFrontGroup->setChecked(true);
     insStripFrontGroup->setStyleSheet(
@@ -3700,7 +3700,7 @@ void TeachingWidget::createPropertyPanels() {
     insMainLayout->addWidget(insStripFrontGroup);
 
     // === REAR 두께 검사 그룹 ===
-    QGroupBox* insStripRearGroup = new QGroupBox("REAR 두께 검사 활성화", insPropWidget);
+    insStripRearGroup = new QGroupBox("REAR 두께 검사 활성화", insPropWidget);
     insStripRearGroup->setCheckable(true);
     insStripRearGroup->setChecked(true);
     insStripRearGroup->setStyleSheet(
@@ -3779,7 +3779,7 @@ void TeachingWidget::createPropertyPanels() {
     insMainLayout->addWidget(insStripRearGroup);
 
     // === EDGE 검사 그룹 ===
-    QGroupBox* insEdgeGroup = new QGroupBox("EDGE 검사 활성화", insPropWidget);
+    insEdgeGroup = new QGroupBox("EDGE 검사 활성화", insPropWidget);
     insEdgeGroup->setCheckable(true);
     insEdgeGroup->setChecked(true);
     insEdgeGroup->setStyleSheet(
@@ -3975,23 +3975,21 @@ void TeachingWidget::createPropertyPanels() {
 }
 
 void TeachingWidget::showImageViewerDialog(const QImage& image, const QString& title) {
-    // 기본 대화상자 생성
+    // 타이틀리스 대화상자 생성
     QDialog* imageDialog = new QDialog(this);
     imageDialog->setWindowTitle(title);
+    imageDialog->setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
     imageDialog->setMinimumSize(400, 400);
     imageDialog->resize(600, 500);
     
     QVBoxLayout* layout = new QVBoxLayout(imageDialog);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
     
     // 스케일 표시용 레이블 (미리 생성)
     QLabel* scaleLabel = new QLabel("Scale: 100%", imageDialog);
     
-    // 스크롤 영역 생성
-    QScrollArea* scrollArea = new QScrollArea(imageDialog);
-    scrollArea->setWidgetResizable(true);
-    scrollArea->setAlignment(Qt::AlignCenter);
-    
-    // 이미지 표시용 확장 레이블 클래스 생성
+    // 이미지 표시용 레이블 (스크롤 없이 직접 표시)
     class ZoomableImageLabel : public QLabel {
     public:
         ZoomableImageLabel(QLabel* scaleLabel, QWidget* parent = nullptr) 
@@ -4138,14 +4136,12 @@ void TeachingWidget::showImageViewerDialog(const QImage& image, const QString& t
     };
     
     // 확대/축소 가능한 레이블 생성
-    ZoomableImageLabel* imageLabel = new ZoomableImageLabel(scaleLabel, scrollArea);
+    ZoomableImageLabel* imageLabel = new ZoomableImageLabel(scaleLabel, imageDialog);
     imageLabel->setOriginalPixmap(QPixmap::fromImage(image));
-    
-    // 스크롤 영역에 레이블 설정
-    scrollArea->setWidget(imageLabel);
     
     // 버튼 레이아웃
     QHBoxLayout* buttonLayout = new QHBoxLayout();
+    buttonLayout->setContentsMargins(10, 5, 10, 5);
     
     // 확대/축소 버튼
     QPushButton* zoomInButton = new QPushButton("+", imageDialog);
@@ -4165,7 +4161,7 @@ void TeachingWidget::showImageViewerDialog(const QImage& image, const QString& t
     buttonLayout->addWidget(closeButton);
     
     // 메인 레이아웃에 위젯 추가
-    layout->addWidget(scrollArea);
+    layout->addWidget(imageLabel, 1);
     layout->addLayout(buttonLayout);
     
     // 버튼 이벤트 연결
@@ -4181,8 +4177,8 @@ void TeachingWidget::showImageViewerDialog(const QImage& image, const QString& t
         imageLabel->setScale(1.0);
     });
     
-    connect(fitButton, &QPushButton::clicked, [imageLabel, scrollArea]() {
-        imageLabel->fitToView(scrollArea->viewport()->size());
+    connect(fitButton, &QPushButton::clicked, [imageLabel, imageDialog]() {
+        imageLabel->fitToView(imageDialog->size());
     });
     
     connect(closeButton, &QPushButton::clicked, imageDialog, &QDialog::accept);
@@ -4766,6 +4762,16 @@ void TeachingWidget::connectPropertyPanelEvents() {
                         if (insBinaryPanel) {
                             insBinaryPanel->setVisible(index == InspectionMethod::BINARY);
                         }
+                        
+                        // STRIP 검사 패널 및 그룹들 표시 설정
+                        bool isStripMethod = (index == InspectionMethod::STRIP);
+                        if (insStripPanel) {
+                            insStripPanel->setVisible(isStripMethod);
+                        }
+                        if (insStripLengthGroup) insStripLengthGroup->setVisible(isStripMethod);
+                        if (insStripFrontGroup) insStripFrontGroup->setVisible(isStripMethod);
+                        if (insStripRearGroup) insStripRearGroup->setVisible(isStripMethod);
+                        if (insEdgeGroup) insEdgeGroup->setVisible(isStripMethod);
                         
                         // STRIP 검사에서는 검사 임계값과 결과 반전 옵션 필요 없음
                         if (insPassThreshSpin && insPassThreshLabel) {
@@ -6046,6 +6052,13 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                     if (insStripPanel) {
                         insStripPanel->setVisible(pattern->inspectionMethod == InspectionMethod::STRIP);
                     }
+                    
+                    // STRIP 검사 그룹들 표시 설정 (STRIP 검사 방법일 때만 보임)
+                    bool isStripMethod = (pattern->inspectionMethod == InspectionMethod::STRIP);
+                    if (insStripLengthGroup) insStripLengthGroup->setVisible(isStripMethod);
+                    if (insStripFrontGroup) insStripFrontGroup->setVisible(isStripMethod);
+                    if (insStripRearGroup) insStripRearGroup->setVisible(isStripMethod);
+                    if (insEdgeGroup) insEdgeGroup->setVisible(isStripMethod);
                     
                     // STRIP 파라미터 로드
                     if (insStripKernelSpin) {

@@ -414,6 +414,7 @@ private:
     QSpinBox* insStripMinPointsSpin = nullptr;
     
     // STRIP 길이검사 관련 위젯들
+    QGroupBox* insStripLengthGroup = nullptr;
     QCheckBox* insStripLengthEnabledCheck = nullptr;
     QLabel* insStripLengthMinLabel = nullptr;
     QLineEdit* insStripLengthMinEdit = nullptr;
@@ -423,6 +424,11 @@ private:
     QDoubleSpinBox* insStripLengthConversionSpin = nullptr;
     QLabel* insStripLengthMeasuredLabel = nullptr;
     QPushButton* insStripLengthRefreshButton = nullptr;
+    
+    // STRIP 두께 검사 그룹들
+    QGroupBox* insStripFrontGroup = nullptr;
+    QGroupBox* insStripRearGroup = nullptr;
+    QGroupBox* insEdgeGroup = nullptr;
     
     // CRIMP 검사 패널 관련 위젯
     QGroupBox* insCrimpPanel = nullptr;
