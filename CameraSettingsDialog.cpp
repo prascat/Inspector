@@ -18,7 +18,99 @@ CameraSettingsDialog::CameraSettingsDialog(QWidget* parent)
 {
     setWindowTitle("카메라 UserSet 관리");
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    setAttribute(Qt::WA_TranslucentBackground);
     setMinimumSize(700, 450);
+    
+    setStyleSheet(
+        "QDialog {"
+        "    background-color: rgba(30, 30, 30, 240);"
+        "    border: 2px solid rgba(100, 100, 100, 200);"
+        "}"
+        "QGroupBox {"
+        "    color: white;"
+        "    background-color: transparent;"
+        "    border: 1px solid rgba(100, 100, 100, 150);"
+        "    margin-top: 10px;"
+        "    padding-top: 10px;"
+        "}"
+        "QGroupBox::title {"
+        "    color: white;"
+        "    subcontrol-origin: margin;"
+        "    left: 10px;"
+        "    padding: 0 5px;"
+        "}"
+        "QLabel {"
+        "    color: white;"
+        "    background-color: transparent;"
+        "}"
+        "QComboBox {"
+        "    background-color: rgba(50, 50, 50, 180);"
+        "    color: white;"
+        "    border: 1px solid rgba(100, 100, 100, 150);"
+        "    padding: 5px;"
+        "}"
+        "QComboBox::drop-down {"
+        "    border: none;"
+        "    width: 20px;"
+        "}"
+        "QComboBox::down-arrow {"
+        "    image: none;"
+        "    border-left: 5px solid transparent;"
+        "    border-right: 5px solid transparent;"
+        "    border-top: 5px solid white;"
+        "    width: 0;"
+        "    height: 0;"
+        "    margin-right: 5px;"
+        "}"
+        "QComboBox QAbstractItemView {"
+        "    background-color: rgba(50, 50, 50, 240);"
+        "    color: white;"
+        "    selection-background-color: rgba(70, 70, 70, 200);"
+        "}"
+        "QSpinBox, QDoubleSpinBox {"
+        "    background-color: rgba(50, 50, 50, 180);"
+        "    color: white;"
+        "    border: 1px solid rgba(100, 100, 100, 150);"
+        "    padding: 3px;"
+        "}"
+        "QSpinBox::up-button, QDoubleSpinBox::up-button {"
+        "    border: none;"
+        "    width: 16px;"
+        "}"
+        "QSpinBox::down-button, QDoubleSpinBox::down-button {"
+        "    border: none;"
+        "    width: 16px;"
+        "}"
+        "QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {"
+        "    image: none;"
+        "    border-left: 4px solid transparent;"
+        "    border-right: 4px solid transparent;"
+        "    border-bottom: 4px solid white;"
+        "    width: 0;"
+        "    height: 0;"
+        "}"
+        "QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {"
+        "    image: none;"
+        "    border-left: 4px solid transparent;"
+        "    border-right: 4px solid transparent;"
+        "    border-top: 4px solid white;"
+        "    width: 0;"
+        "    height: 0;"
+        "}"
+        "QPushButton {"
+        "    background-color: rgba(70, 70, 70, 200);"
+        "    color: white;"
+        "    border: 1px solid rgba(100, 100, 100, 150);"
+        "    padding: 8px 16px;"
+        "    font-weight: bold;"
+        "}"
+        "QPushButton:hover {"
+        "    background-color: rgba(90, 90, 90, 220);"
+        "}"
+        "QPushButton:pressed {"
+        "    background-color: rgba(60, 60, 60, 220);"
+        "}"
+    );
     
     setupUI();
 }
@@ -412,7 +504,7 @@ void CameraSettingsDialog::setupUserSetSettings() {
     QHBoxLayout* statusLayout = new QHBoxLayout;
     statusLayout->addWidget(new QLabel("현재 설정:", this));
     currentUserSetLabel = new QLabel("카메라 선택 필요", this);
-    currentUserSetLabel->setStyleSheet("QLabel { font-weight: bold; color: #FF9800; }");
+    currentUserSetLabel->setStyleSheet("QLabel { font-weight: bold; color: white; }");
     statusLayout->addWidget(currentUserSetLabel);
     statusLayout->addStretch();
     
@@ -459,11 +551,11 @@ void CameraSettingsDialog::setupTriggerTestUI() {
     triggerIndicatorLabel->setFixedSize(60, 50);
     triggerIndicatorLabel->setStyleSheet(
         "QLabel { "
-        "    background-color: #E0E0E0; "
-        "    border: 2px solid #999; "
+        "    background-color: rgba(60, 60, 60, 180); "
+        "    border: 2px solid rgba(100, 100, 100, 150); "
         "    border-radius: 5px; "
         "    font-weight: bold; "
-        "    color: #666; "
+        "    color: white; "
         "    font-size: 11px; "
         "    qproperty-alignment: AlignCenter; "
         "}"
@@ -473,7 +565,7 @@ void CameraSettingsDialog::setupTriggerTestUI() {
     
     // 상태 텍스트 레이블 (고정 높이)
     triggerStatusLabel = new QLabel("대기 중", this);
-    triggerStatusLabel->setStyleSheet("QLabel { font-weight: bold; color: #999; font-size: 13px; }");
+    triggerStatusLabel->setStyleSheet("QLabel { font-weight: bold; color: white; font-size: 13px; }");
     triggerStatusLabel->setFixedHeight(50);
     triggerStatusLabel->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
     headerLayout->addWidget(triggerStatusLabel);
@@ -488,25 +580,25 @@ void CameraSettingsDialog::setupTriggerTestUI() {
     // 라인 정보
     infoLayout->addWidget(new QLabel("트리거 라인:", this), 0, 0);
     triggerLineLabel = new QLabel("-", this);
-    triggerLineLabel->setStyleSheet("QLabel { font-weight: bold; color: #333; }");
+    triggerLineLabel->setStyleSheet("QLabel { font-weight: bold; color: white; }");
     infoLayout->addWidget(triggerLineLabel, 0, 1);
     
     // 엣지 정보
     infoLayout->addWidget(new QLabel("트리거 엣지:", this), 1, 0);
     triggerEdgeLabel = new QLabel("-", this);
-    triggerEdgeLabel->setStyleSheet("QLabel { font-weight: bold; color: #333; }");
+    triggerEdgeLabel->setStyleSheet("QLabel { font-weight: bold; color: white; }");
     infoLayout->addWidget(triggerEdgeLabel, 1, 1);
     
     // 활성화 정보
     infoLayout->addWidget(new QLabel("트리거 활성화:", this), 2, 0);
     triggerActivationLabel = new QLabel("-", this);
-    triggerActivationLabel->setStyleSheet("QLabel { font-weight: bold; color: #333; }");
+    triggerActivationLabel->setStyleSheet("QLabel { font-weight: bold; color: white; }");
     infoLayout->addWidget(triggerActivationLabel, 2, 1);
     
     // 감지 횟수
     infoLayout->addWidget(new QLabel("감지 횟수:", this), 3, 0);
     triggerCountLabel = new QLabel("0", this);
-    triggerCountLabel->setStyleSheet("QLabel { font-weight: bold; color: #2196F3; font-size: 14px; }");
+    triggerCountLabel->setStyleSheet("QLabel { font-weight: bold; color: white; font-size: 14px; }");
     infoLayout->addWidget(triggerCountLabel, 3, 1);
     
     infoLayout->setColumnStretch(1, 1);
@@ -521,23 +613,15 @@ void CameraSettingsDialog::setupTriggerTestUI() {
     triggerImageLabel->setFixedSize(280, 210);
     triggerImageLabel->setStyleSheet(
         "QLabel { "
-        "    background-color: #1a1a1a; "
-        "    border: 2px solid #666; "
+        "    background-color: rgba(26, 26, 26, 200); "
+        "    border: 2px solid rgba(100, 100, 100, 150); "
         "    border-radius: 5px; "
         "    qproperty-alignment: AlignCenter; "
-        "}"
-    );
-    triggerImageLabel->setText("영상 대기 중...");
-    triggerImageLabel->setStyleSheet(
-        "QLabel { "
-        "    background-color: #1a1a1a; "
-        "    border: 2px solid #666; "
-        "    border-radius: 5px; "
-        "    qproperty-alignment: AlignCenter; "
-        "    color: #999; "
+        "    color: white; "
         "    font-size: 11px; "
         "}"
     );
+    triggerImageLabel->setText("영상 대기 중...");
     rightLayout->addWidget(triggerImageLabel);
     rightLayout->addStretch();
     

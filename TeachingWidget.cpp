@@ -6459,7 +6459,6 @@ void TeachingWidget::detectCameras() {
     
     progressDialog->setValue(100);
     progressDialog->deleteLater();
-    qDebug() << "[Spinnaker] Spinnaker 모드에서 OpenCV 카메라 검색 건너뛰기";
     return;
 #endif
     

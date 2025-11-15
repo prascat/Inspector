@@ -14,20 +14,20 @@ CustomMessageBox::CustomMessageBox(QWidget* parent)
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
     setWindowModality(Qt::WindowModal);
     setAttribute(Qt::WA_DeleteOnClose, false);
+    setAttribute(Qt::WA_TranslucentBackground);
     setStyleSheet(
         "QDialog {"
-        "    background-color: white;"
-        "    border-radius: 8px;"
-        "    border: 1px solid #e0e0e0;"
+        "    background-color: rgba(30, 30, 30, 240);"
+        "    border: 2px solid rgba(100, 100, 100, 200);"
         "}"
         "QLabel {"
-        "    color: black;"
+        "    color: white;"
         "    background-color: transparent;"
         "}"
         "QLineEdit {"
-        "    background-color: white;"
-        "    color: black;"
-        "    border: 1px solid #cccccc;"
+        "    background-color: rgba(50, 50, 50, 180);"
+        "    color: white;"
+        "    border: 1px solid rgba(100, 100, 100, 150);"
         "    padding: 8px;"
         "    border-radius: 4px;"
         "    font-size: 12px;"
@@ -36,20 +36,19 @@ CustomMessageBox::CustomMessageBox(QWidget* parent)
         "    border: 2px solid #3498db;"
         "}"
         "QPushButton {"
-        "    background-color: #f0f0f0;"
-        "    color: black;"
-        "    border: 1px solid #cccccc;"
+        "    background-color: rgba(70, 70, 70, 200);"
+        "    color: white;"
+        "    border: 1px solid rgba(100, 100, 100, 150);"
         "    padding: 8px 24px;"
         "    border-radius: 4px;"
         "    font-weight: bold;"
         "    min-width: 60px;"
         "}"
         "QPushButton:hover {"
-        "    background-color: #e0e0e0;"
-        "    border-color: #999999;"
+        "    background-color: rgba(90, 90, 90, 220);"
         "}"
         "QPushButton:pressed {"
-        "    background-color: #d0d0d0;"
+        "    background-color: rgba(60, 60, 60, 220);"
         "}"
     );
     
@@ -64,20 +63,20 @@ CustomMessageBox::CustomMessageBox(QWidget* parent, IconType iconType, const QSt
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
     setWindowModality(Qt::WindowModal);
     setAttribute(Qt::WA_DeleteOnClose, false);
+    setAttribute(Qt::WA_TranslucentBackground);
     setStyleSheet(
         "QDialog {"
-        "    background-color: white;"
-        "    border-radius: 8px;"
-        "    border: 1px solid #e0e0e0;"
+        "    background-color: rgba(30, 30, 30, 240);"
+        "    border: 2px solid rgba(100, 100, 100, 200);"
         "}"
         "QLabel {"
-        "    color: black;"
+        "    color: white;"
         "    background-color: transparent;"
         "}"
         "QLineEdit {"
-        "    background-color: white;"
-        "    color: black;"
-        "    border: 1px solid #cccccc;"
+        "    background-color: rgba(50, 50, 50, 180);"
+        "    color: white;"
+        "    border: 1px solid rgba(100, 100, 100, 150);"
         "    padding: 8px;"
         "    border-radius: 4px;"
         "    font-size: 12px;"
@@ -86,20 +85,19 @@ CustomMessageBox::CustomMessageBox(QWidget* parent, IconType iconType, const QSt
         "    border: 2px solid #3498db;"
         "}"
         "QPushButton {"
-        "    background-color: #f0f0f0;"
-        "    color: black;"
-        "    border: 1px solid #cccccc;"
+        "    background-color: rgba(70, 70, 70, 200);"
+        "    color: white;"
+        "    border: 1px solid rgba(100, 100, 100, 150);"
         "    padding: 8px 24px;"
         "    border-radius: 4px;"
         "    font-weight: bold;"
         "    min-width: 60px;"
         "}"
         "QPushButton:hover {"
-        "    background-color: #e0e0e0;"
-        "    border-color: #999999;"
+        "    background-color: rgba(90, 90, 90, 220);"
         "}"
         "QPushButton:pressed {"
-        "    background-color: #d0d0d0;"
+        "    background-color: rgba(60, 60, 60, 220);"
         "}"
     );
     
@@ -131,11 +129,11 @@ void CustomMessageBox::setupUI() {
     textLayout->setSpacing(8);
     
     titleLabel = new QLabel();
-    titleLabel->setStyleSheet("QLabel { font-size: 14px; font-weight: bold; color: #000000; }");
+    titleLabel->setStyleSheet("QLabel { font-size: 14px; font-weight: bold; color: white; }");
     textLayout->addWidget(titleLabel);
     
     messageLabel = new QLabel();
-    messageLabel->setStyleSheet("QLabel { font-size: 12px; color: #333333; }");
+    messageLabel->setStyleSheet("QLabel { font-size: 12px; color: white; }");
     messageLabel->setWordWrap(true);
     messageLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
     textLayout->addWidget(messageLabel);
@@ -162,27 +160,21 @@ void CustomMessageBox::setupUI() {
     cancelButton = new QPushButton("Cancel");
     
     connect(okButton, &QPushButton::clicked, [this]() {
-        qDebug() << "[CustomMessageBox] OK 버튼 클릭됨";
         result = QMessageBox::Ok;
-        qDebug() << "[CustomMessageBox] result 설정:" << result;
-        qDebug() << "[CustomMessageBox] accept() 호출";
         accept();
     });
     
     connect(yesButton, &QPushButton::clicked, [this]() {
-        qDebug() << "[CustomMessageBox] Yes 버튼 클릭됨";
         result = QMessageBox::Yes;
         accept();
     });
     
     connect(noButton, &QPushButton::clicked, [this]() {
-        qDebug() << "[CustomMessageBox] No 버튼 클릭됨";
         result = QMessageBox::No;
         reject();
     });
     
     connect(cancelButton, &QPushButton::clicked, [this]() {
-        qDebug() << "[CustomMessageBox] Cancel 버튼 클릭됨";
         result = QMessageBox::Cancel;
         reject();
     });
@@ -253,7 +245,6 @@ void CustomMessageBox::setButtons(QMessageBox::StandardButtons buttons) {
 }
 
 int CustomMessageBox::exec() {
-    qDebug() << "[CustomMessageBox] exec() 호출됨";
     adjustSize();
     
     // 부모 중심에 배치
@@ -271,9 +262,7 @@ int CustomMessageBox::exec() {
         move(x, y);
     }
     
-    qDebug() << "[CustomMessageBox] QDialog::exec() 호출";
     int dialogResult = QDialog::exec();
-    qDebug() << "[CustomMessageBox] QDialog::exec() 반환값:" << dialogResult << ", result 멤버:" << result;
     return result;  // QDialog::exec() 대신 저장한 result 반환
 }
 
