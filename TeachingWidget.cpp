@@ -1657,38 +1657,78 @@ void TeachingWidget::setupRightPanelOverlay() {
         "  border-radius: 10px;"
         "}"
         "QLineEdit {"
-        "  background-color: white;"
-        "  color: black;"
-        "  border: 1px solid #ccc;"
+        "  background-color: rgba(50, 50, 50, 180);"
+        "  color: white;"
+        "  border: 1px solid rgba(100, 100, 100, 150);"
         "  padding: 2px;"
         "}"
         "QSpinBox, QDoubleSpinBox {"
-        "  background-color: white;"
-        "  color: black;"
-        "  border: 1px solid #ccc;"
+        "  background-color: rgba(50, 50, 50, 180);"
+        "  color: white;"
+        "  border: 1px solid rgba(100, 100, 100, 150);"
         "  padding: 2px;"
         "}"
         "QSpinBox::up-button, QDoubleSpinBox::up-button {"
-        "  background-color: #e0e0e0;"
+        "  background-color: rgba(70, 70, 70, 180);"
+        "  border: 1px solid rgba(100, 100, 100, 150);"
         "}"
         "QSpinBox::down-button, QDoubleSpinBox::down-button {"
-        "  background-color: #e0e0e0;"
+        "  background-color: rgba(70, 70, 70, 180);"
+        "  border: 1px solid rgba(100, 100, 100, 150);"
+        "}"
+        "QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {"
+        "  image: none;"
+        "  border-left: 4px solid transparent;"
+        "  border-right: 4px solid transparent;"
+        "  border-bottom: 5px solid white;"
+        "  width: 0px;"
+        "  height: 0px;"
+        "}"
+        "QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {"
+        "  image: none;"
+        "  border-left: 4px solid transparent;"
+        "  border-right: 4px solid transparent;"
+        "  border-top: 5px solid white;"
+        "  width: 0px;"
+        "  height: 0px;"
         "}"
         "QComboBox {"
-        "  background-color: white;"
-        "  color: black;"
-        "  border: 1px solid #ccc;"
+        "  background-color: rgba(50, 50, 50, 180);"
+        "  color: white;"
+        "  border: 1px solid rgba(100, 100, 100, 150);"
         "  padding: 2px;"
         "}"
+        "QComboBox::drop-down {"
+        "  border: 1px solid rgba(100, 100, 100, 150);"
+        "}"
+        "QComboBox::down-arrow {"
+        "  image: none;"
+        "  border-left: 4px solid transparent;"
+        "  border-right: 4px solid transparent;"
+        "  border-top: 5px solid white;"
+        "  width: 0px;"
+        "  height: 0px;"
+        "}"
         "QComboBox QAbstractItemView {"
-        "  background-color: white;"
-        "  color: black;"
-        "  selection-background-color: #3399ff;"
+        "  background-color: rgba(50, 50, 50, 230);"
+        "  color: white;"
+        "  selection-background-color: rgba(0, 120, 215, 180);"
         "  selection-color: white;"
         "}"
+        "QCheckBox {"
+        "  color: white;"
+        "}"
+        "QSlider::groove:horizontal {"
+        "  background: rgba(100, 100, 100, 150);"
+        "  height: 6px;"
+        "}"
+        "QSlider::handle:horizontal {"
+        "  background: rgba(0, 120, 215, 200);"
+        "  width: 14px;"
+        "}"
         "QTreeWidget, QTextEdit {"
-        "  background-color: white;"
-        "  color: black;"
+        "  background-color: transparent;"
+        "  color: white;"
         "}"
         "QPushButton#collapseButton {"
         "  background-color: rgba(70, 70, 70, 200);"
@@ -1800,23 +1840,23 @@ void TeachingWidget::setupPatternTree() {
     patternTree->setSelectionMode(QAbstractItemView::SingleSelection);
     patternTree->setAlternatingRowColors(true);
     
-    // 패턴 트리 스타일 설정 (흰색 배경, 검은색 글자)
+    // 패턴 트리 스타일 설정 (투명 배경, 흰색 글자)
     patternTree->setStyleSheet(
         "QTreeWidget { "
-        "   background-color: white; "
-        "   color: black; "
+        "   background-color: transparent; "
+        "   color: white; "
         "} "
         "QTreeWidget::item { "
-        "   color: black; "
+        "   color: white; "
         "} "
         "QTreeWidget::item:selected { "
-        "   background-color: #0078d7; "
+        "   background-color: rgba(0, 120, 215, 150); "
         "   color: white; "
         "} "
         "QHeaderView::section { "
-        "   background-color: #f0f0f0; "
-        "   color: black; "
-        "   border: 1px solid #d0d0d0; "
+        "   background-color: transparent; "
+        "   color: white; "
+        "   border: 1px solid rgba(255, 255, 255, 50); "
         "}"
     );
     
@@ -3012,7 +3052,7 @@ void TeachingWidget::createPropertyPanels() {
     scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     QWidget* scrollContent = new QWidget();
-    scrollContent->setStyleSheet("QWidget { background-color: white; color: black; } QLabel { color: black; }");
+    scrollContent->setStyleSheet("QWidget { background-color: transparent; color: white; } QLabel { color: white; }");
     QVBoxLayout* mainContentLayout = new QVBoxLayout(scrollContent);
     mainContentLayout->setContentsMargins(5, 5, 5, 5);
     mainContentLayout->setSpacing(8);
@@ -3020,7 +3060,7 @@ void TeachingWidget::createPropertyPanels() {
     // === 공통 기본 정보 그룹 ===
     QGroupBox* basicInfoGroup = new QGroupBox("기본 정보", scrollContent);
     basicInfoGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: black; background-color: white; }"
+        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* basicInfoLayout = new QFormLayout(basicInfoGroup);
@@ -3029,22 +3069,22 @@ void TeachingWidget::createPropertyPanels() {
     
     // 패턴 ID
     patternIdLabel = new QLabel("ID:", basicInfoGroup);
-    patternIdLabel->setStyleSheet("color: black;");
+    patternIdLabel->setStyleSheet("color: white;");
     patternIdValue = new QLabel(basicInfoGroup);
     patternIdValue->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    patternIdValue->setStyleSheet("color: #666; font-family: monospace; background-color: white;");
+    patternIdValue->setStyleSheet("color: #ccc; font-family: monospace; background-color: transparent;");
     basicInfoLayout->addRow(patternIdLabel, patternIdValue);
     
     // 패턴 이름
     patternNameLabel = new QLabel("이름:", basicInfoGroup);
-    patternNameLabel->setStyleSheet("color: black;");
+    patternNameLabel->setStyleSheet("color: white;");
     patternNameEdit = new QLineEdit(basicInfoGroup);
     patternNameEdit->setFixedHeight(24);
     basicInfoLayout->addRow(patternNameLabel, patternNameEdit);
     
     // 패턴 타입 (동적 색상 적용)
     patternTypeLabel = new QLabel("타입:", basicInfoGroup);
-    patternTypeLabel->setStyleSheet("color: black;");
+    patternTypeLabel->setStyleSheet("color: white;");
     patternTypeValue = new QLabel(basicInfoGroup);
     patternTypeValue->setAlignment(Qt::AlignCenter);
     patternTypeValue->setFixedHeight(24);
@@ -3061,9 +3101,9 @@ void TeachingWidget::createPropertyPanels() {
     
     // 카메라 이름
     patternCameraLabel = new QLabel("카메라:", basicInfoGroup);
-    patternCameraLabel->setStyleSheet("color: black;");
+    patternCameraLabel->setStyleSheet("color: white;");
     patternCameraValue = new QLabel(basicInfoGroup);
-    patternCameraValue->setStyleSheet("color: #666; background-color: white;");
+    patternCameraValue->setStyleSheet("color: #ccc; background-color: transparent;");
     basicInfoLayout->addRow(patternCameraLabel, patternCameraValue);
 
     mainContentLayout->addWidget(basicInfoGroup);
@@ -3071,7 +3111,7 @@ void TeachingWidget::createPropertyPanels() {
     // === 위치 및 크기 그룹 ===
     QGroupBox* positionSizeGroup = new QGroupBox("위치 및 크기", scrollContent);
     positionSizeGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: black; background-color: white; }"
+        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* positionSizeLayout = new QFormLayout(positionSizeGroup);
@@ -3080,7 +3120,7 @@ void TeachingWidget::createPropertyPanels() {
     
     // 좌표 설정
     positionLabel = new QLabel("좌표:", positionSizeGroup);
-    positionLabel->setStyleSheet("color: black;");
+    positionLabel->setStyleSheet("color: white;");
     QWidget* posWidget = new QWidget(positionSizeGroup);
     QHBoxLayout* posLayout = new QHBoxLayout(posWidget);
     posLayout->setContentsMargins(0, 0, 0, 0);
@@ -3089,13 +3129,13 @@ void TeachingWidget::createPropertyPanels() {
     QLabel* xLabel = new QLabel("X:", posWidget);
     xLabel->setFixedWidth(15);
     xLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    xLabel->setStyleSheet("color: black;");
+    xLabel->setStyleSheet("color: white;");
     patternXSpin = new QSpinBox(posWidget);
     patternXSpin->setFixedHeight(24);
     patternXSpin->setRange(0, 9999);
     
     QLabel* yLabel = new QLabel("Y:", posWidget);
-    yLabel->setStyleSheet("color: black;");
+    yLabel->setStyleSheet("color: white;");
     yLabel->setFixedWidth(15);
     yLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     patternYSpin = new QSpinBox(posWidget);
@@ -3110,7 +3150,7 @@ void TeachingWidget::createPropertyPanels() {
     
     // 크기 설정
     sizeLabel = new QLabel("크기:", positionSizeGroup);
-    sizeLabel->setStyleSheet("color: black;");
+    sizeLabel->setStyleSheet("color: white;");
     QWidget* sizeWidget = new QWidget(positionSizeGroup);
     QHBoxLayout* sizeLayout = new QHBoxLayout(sizeWidget);
     sizeLayout->setContentsMargins(0, 0, 0, 0);
@@ -3119,7 +3159,7 @@ void TeachingWidget::createPropertyPanels() {
     QLabel* wLabel = new QLabel("W:", sizeWidget);
     wLabel->setFixedWidth(15);
     wLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    wLabel->setStyleSheet("color: black;");
+    wLabel->setStyleSheet("color: white;");
     patternWSpin = new QSpinBox(sizeWidget);
     patternWSpin->setFixedHeight(24);
     patternWSpin->setRange(1, 9999);
@@ -3127,7 +3167,7 @@ void TeachingWidget::createPropertyPanels() {
     QLabel* hLabel = new QLabel("H:", sizeWidget);
     hLabel->setFixedWidth(15);
     hLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    hLabel->setStyleSheet("color: black;");
+    hLabel->setStyleSheet("color: white;");
     patternHSpin = new QSpinBox(sizeWidget);
     patternHSpin->setFixedHeight(24);
     patternHSpin->setRange(1, 9999);
@@ -3140,7 +3180,7 @@ void TeachingWidget::createPropertyPanels() {
 
     // 회전 각도
     angleLabel = new QLabel("각도:", positionSizeGroup);
-    angleLabel->setStyleSheet("color: black;");
+    angleLabel->setStyleSheet("color: white;");
     QWidget* angleWidget = new QWidget(positionSizeGroup);
     QHBoxLayout* angleLayout = new QHBoxLayout(angleWidget);
     angleLayout->setContentsMargins(0, 0, 0, 0);
@@ -3152,7 +3192,7 @@ void TeachingWidget::createPropertyPanels() {
     angleEdit->setPlaceholderText("0.0");
     
     QLabel* degreeLabel = new QLabel("°", angleWidget);
-    degreeLabel->setStyleSheet("color: black;");
+    degreeLabel->setStyleSheet("color: white;");
     
     angleLayout->addWidget(angleEdit, 1);
     angleLayout->addWidget(degreeLabel);
@@ -3175,104 +3215,131 @@ void TeachingWidget::createPropertyPanels() {
     roiLayout->addWidget(roiIncludeAllCheck);
     specialPropStack->addWidget(roiPropWidget);
 
-    // 2. FID 속성 - QVBoxLayout 사용
+    // 2. FID 속성 - 그룹박스로 묶기
     QWidget* fidPropWidget = new QWidget(specialPropStack);
     QVBoxLayout* fidLayout = new QVBoxLayout(fidPropWidget);
     fidLayout->setContentsMargins(0, 0, 0, 0);
-    fidLayout->setSpacing(3);
-    fidLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop); // 왼쪽 상단 정렬
+    fidLayout->setSpacing(8);
+
+    // FID 매칭 설정 그룹
+    QGroupBox* fidMatchGroup = new QGroupBox("FID 매칭 설정", fidPropWidget);
+    fidMatchGroup->setStyleSheet(
+        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
+    );
+    QVBoxLayout* fidMatchLayout = new QVBoxLayout(fidMatchGroup);
+    fidMatchLayout->setContentsMargins(10, 15, 10, 10);
+    fidMatchLayout->setSpacing(5);
+    fidMatchLayout->setAlignment(Qt::AlignCenter);
 
     // 매칭 검사 활성화 체크박스
-    fidMatchCheckBox = new QCheckBox("매칭 검사 활성화", fidPropWidget);
-    fidLayout->addWidget(fidMatchCheckBox);
+    fidMatchCheckBox = new QCheckBox("매칭 검사 활성화", fidMatchGroup);
+    QHBoxLayout* fidCheckLayout = new QHBoxLayout();
+    fidCheckLayout->addStretch();
+    fidCheckLayout->addWidget(fidMatchCheckBox);
+    fidCheckLayout->addStretch();
+    fidMatchLayout->addLayout(fidCheckLayout);
 
     // FID 패턴에서 매칭 방법 및 매칭 검사 옵션 추가
-    fidMatchMethodLabel = new QLabel("매칭 방법:", fidPropWidget);
-    fidMatchMethodLabel->setStyleSheet("color: black;");
-    fidMatchMethodCombo = new QComboBox(fidPropWidget);
+    fidMatchMethodLabel = new QLabel("매칭 방법:", fidMatchGroup);
+    fidMatchMethodLabel->setStyleSheet("color: white;");
+    fidMatchMethodCombo = new QComboBox(fidMatchGroup);
     fidMatchMethodCombo->addItem("Coefficient", 0);
     fidMatchMethodCombo->addItem("Correlation", 1);
     
     QHBoxLayout* fidMatchMethodLayout = new QHBoxLayout();
+    fidMatchMethodLayout->addStretch();
     fidMatchMethodLayout->addWidget(fidMatchMethodLabel);
     fidMatchMethodLayout->addWidget(fidMatchMethodCombo);
     fidMatchMethodLayout->addStretch();
-    fidLayout->addLayout(fidMatchMethodLayout);
+    fidMatchLayout->addLayout(fidMatchMethodLayout);
     
     // 매칭 임계값 (불량 판정 기준)
     QHBoxLayout* fidMatchThreshLayout = new QHBoxLayout();
-    fidMatchThreshLabel = new QLabel("매칭 임계값:", fidPropWidget);
-    fidMatchThreshSpin = new QDoubleSpinBox(fidPropWidget);
+    fidMatchThreshLabel = new QLabel("매칭 임계값:", fidMatchGroup);
+    fidMatchThreshSpin = new QDoubleSpinBox(fidMatchGroup);
     fidMatchThreshSpin->setRange(10.0, 100.0);
     fidMatchThreshSpin->setSingleStep(5.0);
     fidMatchThreshSpin->setValue(75.0);
     fidMatchThreshSpin->setSuffix("%");
+    fidMatchThreshLayout->addStretch();
     fidMatchThreshLayout->addWidget(fidMatchThreshLabel);
     fidMatchThreshLayout->addWidget(fidMatchThreshSpin);
     fidMatchThreshLayout->addStretch();
-    fidLayout->addLayout(fidMatchThreshLayout);
+    fidMatchLayout->addLayout(fidMatchThreshLayout);
 
-    // 회전 허용 - 체크박스 왼쪽 정렬
-    fidRotationCheck = new QCheckBox("회전 허용", fidPropWidget);
-    fidLayout->addWidget(fidRotationCheck);
+    // 회전 허용 - 체크박스 중앙 정렬
+    fidRotationCheck = new QCheckBox("회전 허용", fidMatchGroup);
+    QHBoxLayout* fidRotationCheckLayout = new QHBoxLayout();
+    fidRotationCheckLayout->addStretch();
+    fidRotationCheckLayout->addWidget(fidRotationCheck);
+    fidRotationCheckLayout->addStretch();
+    fidMatchLayout->addLayout(fidRotationCheckLayout);
 
     // 회전 각도 범위
     QHBoxLayout* fidAngleLayout = new QHBoxLayout();
     fidAngleLayout->setContentsMargins(0, 0, 0, 0);
     fidAngleLayout->setSpacing(5);
-    fidAngleLabel = new QLabel("회전 각도 범위:", fidPropWidget);
-    fidMinAngleSpin = new QDoubleSpinBox(fidPropWidget);
+    fidAngleLabel = new QLabel("회전 각도 범위:", fidMatchGroup);
+    fidMinAngleSpin = new QDoubleSpinBox(fidMatchGroup);
     fidMinAngleSpin->setFixedHeight(22);
     fidMinAngleSpin->setRange(-15, 0);
     fidMinAngleSpin->setSingleStep(1);
     fidMinAngleSpin->setValue(-5);
     fidMinAngleSpin->setSuffix("°");
-    fidToLabel = new QLabel("~", fidPropWidget);
-    fidMaxAngleSpin = new QDoubleSpinBox(fidPropWidget);
+    fidToLabel = new QLabel("~", fidMatchGroup);
+    fidMaxAngleSpin = new QDoubleSpinBox(fidMatchGroup);
     fidMaxAngleSpin->setFixedHeight(22);
     fidMaxAngleSpin->setRange(0, 15);
     fidMaxAngleSpin->setSingleStep(1);
     fidMaxAngleSpin->setValue(5);
     fidMaxAngleSpin->setSuffix("°");
+    fidAngleLayout->addStretch();
     fidAngleLayout->addWidget(fidAngleLabel);
     fidAngleLayout->addWidget(fidMinAngleSpin);
     fidAngleLayout->addWidget(fidToLabel);
     fidAngleLayout->addWidget(fidMaxAngleSpin);
     fidAngleLayout->addStretch();
-    fidLayout->addLayout(fidAngleLayout);
+    fidMatchLayout->addLayout(fidAngleLayout);
 
     // 각도 스텝
     QHBoxLayout* fidStepLayout = new QHBoxLayout();
     fidStepLayout->setContentsMargins(0, 0, 0, 0);
     fidStepLayout->setSpacing(5);
-    fidStepLabel = new QLabel("각도 스텝:", fidPropWidget);
-    fidStepSpin = new QDoubleSpinBox(fidPropWidget);
+    fidStepLabel = new QLabel("각도 스텝:", fidMatchGroup);
+    fidStepSpin = new QDoubleSpinBox(fidMatchGroup);
     fidStepSpin->setFixedHeight(22);
     fidStepSpin->setRange(0.1, 10);
     fidStepSpin->setSingleStep(0.5);
     fidStepSpin->setValue(1.0);
     fidStepSpin->setSuffix("°");
+    fidStepLayout->addStretch();
     fidStepLayout->addWidget(fidStepLabel);
     fidStepLayout->addWidget(fidStepSpin);
     fidStepLayout->addStretch();
-    fidLayout->addLayout(fidStepLayout);
+    fidMatchLayout->addLayout(fidStepLayout);
 
     // 템플릿 이미지 미리보기
     QHBoxLayout* fidImageLayout = new QHBoxLayout();
     fidImageLayout->setContentsMargins(0, 0, 0, 0);
     fidImageLayout->setSpacing(5);
-    fidTemplateImgLabel = new QLabel("템플릿 이미지:", fidPropWidget);
-    fidTemplateImg = new QLabel(fidPropWidget);
+    fidTemplateImgLabel = new QLabel("템플릿 이미지:", fidMatchGroup);
+    fidTemplateImg = new QLabel(fidMatchGroup);
     fidTemplateImg->setFixedSize(120, 90);
     fidTemplateImg->setAlignment(Qt::AlignCenter);
-    fidTemplateImg->setStyleSheet("background-color: #eee;");
+    fidTemplateImg->setStyleSheet("background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150);");
     fidTemplateImg->setText(TR("NO_IMAGE"));
     fidTemplateImg->setCursor(Qt::PointingHandCursor);
     fidTemplateImg->installEventFilter(this);
+    fidImageLayout->addStretch();
     fidImageLayout->addWidget(fidTemplateImgLabel);
     fidImageLayout->addWidget(fidTemplateImg);
     fidImageLayout->addStretch();
-    fidLayout->addLayout(fidImageLayout);
+    fidMatchLayout->addLayout(fidImageLayout);
+
+    // 그룹을 메인 레이아웃에 추가
+    fidLayout->addWidget(fidMatchGroup);
+    fidLayout->addStretch();
 
     specialPropStack->addWidget(fidPropWidget);
 
@@ -3285,12 +3352,14 @@ void TeachingWidget::createPropertyPanels() {
     // === 기본 검사 설정 그룹 ===
     QGroupBox* basicInspectionGroup = new QGroupBox("기본 검사 설정", insPropWidget);
     basicInspectionGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; }"
+        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* basicInspectionLayout = new QFormLayout(basicInspectionGroup);
     basicInspectionLayout->setVerticalSpacing(5);
     basicInspectionLayout->setContentsMargins(10, 15, 10, 10);
+    basicInspectionLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    basicInspectionLayout->setFormAlignment(Qt::AlignCenter);
 
     // 검사 방법
     insMethodLabel = new QLabel("검사 방법:", basicInspectionGroup);
@@ -3322,12 +3391,14 @@ void TeachingWidget::createPropertyPanels() {
     // === 이진화 검사 설정 그룹 ===
     insBinaryPanel = new QGroupBox("이진화 검사 설정", insPropWidget);
     insBinaryPanel->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; }"
+        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* insBinaryLayout = new QFormLayout(insBinaryPanel);
     insBinaryLayout->setVerticalSpacing(5);
     insBinaryLayout->setContentsMargins(10, 15, 10, 10);
+    insBinaryLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    insBinaryLayout->setFormAlignment(Qt::AlignCenter);
 
     // 이진화 임계값
     insThreshLabel = new QLabel("이진화 임계값:", insBinaryPanel);
@@ -3371,6 +3442,7 @@ void TeachingWidget::createPropertyPanels() {
     insUpperSpin->setSingleStep(0.01);
     insUpperSpin->setValue(0.7);
     
+    rangeLayout->addStretch();
     rangeLayout->addWidget(insLowerLabel);
     rangeLayout->addWidget(insLowerSpin);
     rangeLayout->addWidget(insUpperLabel);
@@ -3391,7 +3463,7 @@ void TeachingWidget::createPropertyPanels() {
     // === 템플릿 이미지 그룹 ===
     QGroupBox* templateGroup = new QGroupBox("템플릿 이미지", insPropWidget);
     templateGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; }"
+        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QVBoxLayout* templateLayout = new QVBoxLayout(templateGroup);
@@ -3402,7 +3474,8 @@ void TeachingWidget::createPropertyPanels() {
     insTemplateImg->setFixedSize(120, 90);
     insTemplateImg->setAlignment(Qt::AlignCenter);
     insTemplateImg->setStyleSheet(
-        "background-color: #f5f5f5; "
+        "background-color: rgba(50, 50, 50, 180); "
+        "border: 1px solid rgba(100, 100, 100, 150); "
         "border-radius: 4px;"
     );
     insTemplateImg->setText("클릭하여\n이미지 선택");
@@ -3418,15 +3491,17 @@ void TeachingWidget::createPropertyPanels() {
     templateLayout->addLayout(insImageCenterLayout);
     insMainLayout->addWidget(templateGroup);
 
-    // === STRIP 검사 파라미터 그룹 ===
-    insStripPanel = new QGroupBox("STRIP 검사 파라미터", insPropWidget);
+    // === STRIP 검사 공통 파라미터 그룹 ===
+    insStripPanel = new QGroupBox("STRIP 검사 공통 파라미터", insPropWidget);
     insStripPanel->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; }"
+        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* insStripLayout = new QFormLayout(insStripPanel);
     insStripLayout->setVerticalSpacing(5);
     insStripLayout->setContentsMargins(10, 15, 10, 10);
+    insStripLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    insStripLayout->setFormAlignment(Qt::AlignCenter);
 
     // 형태학적 커널 크기
     insStripKernelLabel = new QLabel("형태학적 커널:", insStripPanel);
@@ -3498,70 +3573,84 @@ void TeachingWidget::createPropertyPanels() {
     insStripMinPointsSpin->setRange(3, 20);
     insStripMinPointsSpin->setValue(5);
     insStripLayout->addRow(insStripMinPointsLabel, insStripMinPointsSpin);
+
+    insMainLayout->addWidget(insStripPanel);
+
+    // === STRIP 길이 검사 그룹 ===
+    QGroupBox* insStripLengthGroup = new QGroupBox("STRIP 길이 검사", insPropWidget);
+    insStripLengthGroup->setStyleSheet(
+        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
+    );
+    QFormLayout* stripLengthLayout = new QFormLayout(insStripLengthGroup);
+    stripLengthLayout->setVerticalSpacing(5);
+    stripLengthLayout->setContentsMargins(10, 15, 10, 10);
+    stripLengthLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    stripLengthLayout->setFormAlignment(Qt::AlignCenter);
     
-    // 구분선 추가
-    QFrame* separator = new QFrame(insStripPanel);
-    separator->setFrameShape(QFrame::HLine);
-    separator->setFrameShadow(QFrame::Sunken);
-    insStripLayout->addRow(separator);
-    
-    // STRIP 길이검사 체크박스
-    insStripLengthEnabledCheck = new QCheckBox("STRIP 길이검사 활성화", insStripPanel);
-    insStripLayout->addRow("", insStripLengthEnabledCheck);
+    // STRIP 길이검사 활성화 체크박스는 필수이므로 제거됨
     
     // STRIP 길이검사 범위 설정
-    insStripLengthMinLabel = new QLabel("최소 길이:", insStripPanel);
-    insStripLengthMinEdit = new QLineEdit(insStripPanel);
+    insStripLengthMinLabel = new QLabel("최소 길이:", insStripLengthGroup);
+    insStripLengthMinEdit = new QLineEdit(insStripLengthGroup);
     insStripLengthMinEdit->setText("5.70");
     insStripLengthMinEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insStripLengthMinEdit));
-    insStripLayout->addRow(insStripLengthMinLabel, insStripLengthMinEdit);
+    stripLengthLayout->addRow(insStripLengthMinLabel, insStripLengthMinEdit);
     
-    insStripLengthMaxLabel = new QLabel("최대 길이:", insStripPanel);
-    insStripLengthMaxEdit = new QLineEdit(insStripPanel);
+    insStripLengthMaxLabel = new QLabel("최대 길이:", insStripLengthGroup);
+    insStripLengthMaxEdit = new QLineEdit(insStripLengthGroup);
     insStripLengthMaxEdit->setText("6.00");
     insStripLengthMaxEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insStripLengthMaxEdit));
-    insStripLayout->addRow(insStripLengthMaxLabel, insStripLengthMaxEdit);
+    stripLengthLayout->addRow(insStripLengthMaxLabel, insStripLengthMaxEdit);
     
     // STRIP 길이 수치 변환 설정 (스핀박스 + 갱신 버튼)
-    insStripLengthConversionLabel = new QLabel("수치 변환 (mm):", insStripPanel);
+    insStripLengthConversionLabel = new QLabel("수치 변환 (mm):", insStripLengthGroup);
     
-    QWidget* conversionWidget = new QWidget(insStripPanel);
+    QWidget* conversionWidget = new QWidget(insStripLengthGroup);
     QHBoxLayout* conversionLayout = new QHBoxLayout(conversionWidget);
     conversionLayout->setContentsMargins(0, 0, 0, 0);
     conversionLayout->setSpacing(5);
     
-    insStripLengthConversionSpin = new QDoubleSpinBox(insStripPanel);
+    insStripLengthConversionSpin = new QDoubleSpinBox(insStripLengthGroup);
     insStripLengthConversionSpin->setRange(0.001, 100.0);
     insStripLengthConversionSpin->setDecimals(3);
     insStripLengthConversionSpin->setSingleStep(0.001);
     insStripLengthConversionSpin->setValue(6.0);
     conversionLayout->addWidget(insStripLengthConversionSpin);
     
-    insStripLengthRefreshButton = new QPushButton("갱신", insStripPanel);
+    insStripLengthRefreshButton = new QPushButton("갱신", insStripLengthGroup);
     insStripLengthRefreshButton->setMaximumWidth(80);
     conversionLayout->addWidget(insStripLengthRefreshButton);
     
-    insStripLayout->addRow(insStripLengthConversionLabel, conversionWidget);
+    stripLengthLayout->addRow(insStripLengthConversionLabel, conversionWidget);
     
     // 측정값 결과 라벨 (별도 행)
-    insStripLengthMeasuredLabel = new QLabel("측정값: - mm", insStripPanel);
+    insStripLengthMeasuredLabel = new QLabel("측정값: - mm", insStripLengthGroup);
     insStripLengthMeasuredLabel->setStyleSheet("QLabel { color: #00AAFF; font-weight: bold; }");
-    insStripLayout->addRow("", insStripLengthMeasuredLabel);
-    
-    // FRONT 두께검사 구분선 추가
-    QFrame* frontSeparator = new QFrame(insStripPanel);
-    frontSeparator->setFrameShape(QFrame::HLine);
-    frontSeparator->setFrameShadow(QFrame::Sunken);
-    insStripLayout->addRow(frontSeparator);
+    stripLengthLayout->addRow("", insStripLengthMeasuredLabel);
+
+    insMainLayout->addWidget(insStripLengthGroup);
+
+    // === FRONT 두께 검사 그룹 ===
+    QGroupBox* insStripFrontGroup = new QGroupBox("FRONT 두께 검사", insPropWidget);
+    insStripFrontGroup->setStyleSheet(
+        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
+    );
+    QFormLayout* stripFrontLayout = new QFormLayout(insStripFrontGroup);
+    stripFrontLayout->setVerticalSpacing(5);
+    stripFrontLayout->setContentsMargins(10, 15, 10, 10);
+    stripFrontLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    stripFrontLayout->setFormAlignment(Qt::AlignCenter);
     
     // FRONT 두께 검사 체크박스
-    insStripFrontEnabledCheck = new QCheckBox("FRONT 두께 검사 활성화", insStripPanel);
-    insStripLayout->addRow("", insStripFrontEnabledCheck);
+    insStripFrontEnabledCheck = new QCheckBox("FRONT 두께 검사 활성화", insStripFrontGroup);
+    stripFrontLayout->addRow("", insStripFrontEnabledCheck);
     
     // STRIP 두께 측정 관련 컨트롤들 - 슬라이더 + SpinBox 조합
     
     // 측정박스 너비 슬라이더
-    QWidget* thicknessWidthWidget = new QWidget(insStripPanel);
+    QWidget* thicknessWidthWidget = new QWidget(insStripFrontGroup);
     QHBoxLayout* thicknessWidthLayout = new QHBoxLayout(thicknessWidthWidget);
     thicknessWidthLayout->setContentsMargins(0, 0, 0, 0);
     thicknessWidthLayout->setSpacing(5);
@@ -3579,7 +3668,7 @@ void TeachingWidget::createPropertyPanels() {
     thicknessWidthLayout->addWidget(insStripThicknessWidthValueLabel);
     
     // 측정박스 높이 슬라이더
-    QWidget* thicknessHeightWidget = new QWidget(insStripPanel);
+    QWidget* thicknessHeightWidget = new QWidget(insStripFrontGroup);
     QHBoxLayout* thicknessHeightLayout = new QHBoxLayout(thicknessHeightWidget);
     thicknessHeightLayout->setContentsMargins(0, 0, 0, 0);
     thicknessHeightLayout->setSpacing(5);
@@ -3596,30 +3685,57 @@ void TeachingWidget::createPropertyPanels() {
     thicknessHeightLayout->addWidget(insStripThicknessHeightSlider);
     thicknessHeightLayout->addWidget(insStripThicknessHeightValueLabel);
     
+    // 두께 범위 위젯
+    QWidget* thicknessRangeWidget = new QWidget(insStripFrontGroup);
+    QVBoxLayout* thicknessRangeLayout = new QVBoxLayout(thicknessRangeWidget);
+    thicknessRangeLayout->setContentsMargins(0, 0, 0, 0);
+    thicknessRangeLayout->setSpacing(3);
+    thicknessRangeLayout->addWidget(thicknessWidthWidget);
+    thicknessRangeLayout->addWidget(thicknessHeightWidget);
+    
     // 최소/최대 두께 LineEdit
-    insStripThicknessMinLabel = new QLabel("최소 두께:", insStripPanel);
-    insStripThicknessMinEdit = new QLineEdit(insStripPanel);
+    insStripThicknessMinLabel = new QLabel("최소 두께:", insStripFrontGroup);
+    insStripThicknessMinEdit = new QLineEdit(insStripFrontGroup);
     insStripThicknessMinEdit->setText("10");
     insStripThicknessMinEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insStripThicknessMinEdit));
     
-    insStripThicknessMaxLabel = new QLabel("최대 두께:", insStripPanel);
-    insStripThicknessMaxEdit = new QLineEdit(insStripPanel);
+    insStripThicknessMaxLabel = new QLabel("최대 두께:", insStripFrontGroup);
+    insStripThicknessMaxEdit = new QLineEdit(insStripFrontGroup);
     insStripThicknessMaxEdit->setText("100");
     insStripThicknessMaxEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insStripThicknessMaxEdit));
     
+    stripFrontLayout->addRow("FRONT 두께 범위:", thicknessRangeWidget);
+    stripFrontLayout->addRow(insStripThicknessMinLabel, insStripThicknessMinEdit);
+    stripFrontLayout->addRow(insStripThicknessMaxLabel, insStripThicknessMaxEdit);
+
+    insMainLayout->addWidget(insStripFrontGroup);
+
+    // === REAR 두께 검사 그룹 ===
+    QGroupBox* insStripRearGroup = new QGroupBox("REAR 두께 검사", insPropWidget);
+    insStripRearGroup->setStyleSheet(
+        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
+    );
+    QFormLayout* stripRearLayout = new QFormLayout(insStripRearGroup);
+    stripRearLayout->setVerticalSpacing(5);
+    stripRearLayout->setContentsMargins(10, 15, 10, 10);
+    stripRearLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    stripRearLayout->setFormAlignment(Qt::AlignCenter);
+
     // REAR 두께 검사 체크박스
-    insStripRearEnabledCheck = new QCheckBox("REAR 두께 검사 활성화", insStripPanel);
+    insStripRearEnabledCheck = new QCheckBox("REAR 두께 검사 활성화", insStripRearGroup);
+    stripRearLayout->addRow("", insStripRearEnabledCheck);
     
     // REAR 두께 측정 박스 크기 설정
-    insStripRearThicknessWidthLabel = new QLabel("너비:", insStripPanel);
-    insStripRearThicknessWidthSlider = new QSlider(Qt::Horizontal, insStripPanel);
+    insStripRearThicknessWidthLabel = new QLabel("너비:", insStripRearGroup);
+    insStripRearThicknessWidthSlider = new QSlider(Qt::Horizontal, insStripRearGroup);
     insStripRearThicknessWidthSlider->setRange(10, 200);
     insStripRearThicknessWidthSlider->setValue(50);
     insStripRearThicknessWidthSlider->setStyleSheet(UIColors::sliderStyle());
-    insStripRearThicknessWidthValueLabel = new QLabel("50", insStripPanel);
+    insStripRearThicknessWidthValueLabel = new QLabel("50", insStripRearGroup);
     insStripRearThicknessWidthValueLabel->setMinimumWidth(40);
     
-    QWidget* rearThicknessWidthWidget = new QWidget(insStripPanel);
+    QWidget* rearThicknessWidthWidget = new QWidget(insStripRearGroup);
     QHBoxLayout* rearThicknessWidthLayout = new QHBoxLayout(rearThicknessWidthWidget);
     rearThicknessWidthLayout->setContentsMargins(0, 0, 0, 0);
     rearThicknessWidthLayout->setSpacing(5);
@@ -3628,15 +3744,15 @@ void TeachingWidget::createPropertyPanels() {
     rearThicknessWidthLayout->addWidget(insStripRearThicknessWidthSlider);
     rearThicknessWidthLayout->addWidget(insStripRearThicknessWidthValueLabel);
     
-    insStripRearThicknessHeightLabel = new QLabel("높이:", insStripPanel);
-    insStripRearThicknessHeightSlider = new QSlider(Qt::Horizontal, insStripPanel);
+    insStripRearThicknessHeightLabel = new QLabel("높이:", insStripRearGroup);
+    insStripRearThicknessHeightSlider = new QSlider(Qt::Horizontal, insStripRearGroup);
     insStripRearThicknessHeightSlider->setRange(10, 100);
     insStripRearThicknessHeightSlider->setValue(30);
     insStripRearThicknessHeightSlider->setStyleSheet(UIColors::sliderStyle());
-    insStripRearThicknessHeightValueLabel = new QLabel("30", insStripPanel);
+    insStripRearThicknessHeightValueLabel = new QLabel("30", insStripRearGroup);
     insStripRearThicknessHeightValueLabel->setMinimumWidth(40);
     
-    QWidget* rearThicknessHeightWidget = new QWidget(insStripPanel);
+    QWidget* rearThicknessHeightWidget = new QWidget(insStripRearGroup);
     QHBoxLayout* rearThicknessHeightLayout = new QHBoxLayout(rearThicknessHeightWidget);
     rearThicknessHeightLayout->setContentsMargins(0, 0, 0, 0);
     rearThicknessHeightLayout->setSpacing(5);
@@ -3646,27 +3762,18 @@ void TeachingWidget::createPropertyPanels() {
     rearThicknessHeightLayout->addWidget(insStripRearThicknessHeightValueLabel);
     
     // REAR 최소/최대 두께 SpinBox
-    insStripRearThicknessMinLabel = new QLabel("REAR 최소 두께:", insStripPanel);
-    insStripRearThicknessMinEdit = new QLineEdit(insStripPanel);
+    insStripRearThicknessMinLabel = new QLabel("REAR 최소 두께:", insStripRearGroup);
+    insStripRearThicknessMinEdit = new QLineEdit(insStripRearGroup);
     insStripRearThicknessMinEdit->setText("10");
     insStripRearThicknessMinEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insStripRearThicknessMinEdit));
     
-    insStripRearThicknessMaxLabel = new QLabel("REAR 최대 두께:", insStripPanel);
-    insStripRearThicknessMaxEdit = new QLineEdit(insStripPanel);
+    insStripRearThicknessMaxLabel = new QLabel("REAR 최대 두께:", insStripRearGroup);
+    insStripRearThicknessMaxEdit = new QLineEdit(insStripRearGroup);
     insStripRearThicknessMaxEdit->setText("100");
     insStripRearThicknessMaxEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insStripRearThicknessMaxEdit));
     
-    // 두께 범위 위젯을 레이아웃에 추가
-    QWidget* thicknessRangeWidget = new QWidget(insStripPanel);
-    QVBoxLayout* thicknessRangeLayout = new QVBoxLayout(thicknessRangeWidget);
-    thicknessRangeLayout->setContentsMargins(0, 0, 0, 0);
-    thicknessRangeLayout->setSpacing(3);
-    
-    thicknessRangeLayout->addWidget(thicknessWidthWidget);
-    thicknessRangeLayout->addWidget(thicknessHeightWidget);
-    
     // REAR 두께 범위 위젯
-    QWidget* rearThicknessRangeWidget = new QWidget(insStripPanel);
+    QWidget* rearThicknessRangeWidget = new QWidget(insStripRearGroup);
     QVBoxLayout* rearThicknessRangeLayout = new QVBoxLayout(rearThicknessRangeWidget);
     rearThicknessRangeLayout->setContentsMargins(0, 0, 0, 0);
     rearThicknessRangeLayout->setSpacing(3);
@@ -3674,65 +3781,63 @@ void TeachingWidget::createPropertyPanels() {
     rearThicknessRangeLayout->addWidget(rearThicknessWidthWidget);
     rearThicknessRangeLayout->addWidget(rearThicknessHeightWidget);
     
-    insStripLayout->addRow("FRONT 두께 범위:", thicknessRangeWidget);
-    insStripLayout->addRow(insStripThicknessMinLabel, insStripThicknessMinEdit);
-    insStripLayout->addRow(insStripThicknessMaxLabel, insStripThicknessMaxEdit);
-    
-    // REAR 두께 검사 구분선
-    QFrame* rearSeparator = new QFrame(insStripPanel);
-    rearSeparator->setFrameShape(QFrame::HLine);
-    rearSeparator->setFrameShadow(QFrame::Sunken);
-    insStripLayout->addRow(rearSeparator);
-    
-    insStripLayout->addRow("", insStripRearEnabledCheck);
-    insStripLayout->addRow("REAR 두께 범위:", rearThicknessRangeWidget);
-    insStripLayout->addRow(insStripRearThicknessMinLabel, insStripRearThicknessMinEdit);
-    insStripLayout->addRow(insStripRearThicknessMaxLabel, insStripRearThicknessMaxEdit);
+    stripRearLayout->addRow("REAR 두께 범위:", rearThicknessRangeWidget);
+    stripRearLayout->addRow(insStripRearThicknessMinLabel, insStripRearThicknessMinEdit);
+    stripRearLayout->addRow(insStripRearThicknessMaxLabel, insStripRearThicknessMaxEdit);
 
-    // EDGE 검사 구분선
-    QFrame* edgeSeparator = new QFrame(insStripPanel);
-    edgeSeparator->setFrameShape(QFrame::HLine);
-    edgeSeparator->setFrameShadow(QFrame::Sunken);
-    insStripLayout->addRow(edgeSeparator);
+    insMainLayout->addWidget(insStripRearGroup);
 
-    insEdgeEnabledCheck = new QCheckBox("EDGE 검사 활성화", insStripPanel);
+    // === EDGE 검사 그룹 ===
+    QGroupBox* insEdgeGroup = new QGroupBox("EDGE 검사", insPropWidget);
+    insEdgeGroup->setStyleSheet(
+        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
+    );
+    QFormLayout* edgeLayout = new QFormLayout(insEdgeGroup);
+    edgeLayout->setVerticalSpacing(5);
+    edgeLayout->setContentsMargins(10, 15, 10, 10);
+    edgeLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    edgeLayout->setFormAlignment(Qt::AlignCenter);
+
+    insEdgeEnabledCheck = new QCheckBox("EDGE 검사 활성화", insEdgeGroup);
     insEdgeEnabledCheck->setChecked(true);  // CommonDefs.h의 기본값과 일치
+    edgeLayout->addRow("", insEdgeEnabledCheck);
     
-    insEdgeOffsetXLabel = new QLabel("패턴 왼쪽 오프셋:", insStripPanel);
-    insEdgeOffsetXSlider = new QSlider(Qt::Horizontal, insStripPanel);
+    insEdgeOffsetXLabel = new QLabel("패턴 왼쪽 오프셋:", insEdgeGroup);
+    insEdgeOffsetXSlider = new QSlider(Qt::Horizontal, insEdgeGroup);
     insEdgeOffsetXSlider->setRange(1, 500);  // 임시값, 패턴 선택시 동적 조정
     insEdgeOffsetXSlider->setValue(10);
     insEdgeOffsetXSlider->setStyleSheet(UIColors::sliderStyle());
-    insEdgeOffsetXValueLabel = new QLabel("10", insStripPanel);
+    insEdgeOffsetXValueLabel = new QLabel("10", insEdgeGroup);
     
-    QWidget* edgeOffsetWidget = new QWidget(insStripPanel);
+    QWidget* edgeOffsetWidget = new QWidget(insEdgeGroup);
     QHBoxLayout* edgeOffsetLayout = new QHBoxLayout(edgeOffsetWidget);
     edgeOffsetLayout->setContentsMargins(0, 0, 0, 0);
     edgeOffsetLayout->addWidget(insEdgeOffsetXSlider);
     edgeOffsetLayout->addWidget(insEdgeOffsetXValueLabel);
     
-    insEdgeWidthLabel = new QLabel("너비:", insStripPanel);
-    insEdgeWidthSlider = new QSlider(Qt::Horizontal, insStripPanel);
+    insEdgeWidthLabel = new QLabel("너비:", insEdgeGroup);
+    insEdgeWidthSlider = new QSlider(Qt::Horizontal, insEdgeGroup);
     insEdgeWidthSlider->setRange(10, 300);  // 최대값 300으로 고정
     insEdgeWidthSlider->setValue(50);
     insEdgeWidthSlider->setStyleSheet(UIColors::sliderStyle());
-    insEdgeWidthValueLabel = new QLabel("50", insStripPanel);
+    insEdgeWidthValueLabel = new QLabel("50", insEdgeGroup);
     
-    QWidget* edgeWidthWidget = new QWidget(insStripPanel);
+    QWidget* edgeWidthWidget = new QWidget(insEdgeGroup);
     QHBoxLayout* edgeWidthLayout = new QHBoxLayout(edgeWidthWidget);
     edgeWidthLayout->setContentsMargins(0, 0, 0, 0);
     edgeWidthLayout->addWidget(insEdgeWidthLabel);
     edgeWidthLayout->addWidget(insEdgeWidthSlider);
     edgeWidthLayout->addWidget(insEdgeWidthValueLabel);
     
-    insEdgeHeightLabel = new QLabel("높이:", insStripPanel);
-    insEdgeHeightSlider = new QSlider(Qt::Horizontal, insStripPanel);
+    insEdgeHeightLabel = new QLabel("높이:", insEdgeGroup);
+    insEdgeHeightSlider = new QSlider(Qt::Horizontal, insEdgeGroup);
     insEdgeHeightSlider->setRange(20, 300);  // 최대값 300으로 고정
     insEdgeHeightSlider->setValue(100);
     insEdgeHeightSlider->setStyleSheet(UIColors::sliderStyle());
-    insEdgeHeightValueLabel = new QLabel("100", insStripPanel);
+    insEdgeHeightValueLabel = new QLabel("100", insEdgeGroup);
     
-    QWidget* edgeHeightWidget = new QWidget(insStripPanel);
+    QWidget* edgeHeightWidget = new QWidget(insEdgeGroup);
     QHBoxLayout* edgeHeightLayout = new QHBoxLayout(edgeHeightWidget);
     edgeHeightLayout->setContentsMargins(0, 0, 0, 0);
     edgeHeightLayout->addWidget(insEdgeHeightLabel);
@@ -3741,31 +3846,31 @@ void TeachingWidget::createPropertyPanels() {
     
     // insEdgeThresholdLabel과 insEdgeThresholdSpin 제거됨 (통계적 방법 사용)
     
-    insEdgeMaxIrregularitiesLabel = new QLabel("허용 최대 불량 개수:", insStripPanel);
-    insEdgeMaxIrregularitiesSpin = new QSpinBox(insStripPanel);
+    insEdgeMaxIrregularitiesLabel = new QLabel("허용 최대 불량 개수:", insEdgeGroup);
+    insEdgeMaxIrregularitiesSpin = new QSpinBox(insEdgeGroup);
     insEdgeMaxIrregularitiesSpin->setRange(1, 20);
     insEdgeMaxIrregularitiesSpin->setValue(5);
     insEdgeMaxIrregularitiesSpin->setSuffix(" 개");
     
-    insEdgeDistanceMaxLabel = new QLabel("평균선 최대 거리:", insStripPanel);
-    insEdgeDistanceMaxEdit = new QLineEdit(insStripPanel);
+    insEdgeDistanceMaxLabel = new QLabel("평균선 최대 거리:", insEdgeGroup);
+    insEdgeDistanceMaxEdit = new QLineEdit(insEdgeGroup);
     insEdgeDistanceMaxEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insEdgeDistanceMaxEdit));
     insEdgeDistanceMaxEdit->setText("10.00");
     
-    insEdgeStartPercentLabel = new QLabel("시작 제외 비율:", insStripPanel);
-    insEdgeStartPercentSpin = new QSpinBox(insStripPanel);
+    insEdgeStartPercentLabel = new QLabel("시작 제외 비율:", insEdgeGroup);
+    insEdgeStartPercentSpin = new QSpinBox(insEdgeGroup);
     insEdgeStartPercentSpin->setRange(1, 50);
     insEdgeStartPercentSpin->setValue(10);
     insEdgeStartPercentSpin->setSuffix(" %");
     
-    insEdgeEndPercentLabel = new QLabel("끝 제외 비율:", insStripPanel);
-    insEdgeEndPercentSpin = new QSpinBox(insStripPanel);
+    insEdgeEndPercentLabel = new QLabel("끝 제외 비율:", insEdgeGroup);
+    insEdgeEndPercentSpin = new QSpinBox(insEdgeGroup);
     insEdgeEndPercentSpin->setRange(1, 50);
     insEdgeEndPercentSpin->setValue(10);
     insEdgeEndPercentSpin->setSuffix(" %");
     
     // EDGE 위젯들을 레이아웃에 추가
-    QWidget* edgeRangeWidget = new QWidget(insStripPanel);
+    QWidget* edgeRangeWidget = new QWidget(insEdgeGroup);
     QVBoxLayout* edgeRangeLayout = new QVBoxLayout(edgeRangeWidget);
     edgeRangeLayout->setContentsMargins(0, 0, 0, 0);
     edgeRangeLayout->setSpacing(3);
@@ -3773,25 +3878,26 @@ void TeachingWidget::createPropertyPanels() {
     edgeRangeLayout->addWidget(edgeWidthWidget);
     edgeRangeLayout->addWidget(edgeHeightWidget);
     
-    insStripLayout->addRow("", insEdgeEnabledCheck);
-    insStripLayout->addRow(insEdgeOffsetXLabel, edgeOffsetWidget);
-    insStripLayout->addRow("EDGE 박스 크기:", edgeRangeWidget);
-    insStripLayout->addRow(insEdgeMaxIrregularitiesLabel, insEdgeMaxIrregularitiesSpin);
-    insStripLayout->addRow(insEdgeDistanceMaxLabel, insEdgeDistanceMaxEdit);
-    insStripLayout->addRow(insEdgeStartPercentLabel, insEdgeStartPercentSpin);
-    insStripLayout->addRow(insEdgeEndPercentLabel, insEdgeEndPercentSpin);
+    edgeLayout->addRow(insEdgeOffsetXLabel, edgeOffsetWidget);
+    edgeLayout->addRow("EDGE 박스 크기:", edgeRangeWidget);
+    edgeLayout->addRow(insEdgeMaxIrregularitiesLabel, insEdgeMaxIrregularitiesSpin);
+    edgeLayout->addRow(insEdgeDistanceMaxLabel, insEdgeDistanceMaxEdit);
+    edgeLayout->addRow(insEdgeStartPercentLabel, insEdgeStartPercentSpin);
+    edgeLayout->addRow(insEdgeEndPercentLabel, insEdgeEndPercentSpin);
 
-    insMainLayout->addWidget(insStripPanel);
+    insMainLayout->addWidget(insEdgeGroup);
 
     // === CRIMP 검사 파라미터 그룹 ===
     insCrimpPanel = new QGroupBox("CRIMP 검사 파라미터", insPropWidget);
     insCrimpPanel->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; }"
+        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* insCrimpLayout = new QFormLayout(insCrimpPanel);
     insCrimpLayout->setVerticalSpacing(5);
     insCrimpLayout->setContentsMargins(10, 15, 10, 10);
+    insCrimpLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    insCrimpLayout->setFormAlignment(Qt::AlignCenter);
 
     // 템플릿 이미지만 표시 (STRIP과 동일)
     QLabel* crimpTemplateLabel = new QLabel("템플릿 이미지:", insCrimpPanel);
@@ -3838,7 +3944,7 @@ void TeachingWidget::createPropertyPanels() {
     
     // 필터 설명 레이블
     filterDescLabel = new QLabel("필터 설정", filterPanelContainer);
-    filterDescLabel->setStyleSheet("font-weight: bold; color: #333; font-size: 11pt; margin-top: 4px; margin-bottom: 1px;");
+    filterDescLabel->setStyleSheet("font-weight: bold; color: white; font-size: 11pt; margin-top: 4px; margin-bottom: 1px;");
     filterContainerLayout->addWidget(filterDescLabel);
     
     // 스크롤 영역 추가
@@ -3846,12 +3952,12 @@ void TeachingWidget::createPropertyPanels() {
     filterScrollArea->setWidgetResizable(true);
     filterScrollArea->setFrameShape(QFrame::NoFrame);
     
-    // 필터 스크롤 영역 스타일 설정 (흰색 배경)
-    filterScrollArea->setStyleSheet("QScrollArea { background-color: white; }");
+    // 필터 스크롤 영역 스타일 설정 (투명 배경)
+    filterScrollArea->setStyleSheet("QScrollArea { background-color: transparent; }");
     
     // 필터 위젯이 여기에 추가됨
     filterPropertyContainer = new QWidget(filterScrollArea);
-    filterPropertyContainer->setStyleSheet("QWidget { background-color: white; color: black; }");
+    filterPropertyContainer->setStyleSheet("QWidget { background-color: transparent; color: white; }");
     QVBoxLayout* filterLayout = new QVBoxLayout(filterPropertyContainer);
     filterLayout->setContentsMargins(5, 5, 5, 5);
     

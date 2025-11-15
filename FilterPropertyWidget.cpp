@@ -4,11 +4,25 @@
 
 FilterPropertyWidget::FilterPropertyWidget(int filterType, QWidget* parent)
     : QWidget(parent), filterType(filterType), adaptiveGroup(nullptr) {
-    // 필터 프로퍼티 위젯 스타일 설정 (흰색 배경, 검은색 글자)
-    setStyleSheet("QWidget { background-color: white; color: black; } "
-                  "QLabel { color: black; } "
-                  "QComboBox { background-color: white; color: black; } "
-                  "QSlider { background-color: white; }");
+    // 필터 프로퍼티 위젯 스타일 설정 (투명 배경, 흰색 글자)
+    setStyleSheet(
+        "QWidget { background-color: transparent; color: white; } "
+        "QLabel { color: white; } "
+        "QSpinBox, QDoubleSpinBox { background-color: rgba(50, 50, 50, 180); color: white; border: 1px solid rgba(100, 100, 100, 150); } "
+        "QSpinBox::up-button, QDoubleSpinBox::up-button { background-color: rgba(70, 70, 70, 180); border: 1px solid rgba(100, 100, 100, 150); } "
+        "QSpinBox::down-button, QDoubleSpinBox::down-button { background-color: rgba(70, 70, 70, 180); border: 1px solid rgba(100, 100, 100, 150); } "
+        "QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 5px solid white; width: 0px; height: 0px; } "
+        "QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid white; width: 0px; height: 0px; } "
+        "QComboBox { background-color: rgba(50, 50, 50, 180); color: white; border: 1px solid rgba(100, 100, 100, 150); } "
+        "QComboBox::drop-down { border: 1px solid rgba(100, 100, 100, 150); } "
+        "QComboBox::down-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid white; width: 0px; height: 0px; } "
+        "QComboBox QAbstractItemView { background-color: rgba(50, 50, 50, 230); color: white; selection-background-color: rgba(0, 120, 215, 180); } "
+        "QSlider::groove:horizontal { background: rgba(100, 100, 100, 150); height: 6px; } "
+        "QSlider::handle:horizontal { background: rgba(0, 120, 215, 200); width: 14px; } "
+        "QCheckBox { color: white; } "
+        "QGroupBox { color: white; border: 1px solid rgba(255, 255, 255, 50); } "
+        "QGroupBox::title { color: white; }"
+    );
     setupUI();
 }
 
