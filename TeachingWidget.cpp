@@ -782,9 +782,6 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     serverSettingsAction = settingsMenu->addAction(TR("SERVER_SETTINGS"));
     serverSettingsAction->setEnabled(true);
 
-    serialSettingsAction = settingsMenu->addAction(TR("SERIAL_SETTINGS"));
-    serialSettingsAction->setEnabled(true);
-
     languageSettingsAction = settingsMenu->addAction(TR("LANGUAGE_SETTINGS"));
     languageSettingsAction->setEnabled(true);
 
@@ -1558,22 +1555,6 @@ void TeachingWidget::setupStatusPanel() {
     );
     serverStatusLabel->setText("🌐 서버: 미연결");
     serverStatusLabel->raise();
-    
-    // 시리얼 연결 상태 레이블
-    serialStatusLabel = new QLabel(cameraView);
-    serialStatusLabel->setFixedSize(240, 30);
-    serialStatusLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    serialStatusLabel->setStyleSheet(
-        "QLabel {"
-        "  background-color: rgba(0, 0, 0, 180);"
-        "  color: white;"
-        "  border: 1px solid #555;"
-        "  padding-left: 8px;"
-        "  font-size: 12px;"
-        "}"
-    );
-    serialStatusLabel->setText("📡 시리얼: 미연결");
-    serialStatusLabel->raise();
     
     // 디스크 용량 레이블
     diskSpaceLabel = new QLabel(cameraView);
@@ -6688,7 +6669,7 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat& frame, int camIdx) {
 }
 
 void TeachingWidget::updateStatusPanel() {
-    if (!serverStatusLabel || !serialStatusLabel || !diskSpaceLabel) return;
+    if (!serverStatusLabel || !diskSpaceLabel) return;
     
     // 서버 연결 상태 업데이트 (ClientDialog에서 상태 읽기)
     ConfigManager* config = ConfigManager::instance();
@@ -6715,35 +6696,6 @@ void TeachingWidget::updateStatusPanel() {
             "QLabel {"
             "  background-color: rgba(0, 0, 0, 180);"
             "  color: white;"
-            "  border: 1px solid #555;"
-            "  border-radius: 3px;"
-            "  padding-left: 8px;"
-            "  font-size: 12px;"
-            "}"
-        );
-    }
-    
-    // 시리얼 연결 상태 업데이트
-    if (serialCommunication && serialCommunication->isConnected()) {
-        ConfigManager* config = ConfigManager::instance();
-        QString portName = config->getSerialPort();
-        serialStatusLabel->setText(QString("📡 시리얼: 연결됨 (%1)").arg(portName));
-        serialStatusLabel->setStyleSheet(
-            "QLabel {"
-            "  background-color: rgba(0, 0, 0, 180);"
-            "  color: #4caf50;"  // 녹색 (연결됨)
-            "  border: 1px solid #555;"
-            "  border-radius: 3px;"
-            "  padding-left: 8px;"
-            "  font-size: 12px;"
-            "}"
-        );
-    } else {
-        serialStatusLabel->setText("📡 시리얼: 미연결");
-        serialStatusLabel->setStyleSheet(
-            "QLabel {"
-            "  background-color: rgba(0, 0, 0, 180);"
-            "  color: #ff9800;"  // 주황색 (미연결)
             "  border: 1px solid #555;"
             "  border-radius: 3px;"
             "  padding-left: 8px;"
@@ -6782,7 +6734,7 @@ void TeachingWidget::updateStatusPanel() {
 }
 
 void TeachingWidget::updateStatusPanelPosition() {
-    if (!previewOverlayLabel || !serverStatusLabel || !serialStatusLabel || !diskSpaceLabel) return;
+    if (!previewOverlayLabel || !serverStatusLabel || !diskSpaceLabel) return;
     if (!cameraView) return;
     
     int rightMargin = 10;
@@ -6794,13 +6746,12 @@ void TeachingWidget::updateStatusPanelPosition() {
     int previewY = topMargin;
     previewOverlayLabel->move(previewX, previewY);
     
-    // 상태 패널들을 미리보기 아래에 배치
+    // 상태 패널들을 미리보기 아래에 배치 (시리얼 제거)
     int statusX = previewX;
     int statusY = previewY + previewOverlayLabel->height() + spacing;
     
     serverStatusLabel->move(statusX, statusY);
-    serialStatusLabel->move(statusX, statusY + serverStatusLabel->height() + spacing);
-    diskSpaceLabel->move(statusX, statusY + serverStatusLabel->height() + serialStatusLabel->height() + spacing * 2);
+    diskSpaceLabel->move(statusX, statusY + serverStatusLabel->height() + spacing);
 }
 
 void TeachingWidget::updateLogOverlayPosition() {
@@ -10431,7 +10382,7 @@ void TeachingWidget::addFilter() {
         updateAllPatternTemplateImages();
     });
     
-    filterDialog->show();
+    filterDialog->exec();
 }
 
 void TeachingWidget::addPattern() {
@@ -10665,7 +10616,7 @@ void TeachingWidget::addPattern() {
             updateCameraFrame();
         });
         
-        filterDialog->show();
+        filterDialog->exec();
     } else {
         // 선택된 아이템도 없고 그려진 사각형도 없으면 안내 메시지
         if (!selectedItem && !hasDrawnRect) {

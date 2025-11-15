@@ -50,6 +50,15 @@ private:
     QMap<int, FilterPropertyWidget*> filterWidgets;
     QMap<int, FilterInfo> appliedFilters;
     QMap<int, QMap<QString, int>> defaultParams;
+    
+    // 드래그 관련
+    bool dragging;
+    QPoint dragPosition;
+    
+protected:
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
 };
 
 #endif // FILTERDIALOG_H

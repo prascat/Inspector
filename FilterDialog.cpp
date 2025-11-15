@@ -7,9 +7,10 @@
 #include <QScrollArea>
 #include <QLabel>
 #include <QDebug>
+#include <QMouseEvent>
 
 FilterDialog::FilterDialog(CameraView* cameraView, int patternIndex, QWidget* parent)
-    : QDialog(parent), cameraView(cameraView), patternIndex(-1)
+    : QDialog(parent), cameraView(cameraView), patternIndex(-1), dragging(false)
 {
     filterTypes = FILTER_TYPE_LIST;
     for (int filterType : filterTypes) {
@@ -18,6 +19,8 @@ FilterDialog::FilterDialog(CameraView* cameraView, int patternIndex, QWidget* pa
     }
 
     setWindowTitle("필터 관리");
+    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    setAttribute(Qt::WA_TranslucentBackground);
     setMinimumSize(700, 500);
 
     setupUI();
@@ -37,7 +40,23 @@ QUuid FilterDialog::getPatternId(int index) const {
 }
 
 void FilterDialog::setupUI() {
-    QVBoxLayout* dialogLayout = new QVBoxLayout(this);
+    // 투명 배경을 위한 메인 위젯
+    QWidget* mainWidget = new QWidget(this);
+    mainWidget->setObjectName("mainWidget");
+    mainWidget->setStyleSheet(
+        "QWidget#mainWidget { "
+        "  background-color: rgba(30, 30, 30, 240); "
+        "  border: 2px solid rgba(100, 100, 100, 200); "
+        "  color: white; "
+        "}"
+    );
+    
+    QVBoxLayout* mainLayout = new QVBoxLayout(this);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->addWidget(mainWidget);
+    
+    QVBoxLayout* dialogLayout = new QVBoxLayout(mainWidget);
+    dialogLayout->setContentsMargins(10, 10, 10, 10);
     
     // 패턴 정보 레이블 추가
     QLabel* patternInfoLabel = new QLabel("패턴 정보", this);
@@ -79,14 +98,19 @@ void FilterDialog::createFilterControls(QWidget* filtersWidget) {
     const int columns = 2; // 한 줄에 2개씩 배치로 변경
     int row = 0, col = 0;
     
-    // 제목 라벨
-    QLabel* titleLabel = new QLabel("필터 선택", filtersWidget);
-    titleLabel->setStyleSheet("font-weight: bold; font-size: 16px;");
-    filtersLayout->addWidget(titleLabel, row, 0, 1, columns);
-    row++;
-    
     for (int filterType : filterTypes) {
-        QGroupBox* groupBox = new QGroupBox(filterNames[filterType], filtersWidget);
+        QGroupBox* groupBox = new QGroupBox(filtersWidget);
+        groupBox->setTitle(filterNames[filterType] + " 활성화");
+        groupBox->setCheckable(true);
+        groupBox->setChecked(appliedFilters.contains(filterType) && appliedFilters[filterType].enabled);
+        groupBox->setStyleSheet(
+            "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+            "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
+            "QGroupBox::indicator { width: 13px; height: 13px; }"
+            "QGroupBox::indicator:unchecked { background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150); }"
+            "QGroupBox::indicator:checked { background-color: #4CAF50; border: 1px solid #45a049; }"
+        );
+        
         addFilterWidget(filterType, groupBox);
         filtersLayout->addWidget(groupBox, row, col);
         col++;
@@ -103,16 +127,7 @@ void FilterDialog::createFilterControls(QWidget* filtersWidget) {
 
 void FilterDialog::addFilterWidget(int filterType, QGroupBox* groupBox) {
     QVBoxLayout* groupLayout = new QVBoxLayout(groupBox);
-
-    // 필터 활성화 체크박스 생성
-    QCheckBox* checkBox = new QCheckBox("활성화", groupBox);
-    checkBox->setChecked(appliedFilters.contains(filterType) && appliedFilters[filterType].enabled);
-    groupLayout->addWidget(checkBox);
-
-    QFrame* line = new QFrame(groupBox);
-    line->setFrameShape(QFrame::HLine);
-    line->setFrameShadow(QFrame::Sunken);
-    groupLayout->addWidget(line);
+    groupLayout->setContentsMargins(10, 15, 10, 10);
 
     // 필터 프로퍼티 위젯 생성
     FilterPropertyWidget* propertyWidget = new FilterPropertyWidget(filterType, groupBox);
@@ -126,32 +141,34 @@ void FilterDialog::addFilterWidget(int filterType, QGroupBox* groupBox) {
     }
     propertyWidget->setParams(params);
     
-    // 활성화 상태에 따라 프로퍼티 위젯 활성화/비활성화
-    propertyWidget->setEnabled(checkBox->isChecked());
-    
-    // 체크박스 상태 변경 시 프로퍼티 위젯 활성화/비활성화 및 필터 적용
-    connect(checkBox, &QCheckBox::checkStateChanged, this, &FilterDialog::onFilterCheckStateChanged);
-    checkBox->setProperty("filterType", filterType);
+    // 그룹박스 체크 상태 변경 시 필터 적용
+    connect(groupBox, &QGroupBox::toggled, this, [this, filterType, propertyWidget](bool checked) {
+        // 프로퍼티 위젯 활성화/비활성화는 그룹박스가 자동 처리
+        onFilterCheckStateChanged(checked ? Qt::Checked : Qt::Unchecked);
+    });
+    groupBox->setProperty("filterType", filterType);
     
     // 파라미터 변경 시 필터 업데이트
     connect(propertyWidget, &FilterPropertyWidget::paramChanged, this, &FilterDialog::onFilterParamChanged);
     propertyWidget->setProperty("filterType", filterType);
 
-    // 맵에 저장
-    filterCheckboxes[filterType] = checkBox;
+    // 맵에 저장 (groupBox를 체크박스처럼 사용)
+    filterCheckboxes[filterType] = nullptr;  // 더이상 별도 체크박스 없음
     filterWidgets[filterType] = propertyWidget;
 }
 
 void FilterDialog::onFilterCheckStateChanged(int state) {
-    QCheckBox* checkBox = qobject_cast<QCheckBox*>(sender());
-    if (!checkBox) return;
-    
-    int filterType = checkBox->property("filterType").toInt();
+    QObject* senderObj = sender();
+    int filterType = -1;
     bool checked = (state == Qt::Checked);
     
-    // 필터 프로퍼티 위젯 활성화/비활성화
-    if (filterWidgets.contains(filterType)) {
-        filterWidgets[filterType]->setEnabled(checked);
+    // QCheckBox 또는 QGroupBox에서 호출될 수 있음
+    if (QCheckBox* checkBox = qobject_cast<QCheckBox*>(senderObj)) {
+        filterType = checkBox->property("filterType").toInt();
+    } else if (QGroupBox* groupBox = qobject_cast<QGroupBox*>(senderObj)) {
+        filterType = groupBox->property("filterType").toInt();
+    } else {
+        return;
     }
     
     // 패턴 ID가 설정되어 있는지 확인
@@ -817,4 +834,44 @@ void FilterDialog::onApplyClicked() {
     
     
     accept();
+}
+
+void FilterDialog::mousePressEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        // mainWidget 영역 체크
+        QWidget* mainWidget = findChild<QWidget*>("mainWidget");
+        if (mainWidget) {
+            QPoint localPos = mainWidget->mapFrom(this, event->pos());
+            if (mainWidget->rect().contains(localPos)) {
+                // mainWidget 내부의 자식 위젯 확인
+                QWidget* childWidget = mainWidget->childAt(localPos);
+                // 자식 위젯이 없거나 스크롤 영역/레이블 등 드래그 가능한 영역인 경우
+                if (!childWidget || 
+                    qobject_cast<QLabel*>(childWidget) ||
+                    childWidget->objectName() == "qt_scrollarea_viewport") {
+                    dragging = true;
+                    dragPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
+                    event->accept();
+                    return;
+                }
+            }
+        }
+    }
+    QDialog::mousePressEvent(event);
+}
+
+void FilterDialog::mouseMoveEvent(QMouseEvent* event) {
+    if (dragging && (event->buttons() & Qt::LeftButton)) {
+        move(event->globalPosition().toPoint() - dragPosition);
+        event->accept();
+        return;
+    }
+    QDialog::mouseMoveEvent(event);
+}
+
+void FilterDialog::mouseReleaseEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        dragging = false;
+    }
+    QDialog::mouseReleaseEvent(event);
 }
