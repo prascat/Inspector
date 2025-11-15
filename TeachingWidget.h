@@ -658,6 +658,11 @@ private:
     QWidget* logOverlayWidget = nullptr;
     QTextEdit* logTextEdit = nullptr;
     QStringList logMessages;
+    QPoint logDragStartPos;
+    bool logDragging = false;
+    bool logResizing = false;
+    QPoint logResizeStartPos;
+    int logResizeStartHeight = 0;
     
     // 카메라 모드 관련 (camOn/camOff)
     QVariantMap backupRecipeData; // 레시피 백업 데이터

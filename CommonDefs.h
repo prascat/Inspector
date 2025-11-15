@@ -129,6 +129,17 @@ struct InspectionResult {
     QMap<QUuid, double> stripMeasuredLengthPx;     // 측정된 STRIP 길이 픽셀값 원본 (패턴 ID -> 픽셀)
     QMap<QUuid, QPoint> stripLengthStartPoint;     // 길이 측정 시작점 (EDGE 평균선 중점)
     QMap<QUuid, QPoint> stripLengthEndPoint;       // 길이 측정 끝점 (P3,P4 중점)
+    
+    // STRIP 세부 검사 결과 로그용 (출력 순서 제어)
+    QString stripPatternName;                      // STRIP 패턴 이름
+    QString stripLengthResult;                     // STRIP LENGTH 결과 (PASS/NG)
+    QString stripLengthDetail;                     // STRIP LENGTH 세부 정보
+    QString frontResult;                           // FRONT 결과 (PASS/NG)
+    QString frontDetail;                           // FRONT 세부 정보
+    QString rearResult;                            // REAR 결과 (PASS/NG)
+    QString rearDetail;                            // REAR 세부 정보
+    QString edgeResult;                            // EDGE 결과 (PASS/NG)
+    QString edgeDetail;                            // EDGE 세부 정보
 };
 
 // 패턴 유형 열거형

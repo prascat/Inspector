@@ -33,7 +33,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
     
     result.isPassed = true;
     
-    qDebug() << "[검사 초기] result.isPassed =" << result.isPassed;
+    // qDebug() << "[검사 초기] result.isPassed =" << result.isPassed;
     
     // 1. 활성화된 패턴들을 유형별로 분류
     QList<PatternInfo> roiPatterns, fidPatterns, insPatterns;
@@ -208,18 +208,18 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             result.locations[pattern.id] = matchLoc;
             // angles는 위에서 이미 설정됨
             
-            // FID 검사 결과 로그 (개별 출력)
+            // FID 검사 결과 로그 (개별 출력) - 주석 처리
             // FID는 패턴 매칭 실패 시 FAIL (템플릿을 찾지 못함)
-            QString fidResult = fidMatched ? "PASS" : "FAIL";
-            logDebug(QString("%1: %2 [%3/%4]")
-                    .arg(pattern.name)
-                    .arg(fidResult)
-                    .arg(QString::number(matchScore, 'f', 2))
-                    .arg(QString::number(pattern.matchThreshold, 'f', 2)));
+            // QString fidResult = fidMatched ? "PASS" : "FAIL";
+            // logDebug(QString("%1: %2 [%3/%4]")
+            //         .arg(pattern.name)
+            //         .arg(fidResult)
+            //         .arg(QString::number(matchScore, 'f', 2))
+            //         .arg(QString::number(pattern.matchThreshold, 'f', 2)));
             
             // 전체 결과 갱신
             result.isPassed = result.isPassed && fidMatched;
-            qDebug() << "[FID 검사]" << pattern.name << "결과:" << fidMatched << "→ 전체 result.isPassed =" << result.isPassed;
+            // qDebug() << "[FID 검사]" << pattern.name << "결과:" << fidMatched << "→ 전체 result.isPassed =" << result.isPassed;
         }
     }
     
@@ -512,38 +512,26 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                     .arg(QString::number(inspScore, 'f', 2))
                     .arg(QString::number(pattern.passThreshold, 'f', 1)));
             
+            // STRIP 검사인 경우 세부 결과 출력
+            if (pattern.inspectionMethod == InspectionMethod::STRIP && !result.stripPatternName.isEmpty()) {
+                logDebug(QString("%1 STRIP LENGTH: %2 %3").arg(result.stripPatternName).arg(result.stripLengthResult).arg(result.stripLengthDetail));
+                logDebug(QString("%1 FRONT: %2 %3").arg(result.stripPatternName).arg(result.frontResult).arg(result.frontDetail));
+                logDebug(QString("%1 REAR: %2 %3").arg(result.stripPatternName).arg(result.rearResult).arg(result.rearDetail));
+                logDebug(QString("%1 EDGE: %2 %3").arg(result.stripPatternName).arg(result.edgeResult).arg(result.edgeDetail));
+            }
+            
             // 전체 결과 갱신
             result.isPassed = result.isPassed && inspPassed;
-            qDebug() << "[INS 검사]" << pattern.name << "결과:" << inspPassed << "→ 전체 result.isPassed =" << result.isPassed;
+            // qDebug() << "[INS 검사]" << pattern.name << "결과:" << inspPassed << "→ 전체 result.isPassed =" << result.isPassed;
         }
     }
     
     // 전체 검사 결과 로그
     QString resultText = result.isPassed ? "PASS" : "NG";
     
-    qDebug() << "[검사 최종] result.isPassed =" << result.isPassed << "→" << resultText;
+    // qDebug() << "[검사 최종] result.isPassed =" << result.isPassed << "→" << resultText;
     
-    // FID 결과 수집 (개별 PASS/FAIL 판정 포함)
-    QStringList fidDetails;
-    for (const PatternInfo& pattern : patterns) {
-        if (pattern.type == PatternType::FID && result.fidResults.contains(pattern.id)) {
-            bool fidPassed = result.fidResults.value(pattern.id);
-            double score = result.matchScores.value(pattern.id, 0.0);
-            double threshold = pattern.matchThreshold;
-            
-            // FID는 매칭 실패 시 FAIL
-            QString fidResult = fidPassed ? "PASS" : "FAIL";
-            fidDetails.append(QString("%1 %2/%3").arg(fidResult)
-                                                  .arg(QString::number(score * 100.0, 'f', 1))
-                                                  .arg(QString::number(threshold, 'f', 1)));
-        }
-    }
-    
-    QString fidInfo = fidDetails.isEmpty() ? "" : QString(" FID:[%1]").arg(fidDetails.join(" "));
-    
-    logDebug(QString("전체 검사 결과: %1%2")
-            .arg(resultText)
-            .arg(fidInfo));
+    logDebug(QString("전체 검사 결과: %1").arg(resultText));
     
     logDebug(QString("검사 종료 - %1").arg(modeName));
             
@@ -692,8 +680,8 @@ bool InsProcessor::matchFiducial(const cv::Mat& image, const PatternInfo& patter
         // 회전 매칭이 적용된 경우 탐지된 각도 사용
         if (pattern.useRotation && matched) {
             matchAngle = tempAngle;
-            logDebug(QString("FID 패턴 '%1': 회전 매칭 적용됨, tempAngle=%2°, matchAngle=%3°")
-                    .arg(pattern.name).arg(tempAngle).arg(matchAngle));
+            // logDebug(QString("FID 패턴 '%1': 회전 매칭 적용됨, tempAngle=%2°, matchAngle=%3°")
+            //         .arg(pattern.name).arg(tempAngle).arg(matchAngle));
         } else if (matched) {
             matchAngle = pattern.angle; // 기본 각도 사용
         }
@@ -2523,13 +2511,13 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     // 모든 검사 항목을 AND 연산으로 최종 판정
     bool allTestsPassed = isPassed && stripLengthPassed && frontThicknessPassed && rearThicknessPassed && edgeTestPassed;
     
-    qDebug() << "[STRIP 최종 판정]" << pattern.name
-             << "isPassed:" << isPassed
-             << "stripLength:" << stripLengthPassed
-             << "front:" << frontThicknessPassed
-             << "rear:" << rearThicknessPassed
-             << "edge:" << edgeTestPassed
-             << "→ allTestsPassed:" << allTestsPassed;
+    // qDebug() << "[STRIP 최종 판정]" << pattern.name
+    //          << "isPassed:" << isPassed
+    //          << "stripLength:" << stripLengthPassed
+    //          << "front:" << frontThicknessPassed
+    //          << "rear:" << rearThicknessPassed
+    //          << "edge:" << edgeTestPassed
+    //          << "→ allTestsPassed:" << allTestsPassed;
     
     if (allTestsPassed) {
         // 좌표 변환 적용
@@ -3244,19 +3232,27 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                                                .arg(QString::number(pattern.stripRearThicknessMax, 'f', 2));
         }
         
-        // STRIP LENGTH 검사 결과
-        QString stripResult = stripLengthPassed ? "PASS" : "NG";
-        QString stripDetail = "";
+        // STRIP LENGTH 검사 결과 - 로그는 result에 저장하고 나중에 출력
+        result.stripLengthResult = stripLengthPassed ? "PASS" : "NG";
         if (stripMeasuredLength > 0) {
-            stripDetail = QString("[%1/%2-%3]").arg(QString::number(stripMeasuredLength, 'f', 2))
+            result.stripLengthDetail = QString("[%1/%2-%3]").arg(QString::number(stripMeasuredLength, 'f', 2))
                                                 .arg(QString::number(pattern.stripLengthMin, 'f', 2))
                                                 .arg(QString::number(pattern.stripLengthMax, 'f', 2));
         }
         
-        logDebug(QString("%1 EDGE: %2 %3").arg(pattern.name).arg(edgeResult).arg(edgeDetail));
-        logDebug(QString("%1 FRONT: %2 %3").arg(pattern.name).arg(frontResult).arg(frontDetail));
-        logDebug(QString("%1 REAR: %2 %3").arg(pattern.name).arg(rearResult).arg(rearDetail));
-        logDebug(QString("%1 STRIP LENGTH: %2 %3").arg(pattern.name).arg(stripResult).arg(stripDetail));
+        result.frontResult = frontResult;
+        result.frontDetail = frontDetail;
+        result.rearResult = rearResult;
+        result.rearDetail = rearDetail;
+        result.edgeResult = edgeResult;
+        result.edgeDetail = edgeDetail;
+        result.stripPatternName = pattern.name;
+        
+        // 로그는 INS 검사 결과 출력 후에 하도록 주석 처리
+        // logDebug(QString("%1 STRIP LENGTH: %2 %3").arg(pattern.name).arg(stripResult).arg(stripDetail));
+        // logDebug(QString("%1 FRONT: %2 %3").arg(pattern.name).arg(frontResult).arg(frontDetail));
+        // logDebug(QString("%1 REAR: %2 %3").arg(pattern.name).arg(rearResult).arg(rearDetail));
+        // logDebug(QString("%1 EDGE: %2 %3").arg(pattern.name).arg(edgeResult).arg(edgeDetail));
 
         
         return allTestsPassed;  // 모든 검사 통과 여부 반환

@@ -1495,13 +1495,14 @@ void TeachingWidget::setupLogOverlay() {
     
     // 로그 오버레이 위젯 생성 - cameraView에 붙임
     logOverlayWidget = new QWidget(cameraView);
-    logOverlayWidget->setFixedSize(800, 120);
+    logOverlayWidget->setFixedSize(800, 144);  // 120 * 1.2 = 144
     logOverlayWidget->setStyleSheet(
         "QWidget {"
         "  background-color: rgba(0, 0, 0, 180);"
-        "  border: none;"
+        "  border: 2px solid rgba(100, 100, 100, 150);"
         "}"
     );
+    logOverlayWidget->installEventFilter(this);
     
     QVBoxLayout* logLayout = new QVBoxLayout(logOverlayWidget);
     logLayout->setContentsMargins(5, 5, 5, 5);
@@ -1551,7 +1552,6 @@ void TeachingWidget::setupStatusPanel() {
         "  background-color: rgba(0, 0, 0, 180);"
         "  color: white;"
         "  border: 1px solid #555;"
-        "  border-radius: 3px;"
         "  padding-left: 8px;"
         "  font-size: 12px;"
         "}"
@@ -1568,7 +1568,6 @@ void TeachingWidget::setupStatusPanel() {
         "  background-color: rgba(0, 0, 0, 180);"
         "  color: white;"
         "  border: 1px solid #555;"
-        "  border-radius: 3px;"
         "  padding-left: 8px;"
         "  font-size: 12px;"
         "}"
@@ -1585,7 +1584,6 @@ void TeachingWidget::setupStatusPanel() {
         "  background-color: rgba(0, 0, 0, 180);"
         "  color: white;"
         "  border: 1px solid #555;"
-        "  border-radius: 3px;"
         "  padding-left: 8px;"
         "  font-size: 12px;"
         "}"
@@ -1610,22 +1608,18 @@ void TeachingWidget::setupPreviewOverlay() {
     
     // 메인 화면 오른쪽 상단에 미리보기 레이블 생성
     previewOverlayLabel = new QLabel(cameraView);
-    previewOverlayLabel->setFixedSize(240, 180);  // 고정 크기 (1/4 크기)
+    previewOverlayLabel->setFixedSize(240, 180);
     previewOverlayLabel->setAlignment(Qt::AlignCenter);
     previewOverlayLabel->setStyleSheet(
         "QLabel {"
         "  background-color: rgba(0, 0, 0, 200);"
         "  color: white;"
         "  border: 2px solid #555;"
-        "  border-radius: 5px;"
         "}"
     );
     previewOverlayLabel->setText("CAM 2\n" + TR("CAMERA_NO_CONNECTION"));
     previewOverlayLabel->setCursor(Qt::PointingHandCursor);  // 클릭 가능 커서
     previewOverlayLabel->raise();  // 최상단에 표시
-    
-    // 오른쪽 상단 위치로 이동 (10px 마진, 버튼 오버레이 아래)
-    previewOverlayLabel->move(cameraView->width() - previewOverlayLabel->width() - 10, 70);
     
     // 클릭 이벤트 처리를 위한 이벤트 필터 설치
     previewOverlayLabel->installEventFilter(this);
@@ -1654,7 +1648,6 @@ void TeachingWidget::setupRightPanelOverlay() {
         "QWidget#rightPanelOverlay {"
         "  background-color: rgba(30, 30, 30, 200);"
         "  border: 2px solid rgba(100, 100, 100, 150);"
-        "  border-radius: 10px;"
         "}"
         "QLineEdit {"
         "  background-color: rgba(50, 50, 50, 180);"
@@ -1734,7 +1727,6 @@ void TeachingWidget::setupRightPanelOverlay() {
         "  background-color: rgba(70, 70, 70, 200);"
         "  color: white;"
         "  border: 1px solid rgba(100, 100, 100, 150);"
-        "  border-radius: 3px;"
         "  padding: 2px 5px;"
         "  font-weight: bold;"
         "}"
@@ -1896,7 +1888,6 @@ QPushButton* TeachingWidget::createActionButton(const QString &text, const QStri
         "   background-color: " + color + "; "
         "   color: white; "
         "   border: 1px solid #a0a0a0; "
-        "   border-radius: 5px; "
         "   padding: 8px; "
         "}"
         "QPushButton:hover { background-color: " + hoverColor + "; }"
@@ -3091,7 +3082,6 @@ void TeachingWidget::createPropertyPanels() {
     patternTypeValue->setStyleSheet(
         "QLabel { "
         "  border: 1px solid #ccc; "
-        "  border-radius: 4px; "
         "  padding: 2px 8px; "
         "  font-weight: bold; "
         "  color: white; "
@@ -3475,8 +3465,7 @@ void TeachingWidget::createPropertyPanels() {
     insTemplateImg->setAlignment(Qt::AlignCenter);
     insTemplateImg->setStyleSheet(
         "background-color: rgba(50, 50, 50, 180); "
-        "border: 1px solid rgba(100, 100, 100, 150); "
-        "border-radius: 4px;"
+        "border: 1px solid rgba(100, 100, 100, 150);"
     );
     insTemplateImg->setText("클릭하여\n이미지 선택");
     insTemplateImg->setCursor(Qt::PointingHandCursor);
@@ -6780,15 +6769,15 @@ void TeachingWidget::updateStatusPanelPosition() {
     if (!cameraView) return;
     
     int rightMargin = 10;
-    int topMargin = 10;
+    int topMargin = 70;  // 버튼 오버레이 아래
     int spacing = 5;
     
-    // 미리보기 오버레이 위치
+    // 미리보기 오버레이 위치 (오른쪽 끝)
     int previewX = cameraView->width() - previewOverlayLabel->width() - rightMargin;
     int previewY = topMargin;
     previewOverlayLabel->move(previewX, previewY);
     
-    // 상태 패널 위치 (미리보기 아래)
+    // 상태 패널들을 미리보기 아래에 배치
     int statusX = previewX;
     int statusY = previewY + previewOverlayLabel->height() + spacing;
     
@@ -6800,10 +6789,10 @@ void TeachingWidget::updateStatusPanelPosition() {
 void TeachingWidget::updateLogOverlayPosition() {
     if (!logOverlayWidget || !cameraView) return;
     
-    int bottomMargin = 0;  // 하단에 딱 붙임
-    int rightMargin = 0;   // 오른쪽에 딱 붙임
+    int bottomMargin = 10;  // 하단 마진
+    int rightMargin = 10;   // 오른쪽 마진
     
-    // 화면 하단 오른쪽 끝에 배치
+    // 화면 하단 오른쪽 끝에 배치 (미리보기 CAM2와 동일한 마진)
     int x = cameraView->width() - logOverlayWidget->width() - rightMargin;
     int y = cameraView->height() - logOverlayWidget->height() - bottomMargin;
     
@@ -7977,10 +7966,93 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event) {
     if (watched == cameraView && event->type() == QEvent::Resize) {
         updateStatusPanelPosition();
         updateLogOverlayPosition();
+        return QWidget::eventFilter(watched, event);
+    }
+    
+    // 로그 오버레이 드래그 및 리사이즈 처리
+    if (watched == logOverlayWidget && logOverlayWidget) {
+        QMouseEvent *mouseEvent = nullptr;
         
-        // 프리뷰 오버레이 위치도 업데이트
-        if (previewOverlayLabel) {
-            previewOverlayLabel->move(cameraView->width() - previewOverlayLabel->width() - 10, 70);
+        if (event->type() == QEvent::MouseMove || event->type() == QEvent::MouseButtonPress || 
+            event->type() == QEvent::MouseButtonRelease) {
+            mouseEvent = static_cast<QMouseEvent*>(event);
+        }
+        
+        if (event->type() == QEvent::MouseMove && mouseEvent) {
+            if (logResizing) {
+                // 리사이즈 중 - 상단 경계를 드래그하여 높이 조절
+                int deltaY = mouseEvent->globalPosition().toPoint().y() - logResizeStartPos.y();
+                int newHeight = logResizeStartHeight - deltaY;  // 위로 드래그하면 높이 증가
+                newHeight = qMax(80, qMin(newHeight, 500));  // 최소 80px, 최대 500px
+                
+                QPoint currentPos = logOverlayWidget->pos();
+                int heightDiff = logOverlayWidget->height() - newHeight;
+                
+                logOverlayWidget->setFixedHeight(newHeight);
+                logOverlayWidget->move(currentPos.x(), currentPos.y() + heightDiff);
+                return true;
+            } else if (logDragging) {
+                // 드래그 중 - 위치 이동
+                logOverlayWidget->setCursor(Qt::ClosedHandCursor);
+                QPoint delta = mouseEvent->globalPosition().toPoint() - logDragStartPos;
+                logOverlayWidget->move(logOverlayWidget->pos() + delta);
+                logDragStartPos = mouseEvent->globalPosition().toPoint();
+                return true;
+            } else {
+                // 커서 모양 업데이트
+                QPoint pos = mouseEvent->pos();
+                int edgeMargin = 8;
+                
+                if (pos.y() <= edgeMargin) {
+                    // 상단 경계 - 리사이즈 커서
+                    logOverlayWidget->setCursor(Qt::SizeVerCursor);
+                } else {
+                    // 내부 - 이동 커서
+                    logOverlayWidget->setCursor(Qt::SizeAllCursor);
+                }
+            }
+        }
+        else if (event->type() == QEvent::MouseButtonPress && mouseEvent) {
+            if (mouseEvent->button() == Qt::LeftButton) {
+                QPoint pos = mouseEvent->pos();
+                int edgeMargin = 8;
+                
+                if (pos.y() <= edgeMargin) {
+                    // 상단 경계 클릭 - 리사이즈 시작
+                    logResizing = true;
+                    logResizeStartPos = mouseEvent->globalPosition().toPoint();
+                    logResizeStartHeight = logOverlayWidget->height();
+                    return true;
+                } else {
+                    // 내부 클릭 - 드래그 시작
+                    logDragging = true;
+                    logDragStartPos = mouseEvent->globalPosition().toPoint();
+                    logOverlayWidget->setCursor(Qt::ClosedHandCursor);
+                    return true;
+                }
+            }
+        }
+        else if (event->type() == QEvent::MouseButtonRelease && mouseEvent) {
+            if (mouseEvent->button() == Qt::LeftButton) {
+                logDragging = false;
+                logResizing = false;
+                
+                // 현재 마우스 위치에 따라 커서 재설정
+                QPoint pos = mouseEvent->pos();
+                int edgeMargin = 8;
+                
+                if (pos.y() <= edgeMargin) {
+                    logOverlayWidget->setCursor(Qt::SizeVerCursor);
+                } else {
+                    logOverlayWidget->setCursor(Qt::SizeAllCursor);
+                }
+                return true;
+            }
+        }
+        else if (event->type() == QEvent::Leave) {
+            if (!logDragging && !logResizing) {
+                logOverlayWidget->setCursor(Qt::ArrowCursor);
+            }
         }
     }
     
