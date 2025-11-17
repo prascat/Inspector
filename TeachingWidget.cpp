@@ -3913,6 +3913,89 @@ void TeachingWidget::createPropertyPanels() {
     QLabel* crimpTemplateLabel = new QLabel("템플릿 이미지:", insCrimpPanel);
     insCrimpLayout->addRow(crimpTemplateLabel);
 
+    // === CRIMP SHAPE 검사 그룹 ===
+    insCrimpShapeGroup = new QGroupBox("SHAPE 검사 활성화", insCrimpPanel);
+    insCrimpShapeGroup->setCheckable(true);
+    insCrimpShapeGroup->setChecked(true);
+    insCrimpShapeGroup->setStyleSheet(
+        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
+        "QGroupBox::indicator { width: 13px; height: 13px; }"
+        "QGroupBox::indicator:unchecked { background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150); }"
+        "QGroupBox::indicator:checked { background-color: #4CAF50; border: 1px solid #45a049; }"
+    );
+    QFormLayout* crimpShapeLayout = new QFormLayout(insCrimpShapeGroup);
+    crimpShapeLayout->setVerticalSpacing(5);
+    crimpShapeLayout->setContentsMargins(10, 15, 10, 10);
+    crimpShapeLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    crimpShapeLayout->setFormAlignment(Qt::AlignCenter);
+    
+    // 박스 위치 오프셋 (패턴 왼쪽에서의 거리)
+    insCrimpShapeOffsetXLabel = new QLabel("패턴 왼쪽 오프셋:", insCrimpShapeGroup);
+    insCrimpShapeOffsetXSlider = new QSlider(Qt::Horizontal, insCrimpShapeGroup);
+    insCrimpShapeOffsetXSlider->setRange(0, 500);
+    insCrimpShapeOffsetXSlider->setValue(10);
+    insCrimpShapeOffsetXSlider->setStyleSheet(UIColors::sliderStyle());
+    insCrimpShapeOffsetXValueLabel = new QLabel("10", insCrimpShapeGroup);
+    
+    QWidget* crimpShapeOffsetWidget = new QWidget(insCrimpShapeGroup);
+    QHBoxLayout* crimpShapeOffsetLayout = new QHBoxLayout(crimpShapeOffsetWidget);
+    crimpShapeOffsetLayout->setContentsMargins(0, 0, 0, 0);
+    crimpShapeOffsetLayout->addWidget(insCrimpShapeOffsetXSlider);
+    crimpShapeOffsetLayout->addWidget(insCrimpShapeOffsetXValueLabel);
+    
+    // 박스 너비
+    insCrimpShapeWidthLabel = new QLabel("너비:", insCrimpShapeGroup);
+    insCrimpShapeWidthSlider = new QSlider(Qt::Horizontal, insCrimpShapeGroup);
+    insCrimpShapeWidthSlider->setRange(10, 500);
+    insCrimpShapeWidthSlider->setValue(100);
+    insCrimpShapeWidthSlider->setStyleSheet(UIColors::sliderStyle());
+    insCrimpShapeWidthValueLabel = new QLabel("100", insCrimpShapeGroup);
+    
+    QWidget* crimpShapeWidthWidget = new QWidget(insCrimpShapeGroup);
+    QHBoxLayout* crimpShapeWidthLayout = new QHBoxLayout(crimpShapeWidthWidget);
+    crimpShapeWidthLayout->setContentsMargins(0, 0, 0, 0);
+    crimpShapeWidthLayout->addWidget(insCrimpShapeWidthLabel);
+    crimpShapeWidthLayout->addWidget(insCrimpShapeWidthSlider);
+    crimpShapeWidthLayout->addWidget(insCrimpShapeWidthValueLabel);
+    
+    // 박스 높이
+    insCrimpShapeHeightLabel = new QLabel("높이:", insCrimpShapeGroup);
+    insCrimpShapeHeightSlider = new QSlider(Qt::Horizontal, insCrimpShapeGroup);
+    insCrimpShapeHeightSlider->setRange(10, 500);
+    insCrimpShapeHeightSlider->setValue(100);
+    insCrimpShapeHeightSlider->setStyleSheet(UIColors::sliderStyle());
+    insCrimpShapeHeightValueLabel = new QLabel("100", insCrimpShapeGroup);
+    
+    QWidget* crimpShapeHeightWidget = new QWidget(insCrimpShapeGroup);
+    QHBoxLayout* crimpShapeHeightLayout = new QHBoxLayout(crimpShapeHeightWidget);
+    crimpShapeHeightLayout->setContentsMargins(0, 0, 0, 0);
+    crimpShapeHeightLayout->addWidget(insCrimpShapeHeightLabel);
+    crimpShapeHeightLayout->addWidget(insCrimpShapeHeightSlider);
+    crimpShapeHeightLayout->addWidget(insCrimpShapeHeightValueLabel);
+    
+    // 크기 범위 위젯
+    QWidget* crimpShapeSizeWidget = new QWidget(insCrimpShapeGroup);
+    QVBoxLayout* crimpShapeSizeLayout = new QVBoxLayout(crimpShapeSizeWidget);
+    crimpShapeSizeLayout->setContentsMargins(0, 0, 0, 0);
+    crimpShapeSizeLayout->setSpacing(3);
+    crimpShapeSizeLayout->addWidget(crimpShapeWidthWidget);
+    crimpShapeSizeLayout->addWidget(crimpShapeHeightWidget);
+    
+    // 매칭율
+    insCrimpShapeMatchRateLabel = new QLabel("매칭율:", insCrimpShapeGroup);
+    insCrimpShapeMatchRateSpin = new QDoubleSpinBox(insCrimpShapeGroup);
+    insCrimpShapeMatchRateSpin->setRange(0.0, 100.0);
+    insCrimpShapeMatchRateSpin->setValue(80.0);
+    insCrimpShapeMatchRateSpin->setSuffix(" %");
+    insCrimpShapeMatchRateSpin->setDecimals(1);
+    
+    crimpShapeLayout->addRow(insCrimpShapeOffsetXLabel, crimpShapeOffsetWidget);
+    crimpShapeLayout->addRow("SHAPE 박스 크기:", crimpShapeSizeWidget);
+    crimpShapeLayout->addRow(insCrimpShapeMatchRateLabel, insCrimpShapeMatchRateSpin);
+    
+    insCrimpLayout->addRow(insCrimpShapeGroup);
+
     insMainLayout->addWidget(insCrimpPanel);
 
     // 여백 추가
@@ -4244,120 +4327,124 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
         return;
     }
     
+    // cameraFrames 유효성 검사
+    if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size())) {
+        return;
+    }
     
     cv::Mat sourceFrame;
     
     // 시뮬레이션 모드와 일반 모드 모두 cameraFrames 사용
-    if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
-        cameraFrames[cameraIndex].empty()) {
+    if (cameraFrames[cameraIndex].empty()) {
         return;
     }
-    sourceFrame = cameraFrames[cameraIndex].clone();
+    
+    try {
+        sourceFrame = cameraFrames[cameraIndex].clone();
+    } catch (...) {
+        return;
+    }
+    
+    if (sourceFrame.empty()) {
+        return;
+    }
     
     // 1. 전체 프레임 복사 (원본 이미지 사용 - 필터 적용 안함)
     cv::Mat originalFrame = sourceFrame.clone();
     
     // 2. INS 템플릿 이미지는 원본에서 생성 (필터 적용하지 않음)
     
-    // 3. INS 템플릿 이미지: 회전 고려하여 추출하되 ROI 크기 유지
+    // 3. INS 템플릿 이미지: FID와 동일하게 회전 시 최대 width, height로 저장 후 중앙에서 패턴 크기로 추출
     cv::Mat roiMat;
     
-    // INS 템플릿 이미지: FID와 동일한 방식으로 정사각형으로 자르고 마스킹
-    cv::Point2f center(newRect.x() + newRect.width()/2.0f, newRect.y() + newRect.height()/2.0f);
-    
-    // 회전각에 따른 최소 필요 사각형 크기 계산
-    double angleRad = std::abs(pattern->angle) * M_PI / 180.0;
-    double width = newRect.width();
-    double height = newRect.height();
-    
-    // 회전된 사각형의 경계 상자 크기 계산
-    double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
-    double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
-    
-    // 정사각형 크기는 회전된 경계 상자 중 더 큰 값 + 여유분
-    int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
-    
-    // 정사각형 ROI 영역 계산 (중심점 기준)
-    int halfSize = maxSize / 2;
-    cv::Rect squareRoi(
-        static_cast<int>(center.x) - halfSize,
-        static_cast<int>(center.y) - halfSize,
-        maxSize,
-        maxSize
-    );
-    
-    // 이미지 경계와 교집합 구하기
-    cv::Rect imageBounds(0, 0, originalFrame.cols, originalFrame.rows);
-    cv::Rect validRoi = squareRoi & imageBounds;
-    
-    if (validRoi.width > 0 && validRoi.height > 0) {
-        // 정사각형 결과 이미지 생성 (검은색 배경)
-        roiMat = cv::Mat::zeros(maxSize, maxSize, originalFrame.type());
+    // 패턴이 회전되어 있는지 확인
+    if (std::abs(pattern->angle) > 0.1) {
+        // 회전된 경우: 최대 width, height로 사각형 영역 추출 후 중앙에서 패턴 크기로 자르기
+        cv::Point2f center(newRect.x() + newRect.width()/2.0f, newRect.y() + newRect.height()/2.0f);
         
-        // 유효한 영역만 복사
-        int offsetX = validRoi.x - squareRoi.x;
-        int offsetY = validRoi.y - squareRoi.y;
+        // 회전각에 따른 최대 필요 사각형 크기 계산
+        double angleRad = std::abs(pattern->angle) * M_PI / 180.0;
+        double width = newRect.width();
+        double height = newRect.height();
         
-        cv::Mat validImage = originalFrame(validRoi);
-        cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
-        validImage.copyTo(roiMat(resultRect));
+        // 회전된 사각형의 경계 상자 크기 계산
+        double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
+        double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
         
-        // 패턴 영역 외부 마스킹 (패턴 영역만 보이도록)
-        cv::Mat mask = cv::Mat::zeros(maxSize, maxSize, CV_8UC1);
+        // 최대 크기 계산 (정사각형)
+        int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
+        int halfSize = maxSize / 2;
         
-        // 정사각형 중심을 기준으로 패턴 영역 계산
-        cv::Point2f patternCenter(maxSize / 2.0f, maxSize / 2.0f);
-        cv::Size2f patternSize(newRect.width(), newRect.height());
+        // 정사각형 ROI 영역 계산 (중심점 기준)
+        cv::Rect squareRoi(
+            static_cast<int>(center.x) - halfSize,
+            static_cast<int>(center.y) - halfSize,
+            maxSize,
+            maxSize
+        );
         
-        if (std::abs(pattern->angle) > 0.1) {
-            // 회전된 패턴의 경우: 회전된 사각형 마스크
-            cv::Point2f vertices[4];
-            cv::RotatedRect rotatedRect(patternCenter, patternSize, pattern->angle);
-            rotatedRect.points(vertices);
+        // 이미지 경계와 교집합 구하기
+        cv::Rect imageBounds(0, 0, originalFrame.cols, originalFrame.rows);
+        cv::Rect validRoi = squareRoi & imageBounds;
+        
+        if (validRoi.width > 0 && validRoi.height > 0) {
+            // 정사각형 결과 이미지 생성 (검은색 배경)
+            cv::Mat templateRegion = cv::Mat::zeros(maxSize, maxSize, originalFrame.type());
             
-            std::vector<cv::Point> points;
-            for (int i = 0; i < 4; i++) {
-                points.push_back(cv::Point(static_cast<int>(vertices[i].x), 
-                                         static_cast<int>(vertices[i].y)));
+            // 유효한 영역만 복사
+            int offsetX = validRoi.x - squareRoi.x;
+            int offsetY = validRoi.y - squareRoi.y;
+            
+            cv::Mat validImage = originalFrame(validRoi);
+            cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
+            validImage.copyTo(templateRegion(resultRect));
+            
+            // 중앙에서 패턴 크기로 추출 (검사 시와 동일)
+            int extractW = static_cast<int>(width);
+            int extractH = static_cast<int>(height);
+            int startX = (templateRegion.cols - extractW) / 2;
+            int startY = (templateRegion.rows - extractH) / 2;
+            
+            startX = std::max(0, std::min(startX, templateRegion.cols - extractW));
+            startY = std::max(0, std::min(startY, templateRegion.rows - extractH));
+            
+            if (startX >= 0 && startY >= 0 && startX + extractW <= templateRegion.cols && 
+                startY + extractH <= templateRegion.rows) {
+                cv::Rect extractROI(startX, startY, extractW, extractH);
+                roiMat = templateRegion(extractROI).clone();
+            } else {
+                return;
             }
-            
-            cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{points}, cv::Scalar(255));
         } else {
-            // 회전 없는 경우: 일반 사각형 마스크
-            cv::Rect patternRect(
-                static_cast<int>(patternCenter.x - patternSize.width / 2),
-                static_cast<int>(patternCenter.y - patternSize.height / 2),
-                static_cast<int>(patternSize.width),
-                static_cast<int>(patternSize.height)
-            );
-            cv::rectangle(mask, patternRect, cv::Scalar(255), -1);
-        }
-        
-        // 마스크 반전: 패턴 영역 외부를 검은색으로 설정
-        cv::Mat invertedMask;
-        cv::bitwise_not(mask, invertedMask);
-        
-        // 패턴 영역 외부를 검은색으로 마스킹
-        roiMat.setTo(cv::Scalar(0, 0, 0), invertedMask);
-    } else {
-        return;
-    }
-            
-        
-        if (roiMat.empty()) {
             return;
         }
-  
-    for (const FilterInfo& filter : pattern->filters) {
-        if (filter.enabled) {
-            cv::Mat filtered;
-            ImageProcessor processor;
-            processor.applyFilter(roiMat, filtered, filter);
-            if (!filtered.empty()) {
-                roiMat = filtered.clone();
-            }
+    } else {
+        // 회전 없는 경우: 원본 사각형 영역만 추출
+        cv::Rect roi(
+            static_cast<int>(newRect.x()),
+            static_cast<int>(newRect.y()),
+            static_cast<int>(newRect.width()),
+            static_cast<int>(newRect.height())
+        );
+        
+        // 이미지 경계와 교집합 구하기
+        cv::Rect imageBounds(0, 0, originalFrame.cols, originalFrame.rows);
+        cv::Rect validRoi = roi & imageBounds;
+        
+        if (validRoi.width > 0 && validRoi.height > 0) {
+            roiMat = originalFrame(validRoi).clone();
+        } else {
+            return;
         }
     }
+            
+        
+    if (roiMat.empty()) {
+        return;
+    }
+  
+    // **템플릿 이미지는 필터를 적용하지 않고 원본 그대로 저장**
+    // 필터는 실시간 검사 시에만 적용됨
     
     // 5. INS 패턴이 이진화 검사(BINARY)를 사용하는 경우, 이진화 타입 반영
     if (pattern->inspectionMethod == InspectionMethod::BINARY) {
@@ -5760,6 +5847,99 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
     }
     
+    // CRIMP SHAPE 검사 활성화
+    if (insCrimpShapeGroup) {
+        connect(insCrimpShapeGroup, &QGroupBox::toggled, [this](bool checked) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->crimpShapeEnabled = checked;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // CRIMP SHAPE 오프셋 X
+    if (insCrimpShapeOffsetXSlider && insCrimpShapeOffsetXValueLabel) {
+        connect(insCrimpShapeOffsetXSlider, &QSlider::valueChanged, [this](int value) {
+            insCrimpShapeOffsetXValueLabel->setText(QString::number(value));
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->crimpShapeOffsetX = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // CRIMP SHAPE 박스 너비
+    if (insCrimpShapeWidthSlider && insCrimpShapeWidthValueLabel) {
+        connect(insCrimpShapeWidthSlider, &QSlider::valueChanged, [this](int value) {
+            insCrimpShapeWidthValueLabel->setText(QString::number(value));
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->crimpShapeBoxWidth = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // CRIMP SHAPE 박스 높이
+    if (insCrimpShapeHeightSlider && insCrimpShapeHeightValueLabel) {
+        connect(insCrimpShapeHeightSlider, &QSlider::valueChanged, [this](int value) {
+            insCrimpShapeHeightValueLabel->setText(QString::number(value));
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->crimpShapeBoxHeight = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    // CRIMP SHAPE 매칭율
+    if (insCrimpShapeMatchRateSpin) {
+        connect(insCrimpShapeMatchRateSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), 
+                [this](double value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->crimpShapeMatchRate = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                    }
+                }
+            }
+        });
+    }
+    
     // 패턴 각도 텍스트박스
     if (angleEdit) {
         connect(angleEdit, &QLineEdit::textChanged, [this](const QString &text) {
@@ -6070,6 +6250,11 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripPanel->setVisible(pattern->inspectionMethod == InspectionMethod::STRIP);
                     }
                     
+                    // CRIMP 패널 표시 설정
+                    if (insCrimpPanel) {
+                        insCrimpPanel->setVisible(pattern->inspectionMethod == InspectionMethod::CRIMP);
+                    }
+                    
                     // STRIP 검사 그룹들 표시 설정 (STRIP 검사 방법일 때만 보임)
                     bool isStripMethod = (pattern->inspectionMethod == InspectionMethod::STRIP);
                     if (insStripLengthGroup) insStripLengthGroup->setVisible(isStripMethod);
@@ -6360,6 +6545,40 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                     
                     if (insRatioTypeCombo) {
                         insRatioTypeCombo->setCurrentIndex(pattern->ratioType);
+                    }
+                    
+                    // CRIMP SHAPE 검사 파라미터 로드
+                    if (insCrimpShapeGroup) {
+                        insCrimpShapeGroup->blockSignals(true);
+                        insCrimpShapeGroup->setChecked(pattern->crimpShapeEnabled);
+                        insCrimpShapeGroup->blockSignals(false);
+                    }
+                    
+                    if (insCrimpShapeOffsetXSlider && insCrimpShapeOffsetXValueLabel) {
+                        insCrimpShapeOffsetXSlider->blockSignals(true);
+                        insCrimpShapeOffsetXSlider->setValue(pattern->crimpShapeOffsetX);
+                        insCrimpShapeOffsetXValueLabel->setText(QString::number(pattern->crimpShapeOffsetX));
+                        insCrimpShapeOffsetXSlider->blockSignals(false);
+                    }
+                    
+                    if (insCrimpShapeWidthSlider && insCrimpShapeWidthValueLabel) {
+                        insCrimpShapeWidthSlider->blockSignals(true);
+                        insCrimpShapeWidthSlider->setValue(pattern->crimpShapeBoxWidth);
+                        insCrimpShapeWidthValueLabel->setText(QString::number(pattern->crimpShapeBoxWidth));
+                        insCrimpShapeWidthSlider->blockSignals(false);
+                    }
+                    
+                    if (insCrimpShapeHeightSlider && insCrimpShapeHeightValueLabel) {
+                        insCrimpShapeHeightSlider->blockSignals(true);
+                        insCrimpShapeHeightSlider->setValue(pattern->crimpShapeBoxHeight);
+                        insCrimpShapeHeightValueLabel->setText(QString::number(pattern->crimpShapeBoxHeight));
+                        insCrimpShapeHeightSlider->blockSignals(false);
+                    }
+                    
+                    if (insCrimpShapeMatchRateSpin) {
+                        insCrimpShapeMatchRateSpin->blockSignals(true);
+                        insCrimpShapeMatchRateSpin->setValue(pattern->crimpShapeMatchRate);
+                        insCrimpShapeMatchRateSpin->blockSignals(false);
                     }
                     
                     // INS 패턴의 템플릿 이미지 업데이트
@@ -9347,7 +9566,12 @@ void TeachingWidget::switchToRecipeMode() {
 }
 
 void TeachingWidget::updateAllPatternTemplateImages() {
+    printf("[updateAllPatternTemplateImages] START\n");
+    fflush(stdout);
+    
     if (!cameraView) {
+        printf("[updateAllPatternTemplateImages] cameraView is null\n");
+        fflush(stdout);
         return;
     }
     
@@ -9355,12 +9579,20 @@ void TeachingWidget::updateAllPatternTemplateImages() {
     // 현재 이미지 가져오기 (패턴이 그려지기 전의 원본 이미지)
     cv::Mat currentImage;
     if (camOff) {
+        printf("[updateAllPatternTemplateImages] camOff mode\n");
+        fflush(stdout);
+        
         if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
             cameraFrames[cameraIndex].empty()) {
+            printf("[updateAllPatternTemplateImages] Invalid camera frame\n");
+            fflush(stdout);
             return;
         }
         currentImage = cameraFrames[cameraIndex].clone();
     } else {
+        printf("[updateAllPatternTemplateImages] Live camera mode\n");
+        fflush(stdout);
+        
         // CameraView의 backgroundPixmap에서 원본 이미지 가져오기
         if (cameraView) {
             QPixmap bgPixmap = cameraView->getBackgroundPixmap();
@@ -9375,175 +9607,88 @@ void TeachingWidget::updateAllPatternTemplateImages() {
             currentImage = getCurrentFrame();
         }
         if (currentImage.empty()) {
+            printf("[updateAllPatternTemplateImages] Current image is empty\n");
+            fflush(stdout);
             return;
         }
     }
     
+    printf("[updateAllPatternTemplateImages] Getting patterns\n");
+    fflush(stdout);
+    
     // 모든 패턴 가져오기
     QList<PatternInfo> patterns = cameraView->getPatterns();
+    printf("[updateAllPatternTemplateImages] Pattern count: %d\n", patterns.size());
+    fflush(stdout);
     
-    for (PatternInfo pattern : patterns) {  // 복사본으로 작업
+    for (int i = 0; i < patterns.size(); i++) {
+        PatternInfo pattern = patterns[i];
+        printf("[updateAllPatternTemplateImages] Processing pattern %d/%d: %s (type=%d)\n", 
+               i+1, patterns.size(), pattern.name.toStdString().c_str(), (int)pattern.type);
+        fflush(stdout);
+        
         // FID와 INS 패턴만 템플릿 이미지가 필요함
         if (pattern.type == PatternType::FID || pattern.type == PatternType::INS) {
-            // **중요**: 이미 템플릿 이미지가 있으면 재생성하지 않음 (중복 마스킹 방지)
-            if (!pattern.templateImage.isNull()) {
-                printf("[TeachingWidget] 패턴 '%s': 이미 템플릿 이미지가 있으므로 재생성하지 않음\n", 
-                       pattern.name.toStdString().c_str());
+            // 필터 변경 시에는 템플릿을 다시 생성해야 하므로 스킵하지 않음
+            
+            // 패턴 포인터 가져오기
+            printf("[updateAllPatternTemplateImages] Getting pattern pointer for: %s\n", 
+                   pattern.name.toStdString().c_str());
+            fflush(stdout);
+            
+            PatternInfo* patternPtr = cameraView->getPatternById(pattern.id);
+            if (!patternPtr) {
+                printf("[updateAllPatternTemplateImages] Pattern pointer is null for pattern: %s\n", pattern.name.toStdString().c_str());
+                fflush(stdout);
+                continue;
+            }
+            
+            // rect가 유효한지 확인
+            if (patternPtr->rect.width() <= 0 || patternPtr->rect.height() <= 0) {
+                printf("[updateAllPatternTemplateImages] Invalid rect for pattern: %s\n", pattern.name.toStdString().c_str());
                 fflush(stdout);
                 continue;
             }
             
             try {
-                // FID/INS 템플릿 이미지: 가로세로 최대 크기 정사각형으로 추출하고 패턴 영역 외부만 마스킹
-                cv::Mat templateRegion;
-                cv::Point2f center(pattern.rect.x() + pattern.rect.width()/2.0f, 
-                                 pattern.rect.y() + pattern.rect.height()/2.0f);
-                
-                // 회전각에 따른 실제 필요한 사각형 크기 계산
-                double width = pattern.rect.width();
-                double height = pattern.rect.height();
-                double angleRad = pattern.angle * M_PI / 180.0;
-                
-                // 회전된 사각형의 경계 박스 크기 계산
-                double rotatedWidth = std::abs(width * cos(angleRad)) + std::abs(height * sin(angleRad));
-                double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
-                
-                // 최종 정사각형 크기 (회전된 영역이 완전히 들어갈 수 있는 크기)
-                int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10; // 약간의 여유분
-                
-                // 정사각형 ROI 영역 계산 (중심점 기준)
-                int halfSize = squareSize / 2;
-                cv::Rect squareRoi(
-                    static_cast<int>(center.x) - halfSize,
-                    static_cast<int>(center.y) - halfSize,
-                    squareSize,
-                    squareSize
-                );
-                
-                // 이미지 경계와 교집합 구하기
-                cv::Rect imageBounds(0, 0, currentImage.cols, currentImage.rows);
-                cv::Rect validRoi = squareRoi & imageBounds;
-                
-                if (validRoi.width > 0 && validRoi.height > 0) {
-                    // 정사각형 결과 이미지 생성 (검은색 배경)
-                    templateRegion = cv::Mat::zeros(squareSize, squareSize, currentImage.type());
-                    
-                    // 유효한 영역만 복사
-                    int offsetX = validRoi.x - squareRoi.x;
-                    int offsetY = validRoi.y - squareRoi.y;
-                    
-                    cv::Mat validImage = currentImage(validRoi);
-                    cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
-                    validImage.copyTo(templateRegion(resultRect));
-                    
-                    // INS 패턴의 경우 마스킹 적용 (패턴 영역만 보이도록)
-                    if (pattern.type == PatternType::INS) {
-                        cv::Mat mask = cv::Mat::zeros(squareSize, squareSize, CV_8UC1);
-                        
-                        // 정사각형 중심을 기준으로 패턴 영역 계산
-                        cv::Point2f patternCenter(squareSize / 2.0f, squareSize / 2.0f);
-                        cv::Size2f patternSize(pattern.rect.width(), pattern.rect.height());
-                        
-                        if (std::abs(pattern.angle) > 0.1) {
-                            // 회전된 패턴의 경우: 회전된 사각형 마스크
-                            cv::Point2f vertices[4];
-                            cv::RotatedRect rotatedRect(patternCenter, patternSize, pattern.angle);
-                            rotatedRect.points(vertices);
-                            
-                            std::vector<cv::Point> points;
-                            for (int i = 0; i < 4; i++) {
-                                points.push_back(cv::Point(static_cast<int>(vertices[i].x), 
-                                                         static_cast<int>(vertices[i].y)));
-                            }
-                            
-                            cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{points}, cv::Scalar(255));
-                        } else {
-                            // 회전 없는 경우: 일반 사각형 마스크
-                            cv::Rect patternRect(
-                                static_cast<int>(patternCenter.x - patternSize.width / 2),
-                                static_cast<int>(patternCenter.y - patternSize.height / 2),
-                                static_cast<int>(patternSize.width),
-                                static_cast<int>(patternSize.height)
-                            );
-                            cv::rectangle(mask, patternRect, cv::Scalar(255), -1);
-                        }
-                        
-                        // 마스크 반전: 패턴 영역 외부를 검은색으로 설정
-                        cv::Mat invertedMask;
-                        cv::bitwise_not(mask, invertedMask);
-                        
-                        // 패턴 영역 외부를 검은색으로 마스킹
-                        templateRegion.setTo(cv::Scalar(0, 0, 0), invertedMask);
-                    } else {
-                        // FID 패턴의 경우 기존 방식 (패턴 영역만 추출)
-                        cv::Point2f patternCenter(squareSize / 2.0f, squareSize / 2.0f);
-                        cv::Size2f patternSize(pattern.rect.width(), pattern.rect.height());
-                        
-                        // 최소 크기 보장
-                        if (patternSize.width < 10) patternSize.width = 10;
-                        if (patternSize.height < 10) patternSize.height = 10;
-                        
-                        // 패턴 영역만 잘라내기
-                        cv::Rect extractRect;
-                        if (std::abs(pattern.angle) < 0.1) {
-                            // 회전 없는 경우: 단순 사각형 추출
-                            extractRect = cv::Rect(
-                                static_cast<int>(patternCenter.x - patternSize.width / 2),
-                                static_cast<int>(patternCenter.y - patternSize.height / 2),
-                                static_cast<int>(patternSize.width),
-                                static_cast<int>(patternSize.height)
-                            );
-                            
-                            // 경계 체크
-                            extractRect = extractRect & cv::Rect(0, 0, templateRegion.cols, templateRegion.rows);
-                            
-                            if (extractRect.width > 0 && extractRect.height > 0) {
-                                templateRegion = templateRegion(extractRect).clone();
-                            }
-                        }
-                        // 회전된 경우는 복잡하므로 일단 기존 방식 유지
-                    }
-                    
-                    // 패턴의 자체 필터 적용
-                    printf("[TeachingWidget] 패턴 '%s'에 %lld개 필터 적용\n", pattern.name.toStdString().c_str(), (long long)pattern.filters.size());
+                // FID 패턴은 updateFidTemplateImage 사용
+                if (pattern.type == PatternType::FID) {
+                    printf("[updateAllPatternTemplateImages] Updating FID template: %s\n", 
+                           pattern.name.toStdString().c_str());
                     fflush(stdout);
-                    for (const FilterInfo& filter : pattern.filters) {
-                        if (filter.enabled) {
-                            cv::Mat filtered;
-                            ImageProcessor processor;
-                            processor.applyFilter(templateRegion, filtered, filter);
-                            if (!filtered.empty()) {
-                                templateRegion = filtered.clone();
-                                printf("[TeachingWidget] 필터 타입 %d 적용 완료\n", filter.type);
-                                fflush(stdout);
-                            }
-                        }
-                    }
+                    updateFidTemplateImage(patternPtr, patternPtr->rect);
+                }
+                // INS 패턴은 updateInsTemplateImage 사용
+                else if (pattern.type == PatternType::INS) {
+                    printf("[updateAllPatternTemplateImages] Updating INS template: %s\n", 
+                           pattern.name.toStdString().c_str());
+                    fflush(stdout);
+                    updateInsTemplateImage(patternPtr, patternPtr->rect);
                 }
                 
-                if (!templateRegion.empty()) {
-                    // OpenCV Mat을 QImage로 변환
-                    QImage templateImage;
-                    if (templateRegion.channels() == 3) {
-                        cv::Mat rgbImage;
-                        cv::cvtColor(templateRegion, rgbImage, cv::COLOR_BGR2RGB);
-                        templateImage = QImage(rgbImage.data, rgbImage.cols, rgbImage.rows, 
-                                             rgbImage.step, QImage::Format_RGB888).copy();
-                    } else {
-                        templateImage = QImage(templateRegion.data, templateRegion.cols, templateRegion.rows, 
-                                             templateRegion.step, QImage::Format_Grayscale8).copy();
-                    }
-                    
-                    // 패턴의 템플릿 이미지 갱신
-                    pattern.templateImage = templateImage;
-                    cameraView->updatePatternById(pattern.id, pattern);
-                }
+                printf("[updateAllPatternTemplateImages] Successfully updated template for: %s\n", 
+                       pattern.name.toStdString().c_str());
+                fflush(stdout);
+                
             } catch (const std::exception& e) {
-                // 에러 처리 (무시)
+                printf("[updateAllPatternTemplateImages] Exception for pattern %s: %s\n", 
+                       pattern.name.toStdString().c_str(), e.what());
+                fflush(stdout);
+            } catch (...) {
+                printf("[updateAllPatternTemplateImages] Unknown exception for pattern: %s\n", 
+                       pattern.name.toStdString().c_str());
+                fflush(stdout);
             }
         }
     }
+    
+    printf("[updateAllPatternTemplateImages] Updating camera view\n");
+    fflush(stdout);
+    
     cameraView->update(); // 화면 갱신 
+    
+    printf("[updateAllPatternTemplateImages] Checking property panel update\n");
+    fflush(stdout);
     
     // 필터 설정 중이 아닐 때만 프로퍼티 패널의 템플릿 이미지도 업데이트
     if (!isFilterAdjusting) {
@@ -9552,10 +9697,15 @@ void TeachingWidget::updateAllPatternTemplateImages() {
             QUuid selectedPatternId = getPatternIdFromItem(currentItem);
             PatternInfo* selectedPattern = cameraView->getPatternById(selectedPatternId);
             if (selectedPattern && (selectedPattern->type == PatternType::FID || selectedPattern->type == PatternType::INS)) {
+                printf("[updateAllPatternTemplateImages] Updating property panel\n");
+                fflush(stdout);
                 updatePropertyPanel(selectedPattern, nullptr, selectedPatternId, -1);
             }
         }
     }
+    
+    printf("[updateAllPatternTemplateImages] END\n");
+    fflush(stdout);
 }
 
 void TeachingWidget::setStripCrimpMode(int mode) {

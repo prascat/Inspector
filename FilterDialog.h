@@ -46,7 +46,7 @@ private:
     // 필터 관련 데이터
     QVector<int> filterTypes;
     QMap<int, QString> filterNames;
-    QMap<int, QCheckBox*> filterCheckboxes;
+    QMap<int, QWidget*> filterCheckboxes;  // QGroupBox 또는 QCheckBox를 저장
     QMap<int, FilterPropertyWidget*> filterWidgets;
     QMap<int, FilterInfo> appliedFilters;
     QMap<int, QMap<QString, int>> defaultParams;

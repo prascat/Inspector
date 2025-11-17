@@ -82,6 +82,14 @@ public:
                                      std::vector<cv::Point>* frontBlackRegionPoints = nullptr,
                                      std::vector<cv::Point>* rearBlackRegionPoints = nullptr,
                                      double* stripMeasuredLengthPx = nullptr);
+    
+    // CRIMP SHAPE 검사 관련 함수
+    static bool performShapeMatching(const cv::Mat& roiImage, const cv::Mat& templateImage,
+                                   const PatternInfo& pattern,
+                                   double& matchScore, cv::Point& matchLocation,
+                                   std::vector<std::vector<cv::Point>>& currentContours,
+                                   std::vector<std::vector<cv::Point>>& templateContours,
+                                   cv::Mat& diffMask);
 };
 
 #endif // IMAGEPROCESSOR_H

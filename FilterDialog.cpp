@@ -153,7 +153,7 @@ void FilterDialog::addFilterWidget(int filterType, QGroupBox* groupBox) {
     propertyWidget->setProperty("filterType", filterType);
 
     // 맵에 저장 (groupBox를 체크박스처럼 사용)
-    filterCheckboxes[filterType] = nullptr;  // 더이상 별도 체크박스 없음
+    filterCheckboxes[filterType] = groupBox;  // GroupBox를 저장
     filterWidgets[filterType] = propertyWidget;
 }
 
@@ -287,16 +287,10 @@ void FilterDialog::onFilterCheckStateChanged(int state) {
         cameraView->setPatternContours(patternId, QList<QVector<QPoint>>());
     }
 
-    // 화면 갱신
+    // 화면 갱신만 수행 (템플릿 이미지는 원본 그대로 유지)
     if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
         parentWidget->setFilterAdjusting(true);
-        
         parentWidget->updateCameraFrame();
-        
-        // 필터 변경으로 인해 모든 패턴의 템플릿 이미지 실시간 갱신
-        printf("[FilterDialog] Real-time template update after filter check change\n");
-        parentWidget->updateAllPatternTemplateImages();
-        
         parentWidget->setFilterAdjusting(false);
     }
 }
@@ -308,7 +302,17 @@ void FilterDialog::onFilterParamChanged(const QString& paramName, int value) {
     int filterType = propertyWidget->property("filterType").toInt();
     
     // 필터가 활성화되어 있는지 확인
-    if (!filterCheckboxes[filterType]->isChecked()) return;
+    QWidget* checkboxWidget = filterCheckboxes.value(filterType, nullptr);
+    if (!checkboxWidget) return;
+    
+    bool isChecked = false;
+    if (QGroupBox* groupBox = qobject_cast<QGroupBox*>(checkboxWidget)) {
+        isChecked = groupBox->isChecked();
+    } else if (QCheckBox* checkbox = qobject_cast<QCheckBox*>(checkboxWidget)) {
+        isChecked = checkbox->isChecked();
+    }
+    
+    if (!isChecked) return;
     
     updateFilterParam(filterType, paramName, value);
 }
@@ -386,29 +390,101 @@ void FilterDialog::setPatternIndex(int index) {
 }
 
 void FilterDialog::updateUIFromFilters() {
+    printf("[FilterDialog::updateUIFromFilters] Applied filters count: %d\n", (int)appliedFilters.size());
+    fflush(stdout);
+    
     // 모든 필터 체크박스 업데이트
     for (int filterType : filterTypes) {
-        QCheckBox* checkbox = filterCheckboxes[filterType];
-        if (!checkbox) continue;
+        printf("[updateUIFromFilters] Processing filterType: %d\n", filterType);
+        fflush(stdout);
+        
+        QWidget* checkboxWidget = filterCheckboxes[filterType];
+        if (!checkboxWidget) {
+            printf("[updateUIFromFilters] Checkbox widget is null for filterType: %d\n", filterType);
+            fflush(stdout);
+            continue;
+        }
         
         bool checked = appliedFilters.contains(filterType) && appliedFilters[filterType].enabled;
-        checkbox->setChecked(checked);
+        
+        if (appliedFilters.contains(filterType)) {
+            printf("[FilterDialog::updateUIFromFilters] Filter %d: enabled=%d, checking=%d\n", 
+                   filterType, appliedFilters[filterType].enabled, checked);
+            fflush(stdout);
+        }
+        
+        printf("[updateUIFromFilters] Setting checkbox checked: %d\n", checked);
+        fflush(stdout);
+        
+        // GroupBox인 경우
+        if (QGroupBox* groupBox = qobject_cast<QGroupBox*>(checkboxWidget)) {
+            groupBox->setChecked(checked);
+        } else if (QCheckBox* checkbox = qobject_cast<QCheckBox*>(checkboxWidget)) {
+            checkbox->setChecked(checked);
+        }
+        
+        printf("[updateUIFromFilters] Checkbox set complete\n");
+        fflush(stdout);
         
         // 필터 프로퍼티 위젯 활성화/비활성화
         if (filterWidgets.contains(filterType)) {
+            printf("[updateUIFromFilters] Setting property widget enabled\n");
+            fflush(stdout);
+            
             FilterPropertyWidget* propWidget = filterWidgets[filterType];
+            if (!propWidget) {
+                printf("[updateUIFromFilters] Property widget is null for filterType: %d\n", filterType);
+                fflush(stdout);
+                continue;
+            }
+            
             propWidget->setEnabled(checked);
+            
+            printf("[updateUIFromFilters] Property widget enabled set\n");
+            fflush(stdout);
             
             // 파라미터 값 설정
             if (appliedFilters.contains(filterType)) {
+                printf("[updateUIFromFilters] Setting params for filterType: %d\n", filterType);
+                fflush(stdout);
+                
                 propWidget->setParams(appliedFilters[filterType].params);
+                
+                printf("[updateUIFromFilters] Params set complete\n");
+                fflush(stdout);
             }
         }
     }
+    
+    printf("[FilterDialog::updateUIFromFilters] COMPLETE\n");
+    fflush(stdout);
 }
 
 void FilterDialog::updateFilterParam(int filterType, const QString& paramName, int value) {
-    if (!filterCheckboxes[filterType]->isChecked()) return;
+    printf("[updateFilterParam] START: filterType=%d, param=%s, value=%d\n", 
+           filterType, paramName.toStdString().c_str(), value);
+    fflush(stdout);
+    
+    // 필터가 활성화되어 있는지 확인
+    QWidget* checkboxWidget = filterCheckboxes.value(filterType, nullptr);
+    if (!checkboxWidget) {
+        printf("[updateFilterParam] Filter widget not found, returning\n");
+        fflush(stdout);
+        return;
+    }
+    
+    bool isChecked = false;
+    if (QGroupBox* groupBox = qobject_cast<QGroupBox*>(checkboxWidget)) {
+        isChecked = groupBox->isChecked();
+    } else if (QCheckBox* checkbox = qobject_cast<QCheckBox*>(checkboxWidget)) {
+        isChecked = checkbox->isChecked();
+    }
+    
+    if (!isChecked) {
+        printf("[updateFilterParam] Filter not checked, returning\n");
+        fflush(stdout);
+        return;
+    }
     
     // 필터 조정 모드 시작 - 프로퍼티 패널 업데이트 방지
     if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
@@ -427,8 +503,14 @@ void FilterDialog::updateFilterParam(int filterType, const QString& paramName, i
     fflush(stdout);
     
     // 현재 필터 목록 가져오기
+    printf("[updateFilterParam] Getting current filters\n");
+    fflush(stdout);
+    
     const QList<FilterInfo>& currentFilters = cameraView->getPatternFilters(patternId);
 
+    printf("[updateFilterParam] Current filters count: %d\n", currentFilters.size());
+    fflush(stdout);
+    
     int existingFilterIndex = -1;
     for (int i = 0; i < currentFilters.size(); i++) {
         if (currentFilters[i].type == filterType) {
@@ -466,7 +548,15 @@ void FilterDialog::updateFilterParam(int filterType, const QString& paramName, i
         PatternInfo* pattern = cameraView->getPatternById(patternId);
         if (pattern) {
             // 필터가 비활성화된 경우 윤곽선 지우기
-            if (!filterCheckboxes[filterType]->isChecked()) {
+            QWidget* contourWidget = filterCheckboxes.value(filterType, nullptr);
+            bool contourChecked = false;
+            if (QGroupBox* gb = qobject_cast<QGroupBox*>(contourWidget)) {
+                contourChecked = gb->isChecked();
+            } else if (QCheckBox* cb = qobject_cast<QCheckBox*>(contourWidget)) {
+                contourChecked = cb->isChecked();
+            }
+            
+            if (!contourChecked) {
                 // 윤곽선 지우기 (빈 컨투어 리스트 전달)
                 cameraView->setPatternContours(patternId, QList<QVector<QPoint>>());
             } else {
@@ -556,10 +646,6 @@ void FilterDialog::updateFilterParam(int filterType, const QString& paramName, i
             }
         }
         
-        // 필터 파라미터 변경으로 인해 모든 패턴의 템플릿 이미지 실시간 갱신
-        printf("[FilterDialog] Real-time template update after parameter change\n");
-        parentWidget->updateAllPatternTemplateImages();
-        
         // 필터 조정 모드 종료 - 프로퍼티 패널 업데이트 허용
         parentWidget->setFilterAdjusting(false);
     }
@@ -606,10 +692,6 @@ void FilterDialog::onCancelClicked() {
                 parentWidget->selectFilterForPreview(QUuid(), -1);
                 
                 parentWidget->updateCameraFrame();
-                
-                // 필터 상태가 복구되었으므로 모든 패턴의 템플릿 이미지 갱신
-                printf("[FilterDialog] Updating all pattern template images after filter cancel\n");
-                parentWidget->updateAllPatternTemplateImages();
             }
         }
     }
@@ -632,7 +714,13 @@ void FilterDialog::onApplyClicked() {
         cv::Mat templateMat; // 템플릿 이미지 업데이트용
         
         // CONTOUR 필터가 체크되어 있는지 확인
-        bool hasActiveContourFilter = filterCheckboxes[FILTER_CONTOUR]->isChecked();
+        QWidget* contourWidget = filterCheckboxes.value(FILTER_CONTOUR, nullptr);
+        bool hasActiveContourFilter = false;
+        if (QGroupBox* gb = qobject_cast<QGroupBox*>(contourWidget)) {
+            hasActiveContourFilter = gb->isChecked();
+        } else if (QCheckBox* cb = qobject_cast<QCheckBox*>(contourWidget)) {
+            hasActiveContourFilter = cb->isChecked();
+        }
         
         // FID 또는 INS 패턴인 경우, 필터 적용 전 ROI 영역의 원본 이미지 저장
         if (isFidPattern || isInsPattern) {
@@ -670,8 +758,13 @@ void FilterDialog::onApplyClicked() {
         QList<int> maskFilterIndices; // 새로 추가된 마스크 필터의 인덱스 저장
         
         for (int filterType : filterTypes) {
-            QCheckBox* checkbox = filterCheckboxes[filterType];
-            bool isChecked = checkbox->isChecked();
+            QWidget* checkboxWidget = filterCheckboxes[filterType];
+            bool isChecked = false;
+            if (QGroupBox* gb = qobject_cast<QGroupBox*>(checkboxWidget)) {
+                isChecked = gb->isChecked();
+            } else if (QCheckBox* cb = qobject_cast<QCheckBox*>(checkboxWidget)) {
+                isChecked = cb->isChecked();
+            }
             
             if (isChecked) {
                 
@@ -826,10 +919,6 @@ void FilterDialog::onApplyClicked() {
         parentWidget->updatePatternTree();
         // 화면 갱신
         parentWidget->updateCameraFrame();
-        
-        // 모든 패턴의 템플릿 이미지를 필터 적용 상태로 갱신
-        printf("[FilterDialog] Updating all pattern template images after filter apply\n");
-        parentWidget->updateAllPatternTemplateImages();
     }
     
     

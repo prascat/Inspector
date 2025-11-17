@@ -433,6 +433,20 @@ private:
     // CRIMP 검사 패널 관련 위젯
     QGroupBox* insCrimpPanel = nullptr;
     
+    // CRIMP SHAPE 검사 관련 위젯들
+    QGroupBox* insCrimpShapeGroup = nullptr;
+    QLabel* insCrimpShapeOffsetXLabel = nullptr;
+    QSlider* insCrimpShapeOffsetXSlider = nullptr;
+    QLabel* insCrimpShapeOffsetXValueLabel = nullptr;
+    QLabel* insCrimpShapeWidthLabel = nullptr;
+    QSlider* insCrimpShapeWidthSlider = nullptr;
+    QLabel* insCrimpShapeWidthValueLabel = nullptr;
+    QLabel* insCrimpShapeHeightLabel = nullptr;
+    QSlider* insCrimpShapeHeightSlider = nullptr;
+    QLabel* insCrimpShapeHeightValueLabel = nullptr;
+    QLabel* insCrimpShapeMatchRateLabel = nullptr;
+    QDoubleSpinBox* insCrimpShapeMatchRateSpin = nullptr;
+    
     // STRIP 두께 측정 관련 컨트롤
     // FRONT 두께 측정 관련 위젯들
     QGroupBox* insStripFrontEnabledCheck = nullptr;  // GroupBox를 체크박스로 사용

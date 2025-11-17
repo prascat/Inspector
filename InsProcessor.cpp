@@ -463,6 +463,13 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
 
                     break;
                 }
+                
+                case InspectionMethod::CRIMP:
+                {
+                    inspPassed = checkCrimp(image, adjustedPattern, inspScore, result);
+                    logDebug(QString("CRIMP 검사 수행: %1 (method=%2)").arg(pattern.name).arg(pattern.inspectionMethod));
+                    break;
+                }
                     
                 default:
                     // 이전 PATTERN 타입은 COLOR로 처리
@@ -1255,7 +1262,65 @@ bool InsProcessor::performFeatureMatching(const cv::Mat& image, const cv::Mat& t
 }
 
 bool InsProcessor::checkColor(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result) {
-    cv::Mat roi = extractROI(image, pattern.rect, pattern.angle);
+    // CRIMP와 동일한 방식으로 중앙에서 패턴 크기만큼 추출
+    cv::Mat roi;
+    QRectF rectF = pattern.rect;
+    cv::Point2f center(rectF.x() + rectF.width() / 2.0f, rectF.y() + rectF.height() / 2.0f);
+    
+    double width = rectF.width();
+    double height = rectF.height();
+    double angleRad = pattern.angle * M_PI / 180.0;
+    
+    // 회전된 사각형의 경계 박스 크기 계산
+    double rotatedWidth = std::abs(width * cos(angleRad)) + std::abs(height * sin(angleRad));
+    double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
+    
+    // 최종 정사각형 크기
+    int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
+    int halfSize = squareSize / 2;
+    
+    cv::Rect squareRoi(
+        static_cast<int>(center.x) - halfSize,
+        static_cast<int>(center.y) - halfSize,
+        squareSize, squareSize
+    );
+    
+    // 이미지 경계와 교집합
+    cv::Rect imageBounds(0, 0, image.cols, image.rows);
+    cv::Rect validRoi = squareRoi & imageBounds;
+    
+    if (validRoi.width <= 0 || validRoi.height <= 0) {
+        logDebug(QString("색상 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
+        score = 0.0;
+        return false;
+    }
+    
+    // 정사각형 영역 생성
+    cv::Mat templateRegion = cv::Mat::zeros(squareSize, squareSize, image.type());
+    int offsetX = validRoi.x - squareRoi.x;
+    int offsetY = validRoi.y - squareRoi.y;
+    cv::Mat validImage = image(validRoi);
+    cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
+    validImage.copyTo(templateRegion(resultRect));
+    
+    // 중앙에서 패턴 크기로 추출
+    int extractW = static_cast<int>(width);
+    int extractH = static_cast<int>(height);
+    int startX = (templateRegion.cols - extractW) / 2;
+    int startY = (templateRegion.rows - extractH) / 2;
+    
+    startX = std::max(0, std::min(startX, templateRegion.cols - extractW));
+    startY = std::max(0, std::min(startY, templateRegion.rows - extractH));
+    
+    if (startX < 0 || startY < 0 || startX + extractW > templateRegion.cols || 
+        startY + extractH > templateRegion.rows) {
+        logDebug(QString("색상 검사 실패: 추출 범위 초과 - 패턴 '%1'").arg(pattern.name));
+        score = 0.0;
+        return false;
+    }
+    
+    cv::Rect extractROI(startX, startY, extractW, extractH);
+    roi = templateRegion(extractROI).clone();
     
     if (roi.empty()) {
         logDebug(QString("색상 검사 실패: ROI 추출 실패 - 패턴 '%1'").arg(pattern.name));
@@ -1301,18 +1366,38 @@ bool InsProcessor::checkColor(const cv::Mat& image, const PatternInfo& pattern, 
         
         // 템플릿 이미지를 cv::Mat으로 변환
         QImage qTemplateImage = pattern.templateImage.convertToFormat(QImage::Format_RGB888);
-        cv::Mat templateMat;
+        cv::Mat templateBGR;
 
         // QImage 데이터를 복사하여 연속된 메모리에 저장
         if (qTemplateImage.format() == QImage::Format_RGB888) {
-            templateMat = cv::Mat(qTemplateImage.height(), qTemplateImage.width(), 
+            templateBGR = cv::Mat(qTemplateImage.height(), qTemplateImage.width(), 
                             CV_8UC3, const_cast<uchar*>(qTemplateImage.bits()), qTemplateImage.bytesPerLine());
-            templateMat = templateMat.clone(); // 연속된 메모리 보장을 위해 복사
-            cv::cvtColor(templateMat, templateMat, cv::COLOR_RGB2BGR); // RGB -> BGR 변환
+            templateBGR = templateBGR.clone(); // 연속된 메모리 보장을 위해 복사
+            cv::cvtColor(templateBGR, templateBGR, cv::COLOR_RGB2BGR); // RGB -> BGR 변환
         } else {
             logDebug(QString("색상 검사 실패: 이미지 형식 변환 실패 - 패턴 '%1'").arg(pattern.name));
             score = 0.0;
             return false;
+        }
+        
+        // 템플릿도 중앙에서 패턴 크기만큼 추출 (ROI와 동일)
+        cv::Mat templateMat;
+        int templateExtractW = static_cast<int>(width);
+        int templateExtractH = static_cast<int>(height);
+        int templateStartX = (templateBGR.cols - templateExtractW) / 2;
+        int templateStartY = (templateBGR.rows - templateExtractH) / 2;
+        
+        templateStartX = std::max(0, std::min(templateStartX, templateBGR.cols - templateExtractW));
+        templateStartY = std::max(0, std::min(templateStartY, templateBGR.rows - templateExtractH));
+        
+        if (templateStartX >= 0 && templateStartY >= 0 && 
+            templateStartX + templateExtractW <= templateBGR.cols && 
+            templateStartY + templateExtractH <= templateBGR.rows) {
+            cv::Rect templateExtractROI(templateStartX, templateStartY, templateExtractW, templateExtractH);
+            templateMat = templateBGR(templateExtractROI).clone();
+        } else {
+            // 추출 실패 시 원본 사용
+            templateMat = templateBGR.clone();
         }
         
         // 크기 확인 (이제 동일한 방식으로 추출되므로 크기가 같아야 함)
@@ -1350,33 +1435,57 @@ bool InsProcessor::checkColor(const cv::Mat& image, const PatternInfo& pattern, 
         // 상관계수는 -1에서 1 사이의 값이므로 0에서 1로 변환
         score = (score + 1.0) / 2.0;
         
-        // 시각화를 위한 차이 이미지 생성
-        cv::Mat diffImage;
-        cv::absdiff(processedRoi, templateMat, diffImage);
-        cv::cvtColor(diffImage, diffImage, cv::COLOR_BGR2GRAY);
-        cv::normalize(diffImage, diffImage, 0, 255, cv::NORM_MINMAX);
-        cv::bitwise_not(diffImage, diffImage); // 반전해서 유사할수록 밝게 보이도록
+        // 시각화를 위한 차이 이미지 생성 (차이 없음=초록, 차이 있음=빨강)
+        cv::Mat diffGray;
+        cv::absdiff(processedRoi, templateMat, diffGray);
+        cv::cvtColor(diffGray, diffGray, cv::COLOR_BGR2GRAY);
+        
+        // 차이 정도를 0~255로 정규화
+        cv::normalize(diffGray, diffGray, 0, 255, cv::NORM_MINMAX);
+        
+        // 결과 이미지 생성 (3채널 컬러)
+        cv::Mat resultImage = cv::Mat::zeros(diffGray.size(), CV_8UC3);
+        
+        // 각 픽셀별로 차이 정도에 따라 색상 설정
+        for (int y = 0; y < diffGray.rows; y++) {
+            for (int x = 0; x < diffGray.cols; x++) {
+                uchar diff = diffGray.at<uchar>(y, x);
+                
+                if (diff < 30) {
+                    // 차이가 거의 없음 -> 초록색 (차이가 적을수록 진한 초록)
+                    resultImage.at<cv::Vec3b>(y, x) = cv::Vec3b(0, 255 - diff, 0);
+                } else {
+                    // 차이가 있음 -> 빨간색 (차이가 클수록 진한 빨강)
+                    resultImage.at<cv::Vec3b>(y, x) = cv::Vec3b(0, 0, std::min(255, diff + 100));
+                }
+            }
+        }
+        
+        cv::cvtColor(resultImage, resultImage, cv::COLOR_BGR2RGB);  // RGB로 변환
         
         // 비교 방식에 따른 결과 판단
         bool passed = false;
+        double scorePercent = score * 100.0;  // 퍼센트로 변환
+        
         switch (pattern.compareMethod) {
             case 0:  // 이상 (>=)
-                passed = (score >= pattern.passThreshold);
+                passed = (scorePercent >= pattern.passThreshold);
                 break;
             case 1:  // 이하 (<=)
-                passed = (score <= pattern.passThreshold);
+                passed = (scorePercent <= pattern.passThreshold);
                 break;
             case 2:  // 범위 내 (lowerThreshold <= score <= upperThreshold)
-                passed = (score >= pattern.lowerThreshold && score <= pattern.upperThreshold);
+                passed = (scorePercent >= pattern.lowerThreshold && scorePercent <= pattern.upperThreshold);
                 break;
             default:
-                passed = (score >= pattern.passThreshold);
+                passed = (scorePercent >= pattern.passThreshold);
                 break;
         }
         
         // 결과 이미지 저장 - InspectionResult에 직접 저장
-        result.insProcessedImages[pattern.id] = diffImage;
+        result.insProcessedImages[pattern.id] = resultImage;
         result.insMethodTypes[pattern.id] = InspectionMethod::COLOR;
+        result.colorDiffMask[pattern.id] = resultImage.clone();  // diffMask로도 저장
         
         logDebug(QString("색상 검사 결과 - 패턴: '%1', 유사도: %2%, 임계값: %3%, 결과: %4")
                 .arg(pattern.name)
@@ -1402,7 +1511,61 @@ bool InsProcessor::checkColor(const cv::Mat& image, const PatternInfo& pattern, 
 }
 
 bool InsProcessor::checkBinary(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result) {
-    cv::Mat roi = extractROI(image, pattern.rect, pattern.angle);
+    // CRIMP와 동일한 방식으로 중앙에서 패턴 크기만큼 추출
+    cv::Mat roi;
+    QRectF rectF = pattern.rect;
+    cv::Point2f center(rectF.x() + rectF.width() / 2.0f, rectF.y() + rectF.height() / 2.0f);
+    
+    double width = rectF.width();
+    double height = rectF.height();
+    double angleRad = pattern.angle * M_PI / 180.0;
+    
+    double rotatedWidth = std::abs(width * cos(angleRad)) + std::abs(height * sin(angleRad));
+    double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
+    
+    int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
+    int halfSize = squareSize / 2;
+    
+    cv::Rect squareRoi(
+        static_cast<int>(center.x) - halfSize,
+        static_cast<int>(center.y) - halfSize,
+        squareSize, squareSize
+    );
+    
+    cv::Rect imageBounds(0, 0, image.cols, image.rows);
+    cv::Rect validRoi = squareRoi & imageBounds;
+    
+    if (validRoi.width <= 0 || validRoi.height <= 0) {
+        logDebug(QString("이진화 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
+        score = 0.0;
+        return false;
+    }
+    
+    cv::Mat templateRegion = cv::Mat::zeros(squareSize, squareSize, image.type());
+    int offsetX = validRoi.x - squareRoi.x;
+    int offsetY = validRoi.y - squareRoi.y;
+    cv::Mat validImage = image(validRoi);
+    cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
+    validImage.copyTo(templateRegion(resultRect));
+    
+    int extractW = static_cast<int>(width);
+    int extractH = static_cast<int>(height);
+    int startX = (templateRegion.cols - extractW) / 2;
+    int startY = (templateRegion.rows - extractH) / 2;
+    
+    startX = std::max(0, std::min(startX, templateRegion.cols - extractW));
+    startY = std::max(0, std::min(startY, templateRegion.rows - extractH));
+    
+    if (startX < 0 || startY < 0 || startX + extractW > templateRegion.cols || 
+        startY + extractH > templateRegion.rows) {
+        logDebug(QString("이진화 검사 실패: 추출 범위 초과 - 패턴 '%1'").arg(pattern.name));
+        score = 0.0;
+        return false;
+    }
+    
+    cv::Rect extractROI(startX, startY, extractW, extractH);
+    roi = templateRegion(extractROI).clone();
+    
     if (roi.empty()) {
         logDebug(QString("이진화 검사 실패: ROI 추출 실패 - 패턴 '%1'").arg(pattern.name));
         score = 0.0;
@@ -1492,6 +1655,7 @@ bool InsProcessor::checkBinary(const cv::Mat& image, const PatternInfo& pattern,
             // 결과 이미지 저장
             result.insProcessedImages[pattern.id] = tempResult.clone();  // RGB 형식 그대로 저장
             result.insMethodTypes[pattern.id] = InspectionMethod::BINARY;
+            result.binaryDiffMask[pattern.id] = tempResult.clone();  // diffMask로도 저장
             
             logDebug(QString("이진화 검사 결과 (비율): 패턴 '%1', 비율: %2%, 임계값: %3%, 타입: %4, 결과: %5")
                     .arg(pattern.name)
@@ -1634,6 +1798,7 @@ bool InsProcessor::checkBinary(const cv::Mat& image, const PatternInfo& pattern,
         // 결과 저장
         result.insProcessedImages[pattern.id] = resultImage;
         result.insMethodTypes[pattern.id] = InspectionMethod::BINARY;
+        result.binaryDiffMask[pattern.id] = resultImage.clone();  // diffMask로도 저장
         
         // 비교 방식에 따른 결과 판단
         bool passed = false;
@@ -1682,7 +1847,61 @@ bool InsProcessor::checkBinary(const cv::Mat& image, const PatternInfo& pattern,
 }
 
 bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result) {
-    cv::Mat roi = extractROI(image, pattern.rect, pattern.angle);
+    // CRIMP와 동일한 방식으로 중앙에서 패턴 크기만큼 추출
+    cv::Mat roi;
+    QRectF rectF = pattern.rect;
+    cv::Point2f center(rectF.x() + rectF.width() / 2.0f, rectF.y() + rectF.height() / 2.0f);
+    
+    double width = rectF.width();
+    double height = rectF.height();
+    double angleRad = pattern.angle * M_PI / 180.0;
+    
+    double rotatedWidth = std::abs(width * cos(angleRad)) + std::abs(height * sin(angleRad));
+    double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
+    
+    int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
+    int halfSize = squareSize / 2;
+    
+    cv::Rect squareRoi(
+        static_cast<int>(center.x) - halfSize,
+        static_cast<int>(center.y) - halfSize,
+        squareSize, squareSize
+    );
+    
+    cv::Rect imageBounds(0, 0, image.cols, image.rows);
+    cv::Rect validRoi = squareRoi & imageBounds;
+    
+    if (validRoi.width <= 0 || validRoi.height <= 0) {
+        logDebug(QString("엣지 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
+        score = 0.0;
+        return false;
+    }
+    
+    cv::Mat templateRegion = cv::Mat::zeros(squareSize, squareSize, image.type());
+    int offsetX = validRoi.x - squareRoi.x;
+    int offsetY = validRoi.y - squareRoi.y;
+    cv::Mat validImage = image(validRoi);
+    cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
+    validImage.copyTo(templateRegion(resultRect));
+    
+    int extractW = static_cast<int>(width);
+    int extractH = static_cast<int>(height);
+    int startX = (templateRegion.cols - extractW) / 2;
+    int startY = (templateRegion.rows - extractH) / 2;
+    
+    startX = std::max(0, std::min(startX, templateRegion.cols - extractW));
+    startY = std::max(0, std::min(startY, templateRegion.rows - extractH));
+    
+    if (startX < 0 || startY < 0 || startX + extractW > templateRegion.cols || 
+        startY + extractH > templateRegion.rows) {
+        logDebug(QString("엣지 검사 실패: 추출 범위 초과 - 패턴 '%1'").arg(pattern.name));
+        score = 0.0;
+        return false;
+    }
+    
+    cv::Rect extractROI(startX, startY, extractW, extractH);
+    roi = templateRegion(extractROI).clone();
+    
     if (roi.empty()) {
         logDebug(QString("엣지 검사 실패: ROI 추출 실패 - 패턴 '%1'").arg(pattern.name));
         score = 0.0;
@@ -1776,6 +1995,7 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
             
             result.insProcessedImages[pattern.id] = edges.clone();
             result.insMethodTypes[pattern.id] = InspectionMethod::EDGE;
+            result.edgeDiffMask[pattern.id] = edges.clone();  // diffMask로도 저장
             
             return passed;
         }
@@ -1849,6 +2069,7 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
             }
             result.insProcessedImages[pattern.id] = resultEdges;
             result.insMethodTypes[pattern.id] = InspectionMethod::EDGE;
+            result.edgeDiffMask[pattern.id] = resultEdges.clone();  // diffMask로도 저장
             
             return false;
         }
@@ -1920,6 +2141,7 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
         // 결과 이미지 저장
         result.insProcessedImages[pattern.id] = visualEdges;
         result.insMethodTypes[pattern.id] = InspectionMethod::EDGE;
+        result.edgeDiffMask[pattern.id] = visualEdges.clone();  // diffMask로도 저장
         
         // 디버그 출력
         logDebug(QString("엣지 검사 결과 - 패턴: '%1', 유사도: %2, XOR 점수: %3, Chamfer 점수: %4, 임계값: %5, 결과: %6")
@@ -2154,8 +2376,10 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                     if (filter.enabled) {
                         cv::Mat nextFiltered;
                         processor.applyFilter(roiMat, nextFiltered, filter);
-                        if (!nextFiltered.empty()) {
+                        if (!nextFiltered.empty() && nextFiltered.size() == roiMat.size()) {
                             nextFiltered.copyTo(roiMat);
+                        } else if (!nextFiltered.empty()) {
+                            roiMat = nextFiltered.clone();
                         }
                     }
                 }
@@ -2184,8 +2408,10 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                     if (filter.enabled) {
                         cv::Mat nextFiltered;
                         processor.applyFilter(roiMat, nextFiltered, filter);
-                        if (!nextFiltered.empty()) {
+                        if (!nextFiltered.empty() && nextFiltered.size() == roiMat.size()) {
                             nextFiltered.copyTo(roiMat);
+                        } else if (!nextFiltered.empty()) {
+                            roiMat = nextFiltered.clone();
                         }
                     }
                 }
@@ -3266,6 +3492,203 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         logDebug(QString("STRIP 길이 검사 중 알 수 없는 예외 발생 - %1").arg(pattern.name));
         score = 0.0;
         result.insMethodTypes[pattern.id] = InspectionMethod::STRIP;
+        return false;
+    }
+}
+
+// CRIMP 검사 (Shape-based Matching)
+bool InsProcessor::checkCrimp(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result) {
+    try {
+        // 템플릿 이미지 확인
+        if (pattern.templateImage.isNull()) {
+            logDebug(QString("CRIMP 검사 실패: 템플릿 이미지 없음 - %1").arg(pattern.name));
+            score = 0.0;
+            result.insMethodTypes[pattern.id] = InspectionMethod::CRIMP;
+            return false;
+        }
+        
+        // QImage를 cv::Mat로 변환
+        QImage qTemplateImage = pattern.templateImage;
+        cv::Mat templateBGR;
+        
+        if (qTemplateImage.format() == QImage::Format_RGB888) {
+            // RGB888 포맷인 경우
+            cv::Mat templateMat(qTemplateImage.height(), qTemplateImage.width(),
+                               CV_8UC3, const_cast<uchar*>(qTemplateImage.bits()),
+                               qTemplateImage.bytesPerLine());
+            templateMat = templateMat.clone();
+            cv::cvtColor(templateMat, templateBGR, cv::COLOR_RGB2BGR);
+        } else {
+            // 다른 포맷인 경우 RGB888로 변환 후 처리
+            qTemplateImage = qTemplateImage.convertToFormat(QImage::Format_RGB888);
+            cv::Mat templateMat(qTemplateImage.height(), qTemplateImage.width(),
+                               CV_8UC3, const_cast<uchar*>(qTemplateImage.bits()),
+                               qTemplateImage.bytesPerLine());
+            templateMat = templateMat.clone();
+            cv::cvtColor(templateMat, templateBGR, cv::COLOR_RGB2BGR);
+        }
+        
+        qDebug() << "[CRIMP] templateImage 전체 크기:" << templateBGR.cols << "x" << templateBGR.rows;
+        
+        // 패턴 영역 추출 - 티칭할 때와 완전히 동일한 방식
+        QRectF rectF = pattern.rect;
+        
+        qDebug() << "[CRIMP] 패턴 rect - x:" << rectF.x() << "y:" << rectF.y() << "w:" << rectF.width() << "h:" << rectF.height();
+        qDebug() << "[CRIMP] 패턴 angle:" << pattern.angle;
+        
+        cv::Mat roiImage;
+        
+        // 티칭 시와 동일: 정사각형 영역 추출 후 중앙에서 패턴 크기로 자르기
+        cv::Point2f center(rectF.x() + rectF.width() / 2.0f, 
+                         rectF.y() + rectF.height() / 2.0f);
+        
+        double width = rectF.width();
+        double height = rectF.height();
+        double angleRad = pattern.angle * M_PI / 180.0;
+        
+        // 회전된 사각형의 경계 박스 크기 계산
+        double rotatedWidth = std::abs(width * cos(angleRad)) + std::abs(height * sin(angleRad));
+        double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
+        
+        // 최종 정사각형 크기
+        int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
+        
+        // 정사각형 ROI 영역 계산 (중심점 기준)
+        int halfSize = squareSize / 2;
+        cv::Rect squareRoi(
+            static_cast<int>(center.x) - halfSize,
+            static_cast<int>(center.y) - halfSize,
+            squareSize,
+            squareSize
+        );
+        
+        // 이미지 경계와 교집합
+        cv::Rect imageBounds(0, 0, image.cols, image.rows);
+        cv::Rect validRoi = squareRoi & imageBounds;
+        
+        if (validRoi.width <= 0 || validRoi.height <= 0) {
+            logDebug(QString("CRIMP 검사 실패: 유효하지 않은 ROI - %1").arg(pattern.name));
+            score = 0.0;
+            result.insMethodTypes[pattern.id] = InspectionMethod::CRIMP;
+            return false;
+        }
+        
+        // 정사각형 결과 이미지 생성 (검은색 배경)
+        cv::Mat templateRegion = cv::Mat::zeros(squareSize, squareSize, image.type());
+        
+        // 유효한 영역만 복사
+        int offsetX = validRoi.x - squareRoi.x;
+        int offsetY = validRoi.y - squareRoi.y;
+        
+        cv::Mat validImage = image(validRoi);
+        cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
+        validImage.copyTo(templateRegion(resultRect));
+        
+        // 중앙에서 패턴 크기로 추출
+        int extractW = static_cast<int>(width);
+        int extractH = static_cast<int>(height);
+        int startX = (templateRegion.cols - extractW) / 2;
+        int startY = (templateRegion.rows - extractH) / 2;
+        
+        startX = std::max(0, std::min(startX, templateRegion.cols - extractW));
+        startY = std::max(0, std::min(startY, templateRegion.rows - extractH));
+        
+        if (startX < 0 || startY < 0 || startX + extractW > templateRegion.cols || 
+            startY + extractH > templateRegion.rows) {
+            logDebug(QString("CRIMP 검사 실패: 추출 범위 초과 - %1").arg(pattern.name));
+            score = 0.0;
+            result.insMethodTypes[pattern.id] = InspectionMethod::CRIMP;
+            return false;
+        }
+        
+        cv::Rect extractROI(startX, startY, extractW, extractH);
+        roiImage = templateRegion(extractROI).clone();
+        
+        qDebug() << "[CRIMP] roiImage 추출 완료:" << roiImage.cols << "x" << roiImage.rows;
+        
+        // 템플릿 이미지도 중앙에서 패턴 크기만큼 추출 (ROI와 동일하게)
+        cv::Mat templateROI;
+        int templateExtractW = static_cast<int>(width);
+        int templateExtractH = static_cast<int>(height);
+        int templateStartX = (templateBGR.cols - templateExtractW) / 2;
+        int templateStartY = (templateBGR.rows - templateExtractH) / 2;
+        
+        templateStartX = std::max(0, std::min(templateStartX, templateBGR.cols - templateExtractW));
+        templateStartY = std::max(0, std::min(templateStartY, templateBGR.rows - templateExtractH));
+        
+        if (templateStartX >= 0 && templateStartY >= 0 && 
+            templateStartX + templateExtractW <= templateBGR.cols && 
+            templateStartY + templateExtractH <= templateBGR.rows) {
+            cv::Rect templateExtractROI(templateStartX, templateStartY, templateExtractW, templateExtractH);
+            templateROI = templateBGR(templateExtractROI).clone();
+        } else {
+            // 추출 실패 시 원본 사용
+            templateROI = templateBGR.clone();
+        }
+        
+        qDebug() << "[CRIMP] 원본 - roiImage:" << roiImage.cols << "x" << roiImage.rows 
+                 << "templateROI:" << templateROI.cols << "x" << templateROI.rows;
+        
+        // Shape Matching 수행 (패턴 전체 이미지 전달, 내부에서 박스 영역만 비교)
+        double matchScore = 0.0;
+        cv::Point matchLocation;
+        std::vector<std::vector<cv::Point>> currentContours;
+        std::vector<std::vector<cv::Point>> templateContours;
+        cv::Mat diffMask;
+        
+        bool isPassed = ImageProcessor::performShapeMatching(roiImage, templateROI, pattern, 
+                                                            matchScore, matchLocation,
+                                                            currentContours, templateContours, diffMask);
+        
+        // 결과 저장
+        score = matchScore;
+        result.insMethodTypes[pattern.id] = InspectionMethod::CRIMP;
+        
+        // 윤곽선을 QVector<QPoint>로 변환하여 저장
+        QList<QVector<QPoint>> qtCurrentContours;
+        for (const auto& contour : currentContours) {
+            QVector<QPoint> qtContour;
+            for (const auto& pt : contour) {
+                // ROI 내 박스 상대좌표를 그대로 저장 (CameraView에서 변환)
+                qtContour.append(QPoint(pt.x, pt.y));
+            }
+            qtCurrentContours.append(qtContour);
+        }
+        
+        QList<QVector<QPoint>> qtTemplateContours;
+        for (const auto& contour : templateContours) {
+            QVector<QPoint> qtContour;
+            for (const auto& pt : contour) {
+                // ROI 내 박스 상대좌표를 그대로 저장
+                qtContour.append(QPoint(pt.x, pt.y));
+            }
+            qtTemplateContours.append(qtContour);
+        }
+        
+        result.crimpCurrentContours[pattern.id] = qtCurrentContours;
+        result.crimpTemplateContours[pattern.id] = qtTemplateContours;
+        result.crimpDiffMask[pattern.id] = diffMask;
+        
+        // 박스 위치와 크기 저장 (ROI 내 상대좌표)
+        result.crimpBoxCenter[pattern.id] = QPointF(matchLocation.x, matchLocation.y);
+        result.crimpBoxSize[pattern.id] = QSizeF(pattern.crimpShapeBoxWidth, pattern.crimpShapeBoxHeight);
+        
+        logDebug(QString("CRIMP SHAPE 검사 - %1: %2% (기준: %3%)")
+                .arg(pattern.name)
+                .arg(matchScore, 0, 'f', 1)
+                .arg(pattern.crimpShapeMatchRate, 0, 'f', 1));
+        
+        return isPassed;
+        
+    } catch (const cv::Exception& e) {
+        logDebug(QString("CRIMP 검사 중 OpenCV 예외 발생 - %1: %2").arg(pattern.name).arg(e.what()));
+        score = 0.0;
+        result.insMethodTypes[pattern.id] = InspectionMethod::CRIMP;
+        return false;
+    } catch (...) {
+        logDebug(QString("CRIMP 검사 중 알 수 없는 예외 발생 - %1").arg(pattern.name));
+        score = 0.0;
+        result.insMethodTypes[pattern.id] = InspectionMethod::CRIMP;
         return false;
     }
 }

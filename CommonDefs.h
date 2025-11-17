@@ -140,6 +140,18 @@ struct InspectionResult {
     QString rearDetail;                            // REAR 세부 정보
     QString edgeResult;                            // EDGE 결과 (PASS/NG)
     QString edgeDetail;                            // EDGE 세부 정보
+    
+    // CRIMP SHAPE 검사 결과
+    QMap<QUuid, QList<QVector<QPoint>>> crimpCurrentContours;    // 현재 형상 윤곽선 (패턴 ID -> 윤곽선 리스트)
+    QMap<QUuid, QList<QVector<QPoint>>> crimpTemplateContours;   // 템플릿 형상 윤곽선 (패턴 ID -> 윤곽선 리스트)
+    QMap<QUuid, cv::Mat> crimpDiffMask;                          // 차이 마스크 (패턴 ID -> 차이 영역)
+    QMap<QUuid, QPointF> crimpBoxCenter;                         // SHAPE 박스 중심 상대좌표
+    QMap<QUuid, QSizeF> crimpBoxSize;                            // SHAPE 박스 크기
+    
+    // COLOR, EDGE, BINARY 검사 결과 (CRIMP와 동일한 방식)
+    QMap<QUuid, cv::Mat> colorDiffMask;                          // COLOR 차이 마스크 (초록=유사, 빨강=차이)
+    QMap<QUuid, cv::Mat> edgeDiffMask;                           // EDGE 차이 마스크
+    QMap<QUuid, cv::Mat> binaryDiffMask;                         // BINARY 차이 마스크
 };
 
 // 패턴 유형 열거형
@@ -238,6 +250,13 @@ struct PatternInfo {
     
     // EDGE 평균선 거리 검사 파라미터
     double edgeDistanceMax = 0.5;           // 평균선에서 최대 허용 거리 (mm)
+
+    // CRIMP SHAPE 검사 파라미터
+    bool crimpShapeEnabled = true;          // CRIMP SHAPE 검사 활성화 여부
+    int crimpShapeOffsetX = 10;             // 패턴 왼쪽에서의 오프셋 (픽셀)
+    int crimpShapeBoxWidth = 100;           // SHAPE 박스 너비 (픽셀)
+    int crimpShapeBoxHeight = 100;          // SHAPE 박스 높이 (픽셀)
+    double crimpShapeMatchRate = 80.0;      // 매칭율 (%)
 
     // 이진화 검사를 위한 추가 속성
     int binaryThreshold = 128;        // 이진화 임계값 (0-255)

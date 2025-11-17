@@ -968,6 +968,12 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("stripRearThicknessBoxWidth", QString::number(pattern.stripRearThicknessBoxWidth));
     xml.writeAttribute("stripRearThicknessBoxHeight", QString::number(pattern.stripRearThicknessBoxHeight));
     
+    // CRIMP SHAPE 검사 관련 속성 저장
+    xml.writeAttribute("crimpShapeOffsetX", QString::number(pattern.crimpShapeOffsetX));
+    xml.writeAttribute("crimpShapeBoxWidth", QString::number(pattern.crimpShapeBoxWidth));
+    xml.writeAttribute("crimpShapeBoxHeight", QString::number(pattern.crimpShapeBoxHeight));
+    xml.writeAttribute("crimpShapeMatchRate", QString::number(pattern.crimpShapeMatchRate, 'f', 1));
+    
     if (!pattern.templateImage.isNull()) {
         QByteArray ba;
         QBuffer buffer(&ba);
@@ -1747,6 +1753,27 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     QString stripRearThicknessBoxHeightStr = xml.attributes().value("stripRearThicknessBoxHeight").toString();
     if (!stripRearThicknessBoxHeightStr.isEmpty()) {
         pattern.stripRearThicknessBoxHeight = stripRearThicknessBoxHeightStr.toInt();
+    }
+    
+    // CRIMP SHAPE 검사 관련 속성 읽기
+    QString crimpShapeOffsetXStr = xml.attributes().value("crimpShapeOffsetX").toString();
+    if (!crimpShapeOffsetXStr.isEmpty()) {
+        pattern.crimpShapeOffsetX = crimpShapeOffsetXStr.toInt();
+    }
+    
+    QString crimpShapeBoxWidthStr = xml.attributes().value("crimpShapeBoxWidth").toString();
+    if (!crimpShapeBoxWidthStr.isEmpty()) {
+        pattern.crimpShapeBoxWidth = crimpShapeBoxWidthStr.toInt();
+    }
+    
+    QString crimpShapeBoxHeightStr = xml.attributes().value("crimpShapeBoxHeight").toString();
+    if (!crimpShapeBoxHeightStr.isEmpty()) {
+        pattern.crimpShapeBoxHeight = crimpShapeBoxHeightStr.toInt();
+    }
+    
+    QString crimpShapeMatchRateStr = xml.attributes().value("crimpShapeMatchRate").toString();
+    if (!crimpShapeMatchRateStr.isEmpty()) {
+        pattern.crimpShapeMatchRate = crimpShapeMatchRateStr.toDouble();
     }
     
     QString imageStr = xml.attributes().value("templateImage").toString();

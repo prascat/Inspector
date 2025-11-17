@@ -1836,8 +1836,8 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             
             painter.restore();
             
-            // INS 라벨 (이름과 점수를 퍼센트로 표시)
-            QString label = QString("%1: %2%").arg(patternInfo->name).arg(score * 100.0, 0, 'f', 1);
+            // INS 라벨 (이름만 표시, 검사 결과 점수는 표시하지 않음)
+            QString label = patternInfo->name;
             QFont font(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
             painter.setFont(font);
             QFontMetrics fm(font);
@@ -2757,6 +2757,271 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 }
             }
         }
+        
+        // ===== INS CRIMP 검사 결과 시각화 =====
+        if (patternInfo->type == PatternType::INS && 
+            patternInfo->inspectionMethod == InspectionMethod::CRIMP &&
+            patternInfo->crimpShapeEnabled &&
+            result.crimpCurrentContours.contains(patternId)) {
+            
+            // 현재 줌 스케일 계산
+            QTransform t = transform();
+            double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
+            
+            // 패턴의 회전된 꼭짓점들 계산
+            QPointF topLeftScene = inspRectScene.topLeft();
+            QPointF topRightScene(inspRectScene.right(), inspRectScene.top());
+            QPointF bottomLeftScene(inspRectScene.left(), inspRectScene.bottom());
+            QPointF bottomRightScene = inspRectScene.bottomRight();
+            
+            // Viewport 좌표로 변환
+            QPointF topLeftVP = mapFromScene(topLeftScene);
+            QPointF topRightVP = mapFromScene(topRightScene);
+            QPointF bottomLeftVP = mapFromScene(bottomLeftScene);
+            QPointF bottomRightVP = mapFromScene(bottomRightScene);
+            
+            // 회전 각도 (라디안)
+            double radians = insAngle * M_PI / 180.0;
+            double cosA = std::cos(radians);
+            double sinA = std::sin(radians);
+            
+            // 회전 변환 함수
+            auto rotatePoint = [&](QPointF pt, QPointF center) -> QPointF {
+                double dx = pt.x() - center.x();
+                double dy = pt.y() - center.y();
+                double newX = center.x() + dx * cosA - dy * sinA;
+                double newY = center.y() + dx * sinA + dy * cosA;
+                return QPointF(newX, newY);
+            };
+            
+            // 회전 후의 실제 좌표
+            QPointF rotTopLeftVP = rotatePoint(topLeftVP, centerViewport);
+            QPointF rotTopRightVP = rotatePoint(topRightVP, centerViewport);
+            QPointF rotBottomLeftVP = rotatePoint(bottomLeftVP, centerViewport);
+            
+            // 가로 방향 벡터 (회전 후)
+            double widthVectorX = rotTopRightVP.x() - rotTopLeftVP.x();
+            double widthVectorY = rotTopRightVP.y() - rotTopLeftVP.y();
+            double vectorLen = std::sqrt(widthVectorX * widthVectorX + widthVectorY * widthVectorY);
+            
+            if (vectorLen > 0.01) {
+                // CRIMP SHAPE 박스 위치 계산 (패턴 왼쪽에서 offsetX만큼, 세로 중앙)
+                double offsetScaled = patternInfo->crimpShapeOffsetX * currentScale;
+                double unitX = widthVectorX / vectorLen;
+                double unitY = widthVectorY / vectorLen;
+                
+                // 세로 방향 벡터 (반시계방향 90도 회전)
+                double perpUnitX = -unitY;
+                double perpUnitY = unitX;
+                
+                // 패턴 세로 길이
+                double heightVectorX = rotBottomLeftVP.x() - rotTopLeftVP.x();
+                double heightVectorY = rotBottomLeftVP.y() - rotTopLeftVP.y();
+                double patternHeight = std::sqrt(heightVectorX * heightVectorX + heightVectorY * heightVectorY);
+                
+                // zoom scale 적용
+                int boxWidth = int(patternInfo->crimpShapeBoxWidth * currentScale);
+                int boxHeight = int(patternInfo->crimpShapeBoxHeight * currentScale);
+                
+                // 세로 중앙 오프셋
+                double verticalOffset = (patternHeight - boxHeight) / 2.0;
+                
+                QPointF shapeTopLeft(
+                    rotTopLeftVP.x() + unitX * offsetScaled + perpUnitX * verticalOffset,
+                    rotTopLeftVP.y() + unitY * offsetScaled + perpUnitY * verticalOffset
+                );
+                
+                // 박스 회전 각도
+                double boxAngle = std::atan2(widthVectorY, widthVectorX) * 180.0 / M_PI;
+                
+                // 박스 색상: 티칭 모드와 동일한 보라색
+                QColor shapeBoxColor = QColor(147, 112, 219);  // Medium Purple
+                
+                painter.save();
+                painter.translate(shapeTopLeft);  // 박스 왼쪽 상단을 원점으로
+                painter.rotate(boxAngle);
+                
+                // 차이 영역 그리기 (차이=빨강, 동일=초록)
+                if (result.crimpDiffMask.contains(patternId)) {
+                    cv::Mat diffMask = result.crimpDiffMask[patternId];
+                    if (!diffMask.empty()) {
+                        for (int y = 0; y < diffMask.rows; y++) {
+                            for (int x = 0; x < diffMask.cols; x++) {
+                                uchar diffValue = diffMask.at<uchar>(y, x);
+                                QColor pixelColor;
+                                
+                                if (diffValue > 5) {
+                                    // 차이가 있는 부분 -> 빨간색
+                                    pixelColor = QColor(255, 0, 0, 100);
+                                } else {
+                                    // 차이가 없는 부분 (동일) -> 초록색
+                                    pixelColor = QColor(0, 255, 0, 100);
+                                }
+                                
+                                int drawX = int(x * currentScale);
+                                int drawY = int(y * currentScale);
+                                painter.setPen(QPen(pixelColor, 1));
+                                painter.drawPoint(drawX, drawY);
+                            }
+                        }
+                    }
+                }
+                
+                // 박스 테두리 그리기 (점선)
+                QPen shapePen(shapeBoxColor, 2);
+                shapePen.setStyle(Qt::DashLine);  // 점선
+                painter.setPen(shapePen);
+                painter.setBrush(Qt::NoBrush);
+                painter.drawRect(0, 0, boxWidth, boxHeight);  // 원점 기준으로 그리기
+                
+                // 매칭 점수 표시
+                QString scoreText = QString("SHAPE: %1%").arg(score, 0, 'f', 1);
+                QFont shapeFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
+                painter.setFont(shapeFont);
+                QFontMetrics shapeFm(shapeFont);
+                int shapeTextW = shapeFm.horizontalAdvance(scoreText);
+                int shapeTextH = shapeFm.height();
+                
+                QRectF shapeTextRect(boxWidth/2 - shapeTextW/2 - 2, -shapeTextH - 2, 
+                                    shapeTextW + 4, shapeTextH);
+                painter.fillRect(shapeTextRect, QBrush(QColor(0, 0, 0, 180)));
+                painter.setPen(shapeBoxColor);
+                painter.drawText(shapeTextRect, Qt::AlignCenter, scoreText);
+                
+                // PASS/NG 텍스트 표시 (박스 내부 중앙, 양불에 따라 색상 변경)
+                QString passText = passed ? "PASS" : "NG";
+                QColor passColor = passed ? QColor(0, 255, 0) : QColor(255, 0, 0);  // 초록/빨강
+                QFont passFont(NAMEPLATE_FONT_FAMILY, 14, QFont::Bold);
+                painter.setFont(passFont);
+                QFontMetrics passFm(passFont);
+                int passTextW = passFm.horizontalAdvance(passText);
+                int passTextH = passFm.height();
+                
+                QRectF passTextRect(boxWidth/2 - passTextW/2 - 2, boxHeight/2 - passTextH/2,
+                                   passTextW + 4, passTextH);
+                painter.fillRect(passTextRect, QBrush(QColor(0, 0, 0, 200)));
+                painter.setPen(passColor);  // 양불에 따른 색상
+                painter.drawText(passTextRect, Qt::AlignCenter, passText);
+                
+                painter.restore();
+            }
+        }
+        
+        // ===== COLOR 검사 결과 시각화 (CRIMP와 동일한 방식) =====
+        if (patternInfo->inspectionMethod == InspectionMethod::COLOR && 
+            result.colorDiffMask.contains(patternId)) {
+            
+            cv::Mat colorMask = result.colorDiffMask[patternId];
+            if (!colorMask.empty()) {
+                // 패턴 영역 중심
+                QPointF centerViewport = inspRect.center();
+                
+                // 현재 줌 스케일
+                QTransform t = transform();
+                double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
+                
+                painter.save();
+                painter.translate(centerViewport);
+                painter.rotate(insAngle);
+                
+                // 패턴 크기에 맞춰 왼쪽 상단 기준으로 그리기
+                int halfWidth = int(inspRect.width() / 2);
+                int halfHeight = int(inspRect.height() / 2);
+                painter.translate(-halfWidth, -halfHeight);
+                
+                // diffMask 그리기
+                for (int y = 0; y < colorMask.rows; y++) {
+                    for (int x = 0; x < colorMask.cols; x++) {
+                        cv::Vec3b pixel = colorMask.at<cv::Vec3b>(y, x);
+                        QColor pixelColor(pixel[0], pixel[1], pixel[2], 150);  // RGB + alpha
+                        
+                        int drawX = int(x * currentScale);
+                        int drawY = int(y * currentScale);
+                        painter.setPen(QPen(pixelColor, 1));
+                        painter.drawPoint(drawX, drawY);
+                    }
+                }
+                
+                painter.restore();
+            }
+        }
+        
+        // ===== BINARY 검사 결과 시각화 =====
+        if (patternInfo->inspectionMethod == InspectionMethod::BINARY && 
+            result.binaryDiffMask.contains(patternId)) {
+            
+            cv::Mat binaryMask = result.binaryDiffMask[patternId];
+            if (!binaryMask.empty()) {
+                QPointF centerViewport = inspRect.center();
+                QTransform t = transform();
+                double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
+                
+                painter.save();
+                painter.translate(centerViewport);
+                painter.rotate(insAngle);
+                
+                int halfWidth = int(inspRect.width() / 2);
+                int halfHeight = int(inspRect.height() / 2);
+                painter.translate(-halfWidth, -halfHeight);
+                
+                for (int y = 0; y < binaryMask.rows; y++) {
+                    for (int x = 0; x < binaryMask.cols; x++) {
+                        cv::Vec3b pixel = binaryMask.at<cv::Vec3b>(y, x);
+                        QColor pixelColor(pixel[0], pixel[1], pixel[2], 150);
+                        
+                        int drawX = int(x * currentScale);
+                        int drawY = int(y * currentScale);
+                        painter.setPen(QPen(pixelColor, 1));
+                        painter.drawPoint(drawX, drawY);
+                    }
+                }
+                
+                painter.restore();
+            }
+        }
+        
+        // ===== EDGE 검사 결과 시각화 =====
+        if (patternInfo->inspectionMethod == InspectionMethod::EDGE && 
+            result.edgeDiffMask.contains(patternId)) {
+            
+            cv::Mat edgeMask = result.edgeDiffMask[patternId];
+            if (!edgeMask.empty()) {
+                QPointF centerViewport = inspRect.center();
+                QTransform t = transform();
+                double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
+                
+                painter.save();
+                painter.translate(centerViewport);
+                painter.rotate(insAngle);
+                
+                int halfWidth = int(inspRect.width() / 2);
+                int halfHeight = int(inspRect.height() / 2);
+                painter.translate(-halfWidth, -halfHeight);
+                
+                for (int y = 0; y < edgeMask.rows; y++) {
+                    for (int x = 0; x < edgeMask.cols; x++) {
+                        uchar pixelValue;
+                        if (edgeMask.channels() == 3) {
+                            cv::Vec3b pixel = edgeMask.at<cv::Vec3b>(y, x);
+                            pixelValue = pixel[0];  // 그레이스케일이므로 R 채널만
+                        } else {
+                            pixelValue = edgeMask.at<uchar>(y, x);
+                        }
+                        
+                        if (pixelValue > 0) {
+                            QColor pixelColor(pixelValue, pixelValue, pixelValue, 150);
+                            
+                            int drawX = int(x * currentScale);
+                            int drawY = int(y * currentScale);
+                            painter.setPen(QPen(pixelColor, 1));
+                            painter.drawPoint(drawX, drawY);
+                        }
+                    }
+                }
+                
+                painter.restore();
+            }
+        }
     }
     
     // ========== PASS/NG 표시 (화면 상단 중앙) ==========
@@ -3261,6 +3526,87 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         painter.drawText(edgeTextRect, Qt::AlignCenter, edgeLabel);
                         
                         // PASS/NG 표시 (티칭 모드에서는 표시 안함)
+                        
+                        painter.restore();
+                    }
+                }
+            }
+            
+            // CRIMP SHAPE 검사박스 (보라색 점선)
+            if (pattern.type == PatternType::INS && 
+                pattern.inspectionMethod == InspectionMethod::CRIMP &&
+                pattern.id == selectedPatternId &&
+                pattern.crimpShapeEnabled &&
+                !isInspectionMode) {
+                
+                // 현재 zoom scale 계산
+                QTransform t = transform();
+                double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
+                
+                QVector<QPoint> rotatedCorners = getRotatedCorners();
+                if (rotatedCorners.size() == 4) {
+                    QPoint topLeft = rotatedCorners[0];
+                    QPoint topRight = rotatedCorners[1];
+                    QPoint bottomLeft = rotatedCorners[3];
+                    QPoint bottomRight = rotatedCorners[2];
+                    
+                    // 가로 방향 벡터 계산
+                    double widthVectorX = topRight.x() - topLeft.x();
+                    double widthVectorY = topRight.y() - topLeft.y();
+                    double vectorLen = std::sqrt(widthVectorX * widthVectorX + widthVectorY * widthVectorY);
+                    
+                    if (vectorLen > 0.01) {
+                        // CRIMP SHAPE 검사 위치: 패턴 왼쪽에서 crimpShapeOffsetX만큼 이동
+                        double offsetScaled = pattern.crimpShapeOffsetX * currentScale;
+                        
+                        // 가로 방향의 단위 벡터
+                        double unitX = widthVectorX / vectorLen;
+                        double unitY = widthVectorY / vectorLen;
+                        
+                        // 세로 방향 벡터 (반시계방향 90도 회전)
+                        double perpUnitX = -unitY;
+                        double perpUnitY = unitX;
+                        
+                        // 패턴 세로 길이
+                        double heightVectorX = bottomLeft.x() - topLeft.x();
+                        double heightVectorY = bottomLeft.y() - topLeft.y();
+                        double patternHeight = std::sqrt(heightVectorX * heightVectorX + heightVectorY * heightVectorY);
+                        
+                        // 패턴 왼쪽에서 offsetX만큼 이동, 세로는 중앙
+                        int boxWidth = int(pattern.crimpShapeBoxWidth * currentScale);
+                        int boxHeight = int(pattern.crimpShapeBoxHeight * currentScale);
+                        double verticalOffset = (patternHeight - boxHeight) / 2.0;
+                        
+                        QPoint shapeTopLeft = QPoint(
+                            qRound(topLeft.x() + unitX * offsetScaled + perpUnitX * verticalOffset),
+                            qRound(topLeft.y() + unitY * offsetScaled + perpUnitY * verticalOffset)
+                        );
+                        
+                        // 회전 각도
+                        double boxAngle = std::atan2(widthVectorY, widthVectorX) * 180.0 / M_PI;
+                        
+                        painter.save();
+                        painter.translate(shapeTopLeft);  // 왼쪽 상단 기준
+                        painter.rotate(boxAngle);
+                        
+                        QPen shapePen(QColor(147, 112, 219), 2);  // 보라색 (Medium Purple)
+                        shapePen.setStyle(Qt::DashLine);
+                        painter.setPen(shapePen);
+                        painter.setBrush(Qt::NoBrush);
+                        
+                        painter.drawRect(0, 0, boxWidth, boxHeight);  // 원점 기준
+                        
+                        QString shapeLabel = QString("SHAPE:%1%").arg(pattern.crimpShapeMatchRate, 0, 'f', 1);
+                        QFont shapeFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
+                        painter.setFont(shapeFont);
+                        QFontMetrics shapeFm(shapeFont);
+                        int shapeTextW = shapeFm.horizontalAdvance(shapeLabel);
+                        int shapeTextH = shapeFm.height();
+                        
+                        QRect shapeTextRect(boxWidth/2 - shapeTextW/2 - 2, -shapeTextH - 2, shapeTextW + 4, shapeTextH);
+                        painter.fillRect(shapeTextRect, QBrush(QColor(0, 0, 0, 180)));
+                        painter.setPen(QColor(147, 112, 219));
+                        painter.drawText(shapeTextRect, Qt::AlignCenter, shapeLabel);
                         
                         painter.restore();
                     }
