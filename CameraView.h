@@ -244,6 +244,7 @@ signals:
     void fidTemplateUpdateRequired(const QUuid& patternId);
     void insTemplateUpdateRequired(const QUuid& patternId);
     void selectedInspectionPatternCleared(); // 검사 결과 필터 해제 시그널
+    void pixelInfoChanged(int x, int y, int r, int g, int b); // 픽셀 정보 변경 시그널
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;

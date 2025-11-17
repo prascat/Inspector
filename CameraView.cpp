@@ -31,6 +31,7 @@ CameraView::CameraView(QWidget *parent) : QGraphicsView(parent) {
     setMinimumSize(640, 480);
     setStyleSheet("border: 2px solid gray; background-color: black;");
     setMouseTracking(true);
+    viewport()->setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
     setRenderHint(QPainter::Antialiasing, true);
     setRenderHint(QPainter::SmoothPixmapTransform, true);
@@ -399,6 +400,20 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
 }
 
 void CameraView::mouseMoveEvent(QMouseEvent* event) {
+    QPoint pos = event->pos();
+    QPoint originalPos = displayToOriginal(pos);
+    
+    // 픽셀 정보 업데이트 (항상 먼저 실행)
+    if (!backgroundPixmap.isNull()) {
+        QImage bgImage = backgroundPixmap.toImage();
+        if (originalPos.x() >= 0 && originalPos.x() < bgImage.width() &&
+            originalPos.y() >= 0 && originalPos.y() < bgImage.height()) {
+            QRgb pixel = bgImage.pixel(originalPos.x(), originalPos.y());
+            emit pixelInfoChanged(originalPos.x(), originalPos.y(), 
+                                qRed(pixel), qGreen(pixel), qBlue(pixel));
+        }
+    }
+    
     // 패닝 모드일 때 처리
     if (isPanning) {
         QPoint delta = event->pos() - panStartPos;
@@ -437,9 +452,6 @@ void CameraView::mouseMoveEvent(QMouseEvent* event) {
         QGraphicsView::mouseMoveEvent(event);
         return;
     }
-
-    QPoint pos = event->pos();
-    QPoint originalPos = displayToOriginal(pos);
 
     // DRAW 모드에서만 그리기 처리
     if (m_editMode == EditMode::Draw && isDrawing) {
@@ -618,6 +630,7 @@ void CameraView::mouseMoveEvent(QMouseEvent* event) {
     } else {
         setCursor(Qt::ArrowCursor);
     }
+    
     QGraphicsView::mouseMoveEvent(event);
 }
 

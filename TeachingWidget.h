@@ -657,6 +657,7 @@ private:
     QLabel* serverStatusLabel = nullptr;
     QLabel* serialStatusLabel = nullptr;
     QLabel* diskSpaceLabel = nullptr;
+    QLabel* pixelInfoLabel = nullptr;
     QTimer* statusUpdateTimer = nullptr;
     QVector<bool> cameraConnected;
     

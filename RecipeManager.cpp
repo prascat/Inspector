@@ -2340,6 +2340,110 @@ bool RecipeManager::renameRecipe(const QString& oldName, const QString& newName)
     return true;
 }
 
+bool RecipeManager::copyRecipe(const QString& sourceName, const QString& targetName, const QString& newCameraName) {
+    if (sourceName.isEmpty() || targetName.isEmpty()) {
+        setError("레시피 이름이 비어있습니다");
+        return false;
+    }
+    
+    if (sourceName == targetName) {
+        setError("원본과 복사본의 이름이 같습니다");
+        return false;
+    }
+    
+    QString sourceFileName = QDir(getRecipesDirectory()).absoluteFilePath(sourceName + "/" + sourceName + ".xml");
+    QString targetFileName = QDir(getRecipesDirectory()).absoluteFilePath(targetName + "/" + targetName + ".xml");
+    
+    QFile sourceFile(sourceFileName);
+    if (!sourceFile.exists()) {
+        setError(QString("복사할 레시피가 존재하지 않습니다: %1").arg(sourceName));
+        return false;
+    }
+    
+    QFile targetFile(targetFileName);
+    if (targetFile.exists()) {
+        setError(QString("대상 레시피 이름이 이미 존재합니다: %1").arg(targetName));
+        return false;
+    }
+    
+    // 대상 레시피 디렉토리 생성
+    QString targetDir = QDir(getRecipesDirectory()).absoluteFilePath(targetName);
+    QDir dir;
+    if (!dir.exists(targetDir)) {
+        if (!dir.mkpath(targetDir)) {
+            setError(QString("레시피 디렉토리 생성 실패: %1").arg(targetDir));
+            return false;
+        }
+    }
+    
+    // XML 파일 읽기
+    if (!sourceFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        setError(QString("원본 레시피 파일을 열 수 없습니다: %1").arg(sourceFileName));
+        return false;
+    }
+    
+    QByteArray xmlData = sourceFile.readAll();
+    sourceFile.close();
+    
+    // 카메라 이름 변경이 필요한 경우 XML 수정
+    if (!newCameraName.isEmpty()) {
+        QDomDocument doc;
+        if (!doc.setContent(xmlData)) {
+            setError("XML 파싱 실패");
+            return false;
+        }
+        
+        // 모든 Camera 요소의 name 속성 변경
+        QDomNodeList cameraNodes = doc.elementsByTagName("Camera");
+        for (int i = 0; i < cameraNodes.count(); ++i) {
+            QDomElement cameraElement = cameraNodes.at(i).toElement();
+            if (!cameraElement.isNull()) {
+                cameraElement.setAttribute("name", newCameraName);
+            }
+        }
+        
+        xmlData = doc.toByteArray();
+    }
+    
+    // 대상 파일에 쓰기
+    if (!targetFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        setError(QString("대상 레시피 파일을 생성할 수 없습니다: %1").arg(targetFileName));
+        return false;
+    }
+    
+    targetFile.write(xmlData);
+    targetFile.close();
+    
+    // 이미지 폴더 복사 (teach, strip, crimp 등)
+    QString sourceDir = QDir(getRecipesDirectory()).absoluteFilePath(sourceName);
+    QStringList subDirs = {"teach", "strip", "crimp"};
+    
+    for (const QString& subDir : subDirs) {
+        QString sourceSubDir = sourceDir + "/" + subDir;
+        QString targetSubDir = targetDir + "/" + subDir;
+        
+        if (QDir(sourceSubDir).exists()) {
+            if (!dir.mkpath(targetSubDir)) {
+                qWarning() << "서브 디렉토리 생성 실패:" << targetSubDir;
+                continue;
+            }
+            
+            // 모든 파일 복사
+            QDir srcDir(sourceSubDir);
+            QStringList files = srcDir.entryList(QDir::Files);
+            for (const QString& fileName : files) {
+                QString srcFile = sourceSubDir + "/" + fileName;
+                QString dstFile = targetSubDir + "/" + fileName;
+                if (!QFile::copy(srcFile, dstFile)) {
+                    qWarning() << "파일 복사 실패:" << srcFile << "->" << dstFile;
+                }
+            }
+        }
+    }
+    
+    return true;
+}
+
 // 연결된 카메라 정보와 함께 레시피 저장
 
 
@@ -2396,6 +2500,41 @@ QStringList RecipeManager::getRecipeCameraUuids(const QString& recipeName)
     
     file.close();
     return cameraUuids;
+}
+
+QString RecipeManager::getRecipeCameraName(const QString& recipeName) {
+    if (recipeName.isEmpty()) {
+        setError("레시피 이름이 비어있습니다");
+        return QString();
+    }
+    
+    QString fileName = QDir(getRecipesDirectory()).absoluteFilePath(recipeName + "/" + recipeName + ".xml");
+    QFile file(fileName);
+    
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        setError(QString("레시피 파일을 열 수 없습니다: %1").arg(fileName));
+        return QString();
+    }
+    
+    QXmlStreamReader xml(&file);
+    
+    while (!xml.atEnd()) {
+        xml.readNext();
+        
+        if (xml.isStartElement() && xml.name() == QLatin1String("Camera")) {
+            QXmlStreamAttributes attributes = xml.attributes();
+            QString cameraName = attributes.value("name").toString();
+            file.close();
+            return cameraName;
+        }
+    }
+    
+    if (xml.hasError()) {
+        setError(QString("XML 파싱 오류: %1").arg(xml.errorString()));
+    }
+    
+    file.close();
+    return QString();
 }
 
 // 기존 레시피에서 메인 카메라 티칭 이미지 불러오기

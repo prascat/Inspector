@@ -59,6 +59,7 @@ public:
     QStringList getAvailableRecipes();
     bool deleteRecipe(const QString& recipeName);
     bool renameRecipe(const QString& oldName, const QString& newName);
+    bool copyRecipe(const QString& sourceName, const QString& targetName, const QString& newCameraName = QString());
     
     // 레시피 디렉토리 관리
     QString getRecipesDirectory();
@@ -66,6 +67,7 @@ public:
     
     // 레시피에서 카메라 정보 읽기 (시뮬레이션용)
     QStringList getRecipeCameraUuids(const QString& recipeName);
+    QString getRecipeCameraName(const QString& recipeName);
     
     // 기존 레시피에서 메인 카메라 티칭 이미지 불러오기
     bool loadMainCameraImage(const QString& recipeName, cv::Mat& outImage, QString& outCameraName);

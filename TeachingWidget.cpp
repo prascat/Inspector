@@ -1572,6 +1572,22 @@ void TeachingWidget::setupStatusPanel() {
     diskSpaceLabel->setText("💾 디스크: 계산 중...");
     diskSpaceLabel->raise();
     
+    // 픽셀 정보 레이블
+    pixelInfoLabel = new QLabel(cameraView);
+    pixelInfoLabel->setFixedSize(240, 30);
+    pixelInfoLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    pixelInfoLabel->setStyleSheet(
+        "QLabel {"
+        "  background-color: rgba(0, 0, 0, 180);"
+        "  color: white;"
+        "  border: 1px solid #555;"
+        "  padding-left: 8px;"
+        "  font-size: 12px;"
+        "}"
+    );
+    pixelInfoLabel->setText("🖱️ 픽셀: (0,0) RGB(0,0,0)");
+    pixelInfoLabel->raise();
+    
     // 초기 위치 설정
     updateStatusPanelPosition();
     
@@ -1923,6 +1939,26 @@ void TeachingWidget::connectEvents() {
         }
     });
     connect(cameraView, &CameraView::enterKeyPressed, this, &TeachingWidget::addPattern);
+    
+    connect(cameraView, &CameraView::pixelInfoChanged, this, [this](int x, int y, int r, int g, int b) {
+        if (pixelInfoLabel) {
+            // 밝기 계산 (텍스트 색상 결정용)
+            int brightness = (r * 299 + g * 587 + b * 114) / 1000;
+            QString textColor = brightness > 128 ? "black" : "white";
+            
+            pixelInfoLabel->setText(QString("🖱️ (%1,%2) RGB(%3,%4,%5)")
+                .arg(x).arg(y).arg(r).arg(g).arg(b));
+            pixelInfoLabel->setStyleSheet(QString(
+                "QLabel {"
+                "  background-color: rgb(%1, %2, %3);"
+                "  color: %4;"
+                "  border: 1px solid #555;"
+                "  padding-left: 8px;"
+                "  font-size: 12px;"
+                "}"
+            ).arg(r).arg(g).arg(b).arg(textColor));
+        }
+    });
     
     connect(cameraView, &CameraView::patternSelected, this, [this](const QUuid& id) {
         // ID가 빈 값이면 선택 취소
@@ -6751,6 +6787,7 @@ void TeachingWidget::updateStatusPanelPosition() {
     
     serverStatusLabel->move(statusX, statusY);
     diskSpaceLabel->move(statusX, statusY + serverStatusLabel->height() + spacing);
+    pixelInfoLabel->move(statusX, statusY + serverStatusLabel->height() + diskSpaceLabel->height() + spacing * 2);
 }
 
 void TeachingWidget::updateLogOverlayPosition() {
@@ -11830,11 +11867,13 @@ void TeachingWidget::manageRecipes() {
     QHBoxLayout* buttonLayout = new QHBoxLayout();
     
     QPushButton* loadButton = new QPushButton("불러오기");
+    QPushButton* copyButton = new QPushButton("복사");
     QPushButton* deleteButton = new QPushButton("삭제");
     QPushButton* renameButton = new QPushButton("이름 변경");
     QPushButton* closeButton = new QPushButton("닫기");
     
     buttonLayout->addWidget(loadButton);
+    buttonLayout->addWidget(copyButton);
     buttonLayout->addWidget(deleteButton);
     buttonLayout->addWidget(renameButton);
     buttonLayout->addStretch();
@@ -11846,6 +11885,7 @@ void TeachingWidget::manageRecipes() {
     auto updateButtonState = [&]() {
         bool hasSelection = recipeList->currentItem() != nullptr;
         loadButton->setEnabled(hasSelection);
+        copyButton->setEnabled(hasSelection);
         deleteButton->setEnabled(hasSelection);
         renameButton->setEnabled(hasSelection);
     };
@@ -11924,6 +11964,67 @@ void TeachingWidget::manageRecipes() {
                     } else {
                         CustomMessageBox(&dialog, CustomMessageBox::Critical, "레시피 이름 변경 실패",
                             QString("레시피 이름 변경에 실패했습니다:\n%1").arg(manager.getLastError())).exec();
+                    }
+                }
+            }
+        }
+    });
+    
+    connect(copyButton, &QPushButton::clicked, [&]() {
+        QListWidgetItem* item = recipeList->currentItem();
+        if (item) {
+            QString sourceName = item->text();
+            
+            // 레시피의 카메라 이름 가져오기
+            QString recipeCameraName = manager.getRecipeCameraName(sourceName);
+            
+            // 현재 카메라 이름 가져오기
+            QString currentCameraName;
+            if (!cameraInfos.isEmpty()) {
+                currentCameraName = cameraInfos[0].name;
+            }
+            
+            QString targetCameraName;
+            bool needsCameraChange = false;
+            
+            // 레시피 카메라와 현재 카메라가 다른지 확인
+            if (!recipeCameraName.isEmpty() && !currentCameraName.isEmpty() && 
+                recipeCameraName != currentCameraName) {
+                
+                CustomMessageBox confirmBox(&dialog, CustomMessageBox::Question, "카메라 이름 변경",
+                    QString("레시피의 카메라 이름: %1\n현재 카메라 이름: %2\n\n"
+                            "현재 카메라에 맞게 레시피를 복사하시겠습니까?")
+                    .arg(recipeCameraName, currentCameraName));
+                confirmBox.setButtons(QMessageBox::Yes | QMessageBox::No);
+                
+                if (confirmBox.exec() == QMessageBox::Yes) {
+                    targetCameraName = currentCameraName;
+                    needsCameraChange = true;
+                }
+            }
+            
+            // 새 레시피 이름 입력
+            CustomMessageBox msgBox(&dialog);
+            msgBox.setTitle("레시피 복사");
+            msgBox.setMessage("복사할 레시피 이름을 입력하세요:");
+            msgBox.setInputField(true, sourceName + "_복사");
+            msgBox.setButtons(QMessageBox::Ok | QMessageBox::Cancel);
+            
+            if (msgBox.exec() == QMessageBox::Ok) {
+                QString newName = msgBox.getInputText();
+                if (!newName.isEmpty() && newName != sourceName) {
+                    if (manager.copyRecipe(sourceName, newName, needsCameraChange ? targetCameraName : QString())) {
+                        recipeList->addItem(newName);
+                        
+                        QString message = QString("'%1'에서 '%2'로 복사되었습니다.").arg(sourceName, newName);
+                        if (needsCameraChange) {
+                            message += QString("\n카메라 이름이 '%1'(으)로 변경되었습니다.").arg(targetCameraName);
+                        }
+                        
+                        CustomMessageBox(&dialog, CustomMessageBox::Information, "레시피 복사", message).exec();
+                    } else {
+                        CustomMessageBox(&dialog, CustomMessageBox::Critical, "레시피 복사 실패",
+                            QString("레시피 복사에 실패했습니다:\n%1").arg(manager.getLastError())).exec();
                     }
                 }
             }
