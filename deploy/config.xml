@@ -7,6 +7,6 @@
     <SerialBaudRate>115200</SerialBaudRate>
     <ServerIp>192.168.5.2</ServerIp>
     <ServerPort>5000</ServerPort>
-    <AutoConnect>true</AutoConnect>
+    <AutoConnect>false</AutoConnect>
     <ReconnectInterval>3</ReconnectInterval>
 </Config>

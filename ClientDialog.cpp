@@ -110,6 +110,16 @@ void ClientDialog::setupUI()
     // 자동 연결 체크박스
     autoConnectCheckBox = new QCheckBox("프로그램 시작 시 자동 연결", this);
     formLayout->addRow("", autoConnectCheckBox);
+    // 자동연결 체크박스 변경 시 즉시 재연결 시작/중단
+    connect(autoConnectCheckBox, &QCheckBox::stateChanged, this, [this](int state) {
+        if (state == Qt::Checked) {
+            qDebug() << "[자동연결] 체크됨 - 재연결 스레드 시작";
+            startReconnectThread();
+        } else {
+            qDebug() << "[자동연결] 해제됨 - 재연결 스레드 중단";
+            stopReconnectThread();
+        }
+    });
 
     serverGroup->setLayout(formLayout);
     mainLayout->addWidget(serverGroup);
@@ -179,8 +189,9 @@ void ClientDialog::loadSettings()
     reconnectIntervalEdit->setText(QString::number(reconnectInterval));
     autoConnectCheckBox->setChecked(autoConnect);
     
-    qDebug() << QString("서버 설정 로드됨 - IP: %1 Port: %2 재연결 간격: %3 초")
-                .arg(serverIp).arg(serverPort).arg(reconnectInterval);
+    QString autoConnectStatus = autoConnect ? "활성화" : "비활성화";
+    qDebug() << QString("서버 설정 로드됨 - IP: %1 Port: %2 재연결 간격: %3 초 자동연결: %4")
+                .arg(serverIp).arg(serverPort).arg(reconnectInterval).arg(autoConnectStatus);
 }
 
 void ClientDialog::saveSettings()
@@ -420,7 +431,10 @@ void ClientDialog::initialize()
     
     // 자동 연결이 활성화된 경우 재연결 스레드 시작
     if (autoConnect) {
+        qDebug() << "[서버 초기화] 자동연결 활성화 - 재연결 스레드 시작";
         startReconnectThread();
+    } else {
+        qDebug() << "[서버 초기화] 자동연결 비활성화 - 서버 연결 시도 안함";
     }
 }
 

@@ -12235,15 +12235,15 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
             
         }
         
-        // **카메라 ON 상태에서는 updateCameraFrame() 호출 금지**
+        // **카메라 ON 상태에서는 updateCameraFrame() 호출 금지 - 패턴만 로드**
         if (!camOff) {
-            
+            qDebug() << "카메라 ON 상태: 티칭이미지 표시 금지 (패턴만 로드됨)";
         } else if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
             !cameraFrames[cameraIndex].empty()) {
-            
+            qDebug() << "카메라 OFF 상태: 티칭이미지 표시";
             updateCameraFrame();
         } else {
-            
+            qDebug() << "카메라 OFF 상태: 표시할 이미지 없음";
         }
         
         // 프리뷰 화면들도 업데이트
