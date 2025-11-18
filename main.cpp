@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QPalette>
 #include <QDebug>
 #include <QFile>
 #include <QDateTime>
@@ -46,6 +47,36 @@ int main(int argc, char *argv[]) {
     
     QApplication app(argc, argv);
     
+    // 애플리케이션 전체 다크 테마 스타일 적용
+    app.setStyle("Fusion");
+    QPalette darkPalette;
+    darkPalette.setColor(QPalette::Window, QColor(53, 53, 53));
+    darkPalette.setColor(QPalette::WindowText, Qt::white);
+    darkPalette.setColor(QPalette::Base, QColor(42, 42, 42));
+    darkPalette.setColor(QPalette::AlternateBase, QColor(66, 66, 66));
+    darkPalette.setColor(QPalette::ToolTipBase, Qt::white);
+    darkPalette.setColor(QPalette::ToolTipText, Qt::white);
+    darkPalette.setColor(QPalette::Text, Qt::white);
+    darkPalette.setColor(QPalette::Button, QColor(53, 53, 53));
+    darkPalette.setColor(QPalette::ButtonText, Qt::white);
+    darkPalette.setColor(QPalette::BrightText, Qt::red);
+    darkPalette.setColor(QPalette::Link, QColor(42, 130, 218));
+    darkPalette.setColor(QPalette::Highlight, QColor(42, 130, 218));
+    darkPalette.setColor(QPalette::HighlightedText, Qt::black);
+    app.setPalette(darkPalette);
+    
+    // 메뉴바와 상태바 스타일
+    app.setStyleSheet(
+        "QMenuBar { background-color: rgb(53, 53, 53); color: white; } "
+        "QMenuBar::item { background-color: transparent; padding: 4px 8px; } "
+        "QMenuBar::item:selected { background-color: rgb(42, 130, 218); } "
+        "QMenuBar::item:pressed { background-color: rgb(30, 100, 180); } "
+        "QMenu { background-color: rgb(53, 53, 53); color: white; border: 1px solid rgb(80, 80, 80); } "
+        "QMenu::item:selected { background-color: rgb(42, 130, 218); } "
+        "QStatusBar { background-color: rgb(53, 53, 53); color: white; } "
+        "QToolTip { background-color: rgb(70, 70, 70); color: white; border: 1px solid rgb(100, 100, 100); } "
+    );
+    
     // 티칭 위젯 생성
     TeachingWidget widget(0, "카메라 1");
     g_teachingWidget = &widget;
@@ -56,7 +87,10 @@ int main(int argc, char *argv[]) {
     // 윈도우 타이틀 설정
     widget.setWindowTitle("KM Inspector");
     
-    // 최대화 모드로 시작 (타이틀바 유지)
+    // 프레임리스 윈도우로 설정 (타이틀바 제거)
+    widget.setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
+    
+    // 최대화 모드로 시작
     widget.showMaximized();
     
     return app.exec();

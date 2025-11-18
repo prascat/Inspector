@@ -465,7 +465,7 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
         QTimer::singleShot(500, this, [this, lastRecipePath]() {
             // 레시피 경로에서 레시피 이름 추출
             QString recipeName = QFileInfo(lastRecipePath).baseName();
-            qDebug() << "[TeachingWidget] 마지막 레시피 자동 로드:" << recipeName;
+            
             
             // 레시피 파일 존재 여부 확인
             RecipeManager checkManager;
@@ -475,7 +475,7 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
                 // 레시피 선택 (메시지박스 없이)
                 onRecipeSelected(recipeName);
             } else {
-                qDebug() << "[TeachingWidget] 레시피 파일이 존재하지 않음 (자동 로드 생략):" << recipeName;
+                
             }
         });
     }
@@ -500,7 +500,6 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     connect(ClientDialog::instance(), &ClientDialog::stripCrimpModeChanged,
             this, &TeachingWidget::setStripCrimpMode);
 }
-
 
 void TeachingWidget::initializeLanguageSystem() {
     // ConfigManager에서 설정 로드
@@ -527,14 +526,14 @@ void TeachingWidget::initializeLanguageSystem() {
         // ConfigManager에서 저장된 언어 설정 사용
         QString savedLanguage = ConfigManager::instance()->getLanguage();
         LanguageManager::instance()->setCurrentLanguage(savedLanguage);
-        qDebug() << "[TeachingWidget] 저장된 언어 설정 적용:" << savedLanguage;
+        
     }
     
     // ConfigManager의 언어 변경 시그널 연결
     connect(ConfigManager::instance(), &ConfigManager::languageChanged,
             this, [this](const QString& newLanguage) {
                 LanguageManager::instance()->setCurrentLanguage(newLanguage);
-                qDebug() << "[TeachingWidget] 언어 변경됨:" << newLanguage;
+                
             });
 }
 
@@ -678,7 +677,7 @@ void TeachingWidget::openRecipe(bool autoMode) {
     msgBox.setButtons(QMessageBox::Ok);
     msgBox.exec();
         } else {
-            qDebug() << "사용 가능한 레시피가 없습니다.";
+            
         }
         return;
     }
@@ -691,14 +690,14 @@ void TeachingWidget::openRecipe(bool autoMode) {
         
         if (!lastRecipePath.isEmpty() && availableRecipes.contains(lastRecipePath)) {
             selectedRecipe = lastRecipePath;
-            qDebug() << QString("최근 사용한 레시피 '%1'을 자동 로드합니다.").arg(selectedRecipe);
+            
         } else {
             selectedRecipe = availableRecipes.first();
-            qDebug() << QString("최근 레시피가 없어 첫 번째 레시피 '%1'을 로드합니다.").arg(selectedRecipe);
+            
         }
     } else {
         // 수동 모드: 레시피 관리 다이얼로그 열기 (다이얼로그에서 onRecipeSelected 호출됨)
-        qDebug() << QString("수동 모드 - 레시피 관리 다이얼로그 열기");
+        
         manageRecipes(); // 다이얼로그에서 레시피 선택 및 로드 처리
         return;
     }
@@ -710,14 +709,13 @@ void TeachingWidget::openRecipe(bool autoMode) {
         QString recipeFilePath = QDir(checkManager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(selectedRecipe));
         
         if (QFile::exists(recipeFilePath)) {
-            qDebug() << QString("자동 모드 - onRecipeSelected 호출: %1").arg(selectedRecipe);
+            
             onRecipeSelected(selectedRecipe);
         } else {
-            qDebug() << QString("자동 모드 - 레시피 파일이 존재하지 않음 (메시지 생략): %1").arg(selectedRecipe);
+            
         }
     }
 }
-
 
 void TeachingWidget::initBasicSettings() {
     insProcessor = new InsProcessor(this);
@@ -1139,7 +1137,7 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                     
                     if (!cameraView || cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
                         cameraFrames[cameraIndex].empty()) {
-                        qDebug() << "[RUN 버튼] 시뮬레이션 모드 - 카메라 프레임 없음";
+                        
                         btn->blockSignals(true);
                         btn->setChecked(false);
                         btn->blockSignals(false);
@@ -1149,11 +1147,11 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                     // 실제 카메라 모드: 카메라 프레임 확인
                     if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
                         cameraFrames[cameraIndex].empty()) {
-                        qDebug() << "[RUN 버튼] 실제 카메라 모드 - 카메라 프레임 없음";
-                        qDebug() << "  cameraIndex < 0:" << (cameraIndex < 0);
-                        qDebug() << "  cameraIndex >= size:" << (cameraIndex >= static_cast<int>(cameraFrames.size()));
+                        
+                        
+                        
                         if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
-                            qDebug() << "  cameraFrames[" << cameraIndex << "].empty():" << cameraFrames[cameraIndex].empty();
+                            
                         }
                         btn->blockSignals(true);
                         btn->setChecked(false);
@@ -1225,7 +1223,7 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                             btn->blockSignals(true);
                             btn->setChecked(false);
                             btn->blockSignals(false);
-                            qDebug() << "⏭️ [검사 패스] 시뮬레이션 이미지 없음";
+                            
                             return;
                         }
                         inspectionFrame = cameraFrames[cameraIndex].clone();
@@ -1237,8 +1235,7 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                             !cameraFrames[cameraIndex].empty()) {
                             inspectionFrame = cameraFrames[cameraIndex].clone();
                             inspectionCameraIndex = cameraIndex;
-                            qDebug() << QString("[검사] 카메라 ON - 트리거 저장된 프레임 사용: %1x%2")
-                                        .arg(inspectionFrame.cols).arg(inspectionFrame.rows);
+                            
                         } 
                         // 2. 저장된 프레임이 없으면 Spinnaker에서 직접 획득 시도
                         else if (m_useSpinnaker && cameraIndex >= 0 && cameraIndex < static_cast<int>(m_spinCameras.size())) {
@@ -1248,7 +1245,7 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                                 btn->blockSignals(true);
                                 btn->setChecked(false);
                                 btn->blockSignals(false);
-                                qDebug() << "⏭️ [검사 패스] 카메라에서 프레임 획득 실패";
+                                
                                 return;
                             }
                             
@@ -1258,13 +1255,12 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                             }
                             
                             inspectionCameraIndex = cameraIndex;
-                            qDebug() << QString("[검사] 카메라 ON - Spinnaker에서 실시간 프레임 획득: %1x%2")
-                                        .arg(inspectionFrame.cols).arg(inspectionFrame.rows);
+                            
                         } else {
                             btn->blockSignals(true);
                             btn->setChecked(false);
                             btn->blockSignals(false);
-                            qDebug() << "⏭️ [검사 패스] 프레임 없음 (트리거 대기 중이거나 카메라 오류)";
+                            
                             return;
                         }
                     }
@@ -1628,7 +1624,6 @@ void TeachingWidget::setupPreviewOverlay() {
     setupStatusPanel();
 }
 
-
 void TeachingWidget::setupRightPanelOverlay() {
     // 오른쪽 패널 오버레이 위젯 생성
     rightPanelOverlay = new QWidget(this);
@@ -1829,23 +1824,29 @@ void TeachingWidget::setupPatternTree() {
     patternTree->setSelectionMode(QAbstractItemView::SingleSelection);
     patternTree->setAlternatingRowColors(true);
     
-    // 패턴 트리 스타일 설정 (투명 배경, 흰색 글자)
+    // 패턴 트리 스타일 설정 (어두운 배경, 흰색 글자)
     patternTree->setStyleSheet(
         "QTreeWidget { "
-        "   background-color: transparent; "
+        "   background-color: rgb(50, 50, 50); "
         "   color: white; "
+        "   alternate-background-color: rgb(60, 60, 60); "
         "} "
         "QTreeWidget::item { "
         "   color: white; "
+        "   background-color: transparent; "
         "} "
         "QTreeWidget::item:selected { "
         "   background-color: rgba(0, 120, 215, 150); "
         "   color: white; "
         "} "
+        "QTreeWidget::item:hover { "
+        "   background-color: rgba(255, 255, 255, 30); "
+        "} "
         "QHeaderView::section { "
-        "   background-color: transparent; "
+        "   background-color: rgb(40, 40, 40); "
         "   color: white; "
-        "   border: 1px solid rgba(255, 255, 255, 50); "
+        "   border: 1px solid rgb(80, 80, 80); "
+        "   padding: 4px; "
         "}"
     );
     
@@ -2267,9 +2268,9 @@ void TeachingWidget::updatePropertySpinBoxes(const QRect& rect) {
 
 void TeachingWidget::onPatternTableDropEvent(const QModelIndex &parent, int start, int end, const QModelIndex &destination, int row) {
     
-    qDebug() << "=== onPatternTableDropEvent 호출됨 ===";
-    qDebug() << "parent valid:" << parent.isValid() << "start:" << start << "end:" << end;
-    qDebug() << "destination valid:" << destination.isValid() << "row:" << row;
+    
+    
+    
     
     // 드롭된 아이템이 필터인지 확인
     QTreeWidgetItem *item = nullptr;
@@ -2360,8 +2361,8 @@ void TeachingWidget::onPatternTableDropEvent(const QModelIndex &parent, int star
             if (sourcePattern && targetPattern) {
                 // INS 패턴을 FID 패턴 하위로 이동하는 경우만 허용
                 if (sourcePattern->type == PatternType::INS && targetPattern->type == PatternType::FID) {
-                    qDebug() << "패턴 그룹화 시도 (시뮬레이션 모드:" << camOff << "):" << sourcePattern->name << "-> 부모:" << targetPattern->name;
-                    qDebug() << "변경 전 parentId:" << sourcePattern->parentId.toString();
+                    
+                    
                     
                     // 기존 부모에서 제거
                     if (!sourcePattern->parentId.isNull()) {
@@ -2376,57 +2377,57 @@ void TeachingWidget::onPatternTableDropEvent(const QModelIndex &parent, int star
                     sourcePattern->parentId = targetPatternId;
                     
                     // 대상 패턴의 childIds에 추가
-                    qDebug() << "=== childIds 추가 과정 ===";
-                    qDebug() << "소스 패턴 ID:" << sourcePatternId.toString();
-                    qDebug() << "대상 패턴" << targetPattern->name << "의 현재 childIds:";
+                    
+                    
+                    
                     for (int i = 0; i < targetPattern->childIds.size(); i++) {
-                        qDebug() << "  [" << i << "]" << targetPattern->childIds[i].toString();
+                        
                     }
                     
                     bool alreadyContains = targetPattern->childIds.contains(sourcePatternId);
-                    qDebug() << "이미 포함되어 있나?" << alreadyContains;
+                    
                     
                     if (!alreadyContains) {
-                        qDebug() << "대상 패턴 업데이트 전 childIds 수:" << targetPattern->childIds.size();
+                        
                         targetPattern->childIds.append(sourcePatternId);
-                        qDebug() << "대상 패턴 업데이트 후 childIds 수:" << targetPattern->childIds.size();
+                        
                         bool targetUpdateResult = cameraView->updatePatternById(targetPatternId, *targetPattern);
-                        qDebug() << "대상 패턴 업데이트 결과:" << targetUpdateResult;
+                        
                         
                         // 업데이트 후 다시 확인
                         PatternInfo* verifyTarget = cameraView->getPatternById(targetPatternId);
                         if (verifyTarget) {
-                            qDebug() << "업데이트 후 대상 패턴 확인 - childIds 수:" << verifyTarget->childIds.size();
+                            
                         }
                     } else {
-                        qDebug() << "이미 존재하는 자식이므로 추가하지 않음";
+                        
                     }
                     
-                    qDebug() << "변경 후 parentId:" << sourcePattern->parentId.toString();
-                    qDebug() << "대상 패턴의 childIds 수:" << targetPattern->childIds.size();
+                    
+                    
                     
                     // 대상 패턴의 childIds 확인
                     PatternInfo* updatedTargetPattern = cameraView->getPatternById(targetPatternId);
                     if (updatedTargetPattern) {
-                        qDebug() << "업데이트 후 대상 패턴의 childIds 수:" << updatedTargetPattern->childIds.size();
+                        
                         for (const QUuid& childId : updatedTargetPattern->childIds) {
-                            qDebug() << "자식 ID:" << childId.toString();
+                            
                         }
                     }
                     
                     // CameraView에 패턴 업데이트 알리기
                     bool updateResult = cameraView->updatePatternById(sourcePatternId, *sourcePattern);
-                    qDebug() << "updatePatternById 결과:" << updateResult;
+                    
                     
                     // 업데이트 후 다시 확인
                     PatternInfo* updatedPattern = cameraView->getPatternById(sourcePatternId);
                     if (updatedPattern) {
-                        qDebug() << "업데이트 후 확인된 parentId:" << updatedPattern->parentId.toString();
+                        
                     }
                     
                     // 시뮬레이션 모드에서는 즉시 저장하여 데이터 지속성 보장
                     if (camOff) {
-                        qDebug() << "시뮬레이션 모드: 패턴 그룹화 후 즉시 저장";
+                        
                         saveRecipe();
                     }
                     
@@ -2436,15 +2437,15 @@ void TeachingWidget::onPatternTableDropEvent(const QModelIndex &parent, int star
                     // 업데이트 후 최종 확인
                     PatternInfo* finalTargetPattern = cameraView->getPatternById(targetPatternId);
                     if (finalTargetPattern) {
-                        qDebug() << "updatePatternTree 후 대상 패턴 확인 - childIds 수:" << finalTargetPattern->childIds.size();
+                        
                         for (const QUuid& childId : finalTargetPattern->childIds) {
-                            qDebug() << "  - 자식 ID:" << childId.toString();
+                            
                         }
                     }
                     
-                    qDebug() << "=== 패턴 드래그 앤 드롭 완료 ===";
-                    qDebug() << "패턴 그룹화:" << sourcePattern->name << "→" << targetPattern->name;
-                    qDebug() << "패턴 관계 변경 완료 - 저장 버튼으로 저장하세요";
+                    
+                    
+                    
                     
                     // 카메라 뷰 업데이트
                     cameraView->update();
@@ -2453,8 +2454,8 @@ void TeachingWidget::onPatternTableDropEvent(const QModelIndex &parent, int star
                 }
                 // 그룹화 해제 (INS를 최상위로 이동)
                 else if (sourcePattern->type == PatternType::INS && !targetItem->parent()) {
-                    qDebug() << "패턴 그룹화 해제 시도 (시뮬레이션 모드:" << camOff << "):" << sourcePattern->name;
-                    qDebug() << "변경 전 parentId:" << sourcePattern->parentId.toString();
+                    
+                    
                     
                     // 기존 부모에서 제거
                     if (!sourcePattern->parentId.isNull()) {
@@ -2467,21 +2468,21 @@ void TeachingWidget::onPatternTableDropEvent(const QModelIndex &parent, int star
                     
                     sourcePattern->parentId = QUuid();
                     
-                    qDebug() << "변경 후 parentId:" << sourcePattern->parentId.toString();
+                    
                     
                     // CameraView에 패턴 업데이트 알리기
                     bool updateResult = cameraView->updatePatternById(sourcePatternId, *sourcePattern);
-                    qDebug() << "updatePatternById 결과:" << updateResult;
+                    
                     
                     // 업데이트 후 다시 확인
                     PatternInfo* updatedPattern = cameraView->getPatternById(sourcePatternId);
                     if (updatedPattern) {
-                        qDebug() << "업데이트 후 확인된 parentId:" << updatedPattern->parentId.toString();
+                        
                     }
                     
                     // 시뮬레이션 모드에서는 즉시 저장하여 데이터 지속성 보장
                     if (camOff) {
-                        qDebug() << "시뮬레이션 모드: 패턴 그룹화 해제 후 즉시 저장";
+                        
                         saveRecipe();
                     }
                     
@@ -2586,7 +2587,7 @@ void TeachingWidget::updatePatternTree() {
             // camOff 모드에서 cameraIndex가 유효하지 않으면 첫 번째 카메라 사용
             targetUuid = getCameraInfo(0).uniqueId;
             cameraIndex = 0; // cameraIndex 업데이트
-            qDebug() << QString("camOff 모드에서 cameraIndex를 0으로 설정, UUID: %1").arg(targetUuid);
+            
         }
         
         if (!targetUuid.isEmpty() && patternCameraUuid != targetUuid) {
@@ -3058,9 +3059,29 @@ void TeachingWidget::createPropertyPanels() {
     scrollArea->setFrameShape(QFrame::NoFrame);
     scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scrollArea->setStyleSheet(
+        "QScrollArea { background-color: rgb(50, 50, 50); border: none; } "
+        "QScrollBar:vertical { background: rgb(40, 40, 40); width: 12px; } "
+        "QScrollBar::handle:vertical { background: rgb(80, 80, 80); min-height: 20px; border-radius: 6px; } "
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; } "
+        "QScrollBar:horizontal { background: rgb(40, 40, 40); height: 12px; } "
+        "QScrollBar::handle:horizontal { background: rgb(80, 80, 80); min-width: 20px; border-radius: 6px; } "
+        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; } "
+    );
 
     QWidget* scrollContent = new QWidget();
-    scrollContent->setStyleSheet("QWidget { background-color: transparent; color: white; } QLabel { color: white; }");
+    scrollContent->setStyleSheet(
+        "QWidget { background-color: rgb(50, 50, 50); color: white; } "
+        "QLabel { color: white; background-color: transparent; } "
+        "QLineEdit { background-color: rgb(60, 60, 60); color: white; border: 1px solid rgb(100, 100, 100); padding: 2px; } "
+        "QSpinBox, QDoubleSpinBox { background-color: rgb(60, 60, 60); color: white; border: 1px solid rgb(100, 100, 100); } "
+        "QComboBox { background-color: rgb(60, 60, 60); color: white; border: 1px solid rgb(100, 100, 100); padding: 2px; } "
+        "QComboBox::drop-down { border: none; } "
+        "QComboBox QAbstractItemView { background-color: rgb(60, 60, 60); color: white; selection-background-color: rgb(0, 120, 215); } "
+        "QCheckBox { color: white; spacing: 5px; } "
+        "QCheckBox::indicator { width: 16px; height: 16px; background-color: rgb(60, 60, 60); border: 1px solid rgb(100, 100, 100); } "
+        "QCheckBox::indicator:checked { background-color: rgb(0, 120, 215); border: 1px solid rgb(0, 100, 200); } "
+    );
     QVBoxLayout* mainContentLayout = new QVBoxLayout(scrollContent);
     mainContentLayout->setContentsMargins(5, 5, 5, 5);
     mainContentLayout->setSpacing(8);
@@ -3068,7 +3089,7 @@ void TeachingWidget::createPropertyPanels() {
     // === 공통 기본 정보 그룹 ===
     QGroupBox* basicInfoGroup = new QGroupBox("기본 정보", scrollContent);
     basicInfoGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* basicInfoLayout = new QFormLayout(basicInfoGroup);
@@ -3118,7 +3139,7 @@ void TeachingWidget::createPropertyPanels() {
     // === 위치 및 크기 그룹 ===
     QGroupBox* positionSizeGroup = new QGroupBox("위치 및 크기", scrollContent);
     positionSizeGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* positionSizeLayout = new QFormLayout(positionSizeGroup);
@@ -3233,10 +3254,10 @@ void TeachingWidget::createPropertyPanels() {
     fidMatchGroup->setCheckable(true);
     fidMatchGroup->setChecked(true);
     fidMatchGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
         "QGroupBox::indicator { width: 13px; height: 13px; }"
-        "QGroupBox::indicator:unchecked { background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150); }"
+        "QGroupBox::indicator:unchecked { background-color: rgb(60, 60, 60); border: 1px solid rgb(100, 100, 100); }"
         "QGroupBox::indicator:checked { background-color: #4CAF50; border: 1px solid #45a049; }"
     );
     fidMatchCheckBox = fidMatchGroup;  // GroupBox 자체를 체크박스로 사용
@@ -3357,7 +3378,7 @@ void TeachingWidget::createPropertyPanels() {
     // === 기본 검사 설정 그룹 ===
     QGroupBox* basicInspectionGroup = new QGroupBox("기본 검사 설정", insPropWidget);
     basicInspectionGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* basicInspectionLayout = new QFormLayout(basicInspectionGroup);
@@ -3396,7 +3417,7 @@ void TeachingWidget::createPropertyPanels() {
     // === 이진화 검사 설정 그룹 ===
     insBinaryPanel = new QGroupBox("이진화 검사 설정", insPropWidget);
     insBinaryPanel->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* insBinaryLayout = new QFormLayout(insBinaryPanel);
@@ -3468,7 +3489,7 @@ void TeachingWidget::createPropertyPanels() {
     // === 템플릿 이미지 그룹 ===
     QGroupBox* templateGroup = new QGroupBox("템플릿 이미지", insPropWidget);
     templateGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QVBoxLayout* templateLayout = new QVBoxLayout(templateGroup);
@@ -3479,8 +3500,9 @@ void TeachingWidget::createPropertyPanels() {
     insTemplateImg->setFixedSize(120, 90);
     insTemplateImg->setAlignment(Qt::AlignCenter);
     insTemplateImg->setStyleSheet(
-        "background-color: rgba(50, 50, 50, 180); "
-        "border: 1px solid rgba(100, 100, 100, 150);"
+        "background-color: rgb(60, 60, 60); "
+        "border: 1px solid rgb(100, 100, 100); "
+        "color: white;"
     );
     insTemplateImg->setText("클릭하여\n이미지 선택");
     insTemplateImg->setCursor(Qt::PointingHandCursor);
@@ -3498,7 +3520,7 @@ void TeachingWidget::createPropertyPanels() {
     // === STRIP 검사 공통 파라미터 그룹 ===
     insStripPanel = new QGroupBox("STRIP 검사 공통 파라미터", insPropWidget);
     insStripPanel->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* insStripLayout = new QFormLayout(insStripPanel);
@@ -3583,7 +3605,7 @@ void TeachingWidget::createPropertyPanels() {
     // === STRIP 길이 검사 그룹 ===
     insStripLengthGroup = new QGroupBox("STRIP 길이 검사", insPropWidget);
     insStripLengthGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* stripLengthLayout = new QFormLayout(insStripLengthGroup);
@@ -3640,7 +3662,7 @@ void TeachingWidget::createPropertyPanels() {
     insStripFrontGroup->setCheckable(true);
     insStripFrontGroup->setChecked(true);
     insStripFrontGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
         "QGroupBox::indicator { width: 13px; height: 13px; }"
         "QGroupBox::indicator:unchecked { background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150); }"
@@ -3721,7 +3743,7 @@ void TeachingWidget::createPropertyPanels() {
     insStripRearGroup->setCheckable(true);
     insStripRearGroup->setChecked(true);
     insStripRearGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
         "QGroupBox::indicator { width: 13px; height: 13px; }"
         "QGroupBox::indicator:unchecked { background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150); }"
@@ -3800,7 +3822,7 @@ void TeachingWidget::createPropertyPanels() {
     insEdgeGroup->setCheckable(true);
     insEdgeGroup->setChecked(true);
     insEdgeGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
         "QGroupBox::indicator { width: 13px; height: 13px; }"
         "QGroupBox::indicator:unchecked { background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150); }"
@@ -3900,7 +3922,7 @@ void TeachingWidget::createPropertyPanels() {
     // === CRIMP 검사 파라미터 그룹 ===
     insCrimpPanel = new QGroupBox("CRIMP 검사 파라미터", insPropWidget);
     insCrimpPanel->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
     QFormLayout* insCrimpLayout = new QFormLayout(insCrimpPanel);
@@ -3918,7 +3940,7 @@ void TeachingWidget::createPropertyPanels() {
     insCrimpShapeGroup->setCheckable(true);
     insCrimpShapeGroup->setChecked(true);
     insCrimpShapeGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; background-color: transparent; border: 1px solid rgba(255,255,255,50); }"
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
         "QGroupBox::indicator { width: 13px; height: 13px; }"
         "QGroupBox::indicator:unchecked { background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150); }"
@@ -4665,7 +4687,6 @@ cv::Mat TeachingWidget::extractRotatedRegion(const cv::Mat& image, const QRectF&
     
     return result;
 }
-
 
 void TeachingWidget::updatePatternFilters(int patternIndex) {
     updatePatternTree(); // 간단히 트리 전체 업데이트로 대체
@@ -5580,13 +5601,13 @@ void TeachingWidget::connectPropertyPanelEvents() {
                             double pixelLength = result.stripMeasuredLengthPx[patternId];  // 픽셀 원본값 사용
                             double mmLength = pattern->stripLengthConversionMm;
                             
-                            qDebug() << "[캘리브레이션 버튼] 이전 stripLengthCalibrationPx:" << pattern->stripLengthCalibrationPx;
+                            
                             
                             // 캘리브레이션 값 저장
                             pattern->stripLengthCalibrationPx = pixelLength;
                             pattern->stripLengthCalibrated = true;
                             
-                            qDebug() << "[캘리브레이션 버튼] 새로운 stripLengthCalibrationPx:" << pattern->stripLengthCalibrationPx;
+                            
                             
                             // 변환 비율 계산: pixel/mm
                             double conversionRatio = pixelLength / mmLength;
@@ -5606,10 +5627,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                                 );
                             }
                             
-                            qDebug() << "STRIP 길이 캘리브레이션:" 
-                                    << "측정 픽셀=" << pixelLength 
-                                    << "실제 mm=" << mmLength
-                                    << "변환 비율=" << conversionRatio << "px/mm";
+                            
                         } else {
                             if (insStripLengthMeasuredLabel) {
                                 insStripLengthMeasuredLabel->setText("측정값: 검사 필요");
@@ -5794,14 +5812,14 @@ void TeachingWidget::connectPropertyPanelEvents() {
                     if (pattern && pattern->type == PatternType::INS) {
                         bool ok;
                         double value = QLocale::c().toDouble(text, &ok);
-                        qDebug() << "[변환 직후] text:" << text << "ok:" << ok << "value:" << value;
+                        
                         if (ok) {
                             pattern->edgeDistanceMax = value;
-                            qDebug() << "[할당 직후] pattern->edgeDistanceMax =" << pattern->edgeDistanceMax;
+                            
                             cameraView->updatePatternById(patternId, *pattern);
                             cameraView->update();
                         } else {
-                            qDebug() << "[UI 업데이트 실패] toDouble() 변환 실패:" << text;
+                            
                         }
                     }
                 }
@@ -6704,7 +6722,7 @@ void TeachingWidget::detectCameras() {
             }
         }
         catch (Spinnaker::Exception& e) {
-            qDebug() << "[Spinnaker] 오류 발생:" << e.what();
+            
         }
     }
     
@@ -6884,11 +6902,9 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat& frame, int camIdx) {
         cameraFrames[camIdx] = frame.clone();
     }
     
-    // **메인 카메라 처리**
+    // 메인 카메라 처리
     if (camIdx == cameraIndex) {
         try {
-            // TEACH OFF 상태에서는 화면 업데이트 계속 (영상 갱신)
-            // TEACH ON 상태에서는 화면 업데이트도 중지 (영상 정지)
             if (cameraView && !teachingEnabled) {
                 // 필터 적용
                 cv::Mat filteredFrame = frame.clone();
@@ -7209,7 +7225,7 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat& frame, int cameraInd
     // **트리거 처리 시작**
     triggerProcessing = true;
     
-    qDebug() << "[Trigger] 신호 수신 → 프레임 저장";
+    
     
     // **프레임을 cameraFrames에 저장**
     processGrabbedFrame(frame, cameraIndex);
@@ -7224,7 +7240,7 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat& frame, int cameraInd
     
     if (!isRunning) {
         // STOP 상태 → RUN으로 전환 (검사 시작)
-        qDebug() << "[Trigger] STOP 상태 → RUN 클릭";
+        
         QMetaObject::invokeMethod(runStopButton, "click", Qt::QueuedConnection);
         
         // 처리 완료 (200ms 후)
@@ -7233,14 +7249,14 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat& frame, int cameraInd
         });
     } else {
         // RUN 상태(검사 결과 표시 중) → STOP 클릭 → 다시 RUN 클릭
-        qDebug() << "[Trigger] RUN 상태 → STOP 클릭";
+        
         QMetaObject::invokeMethod(runStopButton, "click", Qt::QueuedConnection);
         
         // 100ms 후 다시 RUN 클릭 (QPointer로 안전하게 처리)
         QPointer<QPushButton> safeButton = runStopButton;
         QTimer::singleShot(100, this, [this, safeButton]() {
             if (safeButton) {
-                qDebug() << "[Trigger] → RUN 클릭";
+                
                 QMetaObject::invokeMethod(safeButton, "click", Qt::QueuedConnection);
             }
             // 처리 완료 (추가 100ms 후)
@@ -7283,7 +7299,6 @@ void TeachingWidget::startCamera() {
         uiUpdateThread->stopUpdating();
         uiUpdateThread->wait();
     }
-
 
     if (cameraInfos.isEmpty()) {
         CustomMessageBox msgBox(this);
@@ -7501,7 +7516,7 @@ void TeachingWidget::stopCamera() {
             }
         }
         catch (Spinnaker::Exception& e) {
-            qDebug() << "[Camera] Spinnaker cleanup error:" << e.what();
+            
         }
     }
 #endif
@@ -9215,11 +9230,11 @@ QString TeachingWidget::getCameraName(int index) {
 
 bool TeachingWidget::runInspect(const cv::Mat& frame, int specificCameraIndex) {
     if (frame.empty()) {
-        qDebug() << "❌ [검사 실패] 프레임이 비어있음!";
+        
         return false;
     }
     
-    // qDebug() << QString("✅ [검사 시작] 프레임 크기: %1x%2").arg(frame.cols).arg(frame.rows);  // 로그 제거
+    //   // 로그 제거
     
     if (!cameraView || !insProcessor) {
         return false;
@@ -9249,7 +9264,7 @@ bool TeachingWidget::runInspect(const cv::Mat& frame, int specificCameraIndex) {
 
     // **레시피가 없으면 검사 패스**
     if (cameraPatterns.empty()) {
-        qDebug() << "⏭️ [검사 패스] 레시피 없음 - 패턴 0개";
+        
         return true; // 검사 성공으로 처리 (패턴 없으므로 패스)
     }
 
@@ -9566,12 +9581,7 @@ void TeachingWidget::switchToRecipeMode() {
 }
 
 void TeachingWidget::updateAllPatternTemplateImages() {
-    printf("[updateAllPatternTemplateImages] START\n");
-    fflush(stdout);
-    
     if (!cameraView) {
-        printf("[updateAllPatternTemplateImages] cameraView is null\n");
-        fflush(stdout);
         return;
     }
     
@@ -9579,20 +9589,12 @@ void TeachingWidget::updateAllPatternTemplateImages() {
     // 현재 이미지 가져오기 (패턴이 그려지기 전의 원본 이미지)
     cv::Mat currentImage;
     if (camOff) {
-        printf("[updateAllPatternTemplateImages] camOff mode\n");
-        fflush(stdout);
-        
         if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
             cameraFrames[cameraIndex].empty()) {
-            printf("[updateAllPatternTemplateImages] Invalid camera frame\n");
-            fflush(stdout);
             return;
         }
         currentImage = cameraFrames[cameraIndex].clone();
     } else {
-        printf("[updateAllPatternTemplateImages] Live camera mode\n");
-        fflush(stdout);
-        
         // CameraView의 backgroundPixmap에서 원본 이미지 가져오기
         if (cameraView) {
             QPixmap bgPixmap = cameraView->getBackgroundPixmap();
@@ -9607,88 +9609,46 @@ void TeachingWidget::updateAllPatternTemplateImages() {
             currentImage = getCurrentFrame();
         }
         if (currentImage.empty()) {
-            printf("[updateAllPatternTemplateImages] Current image is empty\n");
-            fflush(stdout);
             return;
         }
     }
     
-    printf("[updateAllPatternTemplateImages] Getting patterns\n");
-    fflush(stdout);
-    
     // 모든 패턴 가져오기
     QList<PatternInfo> patterns = cameraView->getPatterns();
-    printf("[updateAllPatternTemplateImages] Pattern count: %d\n", patterns.size());
-    fflush(stdout);
-    
     for (int i = 0; i < patterns.size(); i++) {
         PatternInfo pattern = patterns[i];
-        printf("[updateAllPatternTemplateImages] Processing pattern %d/%d: %s (type=%d)\n", 
-               i+1, patterns.size(), pattern.name.toStdString().c_str(), (int)pattern.type);
-        fflush(stdout);
-        
         // FID와 INS 패턴만 템플릿 이미지가 필요함
         if (pattern.type == PatternType::FID || pattern.type == PatternType::INS) {
             // 필터 변경 시에는 템플릿을 다시 생성해야 하므로 스킵하지 않음
             
             // 패턴 포인터 가져오기
-            printf("[updateAllPatternTemplateImages] Getting pattern pointer for: %s\n", 
-                   pattern.name.toStdString().c_str());
-            fflush(stdout);
-            
             PatternInfo* patternPtr = cameraView->getPatternById(pattern.id);
             if (!patternPtr) {
-                printf("[updateAllPatternTemplateImages] Pattern pointer is null for pattern: %s\n", pattern.name.toStdString().c_str());
-                fflush(stdout);
                 continue;
             }
             
             // rect가 유효한지 확인
             if (patternPtr->rect.width() <= 0 || patternPtr->rect.height() <= 0) {
-                printf("[updateAllPatternTemplateImages] Invalid rect for pattern: %s\n", pattern.name.toStdString().c_str());
-                fflush(stdout);
                 continue;
             }
             
             try {
                 // FID 패턴은 updateFidTemplateImage 사용
                 if (pattern.type == PatternType::FID) {
-                    printf("[updateAllPatternTemplateImages] Updating FID template: %s\n", 
-                           pattern.name.toStdString().c_str());
-                    fflush(stdout);
                     updateFidTemplateImage(patternPtr, patternPtr->rect);
                 }
                 // INS 패턴은 updateInsTemplateImage 사용
                 else if (pattern.type == PatternType::INS) {
-                    printf("[updateAllPatternTemplateImages] Updating INS template: %s\n", 
-                           pattern.name.toStdString().c_str());
-                    fflush(stdout);
                     updateInsTemplateImage(patternPtr, patternPtr->rect);
                 }
                 
-                printf("[updateAllPatternTemplateImages] Successfully updated template for: %s\n", 
-                       pattern.name.toStdString().c_str());
-                fflush(stdout);
-                
-            } catch (const std::exception& e) {
-                printf("[updateAllPatternTemplateImages] Exception for pattern %s: %s\n", 
-                       pattern.name.toStdString().c_str(), e.what());
-                fflush(stdout);
-            } catch (...) {
-                printf("[updateAllPatternTemplateImages] Unknown exception for pattern: %s\n", 
-                       pattern.name.toStdString().c_str());
-                fflush(stdout);
-            }
+                } catch (const std::exception& e) {
+                } catch (...) {
+                }
         }
     }
     
-    printf("[updateAllPatternTemplateImages] Updating camera view\n");
-    fflush(stdout);
-    
     cameraView->update(); // 화면 갱신 
-    
-    printf("[updateAllPatternTemplateImages] Checking property panel update\n");
-    fflush(stdout);
     
     // 필터 설정 중이 아닐 때만 프로퍼티 패널의 템플릿 이미지도 업데이트
     if (!isFilterAdjusting) {
@@ -9697,16 +9657,12 @@ void TeachingWidget::updateAllPatternTemplateImages() {
             QUuid selectedPatternId = getPatternIdFromItem(currentItem);
             PatternInfo* selectedPattern = cameraView->getPatternById(selectedPatternId);
             if (selectedPattern && (selectedPattern->type == PatternType::FID || selectedPattern->type == PatternType::INS)) {
-                printf("[updateAllPatternTemplateImages] Updating property panel\n");
-                fflush(stdout);
                 updatePropertyPanel(selectedPattern, nullptr, selectedPatternId, -1);
             }
         }
     }
     
-    printf("[updateAllPatternTemplateImages] END\n");
-    fflush(stdout);
-}
+    }
 
 void TeachingWidget::setStripCrimpMode(int mode) {
     currentStripCrimpMode = mode;
@@ -9766,15 +9722,15 @@ void TeachingWidget::setStripCrimpMode(int mode) {
 
 void TeachingWidget::saveRecipe() {
    
-    qDebug() << "========== saveRecipe() 시작 ==========";
-    qDebug() << "currentRecipeName:" << currentRecipeName;
-    qDebug() << "cameraInfos 크기:" << cameraInfos.size();
-    qDebug() << "cameraIndex:" << cameraIndex;
+    
+    
+    
+    
     
     // 현재 레시피 이름이 있으면 개별 파일로 저장, 없으면 사용자에게 물어봄
     if (currentRecipeName.isEmpty()) {
     
-        qDebug() << "레시피 이름 없음 - 새 레시피 생성 확인";
+        
         // 사용자에게 새 레시피 생성 여부 묻기
         CustomMessageBox msgBox(this);
         msgBox.setIcon(CustomMessageBox::Question);
@@ -9786,26 +9742,24 @@ void TeachingWidget::saveRecipe() {
             // 자동으로 타임스탬프 이름 생성
             QDateTime now = QDateTime::currentDateTime();
             currentRecipeName = now.toString("yyyyMMdd_HHmmss_zzz");
-            qDebug() << "자동 생성된 레시피 이름:" << currentRecipeName;
+            
         } else {
-            qDebug() << "저장 취소됨";
+            
             return; // 저장 취소
         }
     }
     
     // cameraInfos 검증
     if (cameraInfos.isEmpty()) {
-        qDebug() << "❌ cameraInfos가 비어있음!";
+        
         CustomMessageBox(this, CustomMessageBox::Critical, "레시피 저장 실패",
             "카메라 정보가 없습니다. 먼저 이미지를 추가하거나 카메라를 연결하세요.").exec();
         return;
     }
     
-    qDebug() << "카메라 정보:";
+    
     for (int i = 0; i < cameraInfos.size(); i++) {
-        qDebug() << "  [" << i << "] name:" << cameraInfos[i].name 
-                 << ", UUID:" << cameraInfos[i].uniqueId
-                 << ", connected:" << cameraInfos[i].isConnected;
+        
     }
     
     // 현재 편집 모드 저장 (저장 후 복원하기 위해)
@@ -9817,16 +9771,16 @@ void TeachingWidget::saveRecipe() {
     
     // 레시피 파일 경로 생성
     QString recipeFileName = QDir(manager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(currentRecipeName));
-    qDebug() << "저장할 레시피 파일 경로:" << recipeFileName;
+    
     
     // 빈 시뮬레이션 이미지 패스와 빈 캘리브레이션 맵 (필요시 나중에 추가)
     QStringList simulationImagePaths;
     QMap<QString, CalibrationInfo> calibrationMap;
     
-    qDebug() << "RecipeManager::saveRecipe 호출...";
+    
     // 기존 saveRecipe 함수 사용 (TeachingWidget 포인터 전달)
     if (manager.saveRecipe(recipeFileName, cameraInfos, cameraIndex, calibrationMap, cameraView, simulationImagePaths, -1, QStringList(), this)) {
-        qDebug() << "✅ 레시피 저장 성공!";
+        
         hasUnsavedChanges = false;
         
         // 최근 사용한 레시피를 ConfigManager에 저장
@@ -9843,8 +9797,8 @@ void TeachingWidget::saveRecipe() {
         msgBox.setButtons(QMessageBox::Ok);
         msgBox.exec();
     } else {
-        qDebug() << "❌ 레시피 저장 실패!";
-        qDebug() << "에러 메시지:" << manager.getLastError();
+        
+        
         CustomMessageBox msgBoxCritical(this);
         msgBoxCritical.setIcon(CustomMessageBox::Critical);
         msgBoxCritical.setTitle("레시피 저장 실패");
@@ -9867,7 +9821,6 @@ void TeachingWidget::saveRecipe() {
     }
 }
 
-
 bool TeachingWidget::loadRecipe(const QString &fileName, bool showMessageBox) {
     if (fileName.isEmpty()) {
         // 파일명이 없으면 사용 가능한 첫 번째 레시피 로드
@@ -9889,7 +9842,6 @@ bool TeachingWidget::loadRecipe(const QString &fileName, bool showMessageBox) {
     }
     return false;
 }
-
 
 bool TeachingWidget::hasLoadedRecipe() const {
     // 레시피가 로드된 경우 패턴이 하나 이상 있어야 함
@@ -9984,10 +9936,7 @@ bool TeachingWidget::initSpinnakerSDK()
         
         // 라이브러리 버전 출력 - 네임스페이스 추가
         const Spinnaker::LibraryVersion spinnakerLibraryVersion = m_spinSystem->GetLibraryVersion();
-        qDebug() << "Spinnaker Library Version:" << spinnakerLibraryVersion.major << "."
-                 << spinnakerLibraryVersion.minor << "."
-                 << spinnakerLibraryVersion.type << "."
-                 << spinnakerLibraryVersion.build;
+        
         
         return true;
     }
@@ -10432,12 +10381,12 @@ cv::Mat TeachingWidget::grabFrameFromSpinnakerCamera(Spinnaker::CameraPtr& camer
                     try {
                         if (camera->IsStreaming()) {
                             camera->EndAcquisition(); // 혹시 남아있는 acquisition 종료
-                            qDebug() << "🛑 [TRIGGER] 기존 acquisition 종료";
+                            
                         }
                         camera->BeginAcquisition();
-                        qDebug() << "� [TRIGGER] SingleFrame - 다음 트리거를 위해 acquisition 강제 재시작";
+                        
                     } catch (Spinnaker::Exception& e) {
-                        qDebug() << "❌ [TRIGGER] acquisition 재시작 실패:" << e.what();
+                        
                     }
                 }
             }
@@ -10572,15 +10521,15 @@ void TeachingWidget::addFilter() {
 }
 
 void TeachingWidget::addPattern() {
-    qDebug() << "[TeachingWidget] addPattern() 호출됨";
+    
     
     // 티칭 모드가 비활성화되어 있으면 패턴 추가 금지
     if (!teachingEnabled) {
-        qDebug() << "[TeachingWidget] ❌ teachingEnabled=false - 패턴 추가 금지";
+        
         return;
     }
     
-    qDebug() << "[TeachingWidget] ✅ teachingEnabled=true - 패턴 추가 진행";
+    
     
     // 시뮬레이션 모드 상태 디버깅 - cameraFrames 체크
     if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
@@ -10591,8 +10540,8 @@ void TeachingWidget::addPattern() {
     QRect currentRect = cameraView->getCurrentRect();
     bool hasDrawnRect = (!currentRect.isNull() && currentRect.width() >= 10 && currentRect.height() >= 10);
     
-    qDebug() << "[TeachingWidget] currentRect:" << currentRect;
-    qDebug() << "[TeachingWidget] hasDrawnRect:" << hasDrawnRect;
+    
+    
     
     // 선택된 아이템 확인
     QTreeWidgetItem* selectedItem = patternTree->currentItem();
@@ -10612,7 +10561,7 @@ void TeachingWidget::addPattern() {
     
     // 그려진 사각형이 있으면 무조건 새 패턴 생성 (필터 추가 방지)
     if (hasDrawnRect) {
-        qDebug() << "[TeachingWidget] 사각형 있음 - 패턴 이름 다이얼로그 표시";
+        
         
         // 패턴 이름 입력 받기
         CustomMessageBox msgBox(this);
@@ -10621,17 +10570,17 @@ void TeachingWidget::addPattern() {
         msgBox.setInputField(true, "");
         msgBox.setButtons(QMessageBox::Ok | QMessageBox::Cancel);
         
-        qDebug() << "[TeachingWidget] CustomMessageBox exec() 호출 전";
+        
         int result = msgBox.exec();
-        qDebug() << "[TeachingWidget] CustomMessageBox 결과:" << result << "(Ok=" << QMessageBox::Ok << ")";
+        
         
         if (result != QMessageBox::Ok) {
-            qDebug() << "[TeachingWidget] 취소 버튼 누름 - 패턴 추가 중단";
+            
             return; // 취소 버튼 누름
         }
         
         QString patternName = msgBox.getInputText();
-        qDebug() << "[TeachingWidget] 입력된 패턴 이름:" << patternName;
+        
         
         // 이름이 비었으면 자동 생성
         if (patternName.isEmpty()) {
@@ -11020,10 +10969,7 @@ InspectionResult TeachingWidget::runSingleInspection(int specificCameraIndex) {
         if (cameraView && frameIndex >= 0 && frameIndex < static_cast<int>(cameraFrames.size()) && 
             !cameraFrames[frameIndex].empty()) {
             inspectionFrame = cameraFrames[frameIndex].clone();
-            printf("[TeachingWidget] runSingleInspection - 카메라[%d] 프레임으로 검사 (camOff: %s)\n", 
-                   frameIndex, camOff ? "true" : "false");
-            fflush(stdout);
-        }
+            }
         
         if (!inspectionFrame.empty() && cameraView) {
             // 현재 카메라의 활성 패턴들 가져오기
@@ -11148,7 +11094,7 @@ void TeachingWidget::onCamModeToggled() {
     
     if (camOff) {
         // camOn -> camOff (라이브 모드 -> 레시피 모드) 전환
-        qDebug() << "모드 전환: 라이브 모드 -> 레시피 모드";
+        
         
         // 카메라 중지
         stopCamera();
@@ -11171,28 +11117,28 @@ void TeachingWidget::onCamModeToggled() {
         
         // cameraFrames 초기화 후 현재 레시피가 있으면 티칭 이미지 다시 로드
         QString currentRecipe = getCurrentRecipeName();
-        qDebug() << "[onCamModeToggled] camOff 모드 진입 - 현재 레시피:" << currentRecipe;
+        
         
         if (!currentRecipe.isEmpty()) {
-            qDebug() << "[onCamModeToggled] 레시피 재로드 (티칭 이미지 포함):" << currentRecipe;
+            
             // 레시피를 다시 로드하여 티칭 이미지 가져오기
             onRecipeSelected(currentRecipe);
         } else {
             // 레시피가 없으면 cameraFrames 초기화
             cameraFrames.clear();
-            qDebug() << "[onCamModeToggled] 레시피 없음 - cameraFrames 초기화";
+            
         }
         
-        qDebug() << "레시피 모드로 전환 완료";
+        
         
     } else {
         // camOff -> camOn (레시피 모드 -> 라이브 모드) 전환
-        qDebug() << "모드 전환: 레시피 모드 -> 라이브 모드";
+        
         
         // 카메라 재연결 시도
         detectCameras();
         
-        qDebug() << "라이브 모드로 전환 완료";
+        
     }
 }
 
@@ -11216,7 +11162,7 @@ void TeachingWidget::onSimulationImageSelected(const cv::Mat& image, const QStri
         
         // 시뮬레이션 모드임을 명확히 표시
         if (cameraView) {
-            qDebug() << QString("시뮬레이션 이미지 처리 시작: %1x%2, channels=%3").arg(image.cols).arg(image.rows).arg(image.channels());
+            
             
             // 패턴은 이미 레시피 로드 시에 로딩되었으므로 재로딩하지 않음
             // 단지 시뮬레이션 이미지만 표시
@@ -11227,25 +11173,25 @@ void TeachingWidget::onSimulationImageSelected(const cv::Mat& image, const QStri
                 cv::Mat rgbImage;
                 cv::cvtColor(image, rgbImage, cv::COLOR_BGR2RGB);
                 qImage = QImage(rgbImage.data, rgbImage.cols, rgbImage.rows, rgbImage.step, QImage::Format_RGB888);
-                qDebug() << "3채널 이미지를 RGB로 변환 완료";
+                
             } else {
                 qImage = QImage(image.data, image.cols, image.rows, image.step, QImage::Format_Grayscale8);
-                qDebug() << "1채널 그레이스케일 이미지 변환 완료";
+                
             }
             
             if (qImage.isNull()) {
-                qDebug() << "QImage 변환 실패!";
+                
                 return;
             }
             
             // QPixmap으로 변환하여 CameraView에 설정
             QPixmap pixmap = QPixmap::fromImage(qImage);
             if (pixmap.isNull()) {
-                qDebug() << "QPixmap 변환 실패!";
+                
                 return;
             }
             
-            qDebug() << QString("시뮬레이션 이미지 CameraView에 설정: %1x%2").arg(pixmap.width()).arg(pixmap.height());
+            
             cameraView->setBackgroundPixmap(pixmap);
             
             // 마우스 이벤트와 줌/팬 기능 강제 활성화
@@ -11264,20 +11210,20 @@ void TeachingWidget::onSimulationImageSelected(const cv::Mat& image, const QStri
             cameraView->setAttribute(Qt::WA_AcceptTouchEvents, true);
             
             // 강제 업데이트
-            qDebug() << "CameraView 강제 업데이트 시작";
+            
             cameraView->update();
             cameraView->repaint();
             cameraView->show(); // 위젯 표시 강제
-            qDebug() << "CameraView 업데이트 완료";
+            
         } else {
-            qDebug() << "CameraView가 null입니다!";
+            
         }
         
         // 시뮬레이션 카메라 정보로 UI 업데이트
         updateCameraInfoForSimulation(imagePath);
         
         // camOff 모드 이미지 설정 완료
-        qDebug() << QString("camOff 모드 이미지 선택됨, 카메라: %1").arg(!cameraInfos.isEmpty() ? cameraInfos[0].name : "없음");
+        
         
         // 패턴 편집 기능들 활성화
         enablePatternEditingFeatures();
@@ -11330,12 +11276,12 @@ void TeachingWidget::onSimulationProjectSelected(const QString& projectName) {
         return;
     }
     
-    qDebug() << QString("시뮬레이션 프로젝트 선택됨: %1").arg(projectName);
+    
     
     // 현재 레시피 이름 설정 (Save 버튼으로 저장할 때 사용)
     currentRecipeName = projectName;
     hasUnsavedChanges = false;
-    qDebug() << QString("시뮬레이션 모드에서 현재 레시피 이름 설정: %1").arg(currentRecipeName);
+    
     
     // 레시피에서 해당 프로젝트의 패턴들 로드 (일반 레시피 로드 방식 사용)
     onRecipeSelected(projectName);
@@ -11354,18 +11300,18 @@ QString TeachingWidget::getCurrentRecipeName() const {
     if (backupRecipeData.contains("recipeName")) {
         QString rn = backupRecipeData.value("recipeName").toString();
         if (!rn.isEmpty()) {
-            qDebug() << "getCurrentRecipeName: using backupRecipeData.recipeName=" << rn;
+            
             return rn;
         }
     }
 
     // 마지막으로 cameraInfos[0].name 사용
     if (!cameraInfos.isEmpty()) {
-        qDebug() << "getCurrentRecipeName: using cameraInfos[0].name=" << cameraInfos[0].name;
+        
         return cameraInfos[0].name;
     }
 
-    qDebug() << "getCurrentRecipeName: no recipe name available";
+    
     return QString(); // 빈 문자열 반환
 }
 
@@ -11483,7 +11429,7 @@ void TeachingWidget::enableFilterWidgets() {
 }
 
 void TeachingWidget::onPatternTreeDropCompleted() {
-    qDebug() << "=== 패턴 드래그 앤 드롭 완료 ===";
+    
     
     // 현재 트리 구조를 분석하여 부모-자식 관계 변화 감지
     QMap<QUuid, QUuid> newParentRelations;  // 자식ID -> 부모ID
@@ -11522,7 +11468,7 @@ void TeachingWidget::onPatternTreeDropCompleted() {
                 parentPattern->type == PatternType::FID) {
                 
                 if (childPattern->parentId != parentId) {
-                    qDebug() << "패턴 그룹화:" << childPattern->name << "→" << parentPattern->name;
+                    
                     childPattern->parentId = parentId;
                     cameraView->updatePatternById(childId, *childPattern);
                     hasChanges = true;
@@ -11562,27 +11508,27 @@ double TeachingWidget::normalizeAngle(double angle) {
 // === 레시피 관리 함수들 구현 ===
 
 void TeachingWidget::newRecipe() {
-    qDebug() << "========== newRecipe() 함수 호출됨 ==========";
+    
     
     // 저장되지 않은 변경사항 확인
     if (hasUnsavedChanges) {
-        qDebug() << "저장되지 않은 변경사항 있음 - 확인 대화상자 표시";
+        
         CustomMessageBox msgBox(this, CustomMessageBox::Question, "새 레시피", 
             "저장되지 않은 변경사항이 있습니다. 새 레시피를 생성하시겠습니까?");
         msgBox.setButtons(QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
         int reply = msgBox.exec();
         
         if (reply == QMessageBox::Cancel) {
-            qDebug() << "사용자가 취소 선택";
+            
             return;
         } else if (reply == QMessageBox::Yes) {
-            qDebug() << "사용자가 저장 선택";
+            
             saveRecipe();
         }
     }
     
     // **첫 번째: 새 레시피 이름 입력받기**
-    qDebug() << "레시피 이름 입력 대화상자 표시";
+    
     CustomMessageBox nameBox(this);
     nameBox.setTitle("새 레시피 생성");
     nameBox.setMessage("레시피 이름을 입력하세요:\n(비어있으면 자동으로 생성됩니다)");
@@ -11590,14 +11536,14 @@ void TeachingWidget::newRecipe() {
     nameBox.setButtons(QMessageBox::Ok | QMessageBox::Cancel);
     
     int nameResult = nameBox.exec();
-    qDebug() << "이름 입력 대화상자 결과:" << nameResult;
+    
     
     if (nameResult != QDialog::Accepted) {
-        qDebug() << "사용자가 이름 입력 취소";
+        
         return; // 사용자가 취소
     }
     QString recipeName = nameBox.getInputText();
-    qDebug() << "입력된 레시피 이름:" << recipeName;
+    
     
     // 이름이 비어있으면 자동 생성 (년월일시간초밀리초)
     if (recipeName.trimmed().isEmpty()) {
@@ -11621,7 +11567,7 @@ void TeachingWidget::newRecipe() {
     }
     
     // **두 번째 선택: "이미지 찾기" vs "레시피로 읽기"**
-    qDebug() << "새 레시피 생성 - 이미지/레시피 선택 대화상자 표시";
+    
     CustomMessageBox msgBox(this);
     msgBox.setTitle("새 레시피 생성");
     msgBox.setMessage("영상을 어디서 가져오시겠습니까?");
@@ -11661,18 +11607,18 @@ void TeachingWidget::newRecipe() {
     });
     
     int result = msgBox.exec();
-    qDebug() << "대화상자 결과:" << result;
     
-    qDebug() << "클릭된 버튼:" << clickedBtn;
+    
+    
     
     if (clickedBtn == imageButton) {
-        qDebug() << "이미지 찾기 선택됨";
+        
         useImage = true;
     } else if (clickedBtn == recipeButton) {
-        qDebug() << "레시피로 읽기 선택됨";
+        
         useRecipe = true;
     } else {
-        qDebug() << "취소됨";
+        
         return; // 취소
     }
     
@@ -11753,8 +11699,8 @@ void TeachingWidget::newRecipe() {
                                 (void*)crimpQImage.constBits(), crimpQImage.bytesPerLine()).clone();
         cv::cvtColor(crimpModeImage, crimpModeImage, cv::COLOR_RGB2BGR);
         
-        qDebug() << "STRIP 이미지 저장 완료:" << stripImageFile;
-        qDebug() << "CRIMP 이미지 저장 완료:" << crimpImageFile;
+        
+        
         
         // 생성 날짜를 카메라 이름으로 설정 (레시피 이름과 동일)
         QString cameraName = recipeName; // 레시피 이름(타임스탬프)을 카메라 이름으로 사용
@@ -11775,11 +11721,11 @@ void TeachingWidget::newRecipe() {
         cameraInfos.append(virtualCamera);
         cameraIndex = 0;
         
-        qDebug() << "시뮬레이션 카메라 정보 생성 완료 - 이름:" << cameraName << ", UUID:" << cameraName;
         
-        qDebug() << "티칭용 이미지 로드 성공:" << imageFile;
-        qDebug() << "카메라 이름 설정:" << cameraName;
-        qDebug() << "cameraFrames[" << cameraIndex << "]에 이미지 설정 완료 - 크기:" << loadedImage.cols << "x" << loadedImage.rows;
+        
+        
+        
+        
         
     } else if (useRecipe) {
         // 기존 레시피 목록 표시
@@ -11858,7 +11804,7 @@ void TeachingWidget::newRecipe() {
             }
         }
         
-        qDebug() << "레시피에서 이미지 로드 완료:" << cameraName;
+        
     }
 
     // 기존 패턴들 클리어
@@ -11876,7 +11822,7 @@ void TeachingWidget::newRecipe() {
     // 윈도우 타이틀 업데이트
     setWindowTitle(QString("KM Inspector - %1").arg(recipeName));
     
-    qDebug() << QString("새 레시피 '%1' 준비 완료 (저장 대기)").arg(recipeName);
+    
 }
 
 void TeachingWidget::loadTeachingImage() {
@@ -11939,10 +11885,7 @@ void TeachingWidget::loadTeachingImage() {
     // 변경사항 플래그 설정
     hasUnsavedChanges = true;
     
-    qDebug() << QString("%1 모드 티칭 이미지 교체 완료: %2x%3")
-        .arg(modeName)
-        .arg(loadedImage.cols)
-        .arg(loadedImage.rows);
+    
 }
 
 void TeachingWidget::saveRecipeAs() {
@@ -11982,7 +11925,7 @@ void TeachingWidget::saveRecipeAs() {
             hasUnsavedChanges = false;
             
             // 티칭 이미지는 XML에 base64로 저장됨
-            qDebug() << "레시피 저장: 티칭 이미지는 XML에 base64로 저장됨";
+            
             
             CustomMessageBox(this, CustomMessageBox::Information, "레시피 저장",
                 QString("'%1' 레시피가 성공적으로 저장되었습니다.").arg(recipeName)).exec();
@@ -12220,15 +12163,15 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
     
     // 레시피에서 카메라 정보 먼저 읽기 (camOn/camOff 공통)
     QStringList recipeCameraUuids = manager.getRecipeCameraUuids(recipeName);
-    qDebug() << QString("레시피 '%1'의 카메라 목록: %2").arg(recipeName).arg(recipeCameraUuids.join(", "));
+    
     
     // **camOff 상태는 사용자가 CAM 버튼으로 제어하므로 자동 전환하지 않음**
-    qDebug() << QString("🎥 [레시피 로드 시작] 현재 camOff 상태: %1 (true=시뮬레이션, false=실제카메라)").arg(camOff);
+    
     
     // camOff 모드에서는 cameraInfos를 비워서 레시피에서 새로 생성하도록 함
     // camOn 모드에서는 기존 cameraInfos 유지 (카메라 연결 상태 유지)
     if (camOff) {
-        qDebug() << QString("🎯 [레시피 로드] camOff 모드 - cameraInfos 초기화");
+        
         cameraInfos.clear();
     } else {
         // camOn 모드에서는 기존 cameraInfos 유지
@@ -12236,30 +12179,29 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
     
     // 티칭 이미지 콜백 함수 정의 (camOn/camOff 공통)
     auto teachingImageCallback = [this](const QStringList& imagePaths) {
-        qDebug() << QString("=== teachingImageCallback 호출 시작 ===");
-        qDebug() << QString("전달받은 이미지 경로 개수: %1").arg(imagePaths.size());
-        qDebug() << QString("camOff 상태: %1 (true=카메라OFF, false=카메라ON)").arg(camOff);
+        
+        
+        
         
         for (int i = 0; i < imagePaths.size(); i++) {
-            qDebug() << QString("이미지 경로[%1]: %2").arg(i).arg(imagePaths[i]);
+            
         }
         
         // **카메라 ON/OFF 모두 티칭 이미지를 cameraFrames에 로드**
-        qDebug() << QString("[레시피 로드] 티칭 이미지 로드 시작 - camOff=%1").arg(camOff);
+        
         
         int imageIndex = 0;
         for (const QString& imagePath : imagePaths) {
-            qDebug() << QString("티칭 이미지 로드 시도 [%1]: %2").arg(imageIndex).arg(imagePath);
+            
             
             // base64 더미 경로인 경우 특별 처리 (이미 cameraFrames에 로드됨)
             if (imagePath.startsWith("base64_image_")) {
-                qDebug() << QString("base64 더미 경로 감지 - cameraFrames[%1] 사용").arg(imageIndex);
+                
                 // cameraFrames에 이미 이미지가 있는지 확인
                 if (imageIndex < static_cast<int>(cameraFrames.size()) && !cameraFrames[imageIndex].empty()) {
-                    qDebug() << QString("cameraFrames[%1]에서 base64 티칭이미지 확인: %2x%3")
-                                .arg(imageIndex).arg(cameraFrames[imageIndex].cols).arg(cameraFrames[imageIndex].rows);
+                    
                 } else {
-                    qDebug() << QString("⚠️ cameraFrames[%1]이 비어있음 - base64 로드 실패").arg(imageIndex);
+                    
                 }
                 imageIndex++;
                 continue;
@@ -12275,38 +12217,37 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
                     }
                     cameraFrames[imageIndex] = teachingImage.clone();
                     
-                    qDebug() << QString("cameraFrames[%1]에 티칭이미지 설정: %2x%3")
-                                .arg(imageIndex).arg(teachingImage.cols).arg(teachingImage.rows);
+                    
                     
                 } else {
-                    qDebug() << QString("⚠️ 티칭 이미지 로드 실패 [%1]: %2 (파일 없음 또는 imread 실패)").arg(imageIndex).arg(imagePath);
+                    
                 }
             } else {
-                qDebug() << QString("⚠️ 티칭 이미지 파일 존재하지 않음 [%1]: %2").arg(imageIndex).arg(imagePath);
+                
             }
             imageIndex++;  // 실패해도 인덱스는 증가
         }
         
-        qDebug() << QString("=== teachingImageCallback 완료: 총 %1개 이미지 처리 ===").arg(imageIndex);
+        
         
         // 모든 이미지 로드 완료 후 UI 업데이트 (camOn/camOff 공통)
-        qDebug() << QString("[teachingImageCallback] updateCameraFrame 호출 조건 확인:");
-        qDebug() << QString("  - cameraIndex: %1").arg(cameraIndex);
-        qDebug() << QString("  - cameraFrames.size(): %1").arg(cameraFrames.size());
-        qDebug() << QString("  - cameraIndex < cameraFrames.size(): %1").arg(cameraIndex < static_cast<int>(cameraFrames.size()));
+        
+        
+        
+        
         if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
-            qDebug() << QString("  - cameraFrames[%1].empty(): %2").arg(cameraIndex).arg(cameraFrames[cameraIndex].empty());
+            
         }
         
         // **카메라 ON 상태에서는 updateCameraFrame() 호출 금지**
         if (!camOff) {
-            qDebug() << QString("[teachingImageCallback] ⚠️ 카메라 ON 상태 - updateCameraFrame() 스킵");
+            
         } else if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
             !cameraFrames[cameraIndex].empty()) {
-            qDebug() << QString("[teachingImageCallback] ✅ updateCameraFrame() 호출 (카메라 OFF 모드)");
+            
             updateCameraFrame();
         } else {
-            qDebug() << QString("[teachingImageCallback] ❌ updateCameraFrame() 호출 조건 불만족");
+            
         }
         
         // 프리뷰 화면들도 업데이트
@@ -12323,7 +12264,7 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
         // 최근 사용한 레시피를 ConfigManager에 저장
         ConfigManager::instance()->setLastRecipePath(recipeName);
         ConfigManager::instance()->saveConfig();
-        qDebug() << QString("레시피 로드 완료: %1").arg(recipeName);
+        
         
         // **STRIP/CRIMP 이미지는 이미 loadRecipe에서 로드되었으므로 추가 로드 불필요**
         // loadMainCameraImage는 첫 번째 TeachingImage만 읽어서 현재 모드를 무시하므로 제거
@@ -12343,11 +12284,11 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
             if (!recipeCameraUuids.isEmpty()) {
                 // 레시피의 첫 번째 카메라 UUID 사용
                 firstCameraUuid = recipeCameraUuids.first();
-                qDebug() << QString("레시피에서 첫 번째 카메라 UUID 사용: %1").arg(firstCameraUuid);
+                
             } else {
                 // 레시피에 카메라 정보가 없으면 cameraInfos에서 가져오기
                 firstCameraUuid = cameraInfos[0].uniqueId;
-                qDebug() << QString("cameraInfos에서 첫 번째 카메라 UUID 사용: %1").arg(firstCameraUuid);
+                
             }
             
             switchToCamera(firstCameraUuid);
@@ -12358,10 +12299,10 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
                 cameraView->update();
                 
                 // 디버그: 현재 CameraView 상태 확인
-                qDebug() << QString("CameraView 상태 확인:");
-                qDebug() << QString("  - currentCameraUuid: %1").arg(firstCameraUuid);
-                qDebug() << QString("  - 패턴 개수: %1").arg(cameraView->getPatterns().size());
-                qDebug() << QString("  - backgroundPixmap null 여부: %1").arg(cameraView->getBackgroundPixmap().isNull() ? "true" : "false");
+                
+                
+                
+                
                 
                 // 강제 repaint
                 cameraView->repaint();
@@ -12371,25 +12312,25 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
             // 이미 위에서 정의된 recipeCameraUuids 사용
             if (!recipeCameraUuids.isEmpty()) {
                 QString firstCameraUuid = recipeCameraUuids.first();
-                qDebug() << QString("시뮬레이션 모드 - 첫 번째 카메라 자동 선택: %1").arg(firstCameraUuid);
+                
                 
                 // cameraFrames 상태 디버그 출력
-                qDebug() << QString("=== cameraFrames 상태 확인 ===");
-                qDebug() << QString("cameraFrames 크기: %1").arg(cameraFrames.size());
+                
+                
                 for (int i = 0; i < static_cast<int>(cameraFrames.size()); i++) {
                     if (!cameraFrames[i].empty()) {
-                        qDebug() << QString("cameraFrames[%1]: %2x%3 (데이터 있음)").arg(i).arg(cameraFrames[i].cols).arg(cameraFrames[i].rows);
+                        
                     } else {
-                        qDebug() << QString("cameraFrames[%1]: 비어있음").arg(i);
+                        
                     }
                 }
                 
                 if (cameraFrames.empty()) {
-                    qDebug() << QString("⚠️ cameraFrames가 완전히 비어있음 - teachingImageCallback이 호출되지 않았을 가능성");
+                    
                 } else if (cameraFrames.size() > 0 && cameraFrames[0].empty()) {
-                    qDebug() << QString("⚠️ cameraFrames[0]이 비어있음 - 첫 번째 카메라 이미지 로드 실패");
+                    
                 }
-                qDebug() << QString("=== cameraFrames 상태 확인 끝 ===");
+                
                 
                 // 첫 번째 카메라로 전환 (프리뷰도 자동 할당됨)
                 switchToCamera(firstCameraUuid);
@@ -12399,8 +12340,7 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
                 if (!cameraFrames.empty() && !cameraFrames[0].empty() && cameraView) {
                     cv::Mat firstCameraImage = cameraFrames[0];
                     
-                    qDebug() << QString("camOff 모드 - 티칭 이미지 표시: %1x%2")
-                                .arg(firstCameraImage.cols).arg(firstCameraImage.rows);
+                    
                     
                     // OpenCV Mat을 QImage로 변환
                     QImage qImage;
@@ -12417,8 +12357,7 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
                         cameraView->setBackgroundPixmap(pixmap);
                         cameraView->update();
                         cameraView->repaint();  // 강제 repaint
-                        qDebug() << QString("티칭 이미지 backgroundPixmap 설정 완료: %1x%2")
-                                    .arg(pixmap.width()).arg(pixmap.height());
+                        
                     }
                 }
                 updateCameraFrame();
@@ -12426,10 +12365,7 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
         }
             
         // cameraInfos 요약 정보 출력
-            qDebug() << QString("레시피 로드 완료 - 카메라: %1개, 현재: %2, camOff: %3")
-                        .arg(cameraInfos.size())
-                        .arg(cameraIndex)
-                        .arg(camOff ? "ON" : "OFF");
+            
 
     } else {
         QString errorMsg = manager.getLastError();
@@ -12438,7 +12374,7 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
             CustomMessageBox(this, CustomMessageBox::Critical, "레시피 불러오기 실패",
                 QString("레시피 불러오기에 실패했습니다:\n%1").arg(errorMsg)).exec();
         } else {
-            qDebug() << QString("레시피가 존재하지 않음 (자동 로드 시 메시지 생략): %1").arg(errorMsg);
+            
         }
     }
 }
@@ -12464,7 +12400,6 @@ void TeachingWidget::onTeachModeToggled(bool checked) {
     // 티칭 관련 버튼들 활성화/비활성화
     setTeachingButtonsEnabled(checked);
 }
-
 
 // 티칭 관련 버튼들 활성화/비활성화
 void TeachingWidget::setTeachingButtonsEnabled(bool enabled) {

@@ -4,25 +4,33 @@
 
 FilterPropertyWidget::FilterPropertyWidget(int filterType, QWidget* parent)
     : QWidget(parent), filterType(filterType), adaptiveGroup(nullptr) {
-    // 필터 프로퍼티 위젯 스타일 설정 (투명 배경, 흰색 글자)
+    // 필터 프로퍼티 위젯 스타일 설정 (어두운 배경, 흰색 글자)
     setStyleSheet(
-        "QWidget { background-color: transparent; color: white; } "
-        "QLabel { color: white; } "
-        "QSpinBox, QDoubleSpinBox { background-color: rgba(50, 50, 50, 180); color: white; border: 1px solid rgba(100, 100, 100, 150); } "
-        "QSpinBox::up-button, QDoubleSpinBox::up-button { background-color: rgba(70, 70, 70, 180); border: 1px solid rgba(100, 100, 100, 150); } "
-        "QSpinBox::down-button, QDoubleSpinBox::down-button { background-color: rgba(70, 70, 70, 180); border: 1px solid rgba(100, 100, 100, 150); } "
+        "FilterPropertyWidget { background-color: rgb(50, 50, 50); color: white; } "
+        "QLabel { color: white; background-color: transparent; } "
+        "QSpinBox, QDoubleSpinBox { background-color: rgb(60, 60, 60); color: white; border: 1px solid rgb(100, 100, 100); } "
+        "QSpinBox::up-button, QDoubleSpinBox::up-button { background-color: rgb(70, 70, 70); border: 1px solid rgb(100, 100, 100); } "
+        "QSpinBox::down-button, QDoubleSpinBox::down-button { background-color: rgb(70, 70, 70); border: 1px solid rgb(100, 100, 100); } "
         "QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 5px solid white; width: 0px; height: 0px; } "
         "QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid white; width: 0px; height: 0px; } "
-        "QComboBox { background-color: rgba(50, 50, 50, 180); color: white; border: 1px solid rgba(100, 100, 100, 150); } "
-        "QComboBox::drop-down { border: 1px solid rgba(100, 100, 100, 150); } "
+        "QComboBox { background-color: rgb(60, 60, 60); color: white; border: 1px solid rgb(100, 100, 100); padding: 2px; } "
+        "QComboBox::drop-down { border: 1px solid rgb(100, 100, 100); } "
         "QComboBox::down-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid white; width: 0px; height: 0px; } "
-        "QComboBox QAbstractItemView { background-color: rgba(50, 50, 50, 230); color: white; selection-background-color: rgba(0, 120, 215, 180); } "
-        "QSlider::groove:horizontal { background: rgba(100, 100, 100, 150); height: 6px; } "
-        "QSlider::handle:horizontal { background: rgba(0, 120, 215, 200); width: 14px; } "
+        "QComboBox QAbstractItemView { background-color: rgb(60, 60, 60); color: white; selection-background-color: rgb(0, 120, 215); } "
+        "QSlider::groove:horizontal { background: rgb(100, 100, 100); height: 6px; } "
+        "QSlider::handle:horizontal { background: rgb(0, 120, 215); width: 14px; } "
         "QCheckBox { color: white; } "
-        "QGroupBox { color: white; border: 1px solid rgba(255, 255, 255, 50); } "
+        "QGroupBox { color: white; border: 1px solid rgba(255, 255, 255, 50); background-color: transparent; } "
         "QGroupBox::title { color: white; }"
     );
+    
+    // 배경색 강제 적용
+    setAutoFillBackground(true);
+    QPalette pal = palette();
+    pal.setColor(QPalette::Window, QColor(50, 50, 50));
+    pal.setColor(QPalette::WindowText, Qt::white);
+    setPalette(pal);
+    
     setupUI();
 }
 

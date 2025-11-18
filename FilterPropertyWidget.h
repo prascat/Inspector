@@ -11,6 +11,7 @@
 #include <QHBoxLayout>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QPalette>
 #include "CommonDefs.h"
 
 class FilterPropertyWidget : public QWidget {
