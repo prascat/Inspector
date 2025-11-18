@@ -8,9 +8,11 @@
 #include <QLabel>
 #include <QDebug>
 #include <QMouseEvent>
+#include <QApplication>
+#include <QScreen>
 
 FilterDialog::FilterDialog(CameraView* cameraView, int patternIndex, QWidget* parent)
-    : QDialog(parent), cameraView(cameraView), patternIndex(-1), dragging(false)
+    : QWidget(parent), cameraView(cameraView), patternIndex(-1), dragging(false)
 {
     filterTypes = FILTER_TYPE_LIST;
     for (int filterType : filterTypes) {
@@ -19,16 +21,26 @@ FilterDialog::FilterDialog(CameraView* cameraView, int patternIndex, QWidget* pa
     }
 
     setWindowTitle("필터 관리");
-    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
     setAttribute(Qt::WA_TranslucentBackground);
     setMinimumSize(700, 500);
 
     setupUI();
     setPatternIndex(patternIndex);
     
-    // 부모 위젯 중앙에 배치
+    // 부모 위젯 또는 화면 중앙에 배치
     if (parent) {
-        move(parent->geometry().center() - rect().center());
+        // 부모 위젯의 중앙에 배치
+        QRect parentGeometry = parent->geometry();
+        int x = parentGeometry.x() + (parentGeometry.width() - width()) / 2;
+        int y = parentGeometry.y() + (parentGeometry.height() - height()) / 2;
+        move(x, y);
+    } else {
+        // 부모가 없으면 화면 중앙에 배치
+        QRect screenGeometry = QApplication::primaryScreen()->geometry();
+        int x = (screenGeometry.width() - width()) / 2;
+        int y = (screenGeometry.height() - height()) / 2;
+        move(x, y);
     }
 }
 
@@ -142,8 +154,10 @@ void FilterDialog::addFilterWidget(int filterType, QGroupBox* groupBox) {
     propertyWidget->setParams(params);
     
     // 그룹박스 체크 상태 변경 시 필터 적용
-    connect(groupBox, &QGroupBox::toggled, this, [this, filterType, propertyWidget](bool checked) {
+    connect(groupBox, &QGroupBox::toggled, this, [this, filterType, propertyWidget, groupBox](bool checked) {
+        qDebug() << "[필터 토글]" << filterType << "checked:" << checked;
         // 프로퍼티 위젯 활성화/비활성화는 그룹박스가 자동 처리
+        propertyWidget->setEnabled(checked);
         onFilterCheckStateChanged(checked ? Qt::Checked : Qt::Unchecked);
     });
     groupBox->setProperty("filterType", filterType);
@@ -171,8 +185,11 @@ void FilterDialog::onFilterCheckStateChanged(int state) {
         return;
     }
     
+    qDebug() << "[onFilterCheckStateChanged] filterType:" << filterType << "checked:" << checked << "patternId:" << patternId;
+    
     // 패턴 ID가 설정되어 있는지 확인
     if (patternId.isNull()) {
+        qDebug() << "[onFilterCheckStateChanged] patternId is null, returning";
         return;
     }
     
@@ -186,11 +203,14 @@ void FilterDialog::onFilterCheckStateChanged(int state) {
         }
     }
     
+    qDebug() << "[onFilterCheckStateChanged] existingFilterIndex:" << existingFilterIndex;
+    
     if (checked) {
         // 체크 시 필터 추가 또는 활성화
         if (existingFilterIndex >= 0) {
             // 기존 필터 활성화
             cameraView->setPatternFilterEnabled(patternId, existingFilterIndex, true);
+            qDebug() << "[onFilterCheckStateChanged] 기존 필터 활성화:" << existingFilterIndex;
             
             // 실시간 미리보기를 위해 필터 선택 상태 설정
             if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
@@ -200,6 +220,7 @@ void FilterDialog::onFilterCheckStateChanged(int state) {
             // 새 필터 추가
             cameraView->addPatternFilter(patternId, filterType);
             int newFilterIndex = cameraView->getPatternFilters(patternId).size() - 1;
+            qDebug() << "[onFilterCheckStateChanged] 새 필터 추가:" << newFilterIndex;
             
             // 현재 UI의 파라미터 값으로 설정
             QMap<QString, int> params = filterWidgets[filterType]->getParams();
@@ -247,6 +268,7 @@ void FilterDialog::onFilterCheckStateChanged(int state) {
         // 체크 해제 시 필터 비활성화
         if (existingFilterIndex >= 0) {
             cameraView->setPatternFilterEnabled(patternId, existingFilterIndex, false);
+            qDebug() << "[onFilterCheckStateChanged] 필터 비활성화:" << existingFilterIndex;
             
             // FILTER_MASK 타입 필터가 비활성화된 경우 겹치는 INS 패턴들의 템플릿 이미지 갱신
             if (filterType == FILTER_MASK) {
@@ -418,9 +440,13 @@ void FilterDialog::updateUIFromFilters() {
         
         // GroupBox인 경우
         if (QGroupBox* groupBox = qobject_cast<QGroupBox*>(checkboxWidget)) {
+            groupBox->blockSignals(true);
             groupBox->setChecked(checked);
+            groupBox->blockSignals(false);
         } else if (QCheckBox* checkbox = qobject_cast<QCheckBox*>(checkboxWidget)) {
+            checkbox->blockSignals(true);
             checkbox->setChecked(checked);
+            checkbox->blockSignals(false);
         }
         
         printf("[updateUIFromFilters] Checkbox set complete\n");
@@ -696,7 +722,7 @@ void FilterDialog::onCancelClicked() {
         }
     }
     
-    reject();
+    close();
 }
 
 void FilterDialog::onApplyClicked() {
@@ -921,46 +947,55 @@ void FilterDialog::onApplyClicked() {
         parentWidget->updateCameraFrame();
     }
     
-    
-    accept();
+    close();
 }
 
 void FilterDialog::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
-        // mainWidget 영역 체크
-        QWidget* mainWidget = findChild<QWidget*>("mainWidget");
-        if (mainWidget) {
-            QPoint localPos = mainWidget->mapFrom(this, event->pos());
-            if (mainWidget->rect().contains(localPos)) {
-                // mainWidget 내부의 자식 위젯 확인
-                QWidget* childWidget = mainWidget->childAt(localPos);
-                // 자식 위젯이 없거나 스크롤 영역/레이블 등 드래그 가능한 영역인 경우
-                if (!childWidget || 
-                    qobject_cast<QLabel*>(childWidget) ||
-                    childWidget->objectName() == "qt_scrollarea_viewport") {
-                    dragging = true;
-                    dragPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
-                    event->accept();
-                    return;
-                }
-            }
-        }
+        dragging = true;
+        dragPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
+        event->accept();
     }
-    QDialog::mousePressEvent(event);
+    QWidget::mousePressEvent(event);
 }
 
 void FilterDialog::mouseMoveEvent(QMouseEvent* event) {
     if (dragging && (event->buttons() & Qt::LeftButton)) {
-        move(event->globalPosition().toPoint() - dragPosition);
+        QPoint newPos = event->globalPosition().toPoint() - dragPosition;
+        move(newPos);
         event->accept();
-        return;
     }
-    QDialog::mouseMoveEvent(event);
+    QWidget::mouseMoveEvent(event);
 }
 
 void FilterDialog::mouseReleaseEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
         dragging = false;
     }
-    QDialog::mouseReleaseEvent(event);
+    QWidget::mouseReleaseEvent(event);
+}
+
+void FilterDialog::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    
+    // 첫 표시 시에만 중앙에 배치
+    static bool firstShow = true;
+    if (firstShow) {
+        firstShow = false;
+        
+        QWidget* parent = parentWidget();
+        if (parent && parent->isVisible()) {
+            // 부모 위젯의 중앙에 배치
+            QRect parentGeometry = parent->geometry();
+            int x = parentGeometry.x() + (parentGeometry.width() - width()) / 2;
+            int y = parentGeometry.y() + (parentGeometry.height() - height()) / 2;
+            move(x, y);
+        } else {
+            // 부모가 없거나 보이지 않으면 화면 중앙에 배치
+            QRect screenGeometry = QApplication::primaryScreen()->geometry();
+            int x = (screenGeometry.width() - width()) / 2;
+            int y = (screenGeometry.height() - height()) / 2;
+            move(x, y);
+        }
+    }
 }

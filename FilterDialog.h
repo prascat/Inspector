@@ -1,7 +1,7 @@
 #ifndef FILTERDIALOG_H
 #define FILTERDIALOG_H
 
-#include <QDialog>
+#include <QWidget>
 #include <QMap>
 #include <QVector>
 #include <QCheckBox>
@@ -14,13 +14,14 @@
 #include "ImageProcessor.h"
 #include "FilterPropertyWidget.h"
 
-class FilterDialog : public QDialog {
+class FilterDialog : public QWidget {
     Q_OBJECT
 
 public:
     FilterDialog(CameraView* cameraView, int patternIndex, QWidget* parent = nullptr);
     void setPatternIndex(int index);
     void setPatternId(const QUuid& id);
+    int exec() { show(); return 0; }  // QDialog 호환성
     
 private slots:
     void onCancelClicked();
@@ -59,6 +60,7 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void showEvent(QShowEvent* event) override;
 };
 
 #endif // FILTERDIALOG_H

@@ -118,8 +118,17 @@ void ClientDialog::setupUI()
     QGroupBox* statusGroup = new QGroupBox("연결 상태", this);
     QVBoxLayout* statusLayout = new QVBoxLayout();
     
-    connectionStatusLabel = new QLabel("미연결", this);
-    connectionStatusLabel->setStyleSheet("QLabel { padding: 10px; background-color: #f0f0f0; border-radius: 5px; }");
+    connectionStatusLabel = new QLabel("✗ 연결 안됨", this);
+    connectionStatusLabel->setStyleSheet(
+        "QLabel { "
+        "padding: 10px; "
+        "background-color: #f8d7da; "
+        "border: 1px solid #f5c6cb; "
+        "border-radius: 5px; "
+        "color: #721c24; "
+        "font-weight: bold; "
+        "}"
+    );
     statusLayout->addWidget(connectionStatusLabel);
     
     statusLabel = new QLabel("", this);
@@ -346,9 +355,36 @@ void ClientDialog::updateConnectionStatus()
     // 주기적으로 연결 상태 확인
     if (testSocket->state() == QAbstractSocket::ConnectedState && !isConnected) {
         isConnected = true;
+        // 연결됨 상태 표시
+        connectionStatusLabel->setText("✓ 연결됨");
+        connectionStatusLabel->setStyleSheet(
+            "QLabel { "
+            "padding: 10px; "
+            "background-color: #d4edda; "
+            "border: 1px solid #28a745; "
+            "border-radius: 5px; "
+            "color: #155724; "
+            "font-weight: bold; "
+            "}"
+        );
     } else if (testSocket->state() != QAbstractSocket::ConnectedState && isConnected) {
         isConnected = false;
         onSocketDisconnected();
+    }
+    
+    // 연결되지 않은 경우 상태 표시
+    if (!isConnected && connectionStatusLabel->text() != "✗ 연결 안됨") {
+        connectionStatusLabel->setText("✗ 연결 안됨");
+        connectionStatusLabel->setStyleSheet(
+            "QLabel { "
+            "padding: 10px; "
+            "background-color: #f8d7da; "
+            "border: 1px solid #f5c6cb; "
+            "border-radius: 5px; "
+            "color: #721c24; "
+            "font-weight: bold; "
+            "}"
+        );
     }
 }
 

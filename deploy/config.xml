@@ -2,11 +2,11 @@
 <Config>
     <Language>ko</Language>
     <AutoSave>true</AutoSave>
-    <LastRecipePath>20251114_103007_145</LastRecipePath>
+    <LastRecipePath>20251118_165730_353</LastRecipePath>
     <SerialPort>사용 가능한 포트 없음</SerialPort>
     <SerialBaudRate>115200</SerialBaudRate>
-    <ServerIp>127.0.0.1</ServerIp>
+    <ServerIp>192.168.5.2</ServerIp>
     <ServerPort>5000</ServerPort>
-    <AutoConnect>false</AutoConnect>
-    <ReconnectInterval>10</ReconnectInterval>
+    <AutoConnect>true</AutoConnect>
+    <ReconnectInterval>3</ReconnectInterval>
 </Config>

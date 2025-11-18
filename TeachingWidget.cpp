@@ -10501,23 +10501,13 @@ void TeachingWidget::addFilter() {
     // 필터 대화상자 설정
     filterDialog->setPatternId(patternId);
     
-    // 기존 연결 해제
-    filterDialog->disconnect(SIGNAL(accepted()));
-    
-    // 필터 대화상자가 완료되면 트리 아이템 업데이트
-    connect(filterDialog, &QDialog::accepted, this, [this, patternId]() {
-        
-        // 트리 아이템 업데이트
-        updatePatternTree();
-        
-        // 카메라 뷰 업데이트
-        updateCameraFrame();
-        
-        // 모든 패턴의 템플릿 이미지 갱신
-        updateAllPatternTemplateImages();
-    });
-    
+    // 필터 대화상자 실행
     filterDialog->exec();
+    
+    // 필터 대화상자가 종료되면 트리 아이템 업데이트
+    updatePatternTree();
+    updateCameraFrame();
+    updateAllPatternTemplateImages();
 }
 
 void TeachingWidget::addPattern() {
@@ -10738,20 +10728,12 @@ void TeachingWidget::addPattern() {
         // 필터 대화상자 설정
         filterDialog->setPatternId(patternId);
         
-        // 기존 연결 해제
-        filterDialog->disconnect(SIGNAL(accepted()));
-        
-        // 필터 대화상자가 완료되면 트리 아이템 업데이트
-        connect(filterDialog, &QDialog::accepted, this, [this, patternId]() {
-            
-            // 트리 아이템 업데이트
-            updatePatternTree();
-            
-            // 카메라 뷰 업데이트
-            updateCameraFrame();
-        });
-        
+        // 필터 대화상자 실행
         filterDialog->exec();
+        
+        // 필터 대화상자가 종료되면 트리 아이템 업데이트
+        updatePatternTree();
+        updateCameraFrame();
     } else {
         // 선택된 아이템도 없고 그려진 사각형도 없으면 안내 메시지
         if (!selectedItem && !hasDrawnRect) {
@@ -11844,7 +11826,8 @@ void TeachingWidget::loadTeachingImage() {
         QString("%1 모드 티칭 이미지로 바꾸시겠습니까?").arg(modeName));
     confirmBox.setButtons(QMessageBox::Yes | QMessageBox::No);
     
-    if (confirmBox.exec() != QDialog::Accepted) {
+    int reply = confirmBox.exec();
+    if (reply != QMessageBox::Yes) {
         return;
     }
     
@@ -11878,6 +11861,19 @@ void TeachingWidget::loadTeachingImage() {
         cameraFrames.resize(cameraIndex + 1);
     }
     cameraFrames[cameraIndex] = loadedImage.clone();
+    
+    // 카메라 정보가 없으면 기본 카메라 정보 생성
+    if (cameraInfos.isEmpty()) {
+        // 이미지 파일명에서 확장자를 제외한 부분을 카메라 이름으로 사용
+        QFileInfo fileInfo(imageFile);
+        QString cameraName = fileInfo.baseName();  // 확장자를 제외한 파일명
+        
+        CameraInfo defaultCamera;
+        defaultCamera.name = cameraName;
+        defaultCamera.uniqueId = QUuid::createUuid().toString();
+        cameraInfos.append(defaultCamera);
+        cameraIndex = 0;
+    }
     
     // 화면에 표시
     cameraView->setBackgroundImage(pixmap);
