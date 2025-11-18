@@ -9709,10 +9709,10 @@ void TeachingWidget::setStripCrimpMode(int mode) {
     if (cameraView) {
         QList<PatternInfo> allPatterns = cameraView->getPatterns();
         for (PatternInfo& pattern : allPatterns) {
-            // 현재 모드와 일치하는 패턴만 활성화
-            pattern.enabled = (pattern.stripCrimpMode == mode);
+            // UI 필터링: 현재 모드와 일치하는 패턴만 표시
+            // 하지만 enabled 상태는 변경하지 않음 (저장 시 원본 상태 유지)
+            // pattern.enabled는 사용자가 설정한 활성화 상태 유지
         }
-        cameraView->getPatterns() = allPatterns;
         cameraView->update();
     }
     

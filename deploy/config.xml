@@ -2,7 +2,7 @@
 <Config>
     <Language>ko</Language>
     <AutoSave>true</AutoSave>
-    <LastRecipePath>20251118_165730_353</LastRecipePath>
+    <LastRecipePath>20251114_183114_522</LastRecipePath>
     <SerialPort>사용 가능한 포트 없음</SerialPort>
     <SerialBaudRate>115200</SerialBaudRate>
     <ServerIp>192.168.5.2</ServerIp>
