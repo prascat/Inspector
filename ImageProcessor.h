@@ -81,7 +81,9 @@ public:
                                      std::vector<cv::Point>* rearThicknessPoints = nullptr,
                                      std::vector<cv::Point>* frontBlackRegionPoints = nullptr,
                                      std::vector<cv::Point>* rearBlackRegionPoints = nullptr,
-                                     double* stripMeasuredLengthPx = nullptr);
+                                     double* stripMeasuredLengthPx = nullptr,
+                                     cv::Point* frontBoxCenter = nullptr, cv::Size* frontBoxSize = nullptr,
+                                     cv::Point* rearBoxCenter = nullptr, cv::Size* rearBoxSize = nullptr);
     
     // CRIMP SHAPE 검사 관련 함수
     static bool performShapeMatching(const cv::Mat& roiImage, const cv::Mat& templateImage,

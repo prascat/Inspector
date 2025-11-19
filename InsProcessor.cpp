@@ -461,7 +461,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                 {
                     // 디버그: STRIP 검사 직전 각도 확인
                     
-                    inspPassed = checkStrip(image, adjustedPattern, inspScore, result);
+                    inspPassed = checkStrip(image, adjustedPattern, inspScore, result, patterns);
 
                     break;
                 }
@@ -1855,76 +1855,56 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
     double width = rectF.width();
     double height = rectF.height();
     
-    cv::Mat templateRegion;
     int extractW = static_cast<int>(width);
     int extractH = static_cast<int>(height);
-    int startX = 0;
-    int startY = 0;
     
-    // 회전이 있는 경우: 전체 사각형 추출
-    if (std::abs(pattern.angle) > 0.1) {
-        double angleRad = pattern.angle * M_PI / 180.0;
-        double rotatedWidth = std::abs(width * cos(angleRad)) + std::abs(height * sin(angleRad));
-        double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
-        
-        int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
-        int halfSize = squareSize / 2;
-        
-        cv::Rect squareRoi(
-            static_cast<int>(center.x) - halfSize,
-            static_cast<int>(center.y) - halfSize,
-            squareSize, squareSize
-        );
-        
-        cv::Rect imageBounds(0, 0, image.cols, image.rows);
-        cv::Rect validRoi = squareRoi & imageBounds;
-        
-        if (validRoi.width <= 0 || validRoi.height <= 0) {
-            logDebug(QString("엣지 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
-            score = 0.0;
-            return false;
-        }
-        
-        templateRegion = cv::Mat::zeros(squareSize, squareSize, image.type());
-        int offsetX = validRoi.x - squareRoi.x;
-        int offsetY = validRoi.y - squareRoi.y;
-        cv::Mat validImage = image(validRoi);
-        cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
-        validImage.copyTo(templateRegion(resultRect));
-        
-        startX = (templateRegion.cols - extractW) / 2;
-        startY = (templateRegion.rows - extractH) / 2;
-        
-        startX = std::max(0, std::min(startX, templateRegion.cols - extractW));
-        startY = std::max(0, std::min(startY, templateRegion.rows - extractH));
-        
-        if (startX < 0 || startY < 0 || startX + extractW > templateRegion.cols || 
-            startY + extractH > templateRegion.rows) {
-            logDebug(QString("엣지 검사 실패: 추출 범위 초과 - 패턴 '%1'").arg(pattern.name));
-            score = 0.0;
-            return false;
-        }
-    } else {
-        // 회전 없는 경우: INS 영역만 직접 추출
-        cv::Rect insRoi(
-            static_cast<int>(rectF.x()),
-            static_cast<int>(rectF.y()),
-            extractW,
-            extractH
-        );
-        
-        cv::Rect imageBounds(0, 0, image.cols, image.rows);
-        cv::Rect validRoi = insRoi & imageBounds;
-        
-        if (validRoi.width <= 0 || validRoi.height <= 0) {
-            logDebug(QString("엣지 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
-            score = 0.0;
-            return false;
-        }
-        
-        templateRegion = image(validRoi).clone();
-        startX = 0;
-        startY = 0;
+    // 회전 각도에 따른 bounding box 크기 계산 (회전 없으면 원본 크기)
+    double angleRad = pattern.angle * M_PI / 180.0;
+    double rotatedWidth = std::abs(width * cos(angleRad)) + std::abs(height * sin(angleRad));
+    double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
+    
+    // bounding box 크기 (티칭과 동일하게 여유 10픽셀 추가)
+    int bboxWidth = static_cast<int>(rotatedWidth) + 10;
+    int bboxHeight = static_cast<int>(rotatedHeight) + 10;
+    
+    cv::Rect bboxRoi(
+        static_cast<int>(center.x - bboxWidth/2.0),
+        static_cast<int>(center.y - bboxHeight/2.0),
+        bboxWidth,
+        bboxHeight
+    );
+    
+    cv::Rect imageBounds(0, 0, image.cols, image.rows);
+    cv::Rect validRoi = bboxRoi & imageBounds;
+    
+    if (validRoi.width <= 0 || validRoi.height <= 0) {
+        logDebug(QString("엣지 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
+        score = 0.0;
+        return false;
+    }
+    
+    // bounding box 크기의 빈 이미지 생성
+    cv::Mat templateRegion = cv::Mat::zeros(bboxHeight, bboxWidth, image.type());
+    
+    // 유효한 영역만 복사
+    int offsetX = validRoi.x - bboxRoi.x;
+    int offsetY = validRoi.y - bboxRoi.y;
+    cv::Mat validImage = image(validRoi);
+    cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
+    validImage.copyTo(templateRegion(resultRect));
+    
+    // INS 영역 추출 위치 계산 (중앙)
+    int startX = (templateRegion.cols - extractW) / 2;
+    int startY = (templateRegion.rows - extractH) / 2;
+    
+    startX = std::max(0, std::min(startX, templateRegion.cols - extractW));
+    startY = std::max(0, std::min(startY, templateRegion.rows - extractH));
+    
+    if (startX < 0 || startY < 0 || startX + extractW > templateRegion.cols || 
+        startY + extractH > templateRegion.rows) {
+        logDebug(QString("엣지 검사 실패: 추출 범위 초과 - 패턴 '%1'").arg(pattern.name));
+        score = 0.0;
+        return false;
     }
     
     // ===== 1. 전체 영역에 필터 순차 적용 =====
@@ -2009,9 +1989,8 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
         cv::Mat templateEdges;
         cv::Canny(templateGray, templateEdges, threshold1, threshold2);
         
-        // INS 영역만 추출 (비교용)
-        cv::Rect extractROI(startX, startY, extractW, extractH);
-        cv::Mat edges = fullEdges(extractROI).clone();
+        // 전체 영역을 비교 (티칭과 동일하게 bboxWidth x bboxHeight)
+        cv::Mat edges = fullEdges.clone();
         
         // 엣지 좌표 추출
         std::vector<cv::Point> edgePoints, templateEdgePoints;
@@ -2021,6 +2000,11 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
                 if (edges.at<uchar>(y, x) > 0) {
                     edgePoints.push_back(cv::Point(x, y));
                 }
+            }
+        }
+        
+        for (int y = 0; y < templateEdges.rows; y++) {
+            for (int x = 0; x < templateEdges.cols; x++) {
                 if (templateEdges.at<uchar>(y, x) > 0) {
                     templateEdgePoints.push_back(cv::Point(x, y));
                 }
@@ -2106,16 +2090,8 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
         result.insProcessedImages[pattern.id] = fullEdges;  // 전체 영역 저장
         result.insMethodTypes[pattern.id] = InspectionMethod::EDGE;
         
-        // diff mask 생성 (회전 여부에 따라 다르게)
-        if (std::abs(pattern.angle) > 0.1) {
-            // 회전 있음: 전체 영역으로 생성 (INS 영역 위치에 diffEdges 배치)
-            cv::Mat fullDiffMask = cv::Mat::zeros(fullEdges.size(), CV_8UC1);
-            diffEdges.copyTo(fullDiffMask(extractROI));
-            result.edgeDiffMask[pattern.id] = fullDiffMask;
-        } else {
-            // 회전 없음: diffEdges 그대로 저장 (이미 INS 영역 크기)
-            result.edgeDiffMask[pattern.id] = diffEdges.clone();
-        }
+        // diff mask는 전체 크기로 저장 (티칭과 검사 모두 bboxWidth x bboxHeight)
+        result.edgeDiffMask[pattern.id] = diffEdges.clone();
         
         // 디버그 출력
         logDebug(QString("엣지 검사 결과 - 패턴: '%1', 유사도: %2, XOR 점수: %3, Chamfer 점수: %4, 임계값: %5, 결과: %6")
@@ -2167,25 +2143,16 @@ cv::Mat InsProcessor::extractROI(const cv::Mat& image, const QRectF& rect, doubl
         double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
         double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
         
-        // 정사각형 크기는 회전된 경계 상자 중 더 큰 값 (padding 제거로 정확한 크기)
-        int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
+        // bounding box 크기 (티칭과 동일하게 여유 10픽셀 추가)
+        int bboxWidth = static_cast<int>(rotatedWidth) + 10;
+        int bboxHeight = static_cast<int>(rotatedHeight) + 10;
         
-
-        
-
-
-
-
-
-
-        
-        // 정사각형 ROI 영역 계산 (중심점 기준)
-        int halfSize = maxSize / 2;
-        cv::Rect squareRoi(
-            static_cast<int>(std::round(center.x)) - halfSize,  // 반올림 사용
-            static_cast<int>(std::round(center.y)) - halfSize,  // 반올림 사용
-            maxSize,
-            maxSize
+        // bounding box ROI 영역 계산 (중심점 기준)
+        cv::Rect bboxRoi(
+            static_cast<int>(std::round(center.x - bboxWidth/2.0)),
+            static_cast<int>(std::round(center.y - bboxHeight/2.0)),
+            bboxWidth,
+            bboxHeight
         );
         
 
@@ -2193,25 +2160,25 @@ cv::Mat InsProcessor::extractROI(const cv::Mat& image, const QRectF& rect, doubl
         
         // 이미지 경계와 교집합 구하기
         cv::Rect imageBounds(0, 0, image.cols, image.rows);
-        cv::Rect validRoi = squareRoi & imageBounds;
+        cv::Rect validRoi = bboxRoi & imageBounds;
         
         if (validRoi.width > 0 && validRoi.height > 0) {
-            // 정사각형 결과 이미지 생성 (검은색 배경 - 티칭과 동일)
-            roiMat = cv::Mat::zeros(maxSize, maxSize, image.type());
+            // bounding box 결과 이미지 생성 (검은색 배경 - 티칭과 동일)
+            roiMat = cv::Mat::zeros(bboxHeight, bboxWidth, image.type());
             
             // 유효한 영역만 복사
-            int offsetX = validRoi.x - squareRoi.x;
-            int offsetY = validRoi.y - squareRoi.y;
+            int offsetX = validRoi.x - bboxRoi.x;
+            int offsetY = validRoi.y - bboxRoi.y;
             
             cv::Mat validImage = image(validRoi);
             cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
             validImage.copyTo(roiMat(resultRect));
             
             // 패턴 영역 외부 마스킹 (패턴 영역만 보이도록)
-            cv::Mat mask = cv::Mat::zeros(maxSize, maxSize, CV_8UC1);
+            cv::Mat mask = cv::Mat::zeros(bboxHeight, bboxWidth, CV_8UC1);
             
             // ROI 내에서 패턴의 실제 위치 계산 (중앙 배치 대신 원래 위치 유지)
-            cv::Point2f patternCenter(center.x - squareRoi.x, center.y - squareRoi.y);
+            cv::Point2f patternCenter(center.x - bboxRoi.x, center.y - bboxRoi.y);
             cv::Size2f patternSize(rect.width(), rect.height());
             
             if (std::abs(angle) > 0.1) {
@@ -2292,113 +2259,32 @@ QImage InsProcessor::matToQImage(const cv::Mat& mat) {
     }
 }
 
-bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result) {
+bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result, const QList<PatternInfo>& patterns) {
     try {
-        // 필터 적용된 원본 이미지 준비
-        cv::Mat filteredImage = image.clone();
-        
-        // 필터가 있고 회전이 있는 경우
-        if (!pattern.filters.isEmpty() && std::abs(pattern.angle) > 0.1) {
-            cv::Point2f center(pattern.rect.x() + pattern.rect.width()/2.0f, 
-                             pattern.rect.y() + pattern.rect.height()/2.0f);
-            
-            // 1. 회전된 사각형 마스크 생성
-            cv::Mat mask = cv::Mat::zeros(image.size(), CV_8UC1);
-            cv::Size2f patternSize(pattern.rect.width(), pattern.rect.height());
-            
-            cv::Point2f vertices[4];
-            cv::RotatedRect rotatedRect(center, patternSize, pattern.angle);
-            rotatedRect.points(vertices);
-            
-            std::vector<cv::Point> points;
-            for (int i = 0; i < 4; i++) {
-                points.push_back(cv::Point(static_cast<int>(std::round(vertices[i].x)), 
-                                         static_cast<int>(std::round(vertices[i].y))));
-            }
-            cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{points}, cv::Scalar(255));
-            
-            // 2. 마스크 영역만 복사한 이미지 생성 (필터 적용용)
-            cv::Mat maskedImage = cv::Mat::zeros(image.size(), image.type());
-            image.copyTo(maskedImage, mask);
-            
-            // 3. 회전된 사각형을 감싸는 최대 사각형 계산
-            double angleRad = std::abs(pattern.angle) * M_PI / 180.0;
-            double width = pattern.rect.width();
-            double height = pattern.rect.height();
-            
-            double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
-            double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
-            
-            int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
-            int halfSize = maxSize / 2;
-            
-            cv::Rect expandedRoi(
-                qBound(0, static_cast<int>(center.x) - halfSize, image.cols - 1),
-                qBound(0, static_cast<int>(center.y) - halfSize, image.rows - 1),
-                qBound(1, maxSize, image.cols - (static_cast<int>(center.x) - halfSize)),
-                qBound(1, maxSize, image.rows - (static_cast<int>(center.y) - halfSize))
-            );
-            
-            // 4. 확장된 영역에 필터 적용
-            if (expandedRoi.width > 0 && expandedRoi.height > 0 && 
-                expandedRoi.x + expandedRoi.width <= maskedImage.cols && 
-                expandedRoi.y + expandedRoi.height <= maskedImage.rows) {
-                
-                cv::Mat roiMat = maskedImage(expandedRoi);
-                ImageProcessor processor;
-                for (const FilterInfo& filter : pattern.filters) {
-                    if (filter.enabled) {
-                        cv::Mat nextFiltered;
-                        processor.applyFilter(roiMat, nextFiltered, filter);
-                        if (!nextFiltered.empty() && nextFiltered.size() == roiMat.size()) {
-                            nextFiltered.copyTo(roiMat);
-                        } else if (!nextFiltered.empty()) {
-                            roiMat = nextFiltered.clone();
-                        }
-                    }
-                }
-            }
-            
-            // 5. 마스크 영역만 필터 적용된 결과로 교체, 나머지는 원본 유지
-            maskedImage.copyTo(filteredImage, mask);
-            
-        } else if (!pattern.filters.isEmpty()) {
-            // 회전 없는 경우: rect 영역에만 필터 적용
-            logDebug(QString("원본 이미지의 사각형 영역에 %1개 필터 적용").arg(pattern.filters.size()));
-            
-            cv::Rect roi(
-                qBound(0, static_cast<int>(pattern.rect.x()), image.cols - 1),
-                qBound(0, static_cast<int>(pattern.rect.y()), image.rows - 1),
-                qBound(1, static_cast<int>(pattern.rect.width()), image.cols - static_cast<int>(pattern.rect.x())),
-                qBound(1, static_cast<int>(pattern.rect.height()), image.rows - static_cast<int>(pattern.rect.y()))
-            );
-            
-            if (roi.width > 0 && roi.height > 0 && 
-                roi.x + roi.width <= image.cols && roi.y + roi.height <= image.rows) {
-                
-                cv::Mat roiMat = filteredImage(roi);
-                ImageProcessor processor;
-                for (const FilterInfo& filter : pattern.filters) {
-                    if (filter.enabled) {
-                        cv::Mat nextFiltered;
-                        processor.applyFilter(roiMat, nextFiltered, filter);
-                        if (!nextFiltered.empty() && nextFiltered.size() == roiMat.size()) {
-                            nextFiltered.copyTo(roiMat);
-                        } else if (!nextFiltered.empty()) {
-                            roiMat = nextFiltered.clone();
-                        }
-                    }
-                }
-            }
-        }
-        
-        // 필터 적용된 이미지에서 ROI 영역 추출
-        cv::Mat roiImage = extractROI(filteredImage, pattern.rect, pattern.angle);
+        // ROI 영역 추출 (회전 고려)
+        cv::Mat roiImage = extractROI(image, pattern.rect, pattern.angle);
         if (roiImage.empty()) {
             logDebug(QString("STRIP 길이 검사 실패: ROI 추출 실패 - %1").arg(pattern.name));
             score = 0.0;
             result.insMethodTypes[pattern.id] = InspectionMethod::STRIP;
             return false;
+        }
+        
+        // 추출한 ROI 전체에 필터 적용
+        if (!pattern.filters.isEmpty()) {
+            logDebug(QString("STRIP ROI(%1x%2)에 %3개 필터 순차 적용")
+                    .arg(roiImage.cols).arg(roiImage.rows).arg(pattern.filters.size()));
+            
+            ImageProcessor processor;
+            for (const FilterInfo& filter : pattern.filters) {
+                if (filter.enabled) {
+                    cv::Mat nextFiltered;
+                    processor.applyFilter(roiImage, nextFiltered, filter);
+                    if (!nextFiltered.empty()) {
+                        roiImage = nextFiltered.clone();
+                    }
+                }
+            }
         }
         
         // 템플릿 이미지 로드 (패턴에 저장된 템플릿 이미지 사용)
@@ -2452,6 +2338,8 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                 
     // performStripInspection 호출을 간소화: PatternInfo 전체를 전달
     std::vector<cv::Point> frontBlackRegionPoints, rearBlackRegionPoints; // 검은색 구간 포인트 (빨간색 표시용)
+    cv::Point frontBoxCenterROI, rearBoxCenterROI;  // ROI 좌표계의 박스 중심
+    cv::Size frontBoxSz, rearBoxSz;  // 박스 크기
     
     bool isPassed = ImageProcessor::performStripInspection(roiImage, templateImage,
                                   pattern,
@@ -2459,7 +2347,9 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                                   &stripLengthPassed, &stripMeasuredLength, &stripLengthStartPoint, &stripLengthEndPoint,
                                   &frontThicknessPoints, &rearThicknessPoints,
                                   &frontBlackRegionPoints, &rearBlackRegionPoints,
-                                  &stripMeasuredLengthPx);
+                                  &stripMeasuredLengthPx,
+                                  &frontBoxCenterROI, &frontBoxSz,
+                                  &rearBoxCenterROI, &rearBoxSz);
     
     // FRONT 두께 통계 계산 (ImageProcessor에서 받은 픽셀 데이터로부터)
     if (!frontThicknessPoints.empty()) {
@@ -2489,39 +2379,35 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         rearMeasuredAvgThickness = sum / static_cast<int>(thicknesses.size());
     }
     
-    // 픽셀을 mm로 변환 (두께 전용 calibration 필요)
-    // 실제 두께를 버니어 캘리퍼스로 측정한 값과 픽셀값을 비교하여 calibration
-    // 예: 실제 1.38mm = 55px → 1px = 1.38/55 = 0.0251mm
-    // 우선은 strip length calibration을 임시로 사용 (나중에 별도 calibration 추가 필요)
     double thicknessPixelToMm = pattern.stripLengthConversionMm / pattern.stripLengthCalibrationPx;
     
     // ROI 좌표를 원본 이미지 좌표로 변환 (extractROI와 정확히 동일한 방식으로 계산)
     cv::Point2f patternCenter(pattern.rect.x() + pattern.rect.width()/2.0f, 
                             pattern.rect.y() + pattern.rect.height()/2.0f);
     
-    // extractROI와 동일한 maxSize 계산
+    // extractROI와 동일한 bounding box 크기 계산
     double angleRad = std::abs(pattern.angle) * M_PI / 180.0;
     double width = pattern.rect.width();
     double height = pattern.rect.height();
     double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
     double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
-    int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
     
-    // extractROI와 정확히 동일한 squareRoi 계산 (소수점 처리도 동일하게)
-    int halfSize = maxSize / 2;
+    // bounding box 크기 (extractROI와 동일하게 여유 10픽셀 추가)
+    int bboxWidth = static_cast<int>(rotatedWidth) + 10;
+    int bboxHeight = static_cast<int>(rotatedHeight) + 10;
     
-    // extractROI와 동일한 center 계산 방식
+    // extractROI와 정확히 동일한 bboxRoi 계산
     cv::Point2f center(pattern.rect.x() + pattern.rect.width()/2.0f, 
                       pattern.rect.y() + pattern.rect.height()/2.0f);
     
-    cv::Rect squareRoi(
-        static_cast<int>(std::round(center.x)) - halfSize,    // extractROI와 정확히 동일 (round 사용)
-        static_cast<int>(std::round(center.y)) - halfSize,    // extractROI와 정확히 동일 (round 사용)
-        maxSize,
-        maxSize
+    cv::Rect bboxRoi(
+        static_cast<int>(std::round(center.x - bboxWidth/2.0)),
+        static_cast<int>(std::round(center.y - bboxHeight/2.0)),
+        bboxWidth,
+        bboxHeight
     );
     
-    cv::Point2f offset(squareRoi.x, squareRoi.y);
+    cv::Point2f offset(bboxRoi.x, bboxRoi.y);
     
     // FRONT/REAR 포인트: 패턴 상대좌표로 변환하여 저장 (각도 적용)
     // 패턴 중심점 (절대좌표)
@@ -2656,6 +2542,37 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     result.stripLengthResults[pattern.id] = stripLengthPassed;
     result.stripMeasuredLength[pattern.id] = stripMeasuredLength;
     result.stripMeasuredLengthPx[pattern.id] = stripMeasuredLengthPx;  // 픽셀 원본값 저장
+    
+    // STRIP 박스 정보 저장 (ROI 좌표를 scene 좌표로 변환)
+    // ImageProcessor에서 반환된 boxCenter는 ROI 이미지 절대 좌표
+    // transformPatternPoints와 동일한 방식으로 scene 좌표로 변환
+    std::vector<cv::Point> frontBoxCenterVec = { frontBoxCenterROI };
+    std::vector<cv::Point> rearBoxCenterVec = { rearBoxCenterROI };
+    
+    QList<QPoint> frontBoxTransformed = transformPatternPoints(frontBoxCenterVec,
+                                                               cv::Size(bboxWidth, bboxHeight),
+                                                               pattern.angle,
+                                                               cv::Point2f(pattern.rect.center().x(), pattern.rect.center().y()));
+    
+    QList<QPoint> rearBoxTransformed = transformPatternPoints(rearBoxCenterVec,
+                                                              cv::Size(bboxWidth, bboxHeight),
+                                                              pattern.angle,
+                                                              cv::Point2f(pattern.rect.center().x(), pattern.rect.center().y()));
+    
+    QPointF frontBoxCenterScene(0, 0);
+    QPointF rearBoxCenterScene(0, 0);
+    
+    if (!frontBoxTransformed.isEmpty()) {
+        frontBoxCenterScene = QPointF(frontBoxTransformed[0].x(), frontBoxTransformed[0].y());
+    }
+    if (!rearBoxTransformed.isEmpty()) {
+        rearBoxCenterScene = QPointF(rearBoxTransformed[0].x(), rearBoxTransformed[0].y());
+    }
+    
+    result.stripFrontBoxCenter[pattern.id] = frontBoxCenterScene;
+    result.stripFrontBoxSize[pattern.id] = QSizeF(frontBoxSz.width, frontBoxSz.height);
+    result.stripRearBoxCenter[pattern.id] = rearBoxCenterScene;
+    result.stripRearBoxSize[pattern.id] = QSizeF(rearBoxSz.width, rearBoxSz.height);
     
     // STRIP 길이 측정 점들을 절대 좌표로 변환
     QPoint absStripLengthStart = QPoint(stripLengthStartPoint.x + offset.x, stripLengthStartPoint.y + offset.y);

@@ -2085,6 +2085,11 @@ void TeachingWidget::connectEvents() {
         pattern->angle = angle;
         cameraView->updatePatternById(id, *pattern);
         
+        // INS 패턴의 경우 회전 시 템플릿 이미지 재생성
+        if (pattern->type == PatternType::INS) {
+            updateInsTemplateImage(pattern, pattern->rect);
+        }
+        
         // FID 패턴인 경우, 그룹화된 INS 패턴들도 함께 회전
         if (pattern->type == PatternType::FID && std::abs(angleDelta) > 0.01) {
             QPointF fidCenter(pattern->rect.x() + pattern->rect.width()/2, 
@@ -3091,7 +3096,7 @@ void TeachingWidget::onPatternSelected(QTreeWidgetItem* current, QTreeWidgetItem
 void TeachingWidget::createPropertyPanels() {
     // 1. 프로퍼티 패널을 담을 스택 위젯 생성
     propertyStackWidget = new QStackedWidget(this);
-    rightPanelLayout->insertWidget(3, propertyStackWidget);
+    rightPanelLayout->addWidget(propertyStackWidget);
    
     // 2. 빈 상태를 위한 기본 패널
     QWidget* emptyPanel = new QWidget(propertyStackWidget);
@@ -4438,54 +4443,56 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
     
     // 2. INS 템플릿 이미지는 원본에서 생성 (필터 적용하지 않음)
     
-    // 3. INS 템플릿 이미지: FID와 동일하게 회전 시 최대 width, height로 저장 후 중앙에서 패턴 크기로 추출
+    // 3. INS 템플릿 이미지: 회전 시 전체 영역을 템플릿으로 저장 (필터 적용 후 저장)
     cv::Mat roiMat;
     
     // 패턴이 회전되어 있는지 확인
     if (std::abs(pattern->angle) > 0.1) {
-        // 회전된 경우: 최대 width, height로 사각형 영역 추출 후 중앙에서 패턴 크기로 자르기
+        // 회전된 경우: 회전 각도에 따른 실제 bounding box 크기 계산
         cv::Point2f center(newRect.x() + newRect.width()/2.0f, newRect.y() + newRect.height()/2.0f);
         
-        // 회전각에 따른 최대 필요 사각형 크기 계산
-        double angleRad = std::abs(pattern->angle) * M_PI / 180.0;
         double width = newRect.width();
         double height = newRect.height();
         
-        // 회전된 사각형의 경계 상자 크기 계산
+        // 회전 각도를 라디안으로 변환
+        double angleRad = std::abs(pattern->angle) * M_PI / 180.0;
+        
+        // 회전된 사각형의 실제 bounding box 크기 계산
         double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
         double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
+         
+        // 회전된 bounding box 크기 (정사각형 아님, 실제 크기 사용)
+        int bboxWidth = static_cast<int>(rotatedWidth) + 10; // 여유 10픽셀
+        int bboxHeight = static_cast<int>(rotatedHeight) + 10;
         
-        // 최대 크기 계산 (정사각형)
-        int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
-        int halfSize = maxSize / 2;
-        
-        // 정사각형 ROI 영역 계산 (중심점 기준)
-        cv::Rect squareRoi(
-            static_cast<int>(center.x) - halfSize,
-            static_cast<int>(center.y) - halfSize,
-            maxSize,
-            maxSize
+        // ROI 영역 계산 (중심점 기준)
+        cv::Rect bboxRoi(
+            static_cast<int>(center.x - bboxWidth/2.0),
+            static_cast<int>(center.y - bboxHeight/2.0),
+            bboxWidth,
+            bboxHeight
         );
         
         // 이미지 경계와 교집합 구하기
         cv::Rect imageBounds(0, 0, originalFrame.cols, originalFrame.rows);
-        cv::Rect validRoi = squareRoi & imageBounds;
+        cv::Rect validRoi = bboxRoi & imageBounds;
         
         if (validRoi.width > 0 && validRoi.height > 0) {
-            // 정사각형 결과 이미지 생성 (검은색 배경)
-            cv::Mat templateRegion = cv::Mat::zeros(maxSize, maxSize, originalFrame.type());
+            // bounding box 크기의 결과 이미지 생성 (검은색 배경)
+            cv::Mat templateRegion = cv::Mat::zeros(bboxHeight, bboxWidth, originalFrame.type());
             
             // 유효한 영역만 복사
-            int offsetX = validRoi.x - squareRoi.x;
-            int offsetY = validRoi.y - squareRoi.y;
+            int offsetX = validRoi.x - bboxRoi.x;
+            int offsetY = validRoi.y - bboxRoi.y;
             
             cv::Mat validImage = originalFrame(validRoi);
             cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
             validImage.copyTo(templateRegion(resultRect));
             
-            // ===== EDGE 검사: 전체 영역에 필터 먼저 적용 =====
-            if (pattern->inspectionMethod == InspectionMethod::EDGE && !pattern->filters.isEmpty()) {
-                qDebug() << QString("EDGE 템플릿: 전체 영역(%1x%2)에 %3개 필터 순차 적용")
+            // ===== EDGE/STRIP 검사: 전체 영역에 필터 먼저 적용 =====
+            if ((pattern->inspectionMethod == InspectionMethod::EDGE || 
+                 pattern->inspectionMethod == InspectionMethod::STRIP) && !pattern->filters.isEmpty()) {
+                qDebug() << QString("템플릿: 전체 영역(%1x%2)에 %3개 필터 순차 적용")
                         .arg(templateRegion.cols).arg(templateRegion.rows).arg(pattern->filters.size());
                 
                 cv::Mat processedRegion = templateRegion.clone();
@@ -4502,22 +4509,8 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
                 templateRegion = processedRegion;
             }
             
-            // 중앙에서 패턴 크기로 추출 (필터 적용 후)
-            int extractW = static_cast<int>(width);
-            int extractH = static_cast<int>(height);
-            int startX = (templateRegion.cols - extractW) / 2;
-            int startY = (templateRegion.rows - extractH) / 2;
-            
-            startX = std::max(0, std::min(startX, templateRegion.cols - extractW));
-            startY = std::max(0, std::min(startY, templateRegion.rows - extractH));
-            
-            if (startX >= 0 && startY >= 0 && startX + extractW <= templateRegion.cols && 
-                startY + extractH <= templateRegion.rows) {
-                cv::Rect extractROI(startX, startY, extractW, extractH);
-                roiMat = templateRegion(extractROI).clone();
-            } else {
-                return;
-            }
+            // 회전 시에는 전체 bounding box 영역을 템플릿으로 저장
+            roiMat = templateRegion.clone();
         } else {
             return;
         }
@@ -4537,9 +4530,10 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
         if (validRoi.width > 0 && validRoi.height > 0) {
             cv::Mat insRegion = originalFrame(validRoi).clone();
             
-            // ===== EDGE 검사: 필터 적용 =====
-            if (pattern->inspectionMethod == InspectionMethod::EDGE && !pattern->filters.isEmpty()) {
-                qDebug() << QString("EDGE 템플릿(회전 없음): INS 영역(%1x%2)에 %3개 필터 순차 적용")
+            // ===== EDGE/STRIP 검사: 필터 적용 =====
+            if ((pattern->inspectionMethod == InspectionMethod::EDGE || 
+                 pattern->inspectionMethod == InspectionMethod::STRIP) && !pattern->filters.isEmpty()) {
+                qDebug() << QString("템플릿(회전 없음): INS 영역(%1x%2)에 %3개 필터 순차 적용")
                         .arg(insRegion.cols).arg(insRegion.rows).arg(pattern->filters.size());
                 
                 cv::Mat processedRegion = insRegion.clone();

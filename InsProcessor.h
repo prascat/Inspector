@@ -22,7 +22,7 @@ public:
     bool checkColor(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result);
     bool checkEdge(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result);
     bool checkBinary(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result);
-    bool checkStrip(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result);
+    bool checkStrip(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result, const QList<PatternInfo>& patterns);
     bool checkCrimp(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result);
 
     // ROI 추출 함수 (패턴 위치에서 영역 가져오기)

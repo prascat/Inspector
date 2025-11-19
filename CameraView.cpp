@@ -282,101 +282,98 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
             return;
         }
         
-        // 패턴 클릭 체크 (모든 모드에서 가능)
-        QUuid hitPatternId = hitTest(pos);
-        
-        qDebug() << "[mousePressEvent] hitTest 결과:" << hitPatternId << "isNull:" << hitPatternId.isNull();
-        
-        // 패턴 클릭 또는 빈 공간 클릭 처리
-        if (!hitPatternId.isNull()) {
-            // 패턴 클릭
-            qDebug() << "[mousePressEvent] 패턴 클릭 - ID:" << hitPatternId;
-            setSelectedPatternId(hitPatternId);
-        } else {
-            // 빈 공간 클릭 - 패턴 선택 해제
-            qDebug() << "[mousePressEvent] 빈 공간 클릭 - 패턴 선택 해제";
-            setSelectedPatternId(QUuid());
-        }
-        
-        // View 모드에서는 편집 기능만 차단 (패턴 선택/해제는 위에서 처리했음)
+        // View 모드에서는 편집 기능만 차단
         if (m_editMode == EditMode::View) {
+            // View 모드에서는 패턴 선택만 가능
+            QUuid hitPatternId = hitTest(pos);
+            
+            if (!hitPatternId.isNull()) {
+                setSelectedPatternId(hitPatternId);
+            } else {
+                setSelectedPatternId(QUuid());
+            }
+            
             QGraphicsView::mousePressEvent(event);
             return;
         }
         
         // MOVE 모드일 때는 Draw 기능 비활성화
         if (m_editMode == EditMode::Move) {
-            // Draw 모드 관련 처리 건너뛰기
+            // MOVE 모드에서 회전 핸들 클릭 체크 (가장 먼저)
+            if (!selectedPatternId.isNull() && getRotateHandleAt(pos) == 1) {
+                isRotating = true;
+                rotateStartPos = pos;
+                PatternInfo* pattern = getPatternById(selectedPatternId);
+                if (pattern) {
+                    initialAngle = pattern->angle;
+                    QPointF centerScene = pattern->rect.center();
+                    rotationCenter = mapFromScene(centerScene.toPoint());
+                }
+                setCursor(Qt::OpenHandCursor);
+                return;
+            }
+            
+            // 리사이즈 핸들 클릭 체크
+            int handleIdx = getCornerHandleAt(pos);
+            if (handleIdx >= 0 && !selectedPatternId.isNull()) {
+                isResizing = true;
+                activeHandleIdx = handleIdx;
+                
+                PatternInfo* pattern = getPatternById(selectedPatternId);
+                if (pattern) {
+                    QVector<QPoint> rotatedCorners = getRotatedCorners();
+                    
+                    if (rotatedCorners.size() == 4) {
+                        int fixedHandleIdx = (handleIdx + 2) % 4;
+                        fixedScreenPos = rotatedCorners[fixedHandleIdx];
+                    } else {
+                        QPointF tl = pattern->rect.topLeft();
+                        QPointF tr = pattern->rect.topRight();
+                        QPointF br = pattern->rect.bottomRight();
+                        QPointF bl = pattern->rect.bottomLeft();
+                    
+                        QPointF fixedOriginal;
+                        if (handleIdx == 0) fixedOriginal = br;
+                        else if (handleIdx == 1) fixedOriginal = bl;
+                        else if (handleIdx == 2) fixedOriginal = tl;
+                        else if (handleIdx == 3) fixedOriginal = tr;
+                    
+                        fixedScreenPos = originalToDisplay(QPoint(static_cast<int>(fixedOriginal.x()), static_cast<int>(fixedOriginal.y())));
+                    }
+                }
+                
+                setCursor(Qt::SizeAllCursor);
+                return;
+            }
+            
+            // 패턴 클릭 체크 (핸들이 아닐 때만)
+            QUuid hitPatternId = hitTest(pos);
+            
+            if (!hitPatternId.isNull()) {
+                setSelectedPatternId(hitPatternId);
+                isDragging = true;
+                PatternInfo* pattern = getPatternById(hitPatternId);
+                if (pattern) {
+                    QPoint patternTopLeft = originalToDisplay(pattern->rect.topLeft().toPoint());
+                    dragOffset = pos - patternTopLeft;
+                }
+                return;
+            } else {
+                // 빈 공간 클릭 - 패턴 선택 해제
+                setSelectedPatternId(QUuid());
+                isDragging = false;
+                isResizing = false;
+                isRotating = false;
+                activeHandle = ResizeHandle::None;
+                update();
+                return;
+            }
         } else if (m_editMode == EditMode::Draw) {
             isDrawing = true;
             startPoint = originalPos;
             currentRect = QRect();
             setCursor(Qt::ArrowCursor);
             update();
-            return;
-        }
-
-        // MOVE 모드에서 회전 핸들 클릭: 회전 시작
-        if (m_editMode == EditMode::Move && !hitPatternId.isNull() && !selectedPatternId.isNull() && getRotateHandleAt(pos) == 1) {
-            isRotating = true;
-            rotateStartPos = pos;
-            PatternInfo* pattern = getPatternById(selectedPatternId);
-            if (pattern) {
-                initialAngle = pattern->angle;
-                // 회전 중심점을 viewport 좌표로 계산
-                QPointF centerScene = pattern->rect.center();
-                rotationCenter = mapFromScene(centerScene.toPoint());
-            }
-            setCursor(Qt::OpenHandCursor);
-            return;
-        }
-
-        int handleIdx = getCornerHandleAt(pos);
-        // 회전 핸들 영역과 겹치는 경우 크기 조정 차단
-        if (m_editMode == EditMode::Move && !selectedPatternId.isNull() && handleIdx != -1 && getRotateHandleAt(pos) == -1) {
-            isResizing = true;
-            activeHandleIdx = handleIdx;
-
-            // ★★★ 회전된 상태의 실제 꼭짓점을 사용하여 고정점 설정 ★★★
-            PatternInfo* pattern = getPatternById(selectedPatternId);
-            if (pattern) {
-                // 회전된 상태의 실제 꼭짓점들을 가져오기
-                QVector<QPoint> rotatedCorners = getRotatedCorners();
-                
-                if (rotatedCorners.size() == 4) {
-                    // 클릭한 핸들의 대각선 반대편 꼭짓점을 고정점으로 설정
-                    int fixedHandleIdx = (handleIdx + 2) % 4;  // 대각선 반대편
-                    fixedScreenPos = rotatedCorners[fixedHandleIdx];
-                    
-                } else {
-                    // 백업: 원본 방식
-                    QPointF tl = pattern->rect.topLeft();
-                    QPointF tr = pattern->rect.topRight();
-                    QPointF br = pattern->rect.bottomRight();
-                    QPointF bl = pattern->rect.bottomLeft();
-                    
-                    QPointF fixedOriginal;
-                    if (handleIdx == 0) fixedOriginal = br;
-                    else if (handleIdx == 1) fixedOriginal = bl;
-                    else if (handleIdx == 2) fixedOriginal = tl;
-                    else if (handleIdx == 3) fixedOriginal = tr;
-                    
-                    fixedScreenPos = originalToDisplay(QPoint(static_cast<int>(fixedOriginal.x()), static_cast<int>(fixedOriginal.y())));
-                }
-            }
-
-            setCursor(Qt::SizeAllCursor);
-            return;
-        }
-
-        // MOVE 모드에서 패턴 내부 클릭: 이동 시작
-        if (m_editMode == EditMode::Move && !hitPatternId.isNull()) {
-            isDragging = true;
-            PatternInfo* pattern = getPatternById(hitPatternId);
-            if (pattern) {
-                QPoint patternTopLeft = originalToDisplay(pattern->rect.topLeft().toPoint());
-                dragOffset = pos - patternTopLeft;
-            }
             return;
         }
     }
@@ -1954,6 +1951,69 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     
                     // stripStartPoint와 stripMaxGradientPoint 데이터는 있지만 표시하지 않음
                 }
+            }
+            
+            // ===== STRIP FRONT/REAR 박스 및 스캔 방향 그리기 =====
+            // FRONT 박스 그리기
+            if (result.stripFrontBoxCenter.contains(patternId) && result.stripFrontBoxSize.contains(patternId)) {
+                QPointF frontCenterScene = result.stripFrontBoxCenter[patternId];
+                QSizeF frontSize = result.stripFrontBoxSize[patternId];
+                
+                // Scene 좌표를 Viewport 좌표로 변환
+                QPointF frontCenterVP = mapFromScene(frontCenterScene);
+                
+                // 박스 좌표 계산 (중심 기준)
+                QRectF frontBox(frontCenterVP.x() - frontSize.width()/2, 
+                               frontCenterVP.y() - frontSize.height()/2, 
+                               frontSize.width(), 
+                               frontSize.height());
+                
+                // 박스 그리기 (파란색, 회전 없음 - 좌표가 이미 올바른 위치)
+                painter.setPen(QPen(QColor(0, 100, 255), 2)); // 파란색
+                painter.drawRect(frontBox);
+                
+                // 세로 스캔 라인 방향 표시 (위→아래 화살표)
+                double scanLineX = frontCenterVP.x();
+                double scanLineY1 = frontCenterVP.y() - frontSize.height()/2 + 5;
+                double scanLineY2 = frontCenterVP.y() + frontSize.height()/2 - 5;
+                painter.setPen(QPen(QColor(0, 255, 255), 1)); // 밝은 파란색
+                painter.drawLine(QPointF(scanLineX, scanLineY1), QPointF(scanLineX, scanLineY2));
+                
+                // 화살표 방향 표시 (아래 방향)
+                double arrowSize = 5;
+                painter.drawLine(QPointF(scanLineX, scanLineY2), QPointF(scanLineX - arrowSize, scanLineY2 - arrowSize));
+                painter.drawLine(QPointF(scanLineX, scanLineY2), QPointF(scanLineX + arrowSize, scanLineY2 - arrowSize));
+            }
+            
+            // REAR 박스 그리기
+            if (result.stripRearBoxCenter.contains(patternId) && result.stripRearBoxSize.contains(patternId)) {
+                QPointF rearCenterScene = result.stripRearBoxCenter[patternId];
+                QSizeF rearSize = result.stripRearBoxSize[patternId];
+                
+                // Scene 좌표를 Viewport 좌표로 변환
+                QPointF rearCenterVP = mapFromScene(rearCenterScene);
+                
+                // 박스 좌표 계산 (중심 기준)
+                QRectF rearBox(rearCenterVP.x() - rearSize.width()/2, 
+                              rearCenterVP.y() - rearSize.height()/2, 
+                              rearSize.width(), 
+                              rearSize.height());
+                
+                // 박스 그리기 (노란색, 회전 없음 - 좌표가 이미 올바른 위치)
+                painter.setPen(QPen(QColor(255, 255, 0), 2)); // 노란색
+                painter.drawRect(rearBox);
+                
+                // 세로 스캔 라인 방향 표시 (위→아래 화살표)
+                double scanLineX = rearCenterVP.x();
+                double scanLineY1 = rearCenterVP.y() - rearSize.height()/2 + 5;
+                double scanLineY2 = rearCenterVP.y() + rearSize.height()/2 - 5;
+                painter.setPen(QPen(QColor(255, 255, 128), 1)); // 밝은 노란색
+                painter.drawLine(QPointF(scanLineX, scanLineY1), QPointF(scanLineX, scanLineY2));
+                
+                // 화살표 방향 표시 (아래 방향)
+                double arrowSize = 5;
+                painter.drawLine(QPointF(scanLineX, scanLineY2), QPointF(scanLineX - arrowSize, scanLineY2 - arrowSize));
+                painter.drawLine(QPointF(scanLineX, scanLineY2), QPointF(scanLineX + arrowSize, scanLineY2 - arrowSize));
             }
             
             // ===== STRIP 4개 컨투어 포인트 그리기 =====
@@ -4067,6 +4127,9 @@ QPoint CameraView::getRotatedCenter() const {
 }
 
 QRect CameraView::rotateHandleRect() const {
+    const PatternInfo* pattern = getPatternById(selectedPatternId);
+    if (!pattern) return QRect();
+    
     QVector<QPoint> corners = getRotatedCorners();
     if (corners.size() < 4) return QRect();
     
@@ -4076,9 +4139,20 @@ QRect CameraView::rotateHandleRect() const {
         (corners[0].y() + corners[1].y()) / 2.0
     );
     
-    // paintEvent와 동일한 위치: displayRect.top() - 20
-    int hx = qRound(topCenter.x());
-    int hy = qRound(topCenter.y() - 20);
+    // 패턴의 중심점
+    QPointF center = mapFromScene(pattern->rect.center());
+    
+    // 회전 각도를 고려하여 핸들 위치 계산
+    double radians = pattern->angle * M_PI / 180.0;
+    double dx = 0;
+    double dy = -20; // 상단으로 20픽셀
+    
+    // 회전 적용
+    double rotatedDx = dx * std::cos(radians) - dy * std::sin(radians);
+    double rotatedDy = dx * std::sin(radians) + dy * std::cos(radians);
+    
+    int hx = qRound(topCenter.x() + rotatedDx);
+    int hy = qRound(topCenter.y() + rotatedDy);
     
     int s = resizeHandleSize;
     return QRect(hx - s/2, hy - s/2, s, s);
@@ -4120,6 +4194,9 @@ QUuid CameraView::hitTest(const QPoint& pos) {
     // 모든 패턴 검사 (최근 추가된 것이 먼저 선택되도록 뒤에서 검사)
     for (int i = patterns.size() - 1; i >= 0; --i) {
         if (!patterns[i].enabled) continue;
+        
+        // ROI 패턴은 hitTest에서 제외 (다른 패턴 편집 방해하지 않도록)
+        if (patterns[i].type == PatternType::ROI) continue;
         
         bool patternVisible = (patterns[i].cameraUuid.isEmpty() || patterns[i].cameraUuid == currentCameraUuid || currentCameraUuid.isEmpty());
        
