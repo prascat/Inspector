@@ -4462,8 +4462,8 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
         double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
          
         // 회전된 bounding box 크기 (정사각형 아님, 실제 크기 사용)
-        int bboxWidth = static_cast<int>(rotatedWidth) + 10; // 여유 10픽셀
-        int bboxHeight = static_cast<int>(rotatedHeight) + 10;
+        int bboxWidth = static_cast<int>(rotatedWidth);
+        int bboxHeight = static_cast<int>(rotatedHeight);
         
         // ROI 영역 계산 (중심점 기준)
         cv::Rect bboxRoi(
@@ -9721,7 +9721,7 @@ void TeachingWidget::updateAllPatternTemplateImages() {
                 
                 } catch (const std::exception& e) {
                 } catch (...) {
-                }
+            }
         }
     }
     

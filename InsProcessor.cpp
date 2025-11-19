@@ -787,7 +787,7 @@ bool InsProcessor::performTemplateMatching(const cv::Mat& image, const cv::Mat& 
     
     // 회전 시 잘림 방지를 위해 여백이 있는 더 큰 이미지 생성
     int diagonal = static_cast<int>(std::sqrt(originalWidth * originalWidth + 
-                                             originalHeight * originalHeight)) + 10;
+                                             originalHeight * originalHeight));
     int offsetX = (diagonal - originalWidth) / 2;
     int offsetY = (diagonal - originalHeight) / 2;
     
@@ -1278,7 +1278,7 @@ bool InsProcessor::checkColor(const cv::Mat& image, const PatternInfo& pattern, 
     double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
     
     // 최종 정사각형 크기
-    int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
+    int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
     int halfSize = squareSize / 2;
     
     cv::Rect squareRoi(
@@ -1525,7 +1525,7 @@ bool InsProcessor::checkBinary(const cv::Mat& image, const PatternInfo& pattern,
     double rotatedWidth = std::abs(width * cos(angleRad)) + std::abs(height * sin(angleRad));
     double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
     
-    int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
+    int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
     int halfSize = squareSize / 2;
     
     cv::Rect squareRoi(
@@ -1864,8 +1864,8 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
     double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
     
     // bounding box 크기 (티칭과 동일하게 여유 10픽셀 추가)
-    int bboxWidth = static_cast<int>(rotatedWidth) + 10;
-    int bboxHeight = static_cast<int>(rotatedHeight) + 10;
+    int bboxWidth = static_cast<int>(rotatedWidth);
+    int bboxHeight = static_cast<int>(rotatedHeight);
     
     cv::Rect bboxRoi(
         static_cast<int>(center.x - bboxWidth/2.0),
@@ -2143,9 +2143,12 @@ cv::Mat InsProcessor::extractROI(const cv::Mat& image, const QRectF& rect, doubl
         double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
         double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
         
-        // bounding box 크기 (티칭과 동일하게 여유 10픽셀 추가)
-        int bboxWidth = static_cast<int>(rotatedWidth) + 10;
-        int bboxHeight = static_cast<int>(rotatedHeight) + 10;
+        // bounding box 크기 (FRONT/REAR 검사를 위해 Y 방향으로 충분한 여유 추가)
+        // REAR 박스 Y 변위 고려: localX * sin(angle)에서 최대 width 정도의 변위 발생 가능
+        int paddingX = 20;
+        int paddingY = static_cast<int>(width * std::abs(std::sin(angleRad))) + 50;  // 변위 + 50픽셀 여유
+        int bboxWidth = static_cast<int>(rotatedWidth) + paddingX;
+        int bboxHeight = static_cast<int>(rotatedHeight) + paddingY;
         
         // bounding box ROI 영역 계산 (중심점 기준)
         cv::Rect bboxRoi(
@@ -2341,6 +2344,10 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     cv::Point frontBoxCenterROI, rearBoxCenterROI;  // ROI 좌표계의 박스 중심
     cv::Size frontBoxSz, rearBoxSz;  // 박스 크기
     
+    // 최소/최대 스캔 라인
+    cv::Point frontMinScanTop, frontMinScanBottom, frontMaxScanTop, frontMaxScanBottom;
+    cv::Point rearMinScanTop, rearMinScanBottom, rearMaxScanTop, rearMaxScanBottom;
+    
     bool isPassed = ImageProcessor::performStripInspection(roiImage, templateImage,
                                   pattern,
                                   score, startPoint, maxGradientPoint, gradientPoints, resultImage, &edgePoints,
@@ -2349,7 +2356,9 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                                   &frontBlackRegionPoints, &rearBlackRegionPoints,
                                   &stripMeasuredLengthPx,
                                   &frontBoxCenterROI, &frontBoxSz,
-                                  &rearBoxCenterROI, &rearBoxSz);
+                                  &rearBoxCenterROI, &rearBoxSz,
+                                  &frontMinScanTop, &frontMinScanBottom, &frontMaxScanTop, &frontMaxScanBottom,
+                                  &rearMinScanTop, &rearMinScanBottom, &rearMaxScanTop, &rearMaxScanBottom);
     
     // FRONT 두께 통계 계산 (ImageProcessor에서 받은 픽셀 데이터로부터)
     if (!frontThicknessPoints.empty()) {
@@ -2392,9 +2401,11 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
     double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
     
-    // bounding box 크기 (extractROI와 동일하게 여유 10픽셀 추가)
-    int bboxWidth = static_cast<int>(rotatedWidth) + 10;
-    int bboxHeight = static_cast<int>(rotatedHeight) + 10;
+    // bounding box 크기 (extractROI와 동일하게 FRONT/REAR 검사를 위해 Y 방향으로 충분한 여유 추가)
+    int paddingX = 20;
+    int paddingY = static_cast<int>(width * std::abs(std::sin(angleRad))) + 50;  // 변위 + 50픽셀 여유
+    int bboxWidth = static_cast<int>(rotatedWidth) + paddingX;
+    int bboxHeight = static_cast<int>(rotatedHeight) + paddingY;
     
     // extractROI와 정확히 동일한 bboxRoi 계산
     cv::Point2f center(pattern.rect.x() + pattern.rect.width()/2.0f, 
@@ -2418,14 +2429,26 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     double cosA = cos(angleRad);
     double sinA = sin(angleRad);
     
+    // ROI 이미지 내에서 패턴의 중심점 (extractROI와 동일한 방식으로 계산)
+    double centerX = center.x - static_cast<double>(bboxRoi.x);
+    double centerY = center.y - static_cast<double>(bboxRoi.y);
+    
     // FRONT 포인트들을 절대좌표로 변환
     // frontThicknessPoints: 검은색 구간의 모든 픽셀들 (ROI 좌표)
     QList<QPoint> frontPointsConverted;
     
     for (const cv::Point& pt : frontThicknessPoints) {
-        // ROI 좌표를 절대좌표로 변환 (offset만 추가)
-        QPoint ptAbs(pt.x + static_cast<int>(offset.x), 
-                     pt.y + static_cast<int>(offset.y));
+        // ROI 좌표를 중심 기준 상대좌표로 변환
+        double localX = pt.x - centerX;
+        double localY = pt.y - centerY;
+        
+        // 회전 적용
+        double rotatedX = localX * cosA - localY * sinA;
+        double rotatedY = localX * sinA + localY * cosA;
+        
+        // 절대좌표로 변환
+        QPoint ptAbs(static_cast<int>(pattern.rect.x() + pattern.rect.width()/2.0 + rotatedX),
+                     static_cast<int>(pattern.rect.y() + pattern.rect.height()/2.0 + rotatedY));
         frontPointsConverted.append(ptAbs);
     }
     
@@ -2434,25 +2457,85 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     QList<QPoint> rearPointsConverted;
     
     for (const cv::Point& pt : rearThicknessPoints) {
-        // ROI 좌표를 절대좌표로 변환 (offset만 추가)
-        QPoint ptAbs(pt.x + static_cast<int>(offset.x), 
-                     pt.y + static_cast<int>(offset.y));
+        // ROI 좌표를 중심 기준 상대좌표로 변환
+        double localX = pt.x - centerX;
+        double localY = pt.y - centerY;
+        
+        // 회전 적용
+        double rotatedX = localX * cosA - localY * sinA;
+        double rotatedY = localX * sinA + localY * cosA;
+        
+        // 절대좌표로 변환
+        QPoint ptAbs(static_cast<int>(pattern.rect.x() + pattern.rect.width()/2.0 + rotatedX),
+                     static_cast<int>(pattern.rect.y() + pattern.rect.height()/2.0 + rotatedY));
         rearPointsConverted.append(ptAbs);
     }
     
-    // 검은색 구간 포인트들도 절대좌표로 변환
+    // 검은색 구간 포인트들도 절대좌표로 변환 (박스 기준 로컬 좌표 -> 절대좌표)
+    // 최소/최대 두께의 라인만 표시
     QList<QPoint> frontBlackPointsConverted;
+    
+    // frontThicknessPoints: cv::Point(라인인덱스, 두께)
+    // 최소/최대 두께의 라인 인덱스 찾기
+    int minThicknessLineIdx = -1, maxThicknessLineIdx = -1;
+    int minThickness = INT_MAX, maxThickness = INT_MIN;
+    
+    for (size_t i = 0; i < frontThicknessPoints.size(); i++) {
+        int thickness = frontThicknessPoints[i].y;
+        if (thickness < minThickness) {
+            minThickness = thickness;
+            minThicknessLineIdx = i;
+        }
+        if (thickness > maxThickness) {
+            maxThickness = thickness;
+            maxThicknessLineIdx = i;
+        }
+    }
+    
+    
+    qDebug() << "[FRONT 검출 영역 디버그]";
+    qDebug() << "  bboxRoi:" << bboxRoi.x << bboxRoi.y << bboxRoi.width << bboxRoi.height;
+    qDebug() << "  frontBoxCenter(ROI):" << frontBoxCenterROI.x << frontBoxCenterROI.y;
+    qDebug() << "  frontBoxSize:" << frontBoxSz.width << frontBoxSz.height;
+    qDebug() << "  검출 포인트 개수:" << frontBlackRegionPoints.size();
+    
+    if (!frontBlackRegionPoints.empty()) {
+        qDebug() << "  첫번째 포인트(로컬):" << frontBlackRegionPoints[0].x << frontBlackRegionPoints[0].y;
+        qDebug() << "  마지막 포인트(로컬):" << frontBlackRegionPoints.back().x << frontBlackRegionPoints.back().y;
+    }
+    
+    // 최소/최대 라인의 포인트만 필터링해서 표시
+    // 검은색 포인트는 검출된 그대로만 절대좌표로 변환 (어떤 회전도 적용 금지)
+    
     for (const cv::Point& pt : frontBlackRegionPoints) {
-        QPoint ptAbs(pt.x + static_cast<int>(offset.x), 
-                     pt.y + static_cast<int>(offset.y));
+        // pt는 ROI 내 절대좌표 (이미 올바른 위치)
+        // 이미지 절대좌표로 변환: 그냥 bboxRoi 오프셋만 더함
+        int absX = bboxRoi.x + pt.x;
+        int absY = bboxRoi.y + pt.y;
+        
+        QPoint ptAbs(absX, absY);
         frontBlackPointsConverted.append(ptAbs);
     }
     
+    if (!frontBlackPointsConverted.isEmpty()) {
+        qDebug() << "[FRONT BLACK] 포인트 개수:" << frontBlackPointsConverted.size();
+    }
+    
     QList<QPoint> rearBlackPointsConverted;
+    
+    // 검은색 포인트는 검출된 그대로만 절대좌표로 변환 (어떤 회전도 적용 금지)
     for (const cv::Point& pt : rearBlackRegionPoints) {
-        QPoint ptAbs(pt.x + static_cast<int>(offset.x), 
-                     pt.y + static_cast<int>(offset.y));
+        // pt는 ROI 내 절대좌표 (이미 올바른 위치)
+        // 이미지 절대좌표로 변환: 그냥 bboxRoi 오프셋만 더함
+        int absX = bboxRoi.x + pt.x;
+        int absY = bboxRoi.y + pt.y;
+        
+        QPoint ptAbs(absX, absY);
         rearBlackPointsConverted.append(ptAbs);
+    }
+    
+    if (!rearBlackPointsConverted.isEmpty()) {
+        qDebug() << "[REAR BLACK] 포인트 개수:" << rearBlackPointsConverted.size();
     }
     
     // 변환된 포인트 저장 (절대좌표)
@@ -2665,17 +2748,11 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     // 박스 위치를 패턴 중심 기준 상대좌표로 저장
         QPointF patternCenterForBox = pattern.rect.center();
         
-        // FRONT 박스 상대좌표 저장
-        float frontBoxOffsetX = (-pattern.rect.width()/2.0f) + pattern.stripThicknessBoxWidth/2.0f;
-        QPointF frontBoxRelativeCenter(frontBoxOffsetX, 0); // Y는 패턴 중심과 동일
-        result.stripFrontBoxCenter[pattern.id] = frontBoxRelativeCenter;
-        result.stripFrontBoxSize[pattern.id] = QSizeF(pattern.stripThicknessBoxWidth, pattern.stripThicknessBoxHeight);
+        // 주의: stripFrontBoxCenter와 stripRearBoxCenter는 이미 위에서 설정되었습니다 (2575줄)
+        // 여기서 다시 설정하면 안 됩니다!
+        // 이 섹션은 REAR 검사가 실패한 경우 fallback으로 상대좌표를 사용했던 legacy 코드입니다.
         
-        // REAR 박스 상대좌표 저장
-        float rearBoxOffsetX = (pattern.rect.width()/2.0f) - pattern.stripRearThicknessBoxWidth/2.0f;
-        QPointF rearBoxRelativeCenter(rearBoxOffsetX, 0); // Y는 패턴 중심과 동일
-        result.stripRearBoxCenter[pattern.id] = rearBoxRelativeCenter;
-        result.stripRearBoxSize[pattern.id] = QSizeF(pattern.stripRearThicknessBoxWidth, pattern.stripRearThicknessBoxHeight);
+        // fallback 제거 - 계산된 박스 정보를 신뢰합니다
         
         // EDGE 박스 상대좌표 계산 (패턴 왼쪽에서 edgeOffsetX만큼 떨어진 위치)
         float edgeOffsetX = (-pattern.rect.width()/2.0f) + pattern.edgeOffsetX; // 중심 기준 오프셋
@@ -3442,7 +3519,7 @@ bool InsProcessor::checkCrimp(const cv::Mat& image, const PatternInfo& pattern, 
         double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
         
         // 최종 정사각형 크기
-        int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
+        int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
         
         // 정사각형 ROI 영역 계산 (중심점 기준)
         int halfSize = squareSize / 2;
