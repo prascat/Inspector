@@ -178,6 +178,8 @@ QRect CameraView::originalRectToDisplay(const QRect& origRect) const {
 }
 
 void CameraView::mousePressEvent(QMouseEvent* event) {
+    qDebug() << "[mousePressEvent] 클릭 발생 - 버튼:" << event->button() << "모드:" << static_cast<int>(m_editMode) << "검사모드:" << isInspectionMode;
+    
     // Shift+클릭: 패닝 모드 (모든 모드에서 가능)
     if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ShiftModifier)) {
         isPanning = true;
@@ -200,6 +202,8 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
         QPoint pos = event->pos();
         QPoint originalPos = displayToOriginal(pos);
+        
+        qDebug() << "[mousePressEvent] 왼쪽 버튼 클릭 - pos:" << pos << "originalPos:" << originalPos;
         
         // 검사 결과 모드: 패턴 클릭 처리 - 이 모드에서는 이것만 처리하고 끝! (View 모드 상관없이)
         if (isInspectionMode) {
@@ -278,9 +282,24 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
             return;
         }
         
-        // View 모드에서는 모든 편집 기능 차단 (검사 결과 모드 제외하고)
+        // 패턴 클릭 체크 (모든 모드에서 가능)
+        QUuid hitPatternId = hitTest(pos);
+        
+        qDebug() << "[mousePressEvent] hitTest 결과:" << hitPatternId << "isNull:" << hitPatternId.isNull();
+        
+        // 패턴 클릭 또는 빈 공간 클릭 처리
+        if (!hitPatternId.isNull()) {
+            // 패턴 클릭
+            qDebug() << "[mousePressEvent] 패턴 클릭 - ID:" << hitPatternId;
+            setSelectedPatternId(hitPatternId);
+        } else {
+            // 빈 공간 클릭 - 패턴 선택 해제
+            qDebug() << "[mousePressEvent] 빈 공간 클릭 - 패턴 선택 해제";
+            setSelectedPatternId(QUuid());
+        }
+        
+        // View 모드에서는 편집 기능만 차단 (패턴 선택/해제는 위에서 처리했음)
         if (m_editMode == EditMode::View) {
-            // View 모드에서는 다른 모든 마우스 이벤트 무시
             QGraphicsView::mousePressEvent(event);
             return;
         }
@@ -298,7 +317,7 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
         }
 
         // MOVE 모드에서 회전 핸들 클릭: 회전 시작
-        if (m_editMode == EditMode::Move && !selectedPatternId.isNull() && getRotateHandleAt(pos) == 1) {
+        if (m_editMode == EditMode::Move && !hitPatternId.isNull() && !selectedPatternId.isNull() && getRotateHandleAt(pos) == 1) {
             isRotating = true;
             rotateStartPos = pos;
             PatternInfo* pattern = getPatternById(selectedPatternId);
@@ -351,16 +370,7 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
         }
 
         // MOVE 모드에서 패턴 내부 클릭: 이동 시작
-        QUuid hitPatternId = hitTest(pos);
-        
         if (m_editMode == EditMode::Move && !hitPatternId.isNull()) {
-            // 패턴 선택 (이미 선택된 경우에도 시그널 발생)
-            if (hitPatternId != selectedPatternId) {
-                setSelectedPatternId(hitPatternId);
-            } else {
-                // 이미 선택된 패턴을 다시 클릭한 경우에도 시그널 발생
-                emit patternSelected(hitPatternId);
-            }
             isDragging = true;
             PatternInfo* pattern = getPatternById(hitPatternId);
             if (pattern) {
@@ -368,32 +378,6 @@ void CameraView::mousePressEvent(QMouseEvent* event) {
                 dragOffset = pos - patternTopLeft;
             }
             return;
-        }
-
-        // MOVE 모드에서 빈 공간 클릭: 패턴 선택 해제 및 검사 결과 필터 해제
-        if (m_editMode == EditMode::Move && hitPatternId.isNull()) {
-            // 빈 공간을 클릭했을 때만 선택 해제
-            setSelectedPatternId(QUuid());  // setSelectedPatternId 호출로 통일
-            
-            // 검사 결과 필터 해제 - 모든 패턴 검사 결과 표시
-            if (!selectedInspectionPatternId.isNull()) {
-                selectedInspectionPatternId = QUuid();
-                emit selectedInspectionPatternCleared();  // TeachingWidget의 패턴 트리 선택 해제
-            }
-            
-            isDragging = false;
-            isResizing = false;
-            isRotating = false;
-            activeHandle = ResizeHandle::None;
-            update();
-            return;
-        }
-        
-        // 추가 안전장치: 어떤 모드든 빈 공간 클릭 시 검사 결과 필터 해제
-        if (hitPatternId.isNull() && !selectedInspectionPatternId.isNull()) {
-            selectedInspectionPatternId = QUuid();
-            update();
-            emit selectedInspectionPatternCleared();
         }
     }
     QGraphicsView::mousePressEvent(event);
@@ -1644,16 +1628,17 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult& res
 void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult& result) {
     bool hasSelectedPattern = !selectedInspectionPatternId.isNull();
     
-    // ========== ROI 패턴 먼저 그리기 (항상 표시) ==========
+    // ========== ROI 패턴 먼저 그리기 ==========
     for (const PatternInfo& pattern : patterns) {
         if (pattern.type != PatternType::ROI || !pattern.enabled) continue;
-        
-        // ROI는 필터링 적용 안 함 (항상 표시)
         
         // 패턴 표시 조건: 패턴에 카메라 지정이 없거나, 현재 카메라가 비어있거나, 카메라가 일치하면 표시
         if (!pattern.cameraUuid.isEmpty() && !currentCameraUuid.isEmpty() && pattern.cameraUuid != currentCameraUuid) {
             continue;
         }
+        
+        // STRIP/CRIMP 모드 체크 (검사 결과에서는 항상 현재 모드만)
+        if (pattern.stripCrimpMode != currentStripCrimpMode) continue;
         
         QPointF topLeft = mapFromScene(pattern.rect.topLeft());
         QPointF bottomRight = mapFromScene(pattern.rect.bottomRight());
@@ -1717,6 +1702,9 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         
         bool patternVisible = (patternInfo->cameraUuid.isEmpty() || patternInfo->cameraUuid == currentCameraUuid || currentCameraUuid.isEmpty());
         if (!patternVisible) continue;
+        
+        // STRIP/CRIMP 모드 체크 (검사 결과에서는 항상 현재 모드만)
+        if (patternInfo->stripCrimpMode != currentStripCrimpMode) continue;
         
         // FID 박스 그리기 (검출된 위치 기준)
         int width = patternInfo->rect.width();
@@ -1798,6 +1786,9 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         
         bool patternVisible = (patternInfo->cameraUuid.isEmpty() || patternInfo->cameraUuid == currentCameraUuid || currentCameraUuid.isEmpty());
         if (!patternVisible) continue;
+        
+        // STRIP/CRIMP 모드 체크 (검사 결과에서는 항상 현재 모드만)
+        if (patternInfo->stripCrimpMode != currentStripCrimpMode) continue;
         
         // 선택된 패턴이 있으면 그 패턴만 그리기 (INS 박스)
         bool drawINSBox = true;
@@ -2995,46 +2986,81 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             }
         }
         
-        // ===== EDGE 검사 결과 시각화 =====
+        // ===== EDGE 검사 결과 시각화 (DIFF MASK) =====
         if (patternInfo->inspectionMethod == InspectionMethod::EDGE && 
             result.edgeDiffMask.contains(patternId)) {
             
             cv::Mat edgeMask = result.edgeDiffMask[patternId];
             if (!edgeMask.empty()) {
-                QPointF centerViewport = inspRect.center();
                 QTransform t = transform();
                 double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
                 
-                painter.save();
-                painter.translate(centerViewport);
-                painter.rotate(insAngle);
+                // INS 패턴의 실제 크기 (Scene 좌표)
+                double patternWidth = patternInfo->rect.width();
+                double patternHeight = patternInfo->rect.height();
                 
-                int halfWidth = int(inspRect.width() / 2);
-                int halfHeight = int(inspRect.height() / 2);
-                painter.translate(-halfWidth, -halfHeight);
+                cv::Mat insEdgeMask;
                 
-                for (int y = 0; y < edgeMask.rows; y++) {
-                    for (int x = 0; x < edgeMask.cols; x++) {
-                        uchar pixelValue;
-                        if (edgeMask.channels() == 3) {
-                            cv::Vec3b pixel = edgeMask.at<cv::Vec3b>(y, x);
-                            pixelValue = pixel[0];  // 그레이스케일이므로 R 채널만
-                        } else {
-                            pixelValue = edgeMask.at<uchar>(y, x);
-                        }
+                // 회전 있는 경우: 전체 사각형에서 INS 영역 추출
+                if (std::abs(patternInfo->angle) > 0.1) {
+                    double angleRad = std::abs(patternInfo->angle) * M_PI / 180.0;
+                    double rotatedWidth = std::abs(patternWidth * std::cos(angleRad)) + std::abs(patternHeight * std::sin(angleRad));
+                    double rotatedHeight = std::abs(patternWidth * std::sin(angleRad)) + std::abs(patternHeight * std::cos(angleRad));
+                    int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
+                    
+                    // INS 영역 추출 위치 계산
+                    int startX = (maxSize - static_cast<int>(patternWidth)) / 2;
+                    int startY = (maxSize - static_cast<int>(patternHeight)) / 2;
+                    
+                    // 범위 체크
+                    if (startX >= 0 && startY >= 0 && 
+                        startX + patternWidth <= edgeMask.cols && 
+                        startY + patternHeight <= edgeMask.rows) {
                         
-                        if (pixelValue > 0) {
-                            QColor pixelColor(pixelValue, pixelValue, pixelValue, 150);
-                            
-                            int drawX = int(x * currentScale);
-                            int drawY = int(y * currentScale);
-                            painter.setPen(QPen(pixelColor, 1));
-                            painter.drawPoint(drawX, drawY);
-                        }
+                        cv::Rect insROI(startX, startY, static_cast<int>(patternWidth), static_cast<int>(patternHeight));
+                        insEdgeMask = edgeMask(insROI);
                     }
+                } else {
+                    // 회전 없는 경우: edgeMask가 이미 INS 영역 크기
+                    insEdgeMask = edgeMask;
                 }
                 
-                painter.restore();
+                if (!insEdgeMask.empty()) {
+                    // Scene 좌표 변환
+                    QPointF topLeft = mapFromScene(patternInfo->rect.topLeft());
+                    QPointF bottomRight = mapFromScene(patternInfo->rect.bottomRight());
+                    QRectF drawRect(topLeft, bottomRight);
+                    
+                    painter.save();
+                    painter.setClipRect(drawRect);  // INS 영역만 클리핑
+                    
+                    // 회전 변환 적용
+                    painter.translate(drawRect.center());
+                    painter.rotate(insAngle);
+                    painter.translate(-drawRect.width() / 2, -drawRect.height() / 2);
+                    
+                    // DIFF MASK 픽셀 그리기 (차이나는 부분만 흰색으로 표시)
+                    for (int y = 0; y < insEdgeMask.rows; y++) {
+                        for (int x = 0; x < insEdgeMask.cols; x++) {
+                            uchar pixelValue;
+                            if (insEdgeMask.channels() == 3) {
+                                cv::Vec3b pixel = insEdgeMask.at<cv::Vec3b>(y, x);
+                                pixelValue = pixel[0];
+                            } else {
+                                pixelValue = insEdgeMask.at<uchar>(y, x);
+                            }
+                            
+                            if (pixelValue > 0) {
+                                // 차이나는 부분은 빨간색으로 표시
+                                QColor diffColor(255, 0, 0, 200);
+                                painter.setPen(QPen(diffColor, 1));
+                                painter.drawPoint(QPointF(x * currentScale, y * currentScale));
+                            }
+                        }
+                    }
+                    
+                    painter.restore();
+                }
             }
         }
     }
@@ -4306,7 +4332,16 @@ void CameraView::setSelectedPatternId(const QUuid& id) {
     if (validId) {
         // 선택 시 각도 등 패턴 속성은 절대 건드리지 않음
         selectedPatternId = id;
-        emit patternSelected(id);
+        
+        // 빈 ID일 때는 선택 해제 시그널 emit
+        if (id.isNull()) {
+            qDebug() << "[setSelectedPatternId] 패턴 선택 해제 - selectedInspectionPatternCleared 시그널 emit";
+            emit selectedInspectionPatternCleared();
+        } else {
+            qDebug() << "[setSelectedPatternId] 패턴 선택:" << id;
+            emit patternSelected(id);
+        }
+        
         update();
     }
 }

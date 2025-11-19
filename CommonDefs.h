@@ -416,11 +416,11 @@ namespace UIColors {
     const QColor BTN_DRAW_COLOR = QColor("#FF8A65");     // 연한 주황색(DRAW)
     const QColor BTN_MOVE_COLOR = QColor("#7986CB");     // 연한 블루바이올렛(MOVE)
 
-    // 버튼 색상 - 연한 회색 40% alpha
-    const QColor BTN_SAVE_COLOR = QColor(200, 200, 200, 102);      // 연한 회색 40% alpha - 저장
-    const QColor BTN_ADD_COLOR = QColor(200, 200, 200, 102);       // 연한 회색 40% alpha - 추가
-    const QColor BTN_REMOVE_COLOR = QColor(200, 200, 200, 102);    // 연한 회색 40% alpha - 삭제
-    const QColor BTN_FILTER_COLOR = QColor(200, 200, 200, 102);    // 연한 회색 40% alpha - 필터
+    // 버튼 색상 - 주황색
+    const QColor BTN_SAVE_COLOR = QColor("#FF8A65");      // 연한 주황색 - 저장
+    const QColor BTN_ADD_COLOR = QColor("#FF8A65");       // 연한 주황색 - 추가
+    const QColor BTN_REMOVE_COLOR = QColor("#FF8A65");    // 연한 주황색 - 삭제
+    const QColor BTN_FILTER_COLOR = QColor("#FF8A65");    // 연한 주황색 - 필터
     
     // 슬라이더 색상
     const QColor SLIDER_HANDLE_COLOR = QColor("#64B5F6");   // 연한 파란색 - 슬라이더 핸들

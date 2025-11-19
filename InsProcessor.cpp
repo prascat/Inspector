@@ -2,6 +2,8 @@
 #include "ImageProcessor.h"
 #include <QDebug>
 #include <QDateTime>
+#include <QDir>
+#include <QCoreApplication>
 #include <QPainter>
 #include <QPainterPath>
 #include <QFont>
@@ -42,7 +44,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
         
         // Strip/Crimp 모드 체크
         if (pattern.stripCrimpMode != stripCrimpMode) {
-            qDebug() << "[모드 불일치] 패턴" << pattern.name << "제외 (패턴모드:" << pattern.stripCrimpMode << "현재모드:" << stripCrimpMode << ")";
+            // 모드 불일치 - 패턴 제외
             continue;
         }
         
@@ -1847,158 +1849,119 @@ bool InsProcessor::checkBinary(const cv::Mat& image, const PatternInfo& pattern,
 }
 
 bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result) {
-    // CRIMP와 동일한 방식으로 중앙에서 패턴 크기만큼 추출
-    cv::Mat roi;
     QRectF rectF = pattern.rect;
     cv::Point2f center(rectF.x() + rectF.width() / 2.0f, rectF.y() + rectF.height() / 2.0f);
     
     double width = rectF.width();
     double height = rectF.height();
-    double angleRad = pattern.angle * M_PI / 180.0;
     
-    double rotatedWidth = std::abs(width * cos(angleRad)) + std::abs(height * sin(angleRad));
-    double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
-    
-    int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
-    int halfSize = squareSize / 2;
-    
-    cv::Rect squareRoi(
-        static_cast<int>(center.x) - halfSize,
-        static_cast<int>(center.y) - halfSize,
-        squareSize, squareSize
-    );
-    
-    cv::Rect imageBounds(0, 0, image.cols, image.rows);
-    cv::Rect validRoi = squareRoi & imageBounds;
-    
-    if (validRoi.width <= 0 || validRoi.height <= 0) {
-        logDebug(QString("엣지 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
-        score = 0.0;
-        return false;
-    }
-    
-    cv::Mat templateRegion = cv::Mat::zeros(squareSize, squareSize, image.type());
-    int offsetX = validRoi.x - squareRoi.x;
-    int offsetY = validRoi.y - squareRoi.y;
-    cv::Mat validImage = image(validRoi);
-    cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
-    validImage.copyTo(templateRegion(resultRect));
-    
+    cv::Mat templateRegion;
     int extractW = static_cast<int>(width);
     int extractH = static_cast<int>(height);
-    int startX = (templateRegion.cols - extractW) / 2;
-    int startY = (templateRegion.rows - extractH) / 2;
+    int startX = 0;
+    int startY = 0;
     
-    startX = std::max(0, std::min(startX, templateRegion.cols - extractW));
-    startY = std::max(0, std::min(startY, templateRegion.rows - extractH));
-    
-    if (startX < 0 || startY < 0 || startX + extractW > templateRegion.cols || 
-        startY + extractH > templateRegion.rows) {
-        logDebug(QString("엣지 검사 실패: 추출 범위 초과 - 패턴 '%1'").arg(pattern.name));
-        score = 0.0;
-        return false;
+    // 회전이 있는 경우: 전체 사각형 추출
+    if (std::abs(pattern.angle) > 0.1) {
+        double angleRad = pattern.angle * M_PI / 180.0;
+        double rotatedWidth = std::abs(width * cos(angleRad)) + std::abs(height * sin(angleRad));
+        double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
+        
+        int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
+        int halfSize = squareSize / 2;
+        
+        cv::Rect squareRoi(
+            static_cast<int>(center.x) - halfSize,
+            static_cast<int>(center.y) - halfSize,
+            squareSize, squareSize
+        );
+        
+        cv::Rect imageBounds(0, 0, image.cols, image.rows);
+        cv::Rect validRoi = squareRoi & imageBounds;
+        
+        if (validRoi.width <= 0 || validRoi.height <= 0) {
+            logDebug(QString("엣지 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
+            score = 0.0;
+            return false;
+        }
+        
+        templateRegion = cv::Mat::zeros(squareSize, squareSize, image.type());
+        int offsetX = validRoi.x - squareRoi.x;
+        int offsetY = validRoi.y - squareRoi.y;
+        cv::Mat validImage = image(validRoi);
+        cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
+        validImage.copyTo(templateRegion(resultRect));
+        
+        startX = (templateRegion.cols - extractW) / 2;
+        startY = (templateRegion.rows - extractH) / 2;
+        
+        startX = std::max(0, std::min(startX, templateRegion.cols - extractW));
+        startY = std::max(0, std::min(startY, templateRegion.rows - extractH));
+        
+        if (startX < 0 || startY < 0 || startX + extractW > templateRegion.cols || 
+            startY + extractH > templateRegion.rows) {
+            logDebug(QString("엣지 검사 실패: 추출 범위 초과 - 패턴 '%1'").arg(pattern.name));
+            score = 0.0;
+            return false;
+        }
+    } else {
+        // 회전 없는 경우: INS 영역만 직접 추출
+        cv::Rect insRoi(
+            static_cast<int>(rectF.x()),
+            static_cast<int>(rectF.y()),
+            extractW,
+            extractH
+        );
+        
+        cv::Rect imageBounds(0, 0, image.cols, image.rows);
+        cv::Rect validRoi = insRoi & imageBounds;
+        
+        if (validRoi.width <= 0 || validRoi.height <= 0) {
+            logDebug(QString("엣지 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
+            score = 0.0;
+            return false;
+        }
+        
+        templateRegion = image(validRoi).clone();
+        startX = 0;
+        startY = 0;
     }
     
-    cv::Rect extractROI(startX, startY, extractW, extractH);
-    roi = templateRegion(extractROI).clone();
+    // ===== 1. 전체 영역에 필터 순차 적용 =====
+    cv::Mat processedRegion = templateRegion.clone();
     
-    if (roi.empty()) {
-        logDebug(QString("엣지 검사 실패: ROI 추출 실패 - 패턴 '%1'").arg(pattern.name));
+    if (!pattern.filters.isEmpty()) {
+        logDebug(QString("전체 영역(%1x%2)에 %3개 필터 순차 적용")
+                .arg(templateRegion.cols).arg(templateRegion.rows).arg(pattern.filters.size()));
+        
+        ImageProcessor processor;
+        for (const FilterInfo& filter : pattern.filters) {
+            if (filter.enabled) {
+                cv::Mat tempFiltered;
+                processor.applyFilter(processedRegion, tempFiltered, filter);
+                if (!tempFiltered.empty()) {
+                    processedRegion = tempFiltered.clone();
+                }
+            }
+        }
+    }
+    
+    // ===== 2. 전체 영역에서 그레이스케일 변환 =====
+    cv::Mat processedGray;
+    if (processedRegion.channels() == 3) {
+        cv::cvtColor(processedRegion, processedGray, cv::COLOR_BGR2GRAY);
+    } else {
+        processedRegion.copyTo(processedGray);
+    }
+    
+    // 템플릿 이미지가 있는지 확인
+    if (pattern.templateImage.isNull()) {
+        logDebug(QString("엣지 검사 실패: 템플릿 이미지가 없음 - 패턴 '%1'").arg(pattern.name));
         score = 0.0;
         return false;
     }
     
     try {
-        // ROI 복사본 생성 (필터 적용용)
-        cv::Mat processedRoi = roi.clone();
-        
-        // ROI에 패턴에 적용된 필터 적용
-        if (!pattern.filters.isEmpty() && std::abs(pattern.angle) > 0.1) {
-            logDebug(QString("ROI에 %1개 필터 적용 (회전 마스크 사용)").arg(pattern.filters.size()));
-            
-            // 회전된 사각형 마스크 생성
-            cv::Mat mask = cv::Mat::zeros(roi.size(), CV_8UC1);
-            cv::Point2f center(roi.cols / 2.0f, roi.rows / 2.0f);
-            cv::Size2f patternSize(pattern.rect.width(), pattern.rect.height());
-            
-            cv::Point2f vertices[4];
-            cv::RotatedRect rotatedRect(center, patternSize, pattern.angle);
-            rotatedRect.points(vertices);
-            
-            std::vector<cv::Point> points;
-            for (int i = 0; i < 4; i++) {
-                points.push_back(cv::Point(static_cast<int>(std::round(vertices[i].x)), 
-                                         static_cast<int>(std::round(vertices[i].y))));
-            }
-            cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{points}, cv::Scalar(255));
-            
-            // 필터를 전체 ROI에 적용
-            cv::Mat filteredRoi = roi.clone();
-            ImageProcessor processor;
-            for (const FilterInfo& filter : pattern.filters) {
-                if (filter.enabled) {
-                    cv::Mat tempFiltered;
-                    processor.applyFilter(filteredRoi, tempFiltered, filter);
-                    if (!tempFiltered.empty()) {
-                        filteredRoi = tempFiltered.clone();
-                    }
-                }
-            }
-            
-            // 마스크 영역만 필터 적용된 결과 사용, 나머지는 원본 유지
-            filteredRoi.copyTo(processedRoi, mask);
-            
-        } else if (!pattern.filters.isEmpty()) {
-            // 회전 없는 경우: 일반 필터 적용
-            logDebug(QString("ROI에 %1개 필터 적용").arg(pattern.filters.size()));
-            
-            ImageProcessor processor;
-            for (const FilterInfo& filter : pattern.filters) {
-                if (filter.enabled) {
-                    cv::Mat tempFiltered;
-                    processor.applyFilter(processedRoi, tempFiltered, filter);
-                    if (!tempFiltered.empty()) {
-                        processedRoi = tempFiltered.clone();
-                    }
-                }
-            }
-        }
-        
-        // 그레이스케일 변환
-        cv::Mat gray;
-        if (processedRoi.channels() == 3) {
-            cv::cvtColor(processedRoi, gray, cv::COLOR_BGR2GRAY);
-        } else {
-            processedRoi.copyTo(gray);
-        }
-        
-        // 템플릿 이미지가 있는지 확인
-        if (pattern.templateImage.isNull()) {
-            logDebug(QString("엣지 검사 실패: 템플릿 이미지가 없음 - 패턴 '%1'").arg(pattern.name));
-            
-            // 템플릿 없이 기존 방식으로 엣지 비율 계산
-            cv::Mat edges;
-            int threshold1 = pattern.binaryThreshold / 2;
-            int threshold2 = pattern.binaryThreshold;
-            
-            cv::Canny(gray, edges, threshold1, threshold2);
-            
-            int totalPixels = edges.rows * edges.cols;
-            int edgePixels = cv::countNonZero(edges);
-            double ratio = (double)edgePixels / totalPixels;
-            score = ratio;
-            
-            // 비교 방식에 따른 결과 판단
-            bool passed = (score >= pattern.passThreshold);
-            if (pattern.compareMethod == 1) passed = (score <= pattern.passThreshold);
-            else if (pattern.compareMethod == 2) passed = (score >= pattern.lowerThreshold && score <= pattern.upperThreshold);
-            
-            result.insProcessedImages[pattern.id] = edges.clone();
-            result.insMethodTypes[pattern.id] = InspectionMethod::EDGE;
-            result.edgeDiffMask[pattern.id] = edges.clone();  // diffMask로도 저장
-            
-            return passed;
-        }
         
         // 템플릿 이미지를 Mat으로 변환
         QImage qTemplateImage = pattern.templateImage.convertToFormat(QImage::Format_RGB888);
@@ -2023,21 +1986,32 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
             templateMat.copyTo(templateGray);
         }
         
-        // 크기 확인 (이제 동일한 방식으로 추출되므로 크기가 같아야 함)
-        if (templateGray.size() != gray.size()) {
-            logDebug(QString("엣지 검사 경고: ROI(%1x%2)와 템플릿(%3x%4) 크기 불일치 - 패턴 '%5'")
-                    .arg(gray.cols).arg(gray.rows)
+        // 크기 확인 (템플릿은 INS 영역 크기, processedGray는 전체 사각형)
+        if (templateGray.size().width > processedGray.size().width || 
+            templateGray.size().height > processedGray.size().height) {
+            logDebug(QString("엣지 검사 실패: 템플릿(%1x%2)이 전체 영역(%3x%4)보다 큼 - 패턴 '%5'")
                     .arg(templateGray.cols).arg(templateGray.rows)
+                    .arg(processedGray.cols).arg(processedGray.rows)
                     .arg(pattern.name));
+            score = 0.0;
+            return false;
         }
         
-        // 엣지 추출 (현재 이미지와 템플릿 모두)
-        cv::Mat edges, templateEdges;
+        // ===== 3. 전체 영역에서 엣지 추출 및 비교 =====
         int threshold1 = pattern.binaryThreshold / 2;
         int threshold2 = pattern.binaryThreshold;
         
-        cv::Canny(gray, edges, threshold1, threshold2);
+        // 전체 영역 엣지 검출
+        cv::Mat fullEdges;
+        cv::Canny(processedGray, fullEdges, threshold1, threshold2);
+        
+        // 템플릿 엣지 검출
+        cv::Mat templateEdges;
         cv::Canny(templateGray, templateEdges, threshold1, threshold2);
+        
+        // INS 영역만 추출 (비교용)
+        cv::Rect extractROI(startX, startY, extractW, extractH);
+        cv::Mat edges = fullEdges(extractROI).clone();
         
         // 엣지 좌표 추출
         std::vector<cv::Point> edgePoints, templateEdgePoints;
@@ -2060,16 +2034,10 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
                     .arg(templateEdgePoints.size()));
             score = 0.0;
             
-            // 결과 이미지 저장
-            cv::Mat resultEdges;
-            if (edgePoints.empty()) {
-                templateEdges.copyTo(resultEdges);
-            } else {
-                edges.copyTo(resultEdges);
-            }
-            result.insProcessedImages[pattern.id] = resultEdges;
+            // ===== 4. 결과 저장: 전체 영역 저장, 화면에는 INS 영역만 그리기 =====
+            result.insProcessedImages[pattern.id] = fullEdges;  // 전체 영역 저장
             result.insMethodTypes[pattern.id] = InspectionMethod::EDGE;
-            result.edgeDiffMask[pattern.id] = resultEdges.clone();  // diffMask로도 저장
+            result.edgeDiffMask[pattern.id] = fullEdges.clone();  // 전체 diff mask
             
             return false;
         }
@@ -2119,9 +2087,9 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
                 break;
         }
         
-        // EDGE 포인트들을 절대좌표로 변환 (Qt 그리기용)
+        // EDGE 포인트들을 절대좌표로 변환 (Qt 그리기용 - INS 영역 기준)
         QList<QPoint> absoluteEdgePoints = transformPatternPoints(edgePoints, 
-                                                                 cv::Size(roi.cols, roi.rows),
+                                                                 cv::Size(edges.cols, edges.rows),
                                                                  pattern.angle, 
                                                                  cv::Point2f(pattern.rect.center().x(), pattern.rect.center().y()));
         result.edgeAbsolutePoints[pattern.id] = absoluteEdgePoints;
@@ -2134,14 +2102,20 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
             qDebug() << "마지막 EDGE 절대좌표:" << absoluteEdgePoints.last();
         }
         
-        // 결과 시각화 이미지 생성 (원본 ROI 사용)
-        cv::Mat visualEdges;
-        cv::cvtColor(edges, visualEdges, cv::COLOR_GRAY2BGR);
-        
-        // 결과 이미지 저장
-        result.insProcessedImages[pattern.id] = visualEdges;
+        // ===== 4. 결과 저장: DIFF MASK 생성 =====
+        result.insProcessedImages[pattern.id] = fullEdges;  // 전체 영역 저장
         result.insMethodTypes[pattern.id] = InspectionMethod::EDGE;
-        result.edgeDiffMask[pattern.id] = visualEdges.clone();  // diffMask로도 저장
+        
+        // diff mask 생성 (회전 여부에 따라 다르게)
+        if (std::abs(pattern.angle) > 0.1) {
+            // 회전 있음: 전체 영역으로 생성 (INS 영역 위치에 diffEdges 배치)
+            cv::Mat fullDiffMask = cv::Mat::zeros(fullEdges.size(), CV_8UC1);
+            diffEdges.copyTo(fullDiffMask(extractROI));
+            result.edgeDiffMask[pattern.id] = fullDiffMask;
+        } else {
+            // 회전 없음: diffEdges 그대로 저장 (이미 INS 영역 크기)
+            result.edgeDiffMask[pattern.id] = diffEdges.clone();
+        }
         
         // 디버그 출력
         logDebug(QString("엣지 검사 결과 - 패턴: '%1', 유사도: %2, XOR 점수: %3, Chamfer 점수: %4, 임계값: %5, 결과: %6")

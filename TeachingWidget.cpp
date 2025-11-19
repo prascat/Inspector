@@ -2227,6 +2227,8 @@ void TeachingWidget::connectEvents() {
     
     // CameraView 빈 공간 클릭 시 검사 결과 필터 해제
     connect(cameraView, &CameraView::selectedInspectionPatternCleared, this, [this]() {
+        qDebug() << "[TeachingWidget] selectedInspectionPatternCleared 시그널 받음 - patternTree 선택 해제";
+        patternTree->setCurrentItem(nullptr);
         patternTree->clearSelection();
     });
 }
@@ -4481,7 +4483,26 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
             cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
             validImage.copyTo(templateRegion(resultRect));
             
-            // 중앙에서 패턴 크기로 추출 (검사 시와 동일)
+            // ===== EDGE 검사: 전체 영역에 필터 먼저 적용 =====
+            if (pattern->inspectionMethod == InspectionMethod::EDGE && !pattern->filters.isEmpty()) {
+                qDebug() << QString("EDGE 템플릿: 전체 영역(%1x%2)에 %3개 필터 순차 적용")
+                        .arg(templateRegion.cols).arg(templateRegion.rows).arg(pattern->filters.size());
+                
+                cv::Mat processedRegion = templateRegion.clone();
+                ImageProcessor processor;
+                for (const FilterInfo& filter : pattern->filters) {
+                    if (filter.enabled) {
+                        cv::Mat tempFiltered;
+                        processor.applyFilter(processedRegion, tempFiltered, filter);
+                        if (!tempFiltered.empty()) {
+                            processedRegion = tempFiltered.clone();
+                        }
+                    }
+                }
+                templateRegion = processedRegion;
+            }
+            
+            // 중앙에서 패턴 크기로 추출 (필터 적용 후)
             int extractW = static_cast<int>(width);
             int extractH = static_cast<int>(height);
             int startX = (templateRegion.cols - extractW) / 2;
@@ -4501,7 +4522,7 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
             return;
         }
     } else {
-        // 회전 없는 경우: 원본 사각형 영역만 추출
+        // 회전 없는 경우: INS 영역만 직접 추출
         cv::Rect roi(
             static_cast<int>(newRect.x()),
             static_cast<int>(newRect.y()),
@@ -4514,7 +4535,28 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
         cv::Rect validRoi = roi & imageBounds;
         
         if (validRoi.width > 0 && validRoi.height > 0) {
-            roiMat = originalFrame(validRoi).clone();
+            cv::Mat insRegion = originalFrame(validRoi).clone();
+            
+            // ===== EDGE 검사: 필터 적용 =====
+            if (pattern->inspectionMethod == InspectionMethod::EDGE && !pattern->filters.isEmpty()) {
+                qDebug() << QString("EDGE 템플릿(회전 없음): INS 영역(%1x%2)에 %3개 필터 순차 적용")
+                        .arg(insRegion.cols).arg(insRegion.rows).arg(pattern->filters.size());
+                
+                cv::Mat processedRegion = insRegion.clone();
+                ImageProcessor processor;
+                for (const FilterInfo& filter : pattern->filters) {
+                    if (filter.enabled) {
+                        cv::Mat tempFiltered;
+                        processor.applyFilter(processedRegion, tempFiltered, filter);
+                        if (!tempFiltered.empty()) {
+                            processedRegion = tempFiltered.clone();
+                        }
+                    }
+                }
+                insRegion = processedRegion;
+            }
+            
+            roiMat = insRegion;
         } else {
             return;
         }
@@ -4526,7 +4568,7 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
     }
   
     // **템플릿 이미지는 필터를 적용하지 않고 원본 그대로 저장**
-    // 필터는 실시간 검사 시에만 적용됨
+    // EDGE 검사는 이미 위에서 전체 영역에 필터 적용 완료
     
     // 5. INS 패턴이 이진화 검사(BINARY)를 사용하는 경우, 이진화 타입 반영
     if (pattern->inspectionMethod == InspectionMethod::BINARY) {
@@ -7304,17 +7346,14 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat& frame, int cameraInd
     
     // **RUN 버튼 상태 확인**
     if (!runStopButton) {
-        qDebug() << "[onTriggerSignalReceived] RUN 버튼 없음";
         triggerProcessing = false;
         return;
     }
     
     bool isRunning = runStopButton->isChecked();
-    qDebug() << "[onTriggerSignalReceived] RUN 버튼 상태:" << (isRunning ? "RUN" : "STOP");
     
     if (!isRunning) {
         // STOP 상태 → RUN으로 전환 (검사 시작)
-        qDebug() << "[onTriggerSignalReceived] STOP → RUN 클릭";
         QMetaObject::invokeMethod(runStopButton, "click", Qt::QueuedConnection);
         
         // 처리 완료 (200ms 후)
@@ -7323,14 +7362,12 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat& frame, int cameraInd
         });
     } else {
         // RUN 상태(검사 결과 표시 중) → STOP 클릭 → 다시 RUN 클릭
-        qDebug() << "[onTriggerSignalReceived] RUN → STOP → RUN 클릭";
         QMetaObject::invokeMethod(runStopButton, "click", Qt::QueuedConnection);
         
         // 100ms 후 다시 RUN 클릭 (QPointer로 안전하게 처리)
         QPointer<QPushButton> safeButton = runStopButton;
         QTimer::singleShot(100, this, [this, safeButton]() {
             if (safeButton) {
-                qDebug() << "[onTriggerSignalReceived] 다시 RUN 클릭";
                 QMetaObject::invokeMethod(safeButton, "click", Qt::QueuedConnection);
             }
             // 처리 완료 (추가 100ms 후)

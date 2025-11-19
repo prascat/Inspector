@@ -538,7 +538,7 @@ void CameraSettingsDialog::setupUserSetSettings() {
     userSetLayout->addWidget(cameraAutoConnectCheckBox);
     
     // 체크박스 상태 변경 시그널 연결
-    connect(cameraAutoConnectCheckBox, &QCheckBox::stateChanged, this, [this](int state) {
+    connect(cameraAutoConnectCheckBox, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState state) {
         bool enabled = (state == Qt::Checked);
         m_configManager->setCameraAutoConnect(enabled);
         qDebug() << "[CameraSettingsDialog] 카메라 자동 연결 설정:" << enabled;
