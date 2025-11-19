@@ -799,12 +799,15 @@ QVBoxLayout* TeachingWidget::createMainLayout() {
     QAction* saveRecipeAsAction = recipeMenu->addAction("다른 이름으로 저장");
     QAction* saveCurrentRecipeAction = recipeMenu->addAction("현재 레시피 저장");
     recipeMenu->addSeparator();
+    QAction* closeRecipeAction = recipeMenu->addAction("현재 레시피 닫기");
+    recipeMenu->addSeparator();
     QAction* manageRecipesAction = recipeMenu->addAction("레시피 관리");
     
     // 레시피 액션들 연결
     connect(newRecipeAction, &QAction::triggered, this, &TeachingWidget::newRecipe);
     connect(saveRecipeAsAction, &QAction::triggered, this, &TeachingWidget::saveRecipeAs);
     connect(saveCurrentRecipeAction, &QAction::triggered, this, &TeachingWidget::saveRecipe);
+    connect(closeRecipeAction, &QAction::triggered, this, &TeachingWidget::clearAllRecipeData);
     connect(manageRecipesAction, &QAction::triggered, this, &TeachingWidget::manageRecipes);
 
     // 설정 메뉴
@@ -4397,20 +4400,29 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
         return;
     }
     
+    // CAM OFF 시뮬레이션 모드에서는 imageIndex 사용 (STRIP=0, CRIMP=1)
+    // CAM ON 일반 모드에서는 cameraIndex 사용
+    int frameIndex;
+    if (camOff) {
+        frameIndex = (currentStripCrimpMode == StripCrimpMode::STRIP_MODE) ? 0 : 1;
+    } else {
+        frameIndex = cameraIndex;
+    }
+    
     // cameraFrames 유효성 검사
-    if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size())) {
+    if (frameIndex < 0 || frameIndex >= static_cast<int>(cameraFrames.size())) {
         return;
     }
     
     cv::Mat sourceFrame;
     
     // 시뮬레이션 모드와 일반 모드 모두 cameraFrames 사용
-    if (cameraFrames[cameraIndex].empty()) {
+    if (cameraFrames[frameIndex].empty()) {
         return;
     }
     
     try {
-        sourceFrame = cameraFrames[cameraIndex].clone();
+        sourceFrame = cameraFrames[frameIndex].clone();
     } catch (...) {
         return;
     }
@@ -4587,20 +4599,23 @@ void TeachingWidget::updateFidTemplateImage(PatternInfo* pattern, const QRectF& 
         return;
     }
 
+    // CAM OFF 시뮬레이션 모드에서는 imageIndex 사용 (STRIP=0, CRIMP=1)
+    // CAM ON 일반 모드에서는 cameraIndex 사용
+    int frameIndex;
+    if (camOff) {
+        frameIndex = (currentStripCrimpMode == StripCrimpMode::STRIP_MODE) ? 0 : 1;
+    } else {
+        frameIndex = cameraIndex;
+    }
+    
     cv::Mat sourceFrame;
     
-    // 시뮬레이션 모드인지 확인
-    if (camOff && cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
-        !cameraFrames[cameraIndex].empty()) {
-        // 시뮬레이션 모드: 현재 카메라 프레임 사용
-        sourceFrame = cameraFrames[cameraIndex].clone();
+    // cameraFrames 유효성 검사 및 프레임 가져오기
+    if (frameIndex >= 0 && frameIndex < static_cast<int>(cameraFrames.size()) && 
+        !cameraFrames[frameIndex].empty()) {
+        sourceFrame = cameraFrames[frameIndex].clone();
     } else {
-        // 일반 카메라 모드: 카메라 프레임 사용
-        if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
-            cameraFrames[cameraIndex].empty()) {
-            return;
-        }
-        sourceFrame = cameraFrames[cameraIndex].clone();
+        return;
     }
 
     cv::Mat roiMat;
@@ -7331,28 +7346,19 @@ void TeachingWidget::startCamera() {
     // ★ CAM ON 상태로 변경
     camOff = false;
     
-    // ★ cameraFrames 전체 비우기 (티칭 이미지 제거)
+    // ★ 모든 레시피 데이터 초기화 (공용 함수 사용)
+    // clearAllRecipeData() 내부에 CAM ON 체크가 있으므로 직접 초기화
     cameraFrames.clear();
-    qDebug() << "[startCamera] cameraFrames 전체 비움";
-    
-    // ★ 뷰포트 클리어 (티칭 이미지 제거)
     if (cameraView) {
         cameraView->setBackgroundPixmap(QPixmap());
-        cameraView->clearPatterns(); // 기존 패턴 제거
+        cameraView->clearPatterns();
+        cameraView->setSelectedPatternId(QUuid());
         cameraView->update();
-        qDebug() << "[startCamera] 뷰포트 클리어 (티칭 이미지 및 패턴 제거)";
     }
-    
-    // ★ 패턴 트리 초기화
     if (patternTree) {
         patternTree->clear();
-        qDebug() << "[startCamera] 패턴 트리 초기화";
     }
-    
-    // 1-4. 선택된 패턴 정리
-    if (cameraView) {
-        cameraView->setSelectedPatternId(QUuid());
-    }
+    qDebug() << "[startCamera] 모든 레시피 데이터 초기화 완료";
     
     // 1-6. 프로퍼티 패널 초기화
     if (propertyStackWidget) {
@@ -7490,6 +7496,10 @@ void TeachingWidget::stopCamera() {
     
     // ★ CAM OFF 상태로 변경
     camOff = true;
+    
+    // ★ cameraFrames 초기화 - CAM ON에서 사용한 프레임 제거
+    cameraFrames.clear();
+    qDebug() << "[stopCamera] cameraFrames 초기화 완료";
     
     // UI 요소들 비활성화 제거됨
 
@@ -9719,28 +9729,26 @@ void TeachingWidget::setStripCrimpMode(int mode) {
         cameraView->setStripCrimpMode(mode);
     }
     
-    // 모드에 따라 이미지 전환
-    cv::Mat* targetImage = (mode == StripCrimpMode::STRIP_MODE) ? &stripModeImage : &crimpModeImage;
-    
-    if (!targetImage->empty()) {
-        // OpenCV Mat를 QPixmap으로 변환
-        cv::Mat displayImage;
-        cv::cvtColor(*targetImage, displayImage, cv::COLOR_BGR2RGB);
-        QImage qImage(displayImage.data, displayImage.cols, displayImage.rows, 
-                     displayImage.step, QImage::Format_RGB888);
-        QPixmap pixmap = QPixmap::fromImage(qImage.copy());
+    // ★ 시뮬레이션 모드(CAM OFF)일 때만 처리
+    // ★ cameraFrames[0]=STRIP, cameraFrames[1]=CRIMP을 직접 사용
+    if (camOff) {
+        int imageIndex = (mode == StripCrimpMode::STRIP_MODE) ? 0 : 1;
         
-        // CameraView 배경 이미지 업데이트
-        if (cameraView) {
-            cameraView->setBackgroundImage(pixmap);
-        }
-        
-        // ★ cameraFrames 덮어쓰기 제거: imageIndex(0=STRIP, 1=CRIMP) 기준으로만 관리되어야 함
-        // cameraFrames는 레시피 로드 시에만 설정되고, 모드 전환 시에는 변경하지 않음
-        
-        // ★ CAM OFF 상태일 때는 화면에 티칭 이미지 표시
-        if (camOff) {
-            qDebug() << "[setStripCrimpMode] CAM OFF 상태: 티칭 이미지 화면 갱신 (mode=" << mode << ")";
+        if (imageIndex < static_cast<int>(cameraFrames.size()) && !cameraFrames[imageIndex].empty()) {
+            // OpenCV Mat를 QPixmap으로 변환
+            cv::Mat displayImage;
+            cv::cvtColor(cameraFrames[imageIndex], displayImage, cv::COLOR_BGR2RGB);
+            QImage qImage(displayImage.data, displayImage.cols, displayImage.rows, 
+                         displayImage.step, QImage::Format_RGB888);
+            QPixmap pixmap = QPixmap::fromImage(qImage.copy());
+            
+            // CameraView 배경 이미지 업데이트
+            if (cameraView) {
+                cameraView->setBackgroundImage(pixmap);
+            }
+            
+            qDebug() << "[setStripCrimpMode] CAM OFF 상태: cameraFrames[" << imageIndex 
+                     << "] 화면 갱신 (mode=" << (mode == StripCrimpMode::STRIP_MODE ? "STRIP" : "CRIMP") << ")";
             updateCameraFrame();
         }
     }
@@ -12015,6 +12023,49 @@ void TeachingWidget::saveRecipeAs() {
 }
 
 // 레시피 관리 함수
+void TeachingWidget::clearAllRecipeData() {
+    qDebug() << "[clearAllRecipeData] 레시피 데이터 초기화 시작";
+    
+    // CAM ON 상태 체크
+    if (!camOff) {
+        qDebug() << "[clearAllRecipeData] CAM ON 상태 - 경고";
+        CustomMessageBox msgBox(this, CustomMessageBox::Warning, 
+                               "레시피 닫기", 
+                               "카메라가 실행 중입니다.\n먼저 카메라를 정지해주세요.");
+        msgBox.exec();
+        return;
+    }
+    
+    // 1. cameraFrames 초기화
+    cameraFrames.clear();
+    qDebug() << "[clearAllRecipeData] cameraFrames 초기화";
+    
+    // 2. 뷰포트 클리어 (배경 이미지 및 패턴 제거)
+    if (cameraView) {
+        cameraView->setBackgroundPixmap(QPixmap());
+        cameraView->clearPatterns();
+        cameraView->setSelectedPatternId(QUuid());
+        cameraView->update();
+        qDebug() << "[clearAllRecipeData] 뷰포트 클리어";
+    }
+    
+    // 3. 패턴 트리 초기화
+    if (patternTree) {
+        patternTree->clear();
+        qDebug() << "[clearAllRecipeData] 패턴 트리 초기화";
+    }
+    
+    // 4. 프로퍼티 패널 초기화
+    if (propertyStackWidget) {
+        propertyStackWidget->setCurrentIndex(0);
+    }
+    
+    // 5. 마지막 레시피 경로 초기화
+    ConfigManager::instance()->setLastRecipePath("");
+    
+    qDebug() << "[clearAllRecipeData] 완료";
+}
+
 void TeachingWidget::manageRecipes() {
     RecipeManager manager;
     QStringList availableRecipes = manager.getAvailableRecipes();

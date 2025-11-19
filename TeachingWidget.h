@@ -226,6 +226,7 @@ public:
     void saveRecipeAs();
     void manageRecipes();
     void onRecipeSelected(const QString& recipeName);
+    void clearAllRecipeData();
     
 signals:
     void frameProcessed(const cv::Mat& frame);

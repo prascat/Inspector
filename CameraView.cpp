@@ -1836,19 +1836,34 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             
             painter.restore();
             
-            // INS 라벨 (이름만 표시, 검사 결과 점수는 표시하지 않음)
-            QString label = patternInfo->name;
+            // INS 라벨 (패턴이름: 검사방법(점수%))
+            QString methodName = InspectionMethod::getName(patternInfo->inspectionMethod);
+            QString label = QString("%1: %2(%3%)").arg(patternInfo->name)
+                                                   .arg(methodName)
+                                                   .arg(score * 100.0, 0, 'f', 1);
             QFont font(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
             painter.setFont(font);
             QFontMetrics fm(font);
             int textW = fm.horizontalAdvance(label);
             int textH = fm.height();
             
+            // PASS/NG 텍스트
+            QString passText = passed ? "PASS" : "NG";
+            QColor passColor = passed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+            int passTextW = fm.horizontalAdvance(passText);
+            
             painter.save();
             painter.translate(centerViewport);
             painter.rotate(insAngle);
             painter.translate(-centerViewport);
             
+            // PASS/NG 배경 및 텍스트 (라벨 위)
+            QRectF passRect(inspRect.center().x() - passTextW/2, inspRect.top() - textH * 2 - 4, passTextW + 6, textH);
+            painter.fillRect(passRect, QBrush(QColor(0, 0, 0, 180)));
+            painter.setPen(passColor);
+            painter.drawText(passRect, Qt::AlignCenter, passText);
+            
+            // 패턴 라벨 배경 및 텍스트
             QRectF labelRect(inspRect.center().x() - textW/2, inspRect.top() - textH - 2, textW + 6, textH);
             painter.fillRect(labelRect, QBrush(QColor(0, 0, 0, 180)));
             
