@@ -2934,8 +2934,10 @@ void TeachingWidget::addFiltersToTreeItem(QTreeWidgetItem* parentItem, const Pat
         // 필터 타입 정보는 1번 열에
         filterItem->setText(1, TR("FIL"));
         
-        // 파라미터 요약은 2번 열에
-        filterItem->setText(2, filter.enabled ? TR("ACTIVE") : TR("INACTIVE"));
+        // 파라미터 요약은 2번 열에 (활성/비활성 상태 포함)
+        QString statusText = filter.enabled ? QString("%1 (%2)").arg(TR("ACTIVE")).arg(paramSummary) 
+                                              : QString("%1").arg(TR("INACTIVE"));
+        filterItem->setText(2, statusText);
        
         // 필터 식별을 위해 사용자 데이터 설정
         // 패턴 ID와 필터 인덱스를 함께 저장
@@ -8514,8 +8516,20 @@ QTreeWidgetItem* TeachingWidget::createPatternTreeItem(const PatternInfo& patter
     }
     item->setText(1, typeText);
     
+    // FIL 패턴의 경우 첫 번째 필터 정보를 함께 표시
+    QString statusText = pattern.enabled ? TR("ACTIVE") : TR("INACTIVE");
+    if (pattern.type == PatternType::FIL && !pattern.filters.isEmpty()) {
+        const FilterInfo& firstFilter = pattern.filters[0];
+        QString filterName = getFilterTypeName(firstFilter.type);
+        QString paramSummary = getFilterParamSummary(firstFilter);
+        statusText = QString("%1 %2").arg(filterName).arg(paramSummary);
+        qDebug() << "[createPatternTreeItem FIL] 필터:" << filterName << "요약:" << paramSummary << "최종:" << statusText;
+    } else if (pattern.type == PatternType::FIL) {
+        qDebug() << "[createPatternTreeItem FIL] 필터 없음 - isEmpty:" << pattern.filters.isEmpty();
+    }
+    
     // 활성화 상태
-    item->setText(2, pattern.enabled ? TR("ACTIVE") : TR("INACTIVE"));
+    item->setText(2, statusText);
     
     // 패턴 ID 저장
     item->setData(0, Qt::UserRole, pattern.id.toString());

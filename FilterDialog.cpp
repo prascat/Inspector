@@ -432,19 +432,20 @@ void FilterDialog::updateUIFromFilters() {
             checkbox->blockSignals(false);
         }
 
-        // 필터 프로퍼티 위젯 활성화/비활성화
+        // 필터 프로퍼티 위젯: 항상 파라미터 값을 표시 (활성화 상태와 별개)
         if (filterWidgets.contains(filterType)) {
             FilterPropertyWidget* propWidget = filterWidgets[filterType];
             if (!propWidget) {
                 continue;
             }
             
-            propWidget->setEnabled(checked);
-
-            // 파라미터 값 설정
+            // 파라미터 값 설정 (활성화 여부와 상관없이)
             if (appliedFilters.contains(filterType)) {
                 propWidget->setParams(appliedFilters[filterType].params);
             }
+            
+            // 활성화 상태 설정 (UI 회색처리)
+            propWidget->setEnabled(checked);
         }
     }
 }

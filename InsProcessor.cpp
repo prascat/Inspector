@@ -1742,10 +1742,10 @@ bool InsProcessor::checkBinary(const cv::Mat& image, const PatternInfo& pattern,
         int templateWhitePixels = cv::countNonZero(templateBinary);
         int totalPixels = binary.rows * binary.cols;
         
-        logDebug(QString("이진화 결과 - 현재: %1% 흰색, 템플릿: %2% 흰색, 임계값: %3, 타입: %4")
+        logDebug(QString("이진화 결과 - 현재: %1%% 흰색, 템플릿: %2%% 흰색, 임계값: %3%%, 타입: %4")
                 .arg((double)binaryWhitePixels / totalPixels * 100.0, 0, 'f', 1)
                 .arg((double)templateWhitePixels / totalPixels * 100.0, 0, 'f', 1)
-                .arg(threshold)
+                .arg((double)threshold, 0, 'f', 1)
                 .arg(thresholdType));
         
         // 일치 및 불일치 픽셀 계산
@@ -1803,19 +1803,21 @@ bool InsProcessor::checkBinary(const cv::Mat& image, const PatternInfo& pattern,
         result.binaryDiffMask[pattern.id] = resultImage.clone();  // diffMask로도 저장
         
         // 비교 방식에 따른 결과 판단
+        // score는 0-1 범위, pattern.passThreshold는 0-100 범위이므로 score를 백분율로 변환해서 비교
+        double scorePercentage = score * 100.0;
         bool passed = false;
         switch (pattern.compareMethod) {
             case 0:  // 이상 (>=)
-                passed = (score >= pattern.passThreshold);
+                passed = (scorePercentage >= pattern.passThreshold);
                 break;
             case 1:  // 이하 (<=)
-                passed = (score <= pattern.passThreshold);
+                passed = (scorePercentage <= pattern.passThreshold);
                 break;
             case 2:  // 범위 내 (lowerThreshold <= score <= upperThreshold)
-                passed = (score >= pattern.lowerThreshold && score <= pattern.upperThreshold);
+                passed = (scorePercentage >= pattern.lowerThreshold && scorePercentage <= pattern.upperThreshold);
                 break;
             default:
-                passed = (score >= pattern.passThreshold);
+                passed = (scorePercentage >= pattern.passThreshold);
                 break;
         }
         
@@ -2055,19 +2057,21 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
         score = 0.7 * similarityScore + 0.3 * chamferScore;
         
         // 비교 방식에 따른 결과 판단
+        // score는 0-1 범위, pattern.passThreshold는 0-100 범위이므로 score를 백분율로 변환해서 비교
+        double scorePercentage = score * 100.0;
         bool passed = false;
         switch (pattern.compareMethod) {
             case 0:  // 이상 (>=)
-                passed = (score >= pattern.passThreshold);
+                passed = (scorePercentage >= pattern.passThreshold);
                 break;
             case 1:  // 이하 (<=)
-                passed = (score <= pattern.passThreshold);
+                passed = (scorePercentage <= pattern.passThreshold);
                 break;
             case 2:  // 범위 내
-                passed = (score >= pattern.lowerThreshold && score <= pattern.upperThreshold);
+                passed = (scorePercentage >= pattern.lowerThreshold && scorePercentage <= pattern.upperThreshold);
                 break;
             default:
-                passed = (score >= pattern.passThreshold);
+                passed = (scorePercentage >= pattern.passThreshold);
                 break;
         }
         
@@ -2093,13 +2097,14 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
         // diff mask는 전체 크기로 저장 (티칭과 검사 모두 bboxWidth x bboxHeight)
         result.edgeDiffMask[pattern.id] = diffEdges.clone();
         
-        // 디버그 출력
-        logDebug(QString("엣지 검사 결과 - 패턴: '%1', 유사도: %2, XOR 점수: %3, Chamfer 점수: %4, 임계값: %5, 결과: %6")
+        // 디버그 출력 - 점수를 백분율로 표시
+        // passThreshold가 이미 0-100 범위로 저장되어 있으므로 그대로 사용
+        logDebug(QString("엣지 검사 결과 - 패턴: '%1', 유사도: %2%, XOR 점수: %3%, Chamfer 점수: %4%, 임계값: %5%, 결과: %6")
                 .arg(pattern.name)
-                .arg(score, 0, 'f', 4)
-                .arg(similarityScore, 0, 'f', 4)
-                .arg(chamferScore, 0, 'f', 4)
-                .arg(pattern.passThreshold, 0, 'f', 4)
+                .arg(score * 100, 0, 'f', 2)
+                .arg(similarityScore * 100, 0, 'f', 2)
+                .arg(chamferScore * 100, 0, 'f', 2)
+                .arg(pattern.passThreshold, 0, 'f', 2)
                 .arg(passed ? "합격" : "불합격"));
         
         return passed;
