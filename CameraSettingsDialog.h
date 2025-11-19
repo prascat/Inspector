@@ -88,6 +88,7 @@ protected:
     QPushButton* loadUserSet0Btn;       // LIVE UserSet (UserSet0) 로드 버튼
     QPushButton* loadUserSet1Btn;       // TRIGGER UserSet (UserSet1) 로드 버튼
     QLabel* currentUserSetLabel;        // 현재 UserSet 상태 표시 레이블
+    QCheckBox* cameraAutoConnectCheckBox;  // 카메라 자동 연결 체크박스
     
     // 트리거 테스트 컨트롤
     QGroupBox* triggerTestGroup;        // 트리거 테스트 그룹박스

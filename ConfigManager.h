@@ -47,6 +47,10 @@ public:
     int getReconnectInterval() const;
     void setReconnectInterval(int seconds);
     
+    // 카메라 자동 연결 설정
+    bool getCameraAutoConnect() const;
+    void setCameraAutoConnect(bool enable);
+    
 signals:
     void configChanged();
     void languageChanged(const QString& newLanguage);
@@ -67,6 +71,7 @@ private:
     int m_serverPort;
     bool m_autoConnect;
     int m_reconnectInterval;
+    bool m_cameraAutoConnect;
     
     // 설정 파일 경로
     QString getConfigFilePath() const;

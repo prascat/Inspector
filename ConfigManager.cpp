@@ -27,6 +27,7 @@ ConfigManager::ConfigManager(QObject* parent) : QObject(parent) {
     m_serverPort = 5000;  // 기본 서버 포트
     m_autoConnect = false;  // 기본 자동 연결 비활성화
     m_reconnectInterval = 10;  // 기본 재연결 간격 10초
+    m_cameraAutoConnect = false;  // 기본 카메라 자동 연결 비활성화
 }
 
 ConfigManager::~ConfigManager() {
@@ -97,6 +98,10 @@ bool ConfigManager::loadConfig() {
                 m_reconnectInterval = xml.readElementText().toInt();
                 if (m_reconnectInterval < 1) m_reconnectInterval = 10;
                 qDebug() << "[ConfigManager] 재연결 간격 로드됨:" << m_reconnectInterval << "초";
+            } else if (xml.name() == QLatin1String("CameraAutoConnect")) {
+                QString value = xml.readElementText();
+                m_cameraAutoConnect = (value.toLower() == "true");
+                qDebug() << "[ConfigManager] 카메라 자동 연결 설정 로드됨:" << m_cameraAutoConnect;
             } else {
                 xml.skipCurrentElement();
             }
@@ -161,6 +166,9 @@ bool ConfigManager::saveConfig() {
     xml.writeTextElement("ServerPort", QString::number(m_serverPort));
     xml.writeTextElement("AutoConnect", m_autoConnect ? "true" : "false");
     xml.writeTextElement("ReconnectInterval", QString::number(m_reconnectInterval));
+    
+    // 카메라 자동 연결 설정 저장
+    xml.writeTextElement("CameraAutoConnect", m_cameraAutoConnect ? "true" : "false");
     
     xml.writeEndElement(); // Config
     xml.writeEndDocument();
@@ -282,5 +290,18 @@ void ConfigManager::setReconnectInterval(int seconds) {
         m_reconnectInterval = seconds;
         emit configChanged();
         qDebug() << "[ConfigManager] 재연결 간격 변경됨:" << seconds << "초";
+    }
+}
+
+bool ConfigManager::getCameraAutoConnect() const {
+    return m_cameraAutoConnect;
+}
+
+void ConfigManager::setCameraAutoConnect(bool enable) {
+    if (m_cameraAutoConnect != enable) {
+        m_cameraAutoConnect = enable;
+        saveConfig(); // 즉시 저장
+        emit configChanged();
+        qDebug() << "[ConfigManager] 카메라 자동 연결 설정 변경됨:" << enable;
     }
 }

@@ -18,7 +18,6 @@ CameraSettingsDialog::CameraSettingsDialog(QWidget* parent)
 {
     setWindowTitle("카메라 UserSet 관리");
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
-    setAttribute(Qt::WA_TranslucentBackground);
     setMinimumSize(700, 450);
     
     setStyleSheet(
@@ -327,7 +326,7 @@ void CameraSettingsDialog::showEvent(QShowEvent* event) {
 }
 
 void CameraSettingsDialog::closeEvent(QCloseEvent* event) {
-    qDebug() << "[CameraSettingsDialog] closeEvent - Stopping threads";
+    qDebug() << "[CameraSettingsDialog] closeEvent - Stopping threads and cleaning up cameras";
     
     // 1. 스레드 정지 플래그 먼저 설정 (모든 스레드가 loop을 빠져나가게 함)
     liveImageThreadRunning = false;
@@ -368,24 +367,46 @@ void CameraSettingsDialog::closeEvent(QCloseEvent* event) {
         }
     }
     
-    // 5. 카메라 리소스 정리
+#ifdef USE_SPINNAKER
+    // 5. 카메라 리소스 정리 - 각 카메라의 acquisition 중지
     try {
-        for (auto& camera : m_spinCameras) {
-            if (camera) {
+        for (size_t i = 0; i < m_spinCameras.size(); ++i) {
+            auto& camera = m_spinCameras[i];
+            if (camera && camera->IsValid()) {
                 try {
+                    // Acquisition 중지
                     if (camera->IsStreaming()) {
+                        qDebug() << "[CameraSettingsDialog] Stopping camera" << i << "acquisition";
                         camera->EndAcquisition();
-                        qDebug() << "[CameraSettingsDialog] Camera EndAcquisition called";
                     }
-                } catch (...) {}
+                    
+                    // DeInit - 카메라 리소스 해제
+                    if (camera->IsInitialized()) {
+                        qDebug() << "[CameraSettingsDialog] DeInitializing camera" << i;
+                        camera->DeInit();
+                    }
+                    
+                    qDebug() << "[CameraSettingsDialog] Camera" << i << "cleaned up successfully";
+                } catch (const Spinnaker::Exception& e) {
+                    qWarning() << "[CameraSettingsDialog] Spinnaker exception for camera" << i << ":" << e.what();
+                } catch (const std::exception& e) {
+                    qWarning() << "[CameraSettingsDialog] Exception for camera" << i << ":" << e.what();
+                }
             }
         }
-        // 카메라 참조 해제
+        
+        // 6. 모든 카메라 참조 해제
+        qDebug() << "[CameraSettingsDialog] Clearing all camera references";
         m_spinCameras.clear();
-        qDebug() << "[CameraSettingsDialog] Camera references cleared";
+        
+        // 7. 잠시 대기 (참조 완전히 해제되도록)
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        
+        qDebug() << "[CameraSettingsDialog] Camera cleanup completed";
     } catch (const std::exception& e) {
         qWarning() << "[CameraSettingsDialog] Error in camera cleanup:" << e.what();
     }
+#endif
     
     qDebug() << "[CameraSettingsDialog] All cleanup completed";
     QDialog::closeEvent(event);
@@ -509,6 +530,19 @@ void CameraSettingsDialog::setupUserSetSettings() {
     statusLayout->addStretch();
     
     userSetLayout->addLayout(statusLayout);
+    
+    // 카메라 자동 연결 체크박스
+    cameraAutoConnectCheckBox = new QCheckBox("프로그램 시작 시 자동으로 카메라 연결 (CAM ON)", this);
+    cameraAutoConnectCheckBox->setStyleSheet("QCheckBox { color: white; font-size: 12px; }");
+    cameraAutoConnectCheckBox->setChecked(m_configManager->getCameraAutoConnect());
+    userSetLayout->addWidget(cameraAutoConnectCheckBox);
+    
+    // 체크박스 상태 변경 시그널 연결
+    connect(cameraAutoConnectCheckBox, &QCheckBox::stateChanged, this, [this](int state) {
+        bool enabled = (state == Qt::Checked);
+        m_configManager->setCameraAutoConnect(enabled);
+        qDebug() << "[CameraSettingsDialog] 카메라 자동 연결 설정:" << enabled;
+    });
     
     // 시그널 연결
     connect(loadUserSet0Btn, &QPushButton::clicked, this, &CameraSettingsDialog::onLoadUserSet0);

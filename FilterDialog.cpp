@@ -412,32 +412,15 @@ void FilterDialog::setPatternIndex(int index) {
 }
 
 void FilterDialog::updateUIFromFilters() {
-    printf("[FilterDialog::updateUIFromFilters] Applied filters count: %d\n", (int)appliedFilters.size());
-    fflush(stdout);
-    
     // 모든 필터 체크박스 업데이트
     for (int filterType : filterTypes) {
-        printf("[updateUIFromFilters] Processing filterType: %d\n", filterType);
-        fflush(stdout);
-        
         QWidget* checkboxWidget = filterCheckboxes[filterType];
         if (!checkboxWidget) {
-            printf("[updateUIFromFilters] Checkbox widget is null for filterType: %d\n", filterType);
-            fflush(stdout);
             continue;
         }
         
         bool checked = appliedFilters.contains(filterType) && appliedFilters[filterType].enabled;
-        
-        if (appliedFilters.contains(filterType)) {
-            printf("[FilterDialog::updateUIFromFilters] Filter %d: enabled=%d, checking=%d\n", 
-                   filterType, appliedFilters[filterType].enabled, checked);
-            fflush(stdout);
-        }
-        
-        printf("[updateUIFromFilters] Setting checkbox checked: %d\n", checked);
-        fflush(stdout);
-        
+ 
         // GroupBox인 경우
         if (QGroupBox* groupBox = qobject_cast<QGroupBox*>(checkboxWidget)) {
             groupBox->blockSignals(true);
@@ -448,54 +431,28 @@ void FilterDialog::updateUIFromFilters() {
             checkbox->setChecked(checked);
             checkbox->blockSignals(false);
         }
-        
-        printf("[updateUIFromFilters] Checkbox set complete\n");
-        fflush(stdout);
-        
+
         // 필터 프로퍼티 위젯 활성화/비활성화
         if (filterWidgets.contains(filterType)) {
-            printf("[updateUIFromFilters] Setting property widget enabled\n");
-            fflush(stdout);
-            
             FilterPropertyWidget* propWidget = filterWidgets[filterType];
             if (!propWidget) {
-                printf("[updateUIFromFilters] Property widget is null for filterType: %d\n", filterType);
-                fflush(stdout);
                 continue;
             }
             
             propWidget->setEnabled(checked);
-            
-            printf("[updateUIFromFilters] Property widget enabled set\n");
-            fflush(stdout);
-            
+
             // 파라미터 값 설정
             if (appliedFilters.contains(filterType)) {
-                printf("[updateUIFromFilters] Setting params for filterType: %d\n", filterType);
-                fflush(stdout);
-                
                 propWidget->setParams(appliedFilters[filterType].params);
-                
-                printf("[updateUIFromFilters] Params set complete\n");
-                fflush(stdout);
             }
         }
     }
-    
-    printf("[FilterDialog::updateUIFromFilters] COMPLETE\n");
-    fflush(stdout);
 }
 
 void FilterDialog::updateFilterParam(int filterType, const QString& paramName, int value) {
-    printf("[updateFilterParam] START: filterType=%d, param=%s, value=%d\n", 
-           filterType, paramName.toStdString().c_str(), value);
-    fflush(stdout);
-    
     // 필터가 활성화되어 있는지 확인
     QWidget* checkboxWidget = filterCheckboxes.value(filterType, nullptr);
     if (!checkboxWidget) {
-        printf("[updateFilterParam] Filter widget not found, returning\n");
-        fflush(stdout);
         return;
     }
     
@@ -507,8 +464,6 @@ void FilterDialog::updateFilterParam(int filterType, const QString& paramName, i
     }
     
     if (!isChecked) {
-        printf("[updateFilterParam] Filter not checked, returning\n");
-        fflush(stdout);
         return;
     }
     
@@ -519,24 +474,10 @@ void FilterDialog::updateFilterParam(int filterType, const QString& paramName, i
     
     // 패턴 ID가 설정되어 있는지 확인
     if (patternId.isNull()) {
-        printf("[FilterDialog] 패턴 ID가 null입니다.\n");
-        fflush(stdout);
         return;
     }
-    
-    printf("[FilterDialog] 필터 파라미터 업데이트: %d %s %d\n", 
-           filterType, paramName.toStdString().c_str(), value);
-    fflush(stdout);
-    
-    // 현재 필터 목록 가져오기
-    printf("[updateFilterParam] Getting current filters\n");
-    fflush(stdout);
-    
-    const QList<FilterInfo>& currentFilters = cameraView->getPatternFilters(patternId);
 
-    printf("[updateFilterParam] Current filters count: %d\n", currentFilters.size());
-    fflush(stdout);
-    
+    const QList<FilterInfo>& currentFilters = cameraView->getPatternFilters(patternId);
     int existingFilterIndex = -1;
     for (int i = 0; i < currentFilters.size(); i++) {
         if (currentFilters[i].type == filterType) {

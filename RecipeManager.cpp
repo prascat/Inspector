@@ -612,51 +612,46 @@ bool RecipeManager::loadRecipe(const QString& fileName,
     file.close();
     
     // 모든 Camera 로드 완료 후, teachingWidget에 저장된 이미지를 현재 모드에 맞게 cameraFrames에 설정
-    if (teachingWidget) {
-        int currentMode = teachingWidget->getStripCrimpMode();
+    // ★ CAM OFF 상태에서만 cameraFrames 및 stripModeImage/crimpModeImage 설정
+    if (teachingWidget && teachingWidget->camOff) {
         cv::Mat stripModeImg = teachingWidget->getStripModeImage();
         cv::Mat crimpModeImg = teachingWidget->getCrimpModeImage();
         
-        qDebug() << QString("=== 레시피 로드 완료 - 현재 Strip/Crimp 모드: %1 ===").arg(currentMode);
+        qDebug() << QString("=== 레시피 로드 (CAM OFF) ===");
         qDebug() << QString("STRIP 이미지 존재: %1, CRIMP 이미지 존재: %2")
                     .arg(!stripModeImg.empty() ? "예" : "아니오")
                     .arg(!crimpModeImg.empty() ? "예" : "아니오");
         
-        // cameraFrames가 비어있으면 resize
-        if (teachingWidget->cameraFrames.empty()) {
-            teachingWidget->cameraFrames.resize(1);
-            qDebug() << "cameraFrames를 크기 1로 초기화";
+        // ★ cameraFrames를 크기 2로 초기화 (STRIP=0, CRIMP=1)
+        if (teachingWidget->cameraFrames.size() < 2) {
+            teachingWidget->cameraFrames.resize(2);
+            qDebug() << "cameraFrames를 크기 2로 초기화 (STRIP=0, CRIMP=1)";
         }
         
-        // 현재 모드에 맞는 이미지를 cameraFrames[0]에 설정
-        bool imageSet = false;
-        if (currentMode == StripCrimpMode::STRIP_MODE && !stripModeImg.empty()) {
-            teachingWidget->cameraFrames[0] = stripModeImg.clone();
-            qDebug() << "STRIP 이미지를 cameraFrames[0]에 설정 (STRIP 모드)";
-            imageSet = true;
-        } else if (currentMode == StripCrimpMode::CRIMP_MODE && !crimpModeImg.empty()) {
-            teachingWidget->cameraFrames[0] = crimpModeImg.clone();
-            qDebug() << "CRIMP 이미지를 cameraFrames[0]에 설정 (CRIMP 모드)";
-            imageSet = true;
-        } else if (currentMode == StripCrimpMode::STRIP_MODE && !crimpModeImg.empty()) {
-            // STRIP 모드인데 STRIP 이미지가 없으면 CRIMP 표시
-            teachingWidget->cameraFrames[0] = crimpModeImg.clone();
-            qDebug() << "CRIMP 이미지를 cameraFrames[0]에 설정 (STRIP 이미지 없음)";
-            imageSet = true;
-        } else if (currentMode == StripCrimpMode::CRIMP_MODE && !stripModeImg.empty()) {
-            // CRIMP 모드인데 CRIMP 이미지가 없으면 STRIP 표시
-            teachingWidget->cameraFrames[0] = stripModeImg.clone();
-            qDebug() << "STRIP 이미지를 cameraFrames[0]에 설정 (CRIMP 이미지 없음)";
-            imageSet = true;
-        }
+        // ★ STRIP/CRIMP 이미지를 각각의 인덱스에 저장
+        QStringList imagePaths;
         
-        // 이미지 설정 직후 trainingImageCallback 호출
-        if (imageSet && trainingImageCallback) {
-            QStringList imagePaths;
+        if (!stripModeImg.empty()) {
+            teachingWidget->cameraFrames[0] = stripModeImg.clone();
+            teachingWidget->setStripModeImage(stripModeImg);
             imagePaths.append("base64_image_0");
-            qDebug() << "현재 모드에 맞는 이미지 설정 완료 - trainingImageCallback 호출";
+            qDebug() << "STRIP 이미지를 cameraFrames[0]에 설정";
+        }
+        
+        if (!crimpModeImg.empty()) {
+            teachingWidget->cameraFrames[1] = crimpModeImg.clone();
+            teachingWidget->setCrimpModeImage(crimpModeImg);
+            imagePaths.append("base64_image_1");
+            qDebug() << "CRIMP 이미지를 cameraFrames[1]에 설정";
+        }
+        
+        // 이미지 로드 후 trainingImageCallback 호출
+        if (!imagePaths.isEmpty() && trainingImageCallback) {
+            qDebug() << "STRIP/CRIMP 이미지 설정 완료 - trainingImageCallback 호출 (이미지 개수:" << imagePaths.size() << ")";
             trainingImageCallback(imagePaths);
         }
+    } else if (teachingWidget && !teachingWidget->camOff) {
+        qDebug() << "[RecipeManager] CAM ON 상태 - cameraFrames/stripModeImage/crimpModeImage 건너뜀 (패턴만 로드)";
     }
     
     // base64 티칭 이미지가 로드된 경우 trainingImageCallback 호출
@@ -1080,6 +1075,13 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
     if (cameraUuid.isEmpty()) {
         xml.skipCurrentElement();
         return false;
+    }
+    
+    // ★ CAM ON 상태에서는 이미지 맵을 nullptr로 설정하여 이미지 로드 건너뜀
+    if (teachingWidget && !teachingWidget->camOff) {
+        stripImageMap = nullptr;
+        crimpImageMap = nullptr;
+        qDebug() << "[readCameraSection] CAM ON 상태 - STRIP/CRIMP 이미지 로드 건너뜀";
     }
     
     // 해당 카메라가 로드하려는 카메라 목록에 있는지 확인하고 CameraInfo 찾기
