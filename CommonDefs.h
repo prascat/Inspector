@@ -148,10 +148,8 @@ struct InspectionResult {
     QMap<QUuid, QPointF> crimpBoxCenter;                         // SHAPE 박스 중심 상대좌표
     QMap<QUuid, QSizeF> crimpBoxSize;                            // SHAPE 박스 크기
     
-    // COLOR, EDGE, BINARY 검사 결과 (CRIMP와 동일한 방식)
-    QMap<QUuid, cv::Mat> colorDiffMask;                          // COLOR 차이 마스크 (초록=유사, 빨강=차이)
-    QMap<QUuid, cv::Mat> edgeDiffMask;                           // EDGE 차이 마스크
-    QMap<QUuid, cv::Mat> binaryDiffMask;                         // BINARY 차이 마스크
+    // DIFF 검사 차이 마스크 (패턴 ID -> 차이 영역)
+    QMap<QUuid, cv::Mat> diffMask;
 };
 
 // 패턴 유형 열거형
@@ -239,16 +237,16 @@ struct PatternInfo {
     double stripRearThicknessMin = 1.0;      // REAR 최소 두께 (mm)
     double stripRearThicknessMax = 2.0;      // REAR 최대 두께 (mm)
 
-    // EDGE 검사 관련 파라미터 (심선 끝 절단면 품질)
-    bool edgeEnabled = true;                 // EDGE 검사 활성화 여부
+    // DIFF 검사 관련 파라미터 (이전 EDGE 검사 파라미터)
+    bool edgeEnabled = true;                 // DIFF 검사 활성화 여부
     int edgeOffsetX = 75;                    // 패턴 왼쪽에서의 오프셋 (픽셀)
-    int edgeBoxWidth = 90;                   // EDGE 검사 박스 너비 (픽셀)
-    int edgeBoxHeight = 150;                 // EDGE 검사 박스 높이 (픽셀)
+    int edgeBoxWidth = 90;                   // DIFF 검사 박스 너비 (픽셀)
+    int edgeBoxHeight = 150;                 // DIFF 검사 박스 높이 (픽셀)
     int edgeMaxOutliers = 4;                 // 허용 최대 불량 포인트 개수 (평균선 거리 기준)
-    int edgeStartPercent = 3;                // EDGE 시작 제외 퍼센트 (1-50%)
-    int edgeEndPercent = 3;                  // EDGE 끝 제외 퍼센트 (1-50%)
+    int edgeStartPercent = 3;                // DIFF 시작 제외 퍼센트 (1-50%)
+    int edgeEndPercent = 3;                  // DIFF 끝 제외 퍼센트 (1-50%)
     
-    // EDGE 평균선 거리 검사 파라미터
+    // DIFF 평균선 거리 검사 파라미터
     double edgeDistanceMax = 0.5;           // 평균선에서 최대 허용 거리 (mm)
 
     // CRIMP SHAPE 검사 파라미터
@@ -258,13 +256,10 @@ struct PatternInfo {
     int crimpShapeBoxHeight = 100;          // SHAPE 박스 높이 (픽셀)
     double crimpShapeMatchRate = 80.0;      // 매칭율 (%)
 
-    // 이진화 검사를 위한 추가 속성
-    int binaryThreshold = 128;        // 이진화 임계값 (0-255)
+    // DIFF 검사 파라미터 (COLOR, EDGE, BINARY 통합)
     int compareMethod = 0;            // 비교 방식 (0: 이상, 1: 이하, 2: 범위 내)
     double lowerThreshold = 0.0;      // 하한 임계값 (범위 검사용)
-    double upperThreshold = 1.0;      // 상한 임계값 (범위 검사용)
-    bool useWhiteRatio = true;        // true: 흰색 비율, false: 검은색 비율 측정
-    int ratioType = 0;
+    double upperThreshold = 100.0;    // 상한 임계값 (범위 검사용)
     QList<FilterInfo> filters;  // 패턴에 적용된 필터 목록
 };
 
@@ -354,21 +349,15 @@ struct CalibrationInfo {
 };
 
 namespace InspectionMethod {
-    const int COLOR = 0;        // 색상 검사
-    const int EDGE = 1;         // 엣지 검사
-    const int BINARY = 2;       // 이진화 검사
-    const int STRIP = 3;        // STRIP 검사 
-    const int CRIMP = 4;        // CRIMP 검사
+    const int DIFF = 0;         // DIFF 검사 (필터 기반 템플릿 비교)
+    const int STRIP = 1;        // STRIP 검사 
+    const int CRIMP = 2;        // CRIMP 검사
     
     // 검사 방법 이름 반환 함수
     inline QString getName(int method) {
         switch (method) {
-            case COLOR:
-                return "COLOR";
-            case EDGE:
-                return "EDGE";
-            case BINARY:
-                return "BINARY";
+            case DIFF:
+                return "DIFF";
             case STRIP:
                 return "STRIP";
             case CRIMP:
@@ -379,7 +368,7 @@ namespace InspectionMethod {
     }
     
     // 검사 방법 개수
-    const int COUNT = 5;
+    const int COUNT = 3;
 }
 
 // Strip/Crimp 모드 정의

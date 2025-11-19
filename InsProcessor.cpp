@@ -241,7 +241,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                 result.insResults[pattern.id] = true;
                 result.insScores[pattern.id] = 1.0;
                 result.adjustedRects[pattern.id] = pattern.rect;
-                result.insMethodTypes[pattern.id] = InspectionMethod::BINARY;
+                result.insMethodTypes[pattern.id] = InspectionMethod::DIFF;
                 continue;
             }
 
@@ -442,19 +442,9 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             }
              
             switch (pattern.inspectionMethod) {
-                case InspectionMethod::COLOR: 
-                    inspPassed = checkColor(image, adjustedPattern, inspScore, result);
-                    logDebug(QString("색상 검사 수행: %1 (method=%2)").arg(pattern.name).arg(pattern.inspectionMethod));
-                    break;
-                    
-                case InspectionMethod::EDGE: 
-                    inspPassed = checkEdge(image, adjustedPattern, inspScore, result);
-                    logDebug(QString("엣지 검사 수행: %1 (method=%2)").arg(pattern.name).arg(pattern.inspectionMethod));
-                    break;
-                    
-                case InspectionMethod::BINARY: 
-                    inspPassed = checkBinary(image, adjustedPattern, inspScore, result);
-                    logDebug(QString("이진화 검사 수행: %1 (method=%2)").arg(pattern.name).arg(pattern.inspectionMethod));
+                case InspectionMethod::DIFF: 
+                    inspPassed = checkDiff(image, adjustedPattern, inspScore, result);
+                    logDebug(QString("DIFF 검사 수행: %1 (method=%2)").arg(pattern.name).arg(pattern.inspectionMethod));
                     break;
                     
                 case InspectionMethod::STRIP:
@@ -474,9 +464,9 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
                 }
                     
                 default:
-                    // 이전 PATTERN 타입은 COLOR로 처리
-                    inspPassed = checkColor(image, adjustedPattern, inspScore, result);
-                    logDebug(QString("알 수 없는 검사 방법 %1, 색상 검사로 수행: %2")
+                    // 이전 PATTERN 타입은 DIFF로 처리
+                    inspPassed = checkDiff(image, adjustedPattern, inspScore, result);
+                    logDebug(QString("알 수 없는 검사 방법 %1, DIFF 검사로 수행: %2")
                             .arg(pattern.inspectionMethod).arg(pattern.name));
                     break;
             }
@@ -518,7 +508,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat& image, const QLi
             logDebug(QString("%1: %2 [%3/%4]")
                     .arg(pattern.name)
                     .arg(insResultText)
-                    .arg(QString::number(inspScore, 'f', 2))
+                    .arg(QString::number(inspScore * 100.0, 'f', 1))
                     .arg(QString::number(pattern.passThreshold, 'f', 1)));
             
             // STRIP 검사인 경우 세부 결과 출력
@@ -1263,594 +1253,7 @@ bool InsProcessor::performFeatureMatching(const cv::Mat& image, const cv::Mat& t
     }
 }
 
-bool InsProcessor::checkColor(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result) {
-    // CRIMP와 동일한 방식으로 중앙에서 패턴 크기만큼 추출
-    cv::Mat roi;
-    QRectF rectF = pattern.rect;
-    cv::Point2f center(rectF.x() + rectF.width() / 2.0f, rectF.y() + rectF.height() / 2.0f);
-    
-    double width = rectF.width();
-    double height = rectF.height();
-    double angleRad = pattern.angle * M_PI / 180.0;
-    
-    // 회전된 사각형의 경계 박스 크기 계산
-    double rotatedWidth = std::abs(width * cos(angleRad)) + std::abs(height * sin(angleRad));
-    double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
-    
-    // 최종 정사각형 크기
-    int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
-    int halfSize = squareSize / 2;
-    
-    cv::Rect squareRoi(
-        static_cast<int>(center.x) - halfSize,
-        static_cast<int>(center.y) - halfSize,
-        squareSize, squareSize
-    );
-    
-    // 이미지 경계와 교집합
-    cv::Rect imageBounds(0, 0, image.cols, image.rows);
-    cv::Rect validRoi = squareRoi & imageBounds;
-    
-    if (validRoi.width <= 0 || validRoi.height <= 0) {
-        logDebug(QString("색상 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
-        score = 0.0;
-        return false;
-    }
-    
-    // 정사각형 영역 생성
-    cv::Mat templateRegion = cv::Mat::zeros(squareSize, squareSize, image.type());
-    int offsetX = validRoi.x - squareRoi.x;
-    int offsetY = validRoi.y - squareRoi.y;
-    cv::Mat validImage = image(validRoi);
-    cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
-    validImage.copyTo(templateRegion(resultRect));
-    
-    // 중앙에서 패턴 크기로 추출
-    int extractW = static_cast<int>(width);
-    int extractH = static_cast<int>(height);
-    int startX = (templateRegion.cols - extractW) / 2;
-    int startY = (templateRegion.rows - extractH) / 2;
-    
-    startX = std::max(0, std::min(startX, templateRegion.cols - extractW));
-    startY = std::max(0, std::min(startY, templateRegion.rows - extractH));
-    
-    if (startX < 0 || startY < 0 || startX + extractW > templateRegion.cols || 
-        startY + extractH > templateRegion.rows) {
-        logDebug(QString("색상 검사 실패: 추출 범위 초과 - 패턴 '%1'").arg(pattern.name));
-        score = 0.0;
-        return false;
-    }
-    
-    cv::Rect extractROI(startX, startY, extractW, extractH);
-    roi = templateRegion(extractROI).clone();
-    
-    if (roi.empty()) {
-        logDebug(QString("색상 검사 실패: ROI 추출 실패 - 패턴 '%1'").arg(pattern.name));
-        score = 0.0;
-        return false;
-    }
-    
-    if (pattern.templateImage.isNull()) {
-        logDebug(QString("색상 검사 실패: 템플릿 이미지가 없음 - 패턴 '%1'").arg(pattern.name));
-        score = 0.0;
-        return false;
-    }
-    
-    // 템플릿 이미지 정보 로그
-    logDebug(QString("색상 검사 - 패턴 '%1': 템플릿 크기 %2x%3, ROI 크기 %4x%5")
-            .arg(pattern.name)
-            .arg(pattern.templateImage.width())
-            .arg(pattern.templateImage.height())
-            .arg(roi.cols)
-            .arg(roi.rows));
-    
-    try {
-        // ROI에 패턴에 적용된 필터 적용 (임시로 비활성화)
-        cv::Mat processedRoi = roi.clone(); // 처리할 ROI 이미지 초기화
-        
-        /*
-        if (!pattern.filters.isEmpty()) {
-            logDebug(QString("ROI에 %1개 필터 적용").arg(pattern.filters.size()));
-            
-            // 필터 순차 적용
-            ImageProcessor processor;
-            for (const FilterInfo& filter : pattern.filters) {
-                if (filter.enabled) {
-                    cv::Mat filteredRoi;
-                    processor.applyFilter(processedRoi, filteredRoi, filter);
-                    if (!filteredRoi.empty()) {
-                        processedRoi = filteredRoi.clone();
-                    }
-                }
-            }
-        }
-        */
-        
-        // 템플릿 이미지를 cv::Mat으로 변환
-        QImage qTemplateImage = pattern.templateImage.convertToFormat(QImage::Format_RGB888);
-        cv::Mat templateBGR;
-
-        // QImage 데이터를 복사하여 연속된 메모리에 저장
-        if (qTemplateImage.format() == QImage::Format_RGB888) {
-            templateBGR = cv::Mat(qTemplateImage.height(), qTemplateImage.width(), 
-                            CV_8UC3, const_cast<uchar*>(qTemplateImage.bits()), qTemplateImage.bytesPerLine());
-            templateBGR = templateBGR.clone(); // 연속된 메모리 보장을 위해 복사
-            cv::cvtColor(templateBGR, templateBGR, cv::COLOR_RGB2BGR); // RGB -> BGR 변환
-        } else {
-            logDebug(QString("색상 검사 실패: 이미지 형식 변환 실패 - 패턴 '%1'").arg(pattern.name));
-            score = 0.0;
-            return false;
-        }
-        
-        // 템플릿도 중앙에서 패턴 크기만큼 추출 (ROI와 동일)
-        cv::Mat templateMat;
-        int templateExtractW = static_cast<int>(width);
-        int templateExtractH = static_cast<int>(height);
-        int templateStartX = (templateBGR.cols - templateExtractW) / 2;
-        int templateStartY = (templateBGR.rows - templateExtractH) / 2;
-        
-        templateStartX = std::max(0, std::min(templateStartX, templateBGR.cols - templateExtractW));
-        templateStartY = std::max(0, std::min(templateStartY, templateBGR.rows - templateExtractH));
-        
-        if (templateStartX >= 0 && templateStartY >= 0 && 
-            templateStartX + templateExtractW <= templateBGR.cols && 
-            templateStartY + templateExtractH <= templateBGR.rows) {
-            cv::Rect templateExtractROI(templateStartX, templateStartY, templateExtractW, templateExtractH);
-            templateMat = templateBGR(templateExtractROI).clone();
-        } else {
-            // 추출 실패 시 원본 사용
-            templateMat = templateBGR.clone();
-        }
-        
-        // 크기 확인 (이제 동일한 방식으로 추출되므로 크기가 같아야 함)
-        if (templateMat.size() != processedRoi.size()) {
-            logDebug(QString("색상 검사 경고: ROI(%1x%2)와 템플릿(%3x%4) 크기 불일치 - 패턴 '%5'")
-                    .arg(processedRoi.cols).arg(processedRoi.rows)
-                    .arg(templateMat.cols).arg(templateMat.rows)
-                    .arg(pattern.name));
-        }
-        
-        // HSV 색 공간으로 변환하여 히스토그램 비교
-        cv::Mat hsvRoi, hsvTemplate;
-        cv::cvtColor(processedRoi, hsvRoi, cv::COLOR_BGR2HSV);
-        cv::cvtColor(templateMat, hsvTemplate, cv::COLOR_BGR2HSV);
-        
-        // 히스토그램 계산
-        int histSize[] = {30, 32, 32};  // H, S, V 각각의 빈 개수
-        float hRanges[] = {0, 180};     // H는 0-180
-        float sRanges[] = {0, 256};     // S, V는 0-255
-        float vRanges[] = {0, 256};
-        const float* ranges[] = {hRanges, sRanges, vRanges};
-        int channels[] = {0, 1, 2};     // 모든 채널 사용
-        
-        cv::Mat roiHist, templateHist;
-        cv::calcHist(&hsvRoi, 1, channels, cv::Mat(), roiHist, 3, histSize, ranges);
-        cv::calcHist(&hsvTemplate, 1, channels, cv::Mat(), templateHist, 3, histSize, ranges);
-        
-        // 히스토그램 정규화
-        cv::normalize(roiHist, roiHist, 0, 1, cv::NORM_MINMAX);
-        cv::normalize(templateHist, templateHist, 0, 1, cv::NORM_MINMAX);
-        
-        // 히스토그램 비교
-        score = cv::compareHist(roiHist, templateHist, cv::HISTCMP_CORREL);
-        
-        // 상관계수는 -1에서 1 사이의 값이므로 0에서 1로 변환
-        score = (score + 1.0) / 2.0;
-        
-        // 시각화를 위한 차이 이미지 생성 (차이 없음=초록, 차이 있음=빨강)
-        cv::Mat diffGray;
-        cv::absdiff(processedRoi, templateMat, diffGray);
-        cv::cvtColor(diffGray, diffGray, cv::COLOR_BGR2GRAY);
-        
-        // 차이 정도를 0~255로 정규화
-        cv::normalize(diffGray, diffGray, 0, 255, cv::NORM_MINMAX);
-        
-        // 결과 이미지 생성 (3채널 컬러)
-        cv::Mat resultImage = cv::Mat::zeros(diffGray.size(), CV_8UC3);
-        
-        // 각 픽셀별로 차이 정도에 따라 색상 설정
-        for (int y = 0; y < diffGray.rows; y++) {
-            for (int x = 0; x < diffGray.cols; x++) {
-                uchar diff = diffGray.at<uchar>(y, x);
-                
-                if (diff < 30) {
-                    // 차이가 거의 없음 -> 초록색 (차이가 적을수록 진한 초록)
-                    resultImage.at<cv::Vec3b>(y, x) = cv::Vec3b(0, 255 - diff, 0);
-                } else {
-                    // 차이가 있음 -> 빨간색 (차이가 클수록 진한 빨강)
-                    resultImage.at<cv::Vec3b>(y, x) = cv::Vec3b(0, 0, std::min(255, diff + 100));
-                }
-            }
-        }
-        
-        cv::cvtColor(resultImage, resultImage, cv::COLOR_BGR2RGB);  // RGB로 변환
-        
-        // 비교 방식에 따른 결과 판단
-        bool passed = false;
-        double scorePercent = score * 100.0;  // 퍼센트로 변환
-        
-        switch (pattern.compareMethod) {
-            case 0:  // 이상 (>=)
-                passed = (scorePercent >= pattern.passThreshold);
-                break;
-            case 1:  // 이하 (<=)
-                passed = (scorePercent <= pattern.passThreshold);
-                break;
-            case 2:  // 범위 내 (lowerThreshold <= score <= upperThreshold)
-                passed = (scorePercent >= pattern.lowerThreshold && scorePercent <= pattern.upperThreshold);
-                break;
-            default:
-                passed = (scorePercent >= pattern.passThreshold);
-                break;
-        }
-        
-        // 결과 이미지 저장 - InspectionResult에 직접 저장
-        result.insProcessedImages[pattern.id] = resultImage;
-        result.insMethodTypes[pattern.id] = InspectionMethod::COLOR;
-        result.colorDiffMask[pattern.id] = resultImage.clone();  // diffMask로도 저장
-        
-        logDebug(QString("색상 검사 결과 - 패턴: '%1', 유사도: %2%, 임계값: %3%, 결과: %4")
-                .arg(pattern.name)
-                .arg(score * 100.0, 0, 'f', 1)
-                .arg(pattern.passThreshold, 0, 'f', 1)
-                .arg(passed ? "합격" : "불합격"));
-        
-        return passed;
-        
-    } catch (const cv::Exception& e) {
-        logDebug(QString("색상 검사 중 OpenCV 예외 발생: '%1' - 패턴 '%2'").arg(e.what()).arg(pattern.name));
-        score = 0.0;
-        return false;
-    } catch (const std::exception& e) {
-        logDebug(QString("색상 검사 중 일반 예외 발생: '%1' - 패턴 '%2'").arg(e.what()).arg(pattern.name));
-        score = 0.0;
-        return false;
-    } catch (...) {
-        logDebug(QString("색상 검사 중 알 수 없는 예외 발생 - 패턴 '%1'").arg(pattern.name));
-        score = 0.0;
-        return false;
-    }
-}
-
-bool InsProcessor::checkBinary(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result) {
-    // CRIMP와 동일한 방식으로 중앙에서 패턴 크기만큼 추출
-    cv::Mat roi;
-    QRectF rectF = pattern.rect;
-    cv::Point2f center(rectF.x() + rectF.width() / 2.0f, rectF.y() + rectF.height() / 2.0f);
-    
-    double width = rectF.width();
-    double height = rectF.height();
-    double angleRad = pattern.angle * M_PI / 180.0;
-    
-    double rotatedWidth = std::abs(width * cos(angleRad)) + std::abs(height * sin(angleRad));
-    double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
-    
-    int squareSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
-    int halfSize = squareSize / 2;
-    
-    cv::Rect squareRoi(
-        static_cast<int>(center.x) - halfSize,
-        static_cast<int>(center.y) - halfSize,
-        squareSize, squareSize
-    );
-    
-    cv::Rect imageBounds(0, 0, image.cols, image.rows);
-    cv::Rect validRoi = squareRoi & imageBounds;
-    
-    if (validRoi.width <= 0 || validRoi.height <= 0) {
-        logDebug(QString("이진화 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
-        score = 0.0;
-        return false;
-    }
-    
-    cv::Mat templateRegion = cv::Mat::zeros(squareSize, squareSize, image.type());
-    int offsetX = validRoi.x - squareRoi.x;
-    int offsetY = validRoi.y - squareRoi.y;
-    cv::Mat validImage = image(validRoi);
-    cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
-    validImage.copyTo(templateRegion(resultRect));
-    
-    int extractW = static_cast<int>(width);
-    int extractH = static_cast<int>(height);
-    int startX = (templateRegion.cols - extractW) / 2;
-    int startY = (templateRegion.rows - extractH) / 2;
-    
-    startX = std::max(0, std::min(startX, templateRegion.cols - extractW));
-    startY = std::max(0, std::min(startY, templateRegion.rows - extractH));
-    
-    if (startX < 0 || startY < 0 || startX + extractW > templateRegion.cols || 
-        startY + extractH > templateRegion.rows) {
-        logDebug(QString("이진화 검사 실패: 추출 범위 초과 - 패턴 '%1'").arg(pattern.name));
-        score = 0.0;
-        return false;
-    }
-    
-    cv::Rect extractROI(startX, startY, extractW, extractH);
-    roi = templateRegion(extractROI).clone();
-    
-    if (roi.empty()) {
-        logDebug(QString("이진화 검사 실패: ROI 추출 실패 - 패턴 '%1'").arg(pattern.name));
-        score = 0.0;
-        return false;
-    }
-    
-    try {
-        // ROI 복사본 생성 (필터 적용용)
-        cv::Mat processedRoi = roi.clone();
-        
-        // 이진화 타입과 파라미터 결정
-        int thresholdType = cv::THRESH_BINARY;
-        int threshold = pattern.binaryThreshold;
-        int blockSize = 11;  // 기본값
-        int C = 2;           // 기본값
-        
-        // 패턴의 필터에서 이진화 필터가 있는지 확인
-        for (const FilterInfo& filter : pattern.filters) {
-            if (filter.enabled && filter.type == FILTER_THRESHOLD) {
-                // 필터에 설정된 이진화 파라미터 사용
-                thresholdType = filter.params.value("thresholdType", cv::THRESH_BINARY);
-                threshold = filter.params.value("threshold", pattern.binaryThreshold);
-                blockSize = filter.params.value("blockSize", 11);
-                C = filter.params.value("C", 2);
-                
-                logDebug(QString("필터에서 이진화 타입 %1 사용, 임계값: %2")
-                        .arg(thresholdType).arg(threshold));
-                break;
-            }
-        }
-        
-        // 필터에 이진화 타입이 없으면 ratioType에 따라 설정
-        if (thresholdType == cv::THRESH_BINARY && pattern.ratioType == 1) {
-            thresholdType = cv::THRESH_BINARY_INV;
-            logDebug(QString("ratioType에 따른 역이진화(BINARY_INV) 사용"));
-        }
-        
-        // 그레이스케일 변환
-        cv::Mat gray;
-        if (processedRoi.channels() == 3) {
-            cv::cvtColor(processedRoi, gray, cv::COLOR_BGR2GRAY);
-        } else {
-            processedRoi.copyTo(gray);
-        }
-        
-        // 템플릿 이미지가 없는 경우 - 단순 비율 계산
-        if (pattern.templateImage.isNull()) {
-            cv::Mat binary;
-            
-            // ImageProcessor 클래스의 thresholdFilter 활용
-            ImageProcessor processor;
-            cv::Mat tempResult;  // 임시 결과 (RGB 형식)
-            processor.applyThresholdFilter(
-                processedRoi, tempResult, 
-                threshold, thresholdType, blockSize, C
-            );
-            
-            // RGB에서 그레이스케일로 다시 변환 (결과가 RGB로 반환되므로)
-            cv::cvtColor(tempResult, binary, cv::COLOR_RGB2GRAY);
-            
-            // 여기를 수정: 0이 아닌 모든 픽셀을 255로 설정 (특수 이진화 타입 보존)
-            cv::threshold(binary, binary, 0, 255, cv::THRESH_BINARY);
-            
-            int totalPixels = binary.rows * binary.cols;
-            int whitePixels = cv::countNonZero(binary);
-            
-            // 관심 비율 계산 (흰색 픽셀 비율)
-            double ratio = (double)whitePixels / totalPixels;
-            score = ratio;
-            
-            // 결과 비교
-            bool passed = false;
-            switch (pattern.compareMethod) {
-                case 0: // 이상 (>=)
-                    passed = ((score * 100.0) >= pattern.passThreshold);
-                    break;
-                case 1: // 이하 (<=)
-                    passed = ((score * 100.0) <= pattern.passThreshold);
-                    break;
-                case 2: // 범위 내
-                    passed = ((score * 100.0) >= pattern.lowerThreshold && (score * 100.0) <= pattern.upperThreshold);
-                    break;
-                default:
-                    passed = ((score * 100.0) >= pattern.passThreshold);
-            }
-            
-            // 결과 이미지 저장
-            result.insProcessedImages[pattern.id] = tempResult.clone();  // RGB 형식 그대로 저장
-            result.insMethodTypes[pattern.id] = InspectionMethod::BINARY;
-            result.binaryDiffMask[pattern.id] = tempResult.clone();  // diffMask로도 저장
-            
-            logDebug(QString("이진화 검사 결과 (비율): 패턴 '%1', 비율: %2%, 임계값: %3%, 타입: %4, 결과: %5")
-                    .arg(pattern.name)
-                    .arg(ratio * 100.0, 0, 'f', 2)
-                    .arg(pattern.passThreshold, 0, 'f', 1)
-                    .arg(thresholdType)
-                    .arg(passed ? "합격" : "불합격"));
-                    
-            return passed;
-        }
-        
-        // 템플릿 이미지 로드 및 처리
-        QImage qTemplateImage = pattern.templateImage.convertToFormat(QImage::Format_RGB888);
-        cv::Mat templateMat;
-        
-        if (qTemplateImage.format() == QImage::Format_RGB888) {
-            templateMat = cv::Mat(qTemplateImage.height(), qTemplateImage.width(), 
-                              CV_8UC3, const_cast<uchar*>(qTemplateImage.bits()), qTemplateImage.bytesPerLine());
-            templateMat = templateMat.clone();
-            cv::cvtColor(templateMat, templateMat, cv::COLOR_RGB2BGR);
-        } else {
-            logDebug(QString("이진화 검사 실패: 템플릿 이미지 형식 변환 실패 - 패턴 '%1'").arg(pattern.name));
-            score = 0.0;
-            return false;
-        }
-        
-        // 크기 확인 (이제 동일한 방식으로 추출되므로 크기가 같아야 함)
-        if (templateMat.size() != processedRoi.size()) {
-            logDebug(QString("이진화 검사 경고: ROI(%1x%2)와 템플릿(%3x%4) 크기 불일치 - 패턴 '%5'")
-                    .arg(processedRoi.cols).arg(processedRoi.rows)
-                    .arg(templateMat.cols).arg(templateMat.rows)
-                    .arg(pattern.name));
-        }
-        
-        // 그레이스케일로 변환
-        cv::Mat grayRoi, grayTemplate;
-        cv::cvtColor(processedRoi, grayRoi, cv::COLOR_BGR2GRAY);
-        cv::cvtColor(templateMat, grayTemplate, cv::COLOR_BGR2GRAY);
-        
-        // 특수 이진화 타입인 경우 처리 방식 변경
-        cv::Mat binary, templateBinary;
-        bool isSpecialThresholdType = (thresholdType == cv::THRESH_TRUNC || 
-                                      thresholdType == cv::THRESH_TOZERO || 
-                                      thresholdType == cv::THRESH_TOZERO_INV);
-        
-        // 적응형 이진화 타입인 경우
-        bool isAdaptiveThreshold = (thresholdType == THRESH_ADAPTIVE_MEAN || 
-                                  thresholdType == THRESH_ADAPTIVE_GAUSSIAN);
-        
-        // 이진화 처리
-        if (isAdaptiveThreshold) {
-            // 적응형 이진화 처리
-            int adaptiveMethod = (thresholdType == THRESH_ADAPTIVE_MEAN) ? 
-                cv::ADAPTIVE_THRESH_MEAN_C : cv::ADAPTIVE_THRESH_GAUSSIAN_C;
-            
-            cv::adaptiveThreshold(grayRoi, binary, 255, adaptiveMethod,
-                               cv::THRESH_BINARY, blockSize, C);
-            cv::adaptiveThreshold(grayTemplate, templateBinary, 255, adaptiveMethod,
-                               cv::THRESH_BINARY, blockSize, C);
-        }
-        else if (isSpecialThresholdType) {
-            // 특수 이진화 타입 처리 (TRUNC, TOZERO, TOZERO_INV)
-            cv::threshold(grayRoi, binary, threshold, 255, thresholdType);
-            cv::threshold(grayTemplate, templateBinary, threshold, 255, thresholdType);
-            
-            // 픽셀값 기반 비교를 위해 다시 일반 이진화로 변환
-            // 0이 아닌 픽셀을 모두 흰색(255)으로, 0인 픽셀은 그대로 0으로 변환
-            cv::Mat tempBinary, tempTemplateBinary;
-            cv::threshold(binary, tempBinary, 0, 255, cv::THRESH_BINARY);
-            cv::threshold(templateBinary, tempTemplateBinary, 0, 255, cv::THRESH_BINARY);
-            binary = tempBinary;
-            templateBinary = tempTemplateBinary;
-        }
-        else {
-            // 일반 이진화 (BINARY, BINARY_INV)
-            cv::threshold(grayRoi, binary, threshold, 255, thresholdType);
-            cv::threshold(grayTemplate, templateBinary, threshold, 255, thresholdType);
-        }
-        
-        // 디버깅을 위한 이진화 결과 로그
-        int binaryWhitePixels = cv::countNonZero(binary);
-        int templateWhitePixels = cv::countNonZero(templateBinary);
-        int totalPixels = binary.rows * binary.cols;
-        
-        logDebug(QString("이진화 결과 - 현재: %1%% 흰색, 템플릿: %2%% 흰색, 임계값: %3%%, 타입: %4")
-                .arg((double)binaryWhitePixels / totalPixels * 100.0, 0, 'f', 1)
-                .arg((double)templateWhitePixels / totalPixels * 100.0, 0, 'f', 1)
-                .arg((double)threshold, 0, 'f', 1)
-                .arg(thresholdType));
-        
-        // 일치 및 불일치 픽셀 계산
-        cv::Mat matchingPixels, diffPixels;
-        cv::bitwise_and(binary, templateBinary, matchingPixels);  // 둘 다 1인 픽셀 (일치하는 흰색)
-        cv::bitwise_xor(binary, templateBinary, diffPixels);      // 서로 다른 픽셀 (불일치)
-        
-        // 일치율 계산 방법 1: 전체 픽셀 대비 동일한 픽셀 비율
-        int samePixels = totalPixels - cv::countNonZero(diffPixels);
-        double matchRatio = (double)samePixels / totalPixels;
-        
-        // 일치율 계산 방법 2: 흰색 픽셀 일치도
-        double whiteMatchRatio = 0.0;
-        if (templateWhitePixels > 0) {
-            int matchingWhitePixels = cv::countNonZero(matchingPixels);
-            whiteMatchRatio = (double)matchingWhitePixels / templateWhitePixels;
-        }
-        
-        // 최종 점수 계산 (두 방법의 가중 평균)
-        score = 0.7 * matchRatio + 0.3 * whiteMatchRatio;
-        
-        // 결과 시각화 이미지 생성
-        cv::Mat resultImage = cv::Mat::zeros(binary.size(), CV_8UC3);
-        
-        // 색상 코드 정의 (BGR 순서)
-        cv::Vec3b colorMatch(0, 255, 0);          // 녹색: 일치하는 흰색 픽셀
-        cv::Vec3b colorOnlyTemplate(0, 0, 255);   // 빨간색: 템플릿에만 있는 흰색 픽셀
-        cv::Vec3b colorOnlyCurrent(255, 0, 0);    // 파란색: 현재 이미지에만 있는 흰색 픽셀
-        cv::Vec3b colorBlack(30, 30, 30);         // 어두운 회색: 모두 검은색인 픽셀
-        
-        for (int y = 0; y < binary.rows; y++) {
-            for (int x = 0; x < binary.cols; x++) {
-                bool isBinaryWhite = binary.at<uchar>(y, x) > 0;
-                bool isTemplateWhite = templateBinary.at<uchar>(y, x) > 0;
-                
-                if (isBinaryWhite && isTemplateWhite) {
-                    // 둘 다 흰색 - 일치
-                    resultImage.at<cv::Vec3b>(y, x) = colorMatch;
-                } else if (!isBinaryWhite && !isTemplateWhite) {
-                    // 둘 다 검은색 - 일치
-                    resultImage.at<cv::Vec3b>(y, x) = colorBlack;
-                } else if (isTemplateWhite) {
-                    // 템플릿만 흰색 - 불일치
-                    resultImage.at<cv::Vec3b>(y, x) = colorOnlyTemplate;
-                } else {
-                    // 현재만 흰색 - 불일치
-                    resultImage.at<cv::Vec3b>(y, x) = colorOnlyCurrent;
-                }
-            }
-        }
-        
-        // 결과 저장
-        result.insProcessedImages[pattern.id] = resultImage;
-        result.insMethodTypes[pattern.id] = InspectionMethod::BINARY;
-        result.binaryDiffMask[pattern.id] = resultImage.clone();  // diffMask로도 저장
-        
-        // 비교 방식에 따른 결과 판단
-        // score는 0-1 범위, pattern.passThreshold는 0-100 범위이므로 score를 백분율로 변환해서 비교
-        double scorePercentage = score * 100.0;
-        bool passed = false;
-        switch (pattern.compareMethod) {
-            case 0:  // 이상 (>=)
-                passed = (scorePercentage >= pattern.passThreshold);
-                break;
-            case 1:  // 이하 (<=)
-                passed = (scorePercentage <= pattern.passThreshold);
-                break;
-            case 2:  // 범위 내 (lowerThreshold <= score <= upperThreshold)
-                passed = (scorePercentage >= pattern.lowerThreshold && scorePercentage <= pattern.upperThreshold);
-                break;
-            default:
-                passed = (scorePercentage >= pattern.passThreshold);
-                break;
-        }
-        
-        logDebug(QString("이진화 검사 결과 - 패턴: '%1', 전체 일치율: %2%, 흰색 일치율: %3%, 최종 점수: %4%, 임계값: %5%, 타입: %6, 결과: %7")
-        .arg(pattern.name)
-        .arg(matchRatio * 100.0, 0, 'f', 2)
-        .arg(whiteMatchRatio * 100.0, 0, 'f', 2)
-        .arg(score * 100.0, 0, 'f', 2)
-        .arg(pattern.passThreshold, 0, 'f', 1)
-        .arg(thresholdType)
-        .arg(passed ? "합격" : "불합격"));
-
-        // 색상 코드 설명 추가
-        logDebug(QString("이진화 결과 시각화 - 패턴: '%1', 녹색: 일치 흰색 픽셀, 빨간색: 템플릿에만 있는 픽셀, 파란색: 현재에만 있는 픽셀")
-                .arg(pattern.name));
-                
-        return passed;
-    } catch (const cv::Exception& e) {
-        logDebug(QString("이진화 검사 중 OpenCV 예외 발생: '%1' - 패턴 '%2'").arg(e.what()).arg(pattern.name));
-        score = 0.0;
-        return false;
-    } catch (const std::exception& e) {
-        logDebug(QString("이진화 검사 중 일반 예외 발생: '%1' - 패턴 '%2'").arg(e.what()).arg(pattern.name));
-        score = 0.0;
-        return false;
-    } catch (...) {
-        logDebug(QString("이진화 검사 중 알 수 없는 예외 발생 - 패턴 '%1'").arg(pattern.name));
-        score = 0.0;
-        return false;
-    }
-}
-
-bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result) {
+bool InsProcessor::checkDiff(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result) {
     QRectF rectF = pattern.rect;
     cv::Point2f center(rectF.x() + rectF.width() / 2.0f, rectF.y() + rectF.height() / 2.0f);
     
@@ -1979,82 +1382,29 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
             return false;
         }
         
-        // ===== 3. 전체 영역에서 엣지 추출 및 비교 =====
-        int threshold1 = pattern.binaryThreshold / 2;
-        int threshold2 = pattern.binaryThreshold;
+        // ===== 3. 이진 이미지로 변환 후 XOR 비교 =====
+        // processedGray를 이진화
+        cv::Mat binary;
+        cv::threshold(processedGray, binary, 127, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
         
-        // 전체 영역 엣지 검출
-        cv::Mat fullEdges;
-        cv::Canny(processedGray, fullEdges, threshold1, threshold2);
+        // 템플릿을 이진화
+        cv::Mat templateBinary;
+        cv::threshold(templateGray, templateBinary, 127, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
         
-        // 템플릿 엣지 검출
-        cv::Mat templateEdges;
-        cv::Canny(templateGray, templateEdges, threshold1, threshold2);
-        
-        // 전체 영역을 비교 (티칭과 동일하게 bboxWidth x bboxHeight)
-        cv::Mat edges = fullEdges.clone();
-        
-        // 엣지 좌표 추출
-        std::vector<cv::Point> edgePoints, templateEdgePoints;
-        
-        for (int y = 0; y < edges.rows; y++) {
-            for (int x = 0; x < edges.cols; x++) {
-                if (edges.at<uchar>(y, x) > 0) {
-                    edgePoints.push_back(cv::Point(x, y));
-                }
-            }
+        // 이진 이미지 크기가 일치하지 않으면 템플릿 크기로 리사이징
+        if (binary.size() != templateBinary.size()) {
+            cv::resize(binary, binary, templateBinary.size());
         }
         
-        for (int y = 0; y < templateEdges.rows; y++) {
-            for (int x = 0; x < templateEdges.cols; x++) {
-                if (templateEdges.at<uchar>(y, x) > 0) {
-                    templateEdgePoints.push_back(cv::Point(x, y));
-                }
-            }
-        }
+        // XOR로 차이 계산 (DIFF 검사)
+        cv::Mat diffMask;
+        cv::bitwise_xor(binary, templateBinary, diffMask);
         
-        // 충분한 엣지 포인트가 있는지 확인
-        if (edgePoints.empty() || templateEdgePoints.empty()) {
-            logDebug(QString("엣지 검사 실패: 엣지 포인트가 충분하지 않음 - 현재(%1), 템플릿(%2)")
-                    .arg(edgePoints.size())
-                    .arg(templateEdgePoints.size()));
-            score = 0.0;
-            
-            // ===== 4. 결과 저장: 전체 영역 저장, 화면에는 INS 영역만 그리기 =====
-            result.insProcessedImages[pattern.id] = fullEdges;  // 전체 영역 저장
-            result.insMethodTypes[pattern.id] = InspectionMethod::EDGE;
-            result.edgeDiffMask[pattern.id] = fullEdges.clone();  // 전체 diff mask
-            
-            return false;
-        }
-        
-        // 방법 1: 엣지 맵 비교 - 두 엣지 맵의 유사도 계산
-        cv::Mat diffEdges;
-        cv::bitwise_xor(edges, templateEdges, diffEdges);  // XOR로 차이 계산
-        int diffPixels = cv::countNonZero(diffEdges);      // 차이 픽셀 수
-        int totalPixels = edges.rows * edges.cols;         // 전체 픽셀 수
+        int diffPixels = cv::countNonZero(diffMask);
+        int totalPixels = diffMask.rows * diffMask.cols;
         
         // 유사도 점수 계산 (1에서 차이 비율 빼기)
-        double similarityScore = 1.0 - (double)diffPixels / totalPixels;
-        
-        // 방법 2: Chamfer 매칭 - 엣지 간의 거리 변환 맵 기반 매칭
-        cv::Mat distanceMap;
-        cv::distanceTransform(~templateEdges, distanceMap, cv::DIST_L2, 3);
-        
-        // 평균 거리 계산
-        double totalDistance = 0.0;
-        for (const cv::Point& pt : edgePoints) {
-            if (pt.x >= 0 && pt.x < distanceMap.cols && pt.y >= 0 && pt.y < distanceMap.rows) {
-                totalDistance += distanceMap.at<float>(pt.y, pt.x);
-            }
-        }
-        
-        // 정규화된 Chamfer 거리 점수 (낮을수록 더 유사)
-        double maxDistance = sqrt(edges.rows * edges.rows + edges.cols * edges.cols);
-        double chamferScore = 1.0 - (totalDistance / edgePoints.size()) / maxDistance;
-        
-        // 두 방법의 점수 조합
-        score = 0.7 * similarityScore + 0.3 * chamferScore;
+        score = 1.0 - (double)diffPixels / totalPixels;
         
         // 비교 방식에 따른 결과 판단
         // score는 0-1 범위, pattern.passThreshold는 0-100 범위이므로 score를 백분율로 변환해서 비교
@@ -2075,35 +1425,17 @@ bool InsProcessor::checkEdge(const cv::Mat& image, const PatternInfo& pattern, d
                 break;
         }
         
-        // EDGE 포인트들을 절대좌표로 변환 (Qt 그리기용 - INS 영역 기준)
-        QList<QPoint> absoluteEdgePoints = transformPatternPoints(edgePoints, 
-                                                                 cv::Size(edges.cols, edges.rows),
-                                                                 pattern.angle, 
-                                                                 cv::Point2f(pattern.rect.center().x(), pattern.rect.center().y()));
-        result.edgeAbsolutePoints[pattern.id] = absoluteEdgePoints;
-        
-        qDebug() << "=== EDGE 절대좌표 변환 완료 ===";
-        qDebug() << "원본 EDGE 포인트 개수:" << edgePoints.size();
-        qDebug() << "변환된 절대좌표 개수:" << absoluteEdgePoints.size();
-        if (!absoluteEdgePoints.isEmpty()) {
-            qDebug() << "첫 번째 EDGE 절대좌표:" << absoluteEdgePoints.first();
-            qDebug() << "마지막 EDGE 절대좌표:" << absoluteEdgePoints.last();
-        }
-        
         // ===== 4. 결과 저장: DIFF MASK 생성 =====
-        result.insProcessedImages[pattern.id] = fullEdges;  // 전체 영역 저장
-        result.insMethodTypes[pattern.id] = InspectionMethod::EDGE;
-        
-        // diff mask는 전체 크기로 저장 (티칭과 검사 모두 bboxWidth x bboxHeight)
-        result.edgeDiffMask[pattern.id] = diffEdges.clone();
+        result.insProcessedImages[pattern.id] = binary;  // 이진 이미지 저장
+        result.insMethodTypes[pattern.id] = InspectionMethod::DIFF;
+        result.diffMask[pattern.id] = diffMask.clone();  // diff mask 저장
+        result.insScores[pattern.id] = score;  // 점수 저장 (0-1 범위)
+        result.insResults[pattern.id] = passed;  // 검사 결과 저장
         
         // 디버그 출력 - 점수를 백분율로 표시
-        // passThreshold가 이미 0-100 범위로 저장되어 있으므로 그대로 사용
-        logDebug(QString("엣지 검사 결과 - 패턴: '%1', 유사도: %2%, XOR 점수: %3%, Chamfer 점수: %4%, 임계값: %5%, 결과: %6")
+        logDebug(QString("DIFF 검사 결과 - 패턴: '%1', 유사도: %2%, 임계값: %3%, 결과: %4")
                 .arg(pattern.name)
-                .arg(score * 100, 0, 'f', 2)
-                .arg(similarityScore * 100, 0, 'f', 2)
-                .arg(chamferScore * 100, 0, 'f', 2)
+                .arg(scorePercentage, 0, 'f', 2)
                 .arg(pattern.passThreshold, 0, 'f', 2)
                 .arg(passed ? "합격" : "불합격"));
         
@@ -2343,7 +1675,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         double stripMeasuredLengthPx = 0.0;  // 픽셀 원본값
         cv::Point stripLengthStartPoint;
         cv::Point stripLengthEndPoint;
-                
+        
     // performStripInspection 호출을 간소화: PatternInfo 전체를 전달
     std::vector<cv::Point> frontBlackRegionPoints, rearBlackRegionPoints; // 검은색 구간 포인트 (빨간색 표시용)
     cv::Point frontBoxCenterROI, rearBoxCenterROI;  // ROI 좌표계의 박스 중심
@@ -2354,16 +1686,16 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     cv::Point rearMinScanTop, rearMinScanBottom, rearMaxScanTop, rearMaxScanBottom;
     
     bool isPassed = ImageProcessor::performStripInspection(roiImage, templateImage,
-                                  pattern,
-                                  score, startPoint, maxGradientPoint, gradientPoints, resultImage, &edgePoints,
-                                  &stripLengthPassed, &stripMeasuredLength, &stripLengthStartPoint, &stripLengthEndPoint,
-                                  &frontThicknessPoints, &rearThicknessPoints,
-                                  &frontBlackRegionPoints, &rearBlackRegionPoints,
-                                  &stripMeasuredLengthPx,
-                                  &frontBoxCenterROI, &frontBoxSz,
-                                  &rearBoxCenterROI, &rearBoxSz,
-                                  &frontMinScanTop, &frontMinScanBottom, &frontMaxScanTop, &frontMaxScanBottom,
-                                  &rearMinScanTop, &rearMinScanBottom, &rearMaxScanTop, &rearMaxScanBottom);
+                                    pattern,
+                                    score, startPoint, maxGradientPoint, gradientPoints, resultImage, &edgePoints,
+                                    &stripLengthPassed, &stripMeasuredLength, &stripLengthStartPoint, &stripLengthEndPoint,
+                                    &frontThicknessPoints, &rearThicknessPoints,
+                                    &frontBlackRegionPoints, &rearBlackRegionPoints,
+                                    &stripMeasuredLengthPx,
+                                    &frontBoxCenterROI, &frontBoxSz,
+                                    &rearBoxCenterROI, &rearBoxSz,
+                                    &frontMinScanTop, &frontMinScanBottom, &frontMaxScanTop, &frontMaxScanBottom,
+                                    &rearMinScanTop, &rearMinScanBottom, &rearMaxScanTop, &rearMaxScanBottom);
     
     // FRONT 두께 통계 계산 (ImageProcessor에서 받은 픽셀 데이터로부터)
     if (!frontThicknessPoints.empty()) {

@@ -732,9 +732,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
     cv::Point* edgeBoxTopLeft = nullptr;
     int* edgeAverageX = nullptr;
         
-        // ===== 1단계: 필터에서 완벽하게 전처리된 이진화 영상 사용 =====
-        // 필터에서 이미 이진화 + 형태학적 연산이 완료되었으므로 그대로 사용
-        // roiImage는 InsProcessor에서 필터 적용된 상태로 들어옴
         cv::Mat processed;
         if (roiImage.channels() == 3) {
             // 3채널이면 그레이스케일로 변환 (필터 적용된 이진 영상은 모든 채널이 동일)

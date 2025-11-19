@@ -19,9 +19,7 @@ public:
         cv::Point& matchLoc, double& matchAngle, const QList<PatternInfo>& allPatterns);
     
     // INS 검사 기능
-    bool checkColor(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result);
-    bool checkEdge(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result);
-    bool checkBinary(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result);
+    bool checkDiff(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result);
     bool checkStrip(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result, const QList<PatternInfo>& patterns);
     bool checkCrimp(const cv::Mat& image, const PatternInfo& pattern, double& score, InspectionResult& result);
 

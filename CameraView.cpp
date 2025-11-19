@@ -1026,7 +1026,7 @@ void CameraView::showContextMenu(const QPoint& pos) {
                 newPattern.enabled = true;
                 newPattern.cameraUuid = currentCameraUuid;
                 newPattern.runInspection = true;
-                newPattern.inspectionMethod = InspectionMethod::COLOR;
+                newPattern.inspectionMethod = InspectionMethod::DIFF;
                 newPattern.passThreshold = 80.0;  // 80%
                 newPattern.compareMethod = 0;
                 newPattern.angle = 0.0;  // 각도 명시적으로 0으로 설정
@@ -2834,153 +2834,79 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             }
         }
         
-        // ===== COLOR 검사 결과 시각화 (CRIMP와 동일한 방식) =====
-        if (patternInfo->inspectionMethod == InspectionMethod::COLOR && 
-            result.colorDiffMask.contains(patternId)) {
-            
-            cv::Mat colorMask = result.colorDiffMask[patternId];
-            if (!colorMask.empty()) {
-                // 패턴 영역 중심
-                QPointF centerViewport = inspRect.center();
-                
-                // 현재 줌 스케일
-                QTransform t = transform();
-                double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
-                
-                painter.save();
-                painter.translate(centerViewport);
-                painter.rotate(insAngle);
-                
-                // 패턴 크기에 맞춰 왼쪽 상단 기준으로 그리기
-                int halfWidth = int(inspRect.width() / 2);
-                int halfHeight = int(inspRect.height() / 2);
-                painter.translate(-halfWidth, -halfHeight);
-                
-                // diffMask 그리기
-                for (int y = 0; y < colorMask.rows; y++) {
-                    for (int x = 0; x < colorMask.cols; x++) {
-                        cv::Vec3b pixel = colorMask.at<cv::Vec3b>(y, x);
-                        QColor pixelColor(pixel[0], pixel[1], pixel[2], 150);  // RGB + alpha
-                        
-                        int drawX = int(x * currentScale);
-                        int drawY = int(y * currentScale);
-                        painter.setPen(QPen(pixelColor, 1));
-                        painter.drawPoint(drawX, drawY);
-                    }
-                }
-                
-                painter.restore();
-            }
-        }
-        
-        // ===== BINARY 검사 결과 시각화 =====
-        if (patternInfo->inspectionMethod == InspectionMethod::BINARY && 
-            result.binaryDiffMask.contains(patternId)) {
-            
-            cv::Mat binaryMask = result.binaryDiffMask[patternId];
-            if (!binaryMask.empty()) {
-                QPointF centerViewport = inspRect.center();
-                QTransform t = transform();
-                double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
-                
-                painter.save();
-                painter.translate(centerViewport);
-                painter.rotate(insAngle);
-                
-                int halfWidth = int(inspRect.width() / 2);
-                int halfHeight = int(inspRect.height() / 2);
-                painter.translate(-halfWidth, -halfHeight);
-                
-                for (int y = 0; y < binaryMask.rows; y++) {
-                    for (int x = 0; x < binaryMask.cols; x++) {
-                        cv::Vec3b pixel = binaryMask.at<cv::Vec3b>(y, x);
-                        QColor pixelColor(pixel[0], pixel[1], pixel[2], 150);
-                        
-                        int drawX = int(x * currentScale);
-                        int drawY = int(y * currentScale);
-                        painter.setPen(QPen(pixelColor, 1));
-                        painter.drawPoint(drawX, drawY);
-                    }
-                }
-                
-                painter.restore();
-            }
-        }
-        
         // ===== EDGE 검사 결과 시각화 (DIFF MASK) =====
-        if (patternInfo->inspectionMethod == InspectionMethod::EDGE && 
-            result.edgeDiffMask.contains(patternId)) {
+        if (patternInfo->inspectionMethod == InspectionMethod::DIFF && 
+            result.diffMask.contains(patternId)) {
             
-            cv::Mat edgeMask = result.edgeDiffMask[patternId];
-            if (!edgeMask.empty()) {
+            cv::Mat diffMaskMat = result.diffMask[patternId];
+            if (!diffMaskMat.empty()) {
+                // zoom scale 적용
                 QTransform t = transform();
                 double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
                 
-                // INS 패턴의 실제 크기 (Scene 좌표)
-                double patternWidth = patternInfo->rect.width();
-                double patternHeight = patternInfo->rect.height();
+                // INS 패턴 정보
+                QRectF rectF = patternInfo->rect;
+                QPointF center(rectF.x() + rectF.width() / 2.0, rectF.y() + rectF.height() / 2.0);
+                QPointF viewCenter = mapFromScene(center);
                 
-                cv::Mat insEdgeMask;
+                double insWidth = rectF.width() * currentScale;
+                double insHeight = rectF.height() * currentScale;
                 
-                // 회전 있는 경우: 전체 사각형에서 INS 영역 추출
-                if (std::abs(patternInfo->angle) > 0.1) {
-                    double angleRad = std::abs(patternInfo->angle) * M_PI / 180.0;
-                    double rotatedWidth = std::abs(patternWidth * std::cos(angleRad)) + std::abs(patternHeight * std::sin(angleRad));
-                    double rotatedHeight = std::abs(patternWidth * std::sin(angleRad)) + std::abs(patternHeight * std::cos(angleRad));
-                    int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight)) + 10;
-                    
-                    // INS 영역 추출 위치 계산
-                    int startX = (maxSize - static_cast<int>(patternWidth)) / 2;
-                    int startY = (maxSize - static_cast<int>(patternHeight)) / 2;
-                    
-                    // 범위 체크
-                    if (startX >= 0 && startY >= 0 && 
-                        startX + patternWidth <= edgeMask.cols && 
-                        startY + patternHeight <= edgeMask.rows) {
+                // diffMask 크기 (스케일 적용)
+                int scaledWidth = static_cast<int>(diffMaskMat.cols * currentScale);
+                int scaledHeight = static_cast<int>(diffMaskMat.rows * currentScale);
+                
+                QPointF topLeft(viewCenter.x() - scaledWidth / 2.0, 
+                               viewCenter.y() - scaledHeight / 2.0);
+                
+                // 회전각 (도 단위)
+                double angle = patternInfo->angle;
+                double angleRad = angle * M_PI / 180.0;
+                double cosA = std::cos(angleRad);
+                double sinA = std::sin(angleRad);
+                
+                // diffMask를 픽셀 단위로 검사하면서 그리기
+                for (int py = 0; py < diffMaskMat.rows; py++) {
+                    for (int px = 0; px < diffMaskMat.cols; px++) {
+                        uchar pixelValue;
+                        if (diffMaskMat.channels() == 3) {
+                            cv::Vec3b pixel = diffMaskMat.at<cv::Vec3b>(py, px);
+                            pixelValue = pixel[0];
+                        } else {
+                            pixelValue = diffMaskMat.at<uchar>(py, px);
+                        }
                         
-                        cv::Rect insROI(startX, startY, static_cast<int>(patternWidth), static_cast<int>(patternHeight));
-                        insEdgeMask = edgeMask(insROI);
-                    }
-                } else {
-                    // 회전 없는 경우: edgeMask가 이미 INS 영역 크기
-                    insEdgeMask = edgeMask;
-                }
-                
-                if (!insEdgeMask.empty()) {
-                    // Scene 좌표 변환
-                    QPointF topLeft = mapFromScene(patternInfo->rect.topLeft());
-                    QPointF bottomRight = mapFromScene(patternInfo->rect.bottomRight());
-                    QRectF drawRect(topLeft, bottomRight);
-                    
-                    painter.save();
-                    painter.setClipRect(drawRect);  // INS 영역만 클리핑
-                    
-                    // 회전 변환 적용
-                    painter.translate(drawRect.center());
-                    painter.rotate(insAngle);
-                    painter.translate(-drawRect.width() / 2, -drawRect.height() / 2);
-                    
-                    // DIFF MASK 픽셀 그리기 (차이나는 부분만 흰색으로 표시)
-                    for (int y = 0; y < insEdgeMask.rows; y++) {
-                        for (int x = 0; x < insEdgeMask.cols; x++) {
-                            uchar pixelValue;
-                            if (insEdgeMask.channels() == 3) {
-                                cv::Vec3b pixel = insEdgeMask.at<cv::Vec3b>(y, x);
-                                pixelValue = pixel[0];
+                        // 뷰 좌표로 변환 (스케일 적용)
+                        double vx = topLeft.x() + px * currentScale;
+                        double vy = topLeft.y() + py * currentScale;
+                        
+                        // 중심을 기준으로 상대 좌표 계산
+                        double relX = vx - viewCenter.x();
+                        double relY = vy - viewCenter.y();
+                        
+                        // 역회전: 회전된 좌표를 원래 좌표로 변환
+                        double unrotatedX = relX * cosA + relY * sinA;
+                        double unrotatedY = -relX * sinA + relY * cosA;
+                        
+                        // INS 영역 범위 확인 (반시계 방향 회전이므로 음수 사용)
+                        if (std::abs(unrotatedX) <= insWidth / 2.0 && 
+                            std::abs(unrotatedY) <= insHeight / 2.0) {
+                            
+                            // 색상 결정
+                            QColor pixelColor;
+                            if (pixelValue > 0) {
+                                pixelColor = QColor(255, 0, 0);  // 빨강 (차이)
                             } else {
-                                pixelValue = insEdgeMask.at<uchar>(y, x);
+                                pixelColor = QColor(0, 255, 0);  // 초록 (유사)
                             }
                             
-                            if (pixelValue > 0) {
-                                // 차이나는 부분은 빨간색으로 표시
-                                QColor diffColor(255, 0, 0, 200);
-                                painter.setPen(QPen(diffColor, 1));
-                                painter.drawPoint(QPointF(x * currentScale, y * currentScale));
-                            }
+                            // 알파 값 적용
+                            pixelColor.setAlpha(179);  // 0.7 * 255 ≈ 179
+                            
+                            // 픽셀 그리기
+                            painter.fillRect(QRectF(vx, vy, currentScale, currentScale), pixelColor);
                         }
                     }
-                    
-                    painter.restore();
                 }
             }
         }

@@ -3450,12 +3450,10 @@ void TeachingWidget::createPropertyPanels() {
     // 검사 방법
     insMethodLabel = new QLabel("검사 방법:", basicInspectionGroup);
     insMethodCombo = new QComboBox(basicInspectionGroup);
-    insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::COLOR));
-    insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::EDGE));
-    insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::BINARY));
+    insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::DIFF));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::STRIP));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::CRIMP));
-    insMethodCombo->setCurrentIndex(3);  // 기본값을 COLOR로 설정
+    insMethodCombo->setCurrentIndex(0);  // 기본값을 DIFF로 설정
     basicInspectionLayout->addRow(insMethodLabel, insMethodCombo);
 
     // 합격 임계값
@@ -4091,7 +4089,7 @@ void TeachingWidget::createPropertyPanels() {
     // 검사 방법에 따른 패널 표시 설정
     connect(insMethodCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), 
         [this](int index) {
-            insBinaryPanel->setVisible(index == InspectionMethod::BINARY);  // 이진화
+            insBinaryPanel->setVisible(index == InspectionMethod::DIFF);  // 이진화
             insStripPanel->setVisible(index == InspectionMethod::STRIP);    // STRIP
             insCrimpPanel->setVisible(index == InspectionMethod::CRIMP);    // CRIMP
             // 결과 반전 옵션은 BINARY, STRIP, CRIMP에서만 표시 (안함)
@@ -4491,8 +4489,8 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
             cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
             validImage.copyTo(templateRegion(resultRect));
             
-            // ===== EDGE/STRIP 검사: 전체 영역에 필터 먼저 적용 =====
-            if ((pattern->inspectionMethod == InspectionMethod::EDGE || 
+            // ===== DIFF/STRIP 검사: 전체 영역에 필터 먼저 적용 =====
+            if ((pattern->inspectionMethod == InspectionMethod::DIFF || 
                  pattern->inspectionMethod == InspectionMethod::STRIP) && !pattern->filters.isEmpty()) {
                 qDebug() << QString("템플릿: 전체 영역(%1x%2)에 %3개 필터 순차 적용")
                         .arg(templateRegion.cols).arg(templateRegion.rows).arg(pattern->filters.size());
@@ -4532,8 +4530,8 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
         if (validRoi.width > 0 && validRoi.height > 0) {
             cv::Mat insRegion = originalFrame(validRoi).clone();
             
-            // ===== EDGE/STRIP 검사: 필터 적용 =====
-            if ((pattern->inspectionMethod == InspectionMethod::EDGE || 
+            // ===== DIFF/STRIP 검사: 필터 적용 =====
+            if ((pattern->inspectionMethod == InspectionMethod::DIFF || 
                  pattern->inspectionMethod == InspectionMethod::STRIP) && !pattern->filters.isEmpty()) {
                 qDebug() << QString("템플릿(회전 없음): INS 영역(%1x%2)에 %3개 필터 순차 적용")
                         .arg(insRegion.cols).arg(insRegion.rows).arg(pattern->filters.size());
@@ -4558,42 +4556,19 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
         }
     }
             
-        
     if (roiMat.empty()) {
         return;
     }
   
     // **템플릿 이미지는 필터를 적용하지 않고 원본 그대로 저장**
-    // EDGE 검사는 이미 위에서 전체 영역에 필터 적용 완료
+    // DIFF 검사는 이미 위에서 전체 영역에 필터 적용 완료
     
-    // 5. INS 패턴이 이진화 검사(BINARY)를 사용하는 경우, 이진화 타입 반영
-    if (pattern->inspectionMethod == InspectionMethod::BINARY) {
-        cv::Mat gray;
-        if (roiMat.channels() == 3) {
-            cv::cvtColor(roiMat, gray, cv::COLOR_BGR2GRAY);
-        } else {
-            roiMat.copyTo(gray);
-        }
-        
-        // 이진화 타입 설정 - 패턴 속성에서 가져옴
-        int thresholdType = cv::THRESH_BINARY;
-        if (pattern->ratioType == 1) { // 검은색 비율 사용 시 반전 이진화
-            thresholdType = cv::THRESH_BINARY_INV;
-        }
-        
-        cv::Mat binary;
-        cv::threshold(gray, binary, pattern->binaryThreshold, 255, thresholdType);
-        
-        // 이진화된 결과를 다시 컬러 이미지로 변환 (QImage 호환성을 위해)
-        cv::cvtColor(binary, roiMat, cv::COLOR_GRAY2BGR);
-    }
-
-    // 6. BGR -> RGB 변환 (QImage 생성용)
+    // BGR -> RGB 변환 (QImage 생성용)
     if (roiMat.channels() == 3) {
         cv::cvtColor(roiMat, roiMat, cv::COLOR_BGR2RGB);
     }
 
-    // 7. QImage로 변환
+    // QImage로 변환
     QImage qimg;
     if (roiMat.isContinuous()) {
         qimg = QImage(roiMat.data, roiMat.cols, roiMat.rows, roiMat.step, QImage::Format_RGB888);
@@ -4604,11 +4579,9 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
         }
     }
     
-    // 8. 패턴의 템플릿 이미지 업데이트
+    // 패턴의 템플릿 이미지 업데이트
     pattern->templateImage = qimg.copy();
     
-    // 디버그 메시지 제거: FID 템플릿 정보 출력은 더 이상 필요하지 않음
-
     // UI 업데이트
     if (insTemplateImg) {
         if (!pattern->templateImage.isNull()) {
@@ -4986,7 +4959,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                         
                         // 이진화 검사 패널 표시 설정
                         if (insBinaryPanel) {
-                            insBinaryPanel->setVisible(index == InspectionMethod::BINARY);
+                            insBinaryPanel->setVisible(index == InspectionMethod::DIFF);
                         }
                         
                         // STRIP 검사 패널 및 그룹들 표시 설정
@@ -5014,7 +4987,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
 
                         // 패턴 매칭 패널 표시 설정
                         if (insPatternMatchPanel) {
-                            insPatternMatchPanel->setVisible(index == InspectionMethod::COLOR && pattern->runInspection);
+                            insPatternMatchPanel->setVisible(index == InspectionMethod::DIFF && pattern->runInspection);
                         }
                         
                         cameraView->updatePatternById(patternId, *pattern);
@@ -5221,22 +5194,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
     
     // 이진화 검사 관련 연결
     // 이진화 임계값
-    if (insBinaryThreshSpin) {
-        connect(insBinaryThreshSpin, QOverload<int>::of(&QSpinBox::valueChanged), 
-                [this](int value) {
-            QTreeWidgetItem* selectedItem = patternTree->currentItem();
-            if (selectedItem) {
-                QUuid patternId = getPatternIdFromItem(selectedItem);
-                if (!patternId.isNull()) {
-                    PatternInfo* pattern = cameraView->getPatternById(patternId);
-                    if (pattern && pattern->type == PatternType::INS) {
-                        pattern->binaryThreshold = value;
-                        cameraView->updatePatternById(patternId, *pattern);
-                    }
-                }
-            }
-        });
-    }
+    // Binary threshold removed - DIFF inspection no longer uses binary threshold
     
     // 비교 방식
     if (insCompareCombo) {
@@ -5302,7 +5260,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                         QUuid patternId = getPatternIdFromItem(selectedItem);
                         PatternInfo* pattern = cameraView->getPatternById(patternId);
                         if (pattern && pattern->type == PatternType::INS) {
-                            pattern->ratioType = index;
+                            // ratioType removed - DIFF inspection no longer uses ratio type
                             
                             // 비율 타입 변경 후 템플릿 이미지 업데이트
                             
@@ -6361,7 +6319,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                     
                     // 이진화 패널 표시 설정
                     if (insBinaryPanel) {
-                        insBinaryPanel->setVisible(pattern->inspectionMethod == InspectionMethod::BINARY);
+                        insBinaryPanel->setVisible(pattern->inspectionMethod == InspectionMethod::DIFF);
                     }
                     
                     // STRIP 패널 표시 설정
@@ -6647,7 +6605,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                     }
                     
                     if (insBinaryThreshSpin) {
-                        insBinaryThreshSpin->setValue(pattern->binaryThreshold);
+                        // binaryThreshold removed - DIFF inspection no longer uses binary threshold
                     }
                     
                     if (insCompareCombo) {
@@ -6663,7 +6621,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                     }
                     
                     if (insRatioTypeCombo) {
-                        insRatioTypeCombo->setCurrentIndex(pattern->ratioType);
+                        // ratioType removed - DIFF inspection no longer uses ratio type
                     }
                     
                     // CRIMP SHAPE 검사 파라미터 로드
@@ -10793,11 +10751,11 @@ void TeachingWidget::addPattern() {
             pattern.passThreshold = 90.0;  // 90%
             pattern.invertResult = false;
             pattern.inspectionMethod = 0;
-            pattern.binaryThreshold = 128;
+            // binaryThreshold removed - DIFF inspection no longer uses binary threshold
             pattern.compareMethod = 0;
             pattern.lowerThreshold = 0.5;
             pattern.upperThreshold = 1.0;
-            pattern.ratioType = 0;
+            // ratioType removed - DIFF inspection no longer uses ratio type
             
             // EDGE 검사 관련 기본값 설정
             pattern.edgeEnabled = true;
