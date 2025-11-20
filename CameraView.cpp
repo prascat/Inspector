@@ -2015,8 +2015,8 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     // zoom scale 적용
                     QTransform t = transform();
                     double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
-                    int boxWidth = int(patternInfo->stripRearThicknessBoxWidth * currentScale);
-                    int boxHeight = int(patternInfo->stripRearThicknessBoxHeight * currentScale);
+                    double boxWidth = patternInfo->stripRearThicknessBoxWidth * currentScale;
+                    double boxHeight = patternInfo->stripRearThicknessBoxHeight * currentScale;
                     
                     qDebug() << "[REAR cyan박스] insAngle=" << insAngle 
                              << ", boxWidth=" << boxWidth << ", boxHeight=" << boxHeight
@@ -2155,8 +2155,8 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         // zoom scale 계산 (cyan 박스와 동일하게)
                         QTransform t = transform();
                         double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
-                        int boxWidth = int(rearBoxSize.width() * currentScale);
-                        int boxHeight = int(rearBoxSize.height() * currentScale);
+                        double boxWidth = rearBoxSize.width() * currentScale;
+                        double boxHeight = rearBoxSize.height() * currentScale;
                         
                         qDebug() << "[REAR 노란박스] angle=" << patternInfo->angle 
                                  << ", boxSize=" << rearBoxSize.width() << "x" << rearBoxSize.height()
@@ -2251,8 +2251,8 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     // zoom scale 적용
                     QTransform t = transform();
                     double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
-                    int boxWidth = int(patternInfo->stripThicknessBoxWidth * currentScale);
-                    int boxHeight = int(patternInfo->stripThicknessBoxHeight * currentScale);
+                    double boxWidth = patternInfo->stripThicknessBoxWidth * currentScale;
+                    double boxHeight = patternInfo->stripThicknessBoxHeight * currentScale;
                     
                     qDebug() << "[FRONT cyan박스] insAngle=" << insAngle 
                              << ", boxWidth=" << boxWidth << ", boxHeight=" << boxHeight
@@ -2387,8 +2387,8 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         // zoom scale 계산 (cyan 박스와 동일하게)
                         QTransform t = transform();
                         double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
-                        int boxWidth = int(frontBoxSize.width() * currentScale);
-                        int boxHeight = int(frontBoxSize.height() * currentScale);
+                        double boxWidth = frontBoxSize.width() * currentScale;
+                        double boxHeight = frontBoxSize.height() * currentScale;
                         
                         qDebug() << "[FRONT 노란박스] angle=" << patternInfo->angle 
                                  << ", boxSize=" << frontBoxSize.width() << "x" << frontBoxSize.height()
@@ -2768,6 +2768,58 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         }
                     }
                 }
+                
+                // EDGE 검은색 검출 영역 표시 (노란색 바운딩 박스)
+                if (patternFound && result.edgeBoxCenter.contains(patternId) && result.edgeBoxSize.contains(patternId)) {
+                    // InsProcessor에서 계산한 Scene 좌표 박스 정보
+                    QPointF edgeBoxCenterScene = result.edgeBoxCenter[patternId];
+                    QSizeF edgeBoxSize = result.edgeBoxSize[patternId];
+                    
+                    // 패턴 정보에서 EDGE 박스 중심(Viewport) 계산
+                    // 티칭 모드에서 그린 주황색 EDGE 박스의 중심과 동일하게 사용
+                    QVector<QPoint> rotatedCorners = getRotatedCorners();
+                    if (rotatedCorners.size() == 4) {
+                        QPoint topLeft = rotatedCorners[0];
+                        QPoint topRight = rotatedCorners[1];
+                        QPoint bottomLeft = rotatedCorners[3];
+                        
+                        double widthVectorX = topRight.x() - topLeft.x();
+                        double widthVectorY = topRight.y() - topLeft.y();
+                        double vectorLen = std::sqrt(widthVectorX * widthVectorX + widthVectorY * widthVectorY);
+                        
+                        if (vectorLen > 0.01) {
+                            QTransform t = transform();
+                            double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
+                            
+                            double edgeOffsetScaled = currentPattern.edgeOffsetX * currentScale;
+                            double unitX = widthVectorX / vectorLen;
+                            double unitY = widthVectorY / vectorLen;
+                            
+                            QPoint edgeTopLeft = QPoint(
+                                qRound(topLeft.x() + unitX * edgeOffsetScaled),
+                                qRound(topLeft.y() + unitY * edgeOffsetScaled)
+                            );
+                            QPoint edgeBottomLeft = QPoint(
+                                qRound(bottomLeft.x() + unitX * edgeOffsetScaled),
+                                qRound(bottomLeft.y() + unitY * edgeOffsetScaled)
+                            );
+                            QPointF edgeBoxCenterVP = QPointF(
+                                (edgeTopLeft.x() + edgeBottomLeft.x()) / 2.0,
+                                (edgeTopLeft.y() + edgeBottomLeft.y()) / 2.0
+                            );
+                            
+                            double boxWidth = edgeBoxSize.width() * currentScale;
+                            double boxHeight = edgeBoxSize.height() * currentScale;
+                            
+                            // 노란색 바운딩 박스 그리기
+                            painter.setPen(QPen(QColor(255, 255, 0), 2));  // 노란색
+                            painter.setBrush(Qt::NoBrush);
+                            painter.drawRect(QRectF(edgeBoxCenterVP.x() - boxWidth/2, 
+                                                   edgeBoxCenterVP.y() - boxHeight/2, 
+                                                   boxWidth, boxHeight));
+                        }
+                    }
+                }
             }
         }
         
@@ -2833,8 +2885,8 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 double patternHeight = std::sqrt(heightVectorX * heightVectorX + heightVectorY * heightVectorY);
                 
                 // zoom scale 적용
-                int boxWidth = int(patternInfo->crimpShapeBoxWidth * currentScale);
-                int boxHeight = int(patternInfo->crimpShapeBoxHeight * currentScale);
+                double boxWidth = patternInfo->crimpShapeBoxWidth * currentScale;
+                double boxHeight = patternInfo->crimpShapeBoxHeight * currentScale;
                 
                 // 세로 중앙 오프셋
                 double verticalOffset = (patternHeight - boxHeight) / 2.0;
@@ -3310,8 +3362,8 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         double boxAngle = std::atan2(widthVectorY, widthVectorX) * 180.0 / M_PI;
                         
                         // zoom scale 적용
-                        int boxWidth = int(pattern.stripThicknessBoxWidth * currentScale);
-                        int boxHeight = int(pattern.stripThicknessBoxHeight * currentScale);
+                        double boxWidth = pattern.stripThicknessBoxWidth * currentScale;
+                        double boxHeight = pattern.stripThicknessBoxHeight * currentScale;
                         
                         painter.save();
                         painter.translate(frontBoxCenter);
@@ -3388,8 +3440,8 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         double boxAngle = std::atan2(widthVectorY, widthVectorX) * 180.0 / M_PI;
                         
                         // zoom scale 적용
-                        int boxWidth = int(pattern.stripRearThicknessBoxWidth * currentScale);
-                        int boxHeight = int(pattern.stripRearThicknessBoxHeight * currentScale);
+                        double boxWidth = pattern.stripRearThicknessBoxWidth * currentScale;
+                        double boxHeight = pattern.stripRearThicknessBoxHeight * currentScale;
                         
                         painter.save();
                         painter.translate(rearBoxCenter);
@@ -3464,20 +3516,22 @@ void CameraView::paintEvent(QPaintEvent *event) {
                             qRound(bottomLeft.x() + unitX * edgeOffsetScaled),
                             qRound(bottomLeft.y() + unitY * edgeOffsetScaled)
                         );
-                        QPoint edgeBoxCenter = QPoint(
-                            (edgeTopLeft.x() + edgeBottomLeft.x()) / 2,
-                            (edgeTopLeft.y() + edgeBottomLeft.y()) / 2
+                        
+                        // EDGE 박스 중심 (Viewport 좌표) - Yellow 박스에서도 재사용
+                        QPointF edgeBoxCenterVP = QPointF(
+                            (edgeTopLeft.x() + edgeBottomLeft.x()) / 2.0,
+                            (edgeTopLeft.y() + edgeBottomLeft.y()) / 2.0
                         );
                         
                         // 회전 각도
                         double boxAngle = std::atan2(widthVectorY, widthVectorX) * 180.0 / M_PI;
                         
                         // zoom scale 적용
-                        int boxWidth = int(pattern.edgeBoxWidth * currentScale);
-                        int boxHeight = int(pattern.edgeBoxHeight * currentScale);
+                        double boxWidth = pattern.edgeBoxWidth * currentScale;
+                        double boxHeight = pattern.edgeBoxHeight * currentScale;
                         
                         painter.save();
-                        painter.translate(edgeBoxCenter);
+                        painter.translate(edgeBoxCenterVP);
                         painter.rotate(boxAngle);
                         
                         QPen edgePen(QColor(255, 128, 0), 2);  // 주황색
@@ -3547,8 +3601,8 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         double patternHeight = std::sqrt(heightVectorX * heightVectorX + heightVectorY * heightVectorY);
                         
                         // 패턴 왼쪽에서 offsetX만큼 이동, 세로는 중앙
-                        int boxWidth = int(pattern.crimpShapeBoxWidth * currentScale);
-                        int boxHeight = int(pattern.crimpShapeBoxHeight * currentScale);
+                        double boxWidth = pattern.crimpShapeBoxWidth * currentScale;
+                        double boxHeight = pattern.crimpShapeBoxHeight * currentScale;
                         double verticalOffset = (patternHeight - boxHeight) / 2.0;
                         
                         QPoint shapeTopLeft = QPoint(
