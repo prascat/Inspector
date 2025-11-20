@@ -1991,6 +1991,9 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 double widthVectorY = rotTopRightVP.y() - rotTopLeftVP.y();
                 double vectorLen = std::sqrt(widthVectorX * widthVectorX + widthVectorY * widthVectorY);
                 
+                // REAR 박스 중심 (Viewport 좌표) - Yellow 박스에서도 재사용
+                QPointF rearBoxCenterVP;
+                
                 if (vectorLen > 0.01) {
                     // gradient 끝점 (REAR 검사 중심) - stripGradientEndPercent (보통 85%)
                     float endPercent = patternInfo->stripGradientEndPercent / 100.0f;
@@ -2002,10 +2005,12 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         rotBottomLeftVP.x() + widthVectorX * endPercent,
                         rotBottomLeftVP.y() + widthVectorY * endPercent
                     );
-                    QPointF rearBoxCenter(
+                    rearBoxCenterVP = QPointF(
                         (posEndTop.x() + posEndBottom.x()) / 2.0f,
                         (posEndTop.y() + posEndBottom.y()) / 2.0f
                     );
+                    
+                    qDebug() << "[REAR cyan박스] boxCenter(viewport)=" << rearBoxCenterVP;
                     
                     // zoom scale 적용
                     QTransform t = transform();
@@ -2013,8 +2018,12 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     int boxWidth = int(patternInfo->stripRearThicknessBoxWidth * currentScale);
                     int boxHeight = int(patternInfo->stripRearThicknessBoxHeight * currentScale);
                     
+                    qDebug() << "[REAR cyan박스] insAngle=" << insAngle 
+                             << ", boxWidth=" << boxWidth << ", boxHeight=" << boxHeight
+                             << ", 원본=" << patternInfo->stripRearThicknessBoxWidth << "x" << patternInfo->stripRearThicknessBoxHeight;
+                    
                     painter.save();
-                    painter.translate(rearBoxCenter);
+                    painter.translate(rearBoxCenterVP);
                     painter.rotate(insAngle);
                     
                     QPen rearPen(QColor(0, 191, 255), 2);
@@ -2044,8 +2053,8 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                 QPointF pt2VP = mapFromScene(QPointF(pt2Scene.x(), pt2Scene.y()));
                                 
                                 // 박스 중심 기준으로 상대 좌표 계산
-                                QPointF rel1 = pt1VP - rearBoxCenter;
-                                QPointF rel2 = pt2VP - rearBoxCenter;
+                                QPointF rel1 = pt1VP - rearBoxCenterVP;
+                                QPointF rel2 = pt2VP - rearBoxCenterVP;
                                 
                                 // 역회전 적용
                                 double rot1X = rel1.x() * cosA - rel1.y() * sinA;
@@ -2134,14 +2143,49 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 if (result.stripRearBlackRegionPoints.contains(patternId)) {
                     const QList<QPoint>& rearBlackPoints = result.stripRearBlackRegionPoints[patternId];
                     
-                    if (!rearBlackPoints.isEmpty()) {
+                    if (!rearBlackPoints.isEmpty() && result.stripRearBoxCenter.contains(patternId) && result.stripRearBoxSize.contains(patternId)) {
+                        QPointF rearBoxCenterScene = result.stripRearBoxCenter[patternId];
+                        QSizeF rearBoxSize = result.stripRearBoxSize[patternId];
+                        
+                        // 각도가 0일 때는 원본 박스 크기 사용
+                        if (std::abs(patternInfo->angle) < 0.1) {
+                            rearBoxSize = QSizeF(patternInfo->stripRearThicknessBoxWidth, patternInfo->stripRearThicknessBoxHeight);
+                        }
+                        
+                        // zoom scale 계산 (cyan 박스와 동일하게)
+                        QTransform t = transform();
+                        double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
+                        int boxWidth = int(rearBoxSize.width() * currentScale);
+                        int boxHeight = int(rearBoxSize.height() * currentScale);
+                        
+                        qDebug() << "[REAR 노란박스] angle=" << patternInfo->angle 
+                                 << ", boxSize=" << rearBoxSize.width() << "x" << rearBoxSize.height()
+                                 << ", scaled=" << boxWidth << "x" << boxHeight
+                                 << ", boxCenter(viewport, cyan과동일)=" << rearBoxCenterVP;
+                        
+                        // 박스 범위 계산 (scene 좌표)
+                        int boxLeft = rearBoxCenterScene.x() - rearBoxSize.width() / 2;
+                        int boxRight = rearBoxCenterScene.x() + rearBoxSize.width() / 2;
+                        int boxTop = rearBoxCenterScene.y() - rearBoxSize.height() / 2;
+                        int boxBottom = rearBoxCenterScene.y() + rearBoxSize.height() / 2;
+                        
+                        // 박스 bounding box 그리기 (노란색 테두리) - Cyan 박스와 동일한 중심 사용
+                        painter.setPen(QPen(QColor(255, 255, 0), 2));  // 노란색
+                        painter.setBrush(Qt::NoBrush);
+                        painter.drawRect(QRectF(rearBoxCenterVP.x() - boxWidth/2, 
+                                               rearBoxCenterVP.y() - boxHeight/2, 
+                                               boxWidth, boxHeight));
+                        
                         painter.setPen(Qt::NoPen);
-                        painter.setBrush(QColor(255, 0, 0, 150));
+                        painter.setBrush(QColor(255, 0, 0, 200));  // 더 불투명하게
                         
                         for (const QPoint& pt : rearBlackPoints) {
-                            QPointF ptScene(pt.x(), pt.y());
-                            QPointF ptVP = mapFromScene(ptScene);
-                            painter.drawEllipse(ptVP, 1.5, 1.5);
+                            // 박스 범위 내에 있는 점만 그리기
+                            if (pt.x() >= boxLeft && pt.x() <= boxRight && pt.y() >= boxTop && pt.y() <= boxBottom) {
+                                QPointF ptScene(pt.x(), pt.y());
+                                QPointF ptVP = mapFromScene(ptScene);
+                                painter.drawEllipse(ptVP, 2.0, 2.0);  // 크기 증가
+                            }
                         }
                     }
                 }
@@ -2185,6 +2229,9 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 double widthVectorY = rotTopRightVP.y() - rotTopLeftVP.y();
                 double vectorLen = std::sqrt(widthVectorX * widthVectorX + widthVectorY * widthVectorY);
                 
+                // FRONT 박스 중심 (Viewport 좌표) - Yellow 박스에서도 재사용
+                QPointF frontBoxCenterVP;
+                
                 if (vectorLen > 0.01) {
                     // gradient 시작점 (FRONT 검사 중심) - stripGradientStartPercent (보통 20%)
                     float startPercent = patternInfo->stripGradientStartPercent / 100.0f;
@@ -2196,7 +2243,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         rotBottomLeftVP.x() + widthVectorX * startPercent,
                         rotBottomLeftVP.y() + widthVectorY * startPercent
                     );
-                    QPointF frontBoxCenter(
+                    frontBoxCenterVP = QPointF(
                         (posStartTop.x() + posStartBottom.x()) / 2.0f,
                         (posStartTop.y() + posStartBottom.y()) / 2.0f
                     );
@@ -2207,8 +2254,12 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     int boxWidth = int(patternInfo->stripThicknessBoxWidth * currentScale);
                     int boxHeight = int(patternInfo->stripThicknessBoxHeight * currentScale);
                     
+                    qDebug() << "[FRONT cyan박스] insAngle=" << insAngle 
+                             << ", boxWidth=" << boxWidth << ", boxHeight=" << boxHeight
+                             << ", 원본=" << patternInfo->stripThicknessBoxWidth << "x" << patternInfo->stripThicknessBoxHeight;
+                    
                     painter.save();
-                    painter.translate(frontBoxCenter);
+                    painter.translate(frontBoxCenterVP);
                     painter.rotate(insAngle);
                     
                     QPen frontPen(Qt::cyan, 2);
@@ -2238,8 +2289,8 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                 QPointF pt2VP = mapFromScene(QPointF(pt2Scene.x(), pt2Scene.y()));
                                 
                                 // 박스 중심 기준으로 상대 좌표 계산
-                                QPointF rel1 = pt1VP - frontBoxCenter;
-                                QPointF rel2 = pt2VP - frontBoxCenter;
+                                QPointF rel1 = pt1VP - frontBoxCenterVP;
+                                QPointF rel2 = pt2VP - frontBoxCenterVP;
                                 
                                 // 역회전 적용
                                 double rot1X = rel1.x() * cosA - rel1.y() * sinA;
@@ -2324,14 +2375,49 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 if (result.stripFrontBlackRegionPoints.contains(patternId)) {
                     const QList<QPoint>& frontBlackPoints = result.stripFrontBlackRegionPoints[patternId];
                     
-                    if (!frontBlackPoints.isEmpty()) {
+                    if (!frontBlackPoints.isEmpty() && result.stripFrontBoxCenter.contains(patternId) && result.stripFrontBoxSize.contains(patternId)) {
+                        QPointF frontBoxCenterScene = result.stripFrontBoxCenter[patternId];
+                        QSizeF frontBoxSize = result.stripFrontBoxSize[patternId];
+                        
+                        // 각도가 0일 때는 원본 박스 크기 사용
+                        if (std::abs(patternInfo->angle) < 0.1) {
+                            frontBoxSize = QSizeF(patternInfo->stripThicknessBoxWidth, patternInfo->stripThicknessBoxHeight);
+                        }
+                        
+                        // zoom scale 계산 (cyan 박스와 동일하게)
+                        QTransform t = transform();
+                        double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
+                        int boxWidth = int(frontBoxSize.width() * currentScale);
+                        int boxHeight = int(frontBoxSize.height() * currentScale);
+                        
+                        qDebug() << "[FRONT 노란박스] angle=" << patternInfo->angle 
+                                 << ", boxSize=" << frontBoxSize.width() << "x" << frontBoxSize.height()
+                                 << ", scaled=" << boxWidth << "x" << boxHeight
+                                 << ", boxCenter(viewport, cyan과동일)=" << frontBoxCenterVP;
+                        
+                        // 박스 범위 계산 (scene 좌표)
+                        int boxLeft = frontBoxCenterScene.x() - frontBoxSize.width() / 2;
+                        int boxRight = frontBoxCenterScene.x() + frontBoxSize.width() / 2;
+                        int boxTop = frontBoxCenterScene.y() - frontBoxSize.height() / 2;
+                        int boxBottom = frontBoxCenterScene.y() + frontBoxSize.height() / 2;
+                        
+                        // 박스 bounding box 그리기 (노란색 테두리) - Cyan 박스와 동일한 중심 사용
+                        painter.setPen(QPen(QColor(255, 255, 0), 2));  // 노란색
+                        painter.setBrush(Qt::NoBrush);
+                        painter.drawRect(QRectF(frontBoxCenterVP.x() - boxWidth/2, 
+                                               frontBoxCenterVP.y() - boxHeight/2, 
+                                               boxWidth, boxHeight));
+                        
                         painter.setPen(Qt::NoPen);
-                        painter.setBrush(QColor(255, 0, 0, 150));
+                        painter.setBrush(QColor(255, 0, 0, 200));  // 더 불투명하게
                         
                         for (const QPoint& pt : frontBlackPoints) {
-                            QPointF ptScene(pt.x(), pt.y());
-                            QPointF ptVP = mapFromScene(ptScene);
-                            painter.drawEllipse(ptVP, 1.5, 1.5);
+                            // 박스 범위 내에 있는 점만 그리기
+                            if (pt.x() >= boxLeft && pt.x() <= boxRight && pt.y() >= boxTop && pt.y() <= boxBottom) {
+                                QPointF ptScene(pt.x(), pt.y());
+                                QPointF ptVP = mapFromScene(ptScene);
+                                painter.drawEllipse(ptVP, 2.0, 2.0);  // 크기 증가
+                            }
                         }
                     }
                 }

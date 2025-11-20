@@ -1651,8 +1651,20 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         float startPercent = gradientStartPercent / 100.0f;
             
             // gradient 시작점까지의 거리 (패턴 왼쪽 끝에서 startPercent만큼)
-            // ROI 내에서는 회전이 없으므로 X 좌표만 계산
-            int boxCenterX = roiPatternCenter.x - (patternWidth/2) + static_cast<int>(startPercent * patternWidth);
+            // ROI 내에서 회전된 패턴의 로컬 좌표 계산
+            // 패턴 중심에서 왼쪽으로 -patternWidth/2, 그리고 startPercent만큼 오른쪽으로 이동
+            float localX = -patternWidth/2.0f + (startPercent * patternWidth);
+            float localY = 0;  // 패턴 중심에서 Y 오프셋 없음
+            
+            // 회전 변환 적용
+            double cosA = cos(angleRad);
+            double sinA = sin(angleRad);
+            float rotatedX = localX * cosA - localY * sinA;
+            float rotatedY = localX * sinA + localY * cosA;
+            
+            // ROI 패턴 중심에서 회전된 오프셋을 더해서 최종 위치 계산
+            float boxCenterX_f = roiPatternCenter.x + rotatedX;
+            int boxCenterX = static_cast<int>(std::round(boxCenterX_f));
             
             // Y 좌표는 검출된 검은색 라인의 평균 Y 위치 사용
             int boxCenterY = roiPatternCenter.y;  // 기본값
@@ -1682,74 +1694,47 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             // 클립된 Y 좌표 사용
             boxCenterY = clippedBoxCenterY;
             
-            // 각도 계산
-            double cosA = cos(angleRad);
-            double sinA = sin(angleRad);
+            // 각도에 따른 bounding box 크기 계산 (템플릿 이미지와 동일한 방식)
+            // cosA, sinA는 위에서 이미 계산됨
+            int actualBoxWidth, actualBoxHeight;
             
-            // 박스 왼쪽 끝 계산
-            int boxLeftX = boxCenterX - thicknessBoxWidth/2;
-            int boxTopY = boxCenterY - thicknessBoxHeight/2;
-            int boxBottomY = boxCenterY + thicknessBoxHeight/2;
-            
-            // 박스 영역에서 세로 방향으로 스캔하여 검은색 픽셀 두께 측정
-            // 전체 박스 폭만큼 스캔 (마진 없음)
-            
-            // 첫 라인과 마지막 라인의 시작점과 끝점을 미리 계산 (직선 보간용)
-            int scanHeight = thicknessBoxHeight;
-            int firstDx = 0;
-            int lastDx = thicknessBoxWidth;
-            
-            cv::Point2d firstTop, lastTop, firstBottom, lastBottom;
+            qDebug() << "[STRIP FRONT] 각도 체크 - angle:" << angle << "std::abs(angle):" << std::abs(angle);
             
             if (std::abs(angle) < 0.1) {
-                // 각도가 거의 없는 경우
-                firstTop = cv::Point2d(boxCenterX - thicknessBoxWidth/2 + firstDx, boxCenterY - thicknessBoxHeight/2 + 1);
-                lastTop = cv::Point2d(boxCenterX - thicknessBoxWidth/2 + lastDx, boxCenterY - thicknessBoxHeight/2 + 1);
-                firstBottom = cv::Point2d(boxCenterX - thicknessBoxWidth/2 + firstDx, boxCenterY + thicknessBoxHeight/2 - 1);
-                lastBottom = cv::Point2d(boxCenterX - thicknessBoxWidth/2 + lastDx, boxCenterY + thicknessBoxHeight/2 - 1);
+                // 각도가 거의 없으면 원본 크기 사용
+                actualBoxWidth = thicknessBoxWidth;
+                actualBoxHeight = thicknessBoxHeight;
+                qDebug() << "[STRIP FRONT] 원본 크기 사용 - " << thicknessBoxWidth << "x" << thicknessBoxHeight;
             } else {
-                // 각도가 있는 경우
-                double cosA = cos(angleRad);
-                double sinA = sin(angleRad);
-                
-                int localX1 = -thicknessBoxWidth/2 + firstDx;
-                int localX2 = -thicknessBoxWidth/2 + lastDx;
-                int localTopY = -thicknessBoxHeight/2 + 1;
-                int localBottomY = thicknessBoxHeight/2 - 1;
-                
-                firstTop.x = boxCenterX + (localX1 * cosA - localTopY * sinA);
-                firstTop.y = boxCenterY + (localX1 * sinA + localTopY * cosA);
-                
-                lastTop.x = boxCenterX + (localX2 * cosA - localTopY * sinA);
-                lastTop.y = boxCenterY + (localX2 * sinA + localTopY * cosA);
-                
-                firstBottom.x = boxCenterX + (localX1 * cosA - localBottomY * sinA);
-                firstBottom.y = boxCenterY + (localX1 * sinA + localBottomY * cosA);
-                
-                lastBottom.x = boxCenterX + (localX2 * cosA - localBottomY * sinA);
-                lastBottom.y = boxCenterY + (localX2 * sinA + localBottomY * cosA);
+                // 각도가 있으면 bounding box 크기 계산
+                double rotatedBoxWidth = std::abs(thicknessBoxWidth * cosA) + std::abs(thicknessBoxHeight * sinA);
+                double rotatedBoxHeight = std::abs(thicknessBoxWidth * sinA) + std::abs(thicknessBoxHeight * cosA);
+                actualBoxWidth = static_cast<int>(std::round(rotatedBoxWidth));
+                actualBoxHeight = static_cast<int>(std::round(rotatedBoxHeight));
+                qDebug() << "[STRIP FRONT] Bounding box 크기 계산 - " << actualBoxWidth << "x" << actualBoxHeight;
             }
             
-            int totalLines = lastDx - firstDx;
+            // 박스 왼쪽 끝 계산 (bounding box 기준)
+            int boxLeftX = boxCenterX - actualBoxWidth/2;
+            int boxTopY = boxCenterY - actualBoxHeight/2;
+            int boxBottomY = boxCenterY + actualBoxHeight/2;
+            
+            // 박스 영역에서 세로 방향으로 스캔하여 검은색 픽셀 두께 측정
+            // 박스 전체 너비를 정확히 채우도록 스캔
+            
+            int firstDx = 0;
+            int lastDx = actualBoxWidth;
             
             for (int dx = firstDx; dx < lastDx; dx += 1) {
                 cv::Point scanTop, scanBottom;
                 
-                // 각도에 관계없이 항상 회전 변환 적용 (박스에 수직인 스캔 라인)
-                double cosA = cos(angleRad);
-                double sinA = sin(angleRad);
+                // ROI는 회전이 없으므로 단순 수직 스캔 (회전 변환 제거)
+                int scanX = boxCenterX - actualBoxWidth/2 + dx;
+                int scanTopY = boxCenterY - actualBoxHeight/2 + 1;
+                int scanBottomY = boxCenterY + actualBoxHeight/2 - 1;
                 
-                int localX = -thicknessBoxWidth/2 + dx;  // 박스 중심에서의 로컬 X
-                int localTopY = -thicknessBoxHeight/2 + 1;
-                int localBottomY = thicknessBoxHeight/2 - 1;
-                
-                // scanTop 회전 변환
-                scanTop.x = static_cast<int>(std::round(boxCenterX + (localX * cosA - localTopY * sinA)));
-                scanTop.y = static_cast<int>(std::round(boxCenterY + (localX * sinA + localTopY * cosA)));
-                
-                // scanBottom 회전 변환
-                scanBottom.x = static_cast<int>(std::round(boxCenterX + (localX * cosA - localBottomY * sinA)));
-                scanBottom.y = static_cast<int>(std::round(boxCenterY + (localX * sinA + localBottomY * cosA)));
+                scanTop = cv::Point(scanX, scanTopY);
+                scanBottom = cv::Point(scanX, scanBottomY);
                 
                 // 스캔 라인이 이미지 범위를 벗어나면 건너뛰기
                 if (scanTop.x < 0 || scanTop.y < 0 || scanBottom.x < 0 || scanBottom.y < 0 ||
@@ -1831,14 +1816,27 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 }
                 
                 // 첫 번째 검은색 시작점부터 마지막 검은색 끝점까지 모든 포인트를 절대좌표로 저장
+                // 회전된 박스 내부에 있는지 체크
                 if (firstBlackIdx >= 0 && lastBlackIdx >= 0 && 
                     firstBlackIdx < linePoints.size() && lastBlackIdx < linePoints.size()) {
-                    // 검은색 구간에 포함된 모든 포인트를 절대 ROI 좌표로 저장 (어떤 변환도 하지 않음)
+                    
                     for (int i = firstBlackIdx; i <= lastBlackIdx; i++) {
                         if (i < linePoints.size()) {
-                            // linePoints[i]는 이미 ROI 내 절대좌표
-                            // 이것을 그대로 저장
-                            blackRegionPoints.push_back(linePoints[i]);
+                            cv::Point pt = linePoints[i];
+                            
+                            // 점이 회전된 박스 내부에 있는지 체크
+                            // 박스 중심에서의 상대 좌표
+                            float dx = pt.x - boxCenterX;
+                            float dy = pt.y - boxCenterY;
+                            
+                            // 역회전 변환 (박스의 로컬 좌표계로)
+                            float localX = dx * cosA + dy * sinA;
+                            float localY = -dx * sinA + dy * cosA;
+                            
+                            // 로컬 좌표가 박스 범위 내에 있는지 체크 (원본 박스 크기 사용)
+                            if (std::abs(localX) <= thicknessBoxWidth/2.0f && std::abs(localY) <= thicknessBoxHeight/2.0f) {
+                                blackRegionPoints.push_back(pt);
+                            }
                         }
                     }
                 }
@@ -1863,7 +1861,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 
                 qDebug() << "[STRIP FRONT COORD DEBUG] boxLeftX:" << boxLeftX << "boxTopY:" << boxTopY
                          << "boxCenterX:" << boxCenterX << "boxCenterY:" << boxCenterY
-                         << "thicknessBoxWidth:" << thicknessBoxWidth << "thicknessBoxHeight:" << thicknessBoxHeight;
+                         << "actualBoxWidth:" << actualBoxWidth << "actualBoxHeight:" << actualBoxHeight;
                 qDebug() << "[STRIP FRONT COORD DEBUG] ROI크기:" << roiImage.cols << "x" << roiImage.rows
                          << "processed크기:" << processed.cols << "x" << processed.rows
                          << "검은색포인트개수:" << blackRegionPoints.size();
@@ -1889,7 +1887,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 
                 // FRONT 박스 정보 반환 (ROI 좌표계의 박스 중심)
                 if (frontBoxCenter) *frontBoxCenter = cv::Point(boxCenterX, boxCenterY);
-                if (frontBoxSize) *frontBoxSize = cv::Size(thicknessBoxWidth, thicknessBoxHeight);
+                if (frontBoxSize) *frontBoxSize = cv::Size(actualBoxWidth, actualBoxHeight);
                 
                 qDebug() << "[STRIP FRONT] 반환좌표 - boxCenterX:" << boxCenterX << "boxCenterY:" << boxCenterY;                // FRONT 영역을 잘라내서 PNG로 저장 (디버그용)
                 int x1_f = std::max(0, boxCenterX - thicknessBoxWidth/2);
@@ -1917,12 +1915,22 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         double cosA_rear = cos(angleRad);
         double sinA_rear = sin(angleRad);
         
-        // 박스 왼쪽 끝 계산
+        // 박스 중심 계산
         float endPercent = gradientEndPercent / 100.0f;
         
         // gradient 끝점까지의 거리 (패턴 왼쪽 끝에서 endPercent만큼)
-        // ROI 내에서는 회전이 없으므로 X 좌표만 계산
-        int boxCenterX_rear = roiPatternCenter_rear.x - (patternWidth/2) + static_cast<int>(endPercent * patternWidth);
+        // ROI 내에서 회전된 패턴의 로컬 좌표 계산
+        // 패턴 중심에서 왼쪽으로 -patternWidth/2, 그리고 endPercent만큼 오른쪽으로 이동
+        float localX_rear = -patternWidth/2.0f + (endPercent * patternWidth);
+        float localY_rear = 0;  // 패턴 중심에서 Y 오프셋 없음
+        
+        // 회전 변환 적용
+        float rotatedX_rear = localX_rear * cosA_rear - localY_rear * sinA_rear;
+        float rotatedY_rear = localX_rear * sinA_rear + localY_rear * cosA_rear;
+        
+        // ROI 패턴 중심에서 회전된 오프셋을 더해서 최종 위치 계산
+        float boxCenterX_rear_f = roiPatternCenter_rear.x + rotatedX_rear;
+        int boxCenterX_rear = static_cast<int>(std::round(boxCenterX_rear_f));
         
         // Y 좌표는 검출된 검은색 라인의 평균 Y 위치 사용
         int boxCenterY_rear = roiPatternCenter_rear.y;  // 기본값
@@ -1955,67 +1963,42 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         std::vector<cv::Point> blackPixelPoints_rear; // 검은색 픽셀 위치 저장 (시각화용 - 전체 스캔 라인)
         std::vector<cv::Point> blackRegionPoints_rear; // 검은색이 실제로 검출된 구간만 저장 (빨간색으로 표시용)
         
-        // 박스 왼쪽 끝 계산
-        int boxLeftX_rear = boxCenterX_rear - rearThicknessBoxWidth/2;
-        int boxTopY_rear = boxCenterY_rear - rearThicknessBoxHeight/2;
-        int boxBottomY_rear = boxCenterY_rear + rearThicknessBoxHeight/2;
-        
-        // 박스 영역에서 세로 방향으로 스캔하여 검은색 픽셀 두께 측정 (REAR)
-        // 박스 테두리를 피해서 안쪽만 그림: dx=2 ~ width-1
-        
-        // 첫 라인과 마지막 라인의 시작점과 끝점을 미리 계산 (직선 보간용)
-        int scanHeight_rear = rearThicknessBoxHeight - 2;
-        int firstDx_rear = 2;
-        int lastDx_rear = rearThicknessBoxWidth - 1;
-        
-        cv::Point2d firstTop_rear, lastTop_rear, firstBottom_rear, lastBottom_rear;
+        // 각도에 따른 bounding box 크기 계산 (템플릿 이미지와 동일한 방식)
+        int actualBoxWidth_rear, actualBoxHeight_rear;
         
         if (std::abs(angle) < 0.1) {
-            // 각도가 거의 없는 경우
-            firstTop_rear = cv::Point2d(boxCenterX_rear - rearThicknessBoxWidth/2 + firstDx_rear, boxCenterY_rear - rearThicknessBoxHeight/2 + 1);
-            lastTop_rear = cv::Point2d(boxCenterX_rear - rearThicknessBoxWidth/2 + lastDx_rear, boxCenterY_rear - rearThicknessBoxHeight/2 + 1);
-            firstBottom_rear = cv::Point2d(boxCenterX_rear - rearThicknessBoxWidth/2 + firstDx_rear, boxCenterY_rear + rearThicknessBoxHeight/2 - 1);
-            lastBottom_rear = cv::Point2d(boxCenterX_rear - rearThicknessBoxWidth/2 + lastDx_rear, boxCenterY_rear + rearThicknessBoxHeight/2 - 1);
+            // 각도가 거의 없으면 원본 크기 사용
+            actualBoxWidth_rear = rearThicknessBoxWidth;
+            actualBoxHeight_rear = rearThicknessBoxHeight;
         } else {
-            // 각도가 있는 경우
-            int localX1 = -rearThicknessBoxWidth/2 + firstDx_rear;
-            int localX2 = -rearThicknessBoxWidth/2 + lastDx_rear;
-            int localTopY = -rearThicknessBoxHeight/2 + 1;
-            int localBottomY = rearThicknessBoxHeight/2 - 1;
-            
-            firstTop_rear.x = boxCenterX_rear + (localX1 * cosA_rear - localTopY * sinA_rear);
-            firstTop_rear.y = boxCenterY_rear + (localX1 * sinA_rear + localTopY * cosA_rear);
-            
-            lastTop_rear.x = boxCenterX_rear + (localX2 * cosA_rear - localTopY * sinA_rear);
-            lastTop_rear.y = boxCenterY_rear + (localX2 * sinA_rear + localTopY * cosA_rear);
-            
-            firstBottom_rear.x = boxCenterX_rear + (localX1 * cosA_rear - localBottomY * sinA_rear);
-            firstBottom_rear.y = boxCenterY_rear + (localX1 * sinA_rear + localBottomY * cosA_rear);
-            
-            lastBottom_rear.x = boxCenterX_rear + (localX2 * cosA_rear - localBottomY * sinA_rear);
-            lastBottom_rear.y = boxCenterY_rear + (localX2 * sinA_rear + localBottomY * cosA_rear);
+            // 각도가 있으면 bounding box 크기 계산
+            double rotatedBoxWidth_rear = std::abs(rearThicknessBoxWidth * cosA_rear) + std::abs(rearThicknessBoxHeight * sinA_rear);
+            double rotatedBoxHeight_rear = std::abs(rearThicknessBoxWidth * sinA_rear) + std::abs(rearThicknessBoxHeight * cosA_rear);
+            actualBoxWidth_rear = static_cast<int>(std::round(rotatedBoxWidth_rear));
+            actualBoxHeight_rear = static_cast<int>(std::round(rotatedBoxHeight_rear));
         }
         
-        int totalLines_rear = lastDx_rear - firstDx_rear;
+        // 박스 왼쪽 끝 계산 (bounding box 기준)
+        int boxLeftX_rear = boxCenterX_rear - actualBoxWidth_rear/2;
+        int boxTopY_rear = boxCenterY_rear - actualBoxHeight_rear/2;
+        int boxBottomY_rear = boxCenterY_rear + actualBoxHeight_rear/2;
+        
+        // 박스 영역에서 세로 방향으로 스캔하여 검은색 픽셀 두께 측정 (REAR)
+        // 박스 전체 너비를 정확히 채우도록 스캔
+        
+        int firstDx_rear = 0;
+        int lastDx_rear = actualBoxWidth_rear;
         
         for (int dx = firstDx_rear; dx < lastDx_rear; dx += 1) {
             cv::Point scanTop_rear, scanBottom_rear;
             
-            // 각도에 관계없이 항상 회전 변환 적용 (박스에 수직인 스캔 라인)
-            double cosA = cos(angleRad);
-            double sinA = sin(angleRad);
+            // ROI는 회전이 없으므로 단순 수직 스캔 (회전 변환 제거)
+            int scanX_rear = boxCenterX_rear - actualBoxWidth_rear/2 + dx;
+            int scanTopY_rear = boxCenterY_rear - actualBoxHeight_rear/2 + 1;
+            int scanBottomY_rear = boxCenterY_rear + actualBoxHeight_rear/2 - 1;
             
-            int localX = -rearThicknessBoxWidth/2 + dx;
-            int localTopY = -rearThicknessBoxHeight/2 + 1;
-            int localBottomY = rearThicknessBoxHeight/2 - 1;
-            
-            // scanTop 회전 변환
-            scanTop_rear.x = static_cast<int>(std::round(boxCenterX_rear + (localX * cosA - localTopY * sinA)));
-            scanTop_rear.y = static_cast<int>(std::round(boxCenterY_rear + (localX * sinA + localTopY * cosA)));
-            
-            // scanBottom 회전 변환
-            scanBottom_rear.x = static_cast<int>(std::round(boxCenterX_rear + (localX * cosA - localBottomY * sinA)));
-            scanBottom_rear.y = static_cast<int>(std::round(boxCenterY_rear + (localX * sinA + localBottomY * cosA)));
+            scanTop_rear = cv::Point(scanX_rear, scanTopY_rear);
+            scanBottom_rear = cv::Point(scanX_rear, scanBottomY_rear);
             
             // 스캔 라인이 이미지 범위를 벗어나면 건너뛰기
             if (scanTop_rear.x < 0 || scanTop_rear.y < 0 || scanBottom_rear.x < 0 || scanBottom_rear.y < 0 ||
@@ -2067,11 +2050,23 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                             }
                             blackRegions_rear.push_back({regionStart, i});
                             
-                            // 검은색 구간에 포함된 모든 포인트를 절대 ROI 좌표로 저장 (어떤 변환도 하지 않음)
+                            // 회전된 박스 내부에 있는 포인트만 저장
                             if (regionStart < linePoints_rear.size() && i - 1 < linePoints_rear.size()) {
                                 for (int idx = regionStart; idx < i && idx < linePoints_rear.size(); idx++) {
-                                    // linePoints_rear[idx]는 이미 ROI 내 절대좌표
-                                    blackRegionPoints_rear.push_back(linePoints_rear[idx]);
+                                    cv::Point pt = linePoints_rear[idx];
+                                    
+                                    // 점이 회전된 박스 내부에 있는지 체크
+                                    float dx = pt.x - boxCenterX_rear;
+                                    float dy = pt.y - boxCenterY_rear;
+                                    
+                                    // 역회전 변환
+                                    float localX = dx * cosA_rear + dy * sinA_rear;
+                                    float localY = -dx * sinA_rear + dy * cosA_rear;
+                                    
+                                    // 로컬 좌표가 박스 범위 내에 있는지 체크
+                                    if (std::abs(localX) <= rearThicknessBoxWidth/2.0f && std::abs(localY) <= rearThicknessBoxHeight/2.0f) {
+                                        blackRegionPoints_rear.push_back(pt);
+                                    }
                                 }
                             }
                         }
@@ -2090,11 +2085,23 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     }
                     blackRegions_rear.push_back({regionStart, it.count});
                     
-                    // 검은색 구간에 포함된 모든 포인트를 절대 ROI 좌표로 저장 (어떤 변환도 하지 않음)
+                    // 회전된 박스 내부에 있는 포인트만 저장
                     if (regionStart < linePoints_rear.size() && it.count - 1 < linePoints_rear.size()) {
                         for (int idx = regionStart; idx < it.count && idx < linePoints_rear.size(); idx++) {
-                            // linePoints_rear[idx]는 이미 ROI 내 절대좌표
-                            blackRegionPoints_rear.push_back(linePoints_rear[idx]);
+                            cv::Point pt = linePoints_rear[idx];
+                            
+                            // 점이 회전된 박스 내부에 있는지 체크
+                            float dx = pt.x - boxCenterX_rear;
+                            float dy = pt.y - boxCenterY_rear;
+                            
+                            // 역회전 변환
+                            float localX = dx * cosA_rear + dy * sinA_rear;
+                            float localY = -dx * sinA_rear + dy * cosA_rear;
+                            
+                            // 로컬 좌표가 박스 범위 내에 있는지 체크
+                            if (std::abs(localX) <= rearThicknessBoxWidth/2.0f && std::abs(localY) <= rearThicknessBoxHeight/2.0f) {
+                                blackRegionPoints_rear.push_back(pt);
+                            }
                         }
                     }
                 }
@@ -2147,11 +2154,9 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     *rearBlackRegionPoints = blackRegionPoints_rear;
                 }
                 
-        // REAR 박스 정보 반환 (ROI 좌표계의 박스 중심)
-        if (rearBoxCenter) *rearBoxCenter = cv::Point(boxCenterX_rear, boxCenterY_rear);
-        if (rearBoxSize) *rearBoxSize = cv::Size(rearThicknessBoxWidth, rearThicknessBoxHeight);
-        
-        qDebug() << "[STRIP REAR] 반환좌표 - boxCenterX_rear:" << boxCenterX_rear << "boxCenterY_rear:" << boxCenterY_rear;                // REAR 영역을 잘라내서 PNG로 저장 (디버그용)
+                // REAR 박스 정보 반환 (ROI 좌표계의 박스 중심)
+                if (rearBoxCenter) *rearBoxCenter = cv::Point(boxCenterX_rear, boxCenterY_rear);
+                if (rearBoxSize) *rearBoxSize = cv::Size(actualBoxWidth_rear, actualBoxHeight_rear);        qDebug() << "[STRIP REAR] 반환좌표 - boxCenterX_rear:" << boxCenterX_rear << "boxCenterY_rear:" << boxCenterY_rear;                // REAR 영역을 잘라내서 PNG로 저장 (디버그용)
                 int x1 = std::max(0, boxCenterX_rear - rearThicknessBoxWidth/2);
                 int y1 = std::max(0, boxCenterY_rear - rearThicknessBoxHeight/2);
                 int x2 = std::min(roiImage.cols, boxCenterX_rear + rearThicknessBoxWidth/2);

@@ -2083,6 +2083,25 @@ void TeachingWidget::connectEvents() {
         
         // 정규화된 각도로 패턴 업데이트
         pattern->angle = angle;
+        
+        // INS 패턴의 STRIP 검사 박스 크기를 각도에 따라 재설정
+        if (pattern->type == PatternType::INS && pattern->inspectionMethod == InspectionMethod::STRIP) {
+            int patternWidth = pattern->rect.width();
+            int patternHeight = pattern->rect.height();
+            
+            // 각도가 거의 0이면 원본 크기로, 아니면 기본값 유지 (UI에서 조정 가능)
+            if (std::abs(angle) < 0.1) {
+                // 각도 0: 박스 크기를 패턴 크기 기반으로 재설정
+                pattern->stripThicknessBoxWidth = patternWidth / 2;
+                pattern->stripThicknessBoxHeight = patternHeight;
+                pattern->stripRearThicknessBoxWidth = patternWidth / 2;
+                pattern->stripRearThicknessBoxHeight = patternHeight;
+                qDebug() << "[각도 변경] angle=0 -> 박스 크기 재설정:" 
+                         << "FRONT=" << pattern->stripThicknessBoxWidth << "x" << pattern->stripThicknessBoxHeight
+                         << "REAR=" << pattern->stripRearThicknessBoxWidth << "x" << pattern->stripRearThicknessBoxHeight;
+            }
+        }
+        
         cameraView->updatePatternById(id, *pattern);
         
         // INS 패턴의 경우 회전 시 템플릿 이미지 재생성
@@ -2193,7 +2212,7 @@ void TeachingWidget::connectEvents() {
                     if (insEdgeOffsetXSlider->value() > patternWidth) {
                         insEdgeOffsetXSlider->setValue(patternWidth);
                         pattern->edgeOffsetX = patternWidth;
-                        insEdgeOffsetXValueLabel->setText(QString::number(patternWidth));
+                        insEdgeOffsetXValueLabel->setText(QString("%1px").arg(patternWidth));
                     }
                     insEdgeOffsetXSlider->blockSignals(false);
                 }
@@ -5388,7 +5407,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 [this](int value) {
             // 값 표시 레이블 업데이트
             if (insStripThicknessWidthValueLabel) {
-                insStripThicknessWidthValueLabel->setText(QString("%1mm").arg(value));
+                insStripThicknessWidthValueLabel->setText(QString("%1px").arg(value));
             }
             
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
@@ -5412,7 +5431,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 [this](int value) {
             // 값 표시 레이블 업데이트
             if (insStripThicknessHeightValueLabel) {
-                insStripThicknessHeightValueLabel->setText(QString("%1mm").arg(value));
+                insStripThicknessHeightValueLabel->setText(QString("%1px").arg(value));
             }
             
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
@@ -5482,7 +5501,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 [this](int value) {
             // 값 표시 레이블 업데이트
             if (insStripRearThicknessWidthValueLabel) {
-                insStripRearThicknessWidthValueLabel->setText(QString("%1mm").arg(value));
+                insStripRearThicknessWidthValueLabel->setText(QString("%1px").arg(value));
             }
             
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
@@ -5506,7 +5525,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 [this](int value) {
             // 값 표시 레이블 업데이트
             if (insStripRearThicknessHeightValueLabel) {
-                insStripRearThicknessHeightValueLabel->setText(QString("%1mm").arg(value));
+                insStripRearThicknessHeightValueLabel->setText(QString("%1px").arg(value));
             }
             
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
@@ -5770,7 +5789,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
     if (insEdgeOffsetXSlider) {
         connect(insEdgeOffsetXSlider, &QSlider::valueChanged, 
                 [this](int value) {
-            insEdgeOffsetXValueLabel->setText(QString::number(value));
+            insEdgeOffsetXValueLabel->setText(QString("%1px").arg(value));
             
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
@@ -5794,7 +5813,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 this, [this](int value) {
             // 값 표시 레이블 업데이트
             if (insEdgeWidthValueLabel) {
-                insEdgeWidthValueLabel->setText(QString::number(value));
+                insEdgeWidthValueLabel->setText(QString("%1px").arg(value));
             }
             
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
@@ -5819,7 +5838,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 this, [this](int value) {
             // 값 표시 레이블 업데이트
             if (insEdgeHeightValueLabel) {
-                insEdgeHeightValueLabel->setText(QString::number(value));
+                insEdgeHeightValueLabel->setText(QString("%1px").arg(value));
             }
             
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
@@ -6385,6 +6404,10 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         // 패턴의 실제 너비 계산
                         float patternWidth = abs(pattern->rect.width());
                         
+                        qDebug() << QString("[STRIP UI] pattern->rect 크기: %1 x %2, stripThicknessBoxWidth: %3, stripThicknessBoxHeight: %4")
+                                .arg(pattern->rect.width()).arg(pattern->rect.height())
+                                .arg(pattern->stripThicknessBoxWidth).arg(pattern->stripThicknessBoxHeight);
+                        
                         insStripThicknessWidthSlider->blockSignals(true);
                         // 너비 슬라이더 최대값을 패턴 너비의 절반으로 설정
                         insStripThicknessWidthSlider->setMaximum(patternWidth / 2);
@@ -6392,7 +6415,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripThicknessWidthSlider->blockSignals(false);
                         
                         if (insStripThicknessWidthValueLabel) {
-                            insStripThicknessWidthValueLabel->setText(QString("%1mm").arg(pattern->stripThicknessBoxWidth));
+                            insStripThicknessWidthValueLabel->setText(QString("%1px").arg(pattern->stripThicknessBoxWidth));
                         }
                     }
                     
@@ -6407,7 +6430,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripThicknessHeightSlider->blockSignals(false);
                         
                         if (insStripThicknessHeightValueLabel) {
-                            insStripThicknessHeightValueLabel->setText(QString("%1mm").arg(pattern->stripThicknessBoxHeight));
+                            insStripThicknessHeightValueLabel->setText(QString("%1px").arg(pattern->stripThicknessBoxHeight));
                         }
                     }
                     
@@ -6435,7 +6458,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripRearThicknessWidthSlider->blockSignals(false);
                         
                         if (insStripRearThicknessWidthValueLabel) {
-                            insStripRearThicknessWidthValueLabel->setText(QString("%1mm").arg(pattern->stripRearThicknessBoxWidth));
+                            insStripRearThicknessWidthValueLabel->setText(QString("%1px").arg(pattern->stripRearThicknessBoxWidth));
                         }
                     }
                     
@@ -6450,7 +6473,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripRearThicknessHeightSlider->blockSignals(false);
                         
                         if (insStripRearThicknessHeightValueLabel) {
-                            insStripRearThicknessHeightValueLabel->setText(QString("%1mm").arg(pattern->stripRearThicknessBoxHeight));
+                            insStripRearThicknessHeightValueLabel->setText(QString("%1px").arg(pattern->stripRearThicknessBoxHeight));
                         }
                     }
                     
@@ -6560,21 +6583,21 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                     if (insEdgeOffsetXSlider) {
                         insEdgeOffsetXSlider->blockSignals(true);
                         insEdgeOffsetXSlider->setValue(pattern->edgeOffsetX);
-                        insEdgeOffsetXValueLabel->setText(QString::number(pattern->edgeOffsetX));
+                        insEdgeOffsetXValueLabel->setText(QString("%1px").arg(pattern->edgeOffsetX));
                         insEdgeOffsetXSlider->blockSignals(false);
                     }
                     
                     if (insEdgeWidthSlider) {
                         insEdgeWidthSlider->blockSignals(true);
                         insEdgeWidthSlider->setValue(pattern->edgeBoxWidth);
-                        insEdgeWidthValueLabel->setText(QString::number(pattern->edgeBoxWidth));
+                        insEdgeWidthValueLabel->setText(QString("%1px").arg(pattern->edgeBoxWidth));
                         insEdgeWidthSlider->blockSignals(false);
                     }
                     
                     if (insEdgeHeightSlider) {
                         insEdgeHeightSlider->blockSignals(true);
                         insEdgeHeightSlider->setValue(pattern->edgeBoxHeight);
-                        insEdgeHeightValueLabel->setText(QString::number(pattern->edgeBoxHeight));
+                        insEdgeHeightValueLabel->setText(QString("%1px").arg(pattern->edgeBoxHeight));
                         insEdgeHeightSlider->blockSignals(false);
                     }
                     
@@ -12424,6 +12447,18 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
     if (manager.loadRecipe(recipeFileName, cameraInfos, calibrationMap, cameraView, patternTree, teachingImageCallback, this)) {
         currentRecipeName = recipeName;
         hasUnsavedChanges = false;
+        
+        // 레시피 로드 후 INS 패턴의 STRIP 박스 크기 로그 출력
+        QList<PatternInfo>& allPatterns = cameraView->getPatterns();
+        for (int i = 0; i < allPatterns.size(); i++) {
+            PatternInfo& pattern = allPatterns[i];
+            if (pattern.type == PatternType::INS && pattern.inspectionMethod == InspectionMethod::STRIP) {
+                qDebug() << "[레시피 로드] 박스 크기:" << pattern.name
+                         << "angle=" << pattern.angle
+                         << "FRONT=" << pattern.stripThicknessBoxWidth << "x" << pattern.stripThicknessBoxHeight
+                         << "REAR=" << pattern.stripRearThicknessBoxWidth << "x" << pattern.stripRearThicknessBoxHeight;
+            }
+        }
         
         // 윈도우 타이틀 업데이트
         setWindowTitle(QString("KM Inspector - %1").arg(recipeName));
