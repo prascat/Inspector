@@ -1480,12 +1480,9 @@ cv::Mat InsProcessor::extractROI(const cv::Mat& image, const QRectF& rect, doubl
         double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
         double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
         
-        // bounding box 크기 (FRONT/REAR 검사를 위해 Y 방향으로 충분한 여유 추가)
-        // REAR 박스 Y 변위 고려: localX * sin(angle)에서 최대 width 정도의 변위 발생 가능
-        int paddingX = 20;
-        int paddingY = static_cast<int>(width * std::abs(std::sin(angleRad))) + 50;  // 변위 + 50픽셀 여유
-        int bboxWidth = static_cast<int>(rotatedWidth) + paddingX;
-        int bboxHeight = static_cast<int>(rotatedHeight) + paddingY;
+        // bounding box 크기 (티칭과 동일하게 여유 없음)
+        int bboxWidth = static_cast<int>(rotatedWidth);
+        int bboxHeight = static_cast<int>(rotatedHeight);
         
         // bounding box ROI 영역 계산 (중심점 기준)
         cv::Rect bboxRoi(
@@ -1738,11 +1735,9 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
     double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
     
-    // bounding box 크기 (extractROI와 동일하게 FRONT/REAR 검사를 위해 Y 방향으로 충분한 여유 추가)
-    int paddingX = 20;
-    int paddingY = static_cast<int>(width * std::abs(std::sin(angleRad))) + 50;  // 변위 + 50픽셀 여유
-    int bboxWidth = static_cast<int>(rotatedWidth) + paddingX;
-    int bboxHeight = static_cast<int>(rotatedHeight) + paddingY;
+    // bounding box 크기 (extractROI와 동일하게 여유 없음)
+    int bboxWidth = static_cast<int>(rotatedWidth);
+    int bboxHeight = static_cast<int>(rotatedHeight);
     
     // extractROI와 정확히 동일한 bboxRoi 계산
     cv::Point2f center(pattern.rect.x() + pattern.rect.width()/2.0f, 
