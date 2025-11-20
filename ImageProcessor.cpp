@@ -1651,32 +1651,26 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         float startPercent = gradientStartPercent / 100.0f;
             
             // gradient 시작점까지의 거리 (패턴 왼쪽 끝에서 startPercent만큼)
-            float gradientStartX = roiPatternCenter.x - (patternWidth/2) + (startPercent * patternWidth);
-            
-            // 각도 적용한 실제 gradient 시작점 중앙 계산 (패턴 중심 기준으로 회전)
-            float localX = gradientStartX - roiPatternCenter.x;  // 패턴 중심 기준 상대 좌표
+            // ROI 내에서는 회전이 없으므로 X 좌표만 계산
+            int boxCenterX = roiPatternCenter.x - (patternWidth/2) + static_cast<int>(startPercent * patternWidth);
             
             // Y 좌표는 검출된 검은색 라인의 평균 Y 위치 사용
-            float detectedY = roiPatternCenter.y;  // 기본값
+            int boxCenterY = roiPatternCenter.y;  // 기본값
             if (!topPositions.empty() && !bottomPositions.empty()) {
                 // 상단과 하단 포인트의 평균 Y 좌표 계산
                 float sumY = 0;
                 for (const auto& pt : topPositions) sumY += pt.y;
                 for (const auto& pt : bottomPositions) sumY += pt.y;
-                detectedY = sumY / (topPositions.size() + bottomPositions.size());
+                boxCenterY = static_cast<int>(sumY / (topPositions.size() + bottomPositions.size()));
             }
-            float localY = detectedY - roiPatternCenter.y;  // 패턴 중심 기준 상대 Y
-            
-            int boxCenterX = roiPatternCenter.x + static_cast<int>(localX * cos(angleRad) - localY * sin(angleRad));
-            int boxCenterY = roiPatternCenter.y + static_cast<int>(localX * sin(angleRad) + localY * cos(angleRad));
             
             // ROI 범위 내로 안전하게 클립 - 여유 있게 설정하여 가능한 많은 부분을 스캔
             int clippedBoxCenterY = std::max(thicknessBoxHeight/4, 
                                              std::min(boxCenterY, roiImage.rows - thicknessBoxHeight/4));
             
             qDebug() << "[STRIP FRONT] 진단정보 - roiPatternCenter:" << roiPatternCenter.x << "," << roiPatternCenter.y
-                     << ", startPercent:" << startPercent << ", gradientStartX:" << gradientStartX
-                     << ", localX:" << localX << ", patternWidth:" << patternWidth
+                     << ", startPercent:" << startPercent
+                     << ", boxCenterX:" << boxCenterX << ", patternWidth:" << patternWidth
                      << ", originalY:" << boxCenterY << ", clippedY:" << clippedBoxCenterY
                      << ", adjustment:" << (clippedBoxCenterY - boxCenterY);
             
@@ -1927,24 +1921,18 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         float endPercent = gradientEndPercent / 100.0f;
         
         // gradient 끝점까지의 거리 (패턴 왼쪽 끝에서 endPercent만큼)
-        float gradientEndX_rear = roiPatternCenter_rear.x - (patternWidth/2) + (endPercent * patternWidth);
-        
-        // 각도 적용한 실제 gradient 끝점 중앙 계산 (패턴 중심 기준으로 회전)
-        float localX_rear = gradientEndX_rear - roiPatternCenter_rear.x;  // 패턴 중심 기준 상대 좌표
+        // ROI 내에서는 회전이 없으므로 X 좌표만 계산
+        int boxCenterX_rear = roiPatternCenter_rear.x - (patternWidth/2) + static_cast<int>(endPercent * patternWidth);
         
         // Y 좌표는 검출된 검은색 라인의 평균 Y 위치 사용
-        float detectedY_rear = roiPatternCenter_rear.y;  // 기본값
+        int boxCenterY_rear = roiPatternCenter_rear.y;  // 기본값
         if (!topPositions.empty() && !bottomPositions.empty()) {
             // 상단과 하단 포인트의 평균 Y 좌표 계산
             float sumY = 0;
             for (const auto& pt : topPositions) sumY += pt.y;
             for (const auto& pt : bottomPositions) sumY += pt.y;
-            detectedY_rear = sumY / (topPositions.size() + bottomPositions.size());
+            boxCenterY_rear = static_cast<int>(sumY / (topPositions.size() + bottomPositions.size()));
         }
-        float localY_rear = detectedY_rear - roiPatternCenter_rear.y;  // 패턴 중심 기준 상대 Y
-        
-        int boxCenterX_rear = roiPatternCenter_rear.x + static_cast<int>(localX_rear * cos(angleRad) - localY_rear * sin(angleRad));
-        int boxCenterY_rear = roiPatternCenter_rear.y + static_cast<int>(localX_rear * sin(angleRad) + localY_rear * cos(angleRad));
         
         // ROI 범위 내로 안전하게 클립 - 여유 있게 설정하여 가능한 많은 부분을 스캔
         int clippedBoxCenterY_rear = std::max(rearThicknessBoxHeight/4, 
@@ -1952,8 +1940,8 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         int yAdjustment = clippedBoxCenterY_rear - boxCenterY_rear;
         
         qDebug() << "[STRIP REAR] 진단정보 - roiPatternCenter:" << roiPatternCenter_rear.x << "," << roiPatternCenter_rear.y
-                 << ", endPercent:" << endPercent << ", gradientEndX_rear:" << gradientEndX_rear
-                 << ", localX_rear:" << localX_rear << ", patternWidth:" << patternWidth
+                 << ", endPercent:" << endPercent
+                 << ", boxCenterX_rear:" << boxCenterX_rear << ", patternWidth:" << patternWidth
                  << ", originalY:" << boxCenterY_rear << ", clippedY:" << clippedBoxCenterY_rear << ", adjustment:" << yAdjustment;
         qDebug() << "[STRIP REAR] 측정 시작 - boxCenter:" << boxCenterX_rear << "," << clippedBoxCenterY_rear
                  << ", boxSize:" << rearThicknessBoxWidth << "x" << rearThicknessBoxHeight;

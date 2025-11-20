@@ -1753,55 +1753,14 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     cv::Point2f offset(bboxRoi.x, bboxRoi.y);
     
     // FRONT/REAR 포인트: 패턴 상대좌표로 변환하여 저장 (각도 적용)
-    // 패턴 중심점 (절대좌표)
-    QPointF patternCenterAbs(pattern.rect.x() + pattern.rect.width()/2.0f,
-                            pattern.rect.y() + pattern.rect.height()/2.0f);
-    
-    // angleRad는 이미 위에서 정의됨 (line 2378)
-    double cosA = cos(angleRad);
-    double sinA = sin(angleRad);
-    
-    // ROI 이미지 내에서 패턴의 중심점 (extractROI와 동일한 방식으로 계산)
-    double centerX = center.x - static_cast<double>(bboxRoi.x);
-    double centerY = center.y - static_cast<double>(bboxRoi.y);
-    
-    // FRONT 포인트들을 절대좌표로 변환
-    // frontThicknessPoints: 검은색 구간의 모든 픽셀들 (ROI 좌표)
+    // frontThicknessPoints와 rearThicknessPoints는 (index, thickness) 형태의 데이터이므로
+    // 공간 좌표 변환을 수행하지 않습니다. (그래프용 데이터)
     QList<QPoint> frontPointsConverted;
-    
-    for (const cv::Point& pt : frontThicknessPoints) {
-        // ROI 좌표를 중심 기준 상대좌표로 변환
-        double localX = pt.x - centerX;
-        double localY = pt.y - centerY;
-        
-        // 회전 적용
-        double rotatedX = localX * cosA - localY * sinA;
-        double rotatedY = localX * sinA + localY * cosA;
-        
-        // 절대좌표로 변환
-        QPoint ptAbs(static_cast<int>(pattern.rect.x() + pattern.rect.width()/2.0 + rotatedX),
-                     static_cast<int>(pattern.rect.y() + pattern.rect.height()/2.0 + rotatedY));
-        frontPointsConverted.append(ptAbs);
-    }
-    
-    // REAR 포인트들을 절대좌표로 변환
-    // rearThicknessPoints: 검은색 구간의 모든 픽셀들 (ROI 좌표)
     QList<QPoint> rearPointsConverted;
     
-    for (const cv::Point& pt : rearThicknessPoints) {
-        // ROI 좌표를 중심 기준 상대좌표로 변환
-        double localX = pt.x - centerX;
-        double localY = pt.y - centerY;
-        
-        // 회전 적용
-        double rotatedX = localX * cosA - localY * sinA;
-        double rotatedY = localX * sinA + localY * cosA;
-        
-        // 절대좌표로 변환
-        QPoint ptAbs(static_cast<int>(pattern.rect.x() + pattern.rect.width()/2.0 + rotatedX),
-                     static_cast<int>(pattern.rect.y() + pattern.rect.height()/2.0 + rotatedY));
-        rearPointsConverted.append(ptAbs);
-    }
+    // 그래프 데이터로 그대로 사용하기 위해 변환 없이 저장하거나, 
+    // 필요하다면 별도의 필드에 저장해야 합니다.
+    // 현재는 빈 리스트로 두어 잘못된 좌표 표시를 방지합니다.
     
     // 검은색 구간 포인트들도 절대좌표로 변환 (박스 기준 로컬 좌표 -> 절대좌표)
     // 최소/최대 두께의 라인만 표시
@@ -1909,7 +1868,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     
     // OpenCV에서 검출된 gradientPoints를 사용 (4개 포인트)
     QPoint absPoint1, absPoint2, absPoint3, absPoint4;
-    cv::Point roiPoint1, roiPoint2, roiPoint3, roiPoint4;  // ROI 좌표 저장
     
     if (gradientPoints.size() >= 4) {
         // OpenCV gradientPoints 순서 재정렬 - 올바른 위치로 매핑
@@ -1920,26 +1878,14 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             gradientPoints[3]   // Point 4: 오른쪽 아래
         };
         
-        // ROI 좌표 저장 (회전 전)
-        roiPoint1 = orderedPoints[0];
-        roiPoint2 = orderedPoints[1];
-        roiPoint3 = orderedPoints[2];
-        roiPoint4 = orderedPoints[3];
-        
-        // 유틸리티 함수를 사용하여 점들을 변환
-        QList<QPoint> transformedPoints = InsProcessor::transformPatternPoints(
-            orderedPoints, 
-            roiImage.size(), 
-            pattern.angle, 
-            offset
-        );
-        
-        // 변환된 점들을 할당
-        if (transformedPoints.size() >= 4) {
-            absPoint1 = transformedPoints[0];
-            absPoint2 = transformedPoints[1];
-            absPoint3 = transformedPoints[2];
-            absPoint4 = transformedPoints[3];
+        // ROI 좌표를 절대 좌표로 변환 (회전 없음, 오프셋만 적용)
+        // extractROI는 이미지를 회전시키지 않고 crop만 하므로, 
+        // ROI 내의 점들은 원본 이미지에서 offset만큼만 이동하면 됨
+        if (orderedPoints.size() >= 4) {
+            absPoint1 = QPoint(orderedPoints[0].x + offset.x, orderedPoints[0].y + offset.y);
+            absPoint2 = QPoint(orderedPoints[1].x + offset.x, orderedPoints[1].y + offset.y);
+            absPoint3 = QPoint(orderedPoints[2].x + offset.x, orderedPoints[2].y + offset.y);
+            absPoint4 = QPoint(orderedPoints[3].x + offset.x, orderedPoints[3].y + offset.y);
         }
     } else {
         qDebug() << "경고: gradientPoints 개수 부족 (" << gradientPoints.size() << "/4)";
@@ -1960,29 +1906,13 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     
     // STRIP 박스 정보 저장 (ROI 좌표를 scene 좌표로 변환)
     // ImageProcessor에서 반환된 boxCenter는 ROI 이미지 절대 좌표
-    // transformPatternPoints와 동일한 방식으로 scene 좌표로 변환
-    std::vector<cv::Point> frontBoxCenterVec = { frontBoxCenterROI };
-    std::vector<cv::Point> rearBoxCenterVec = { rearBoxCenterROI };
-    
-    QList<QPoint> frontBoxTransformed = transformPatternPoints(frontBoxCenterVec,
-                                                               cv::Size(bboxWidth, bboxHeight),
-                                                               pattern.angle,
-                                                               cv::Point2f(pattern.rect.center().x(), pattern.rect.center().y()));
-    
-    QList<QPoint> rearBoxTransformed = transformPatternPoints(rearBoxCenterVec,
-                                                              cv::Size(bboxWidth, bboxHeight),
-                                                              pattern.angle,
-                                                              cv::Point2f(pattern.rect.center().x(), pattern.rect.center().y()));
+    // extractROI는 이미지를 회전시키지 않으므로, 오프셋만 더하면 됨 (추가 회전 불필요)
     
     QPointF frontBoxCenterScene(0, 0);
     QPointF rearBoxCenterScene(0, 0);
     
-    if (!frontBoxTransformed.isEmpty()) {
-        frontBoxCenterScene = QPointF(frontBoxTransformed[0].x(), frontBoxTransformed[0].y());
-    }
-    if (!rearBoxTransformed.isEmpty()) {
-        rearBoxCenterScene = QPointF(rearBoxTransformed[0].x(), rearBoxTransformed[0].y());
-    }
+    frontBoxCenterScene = QPointF(frontBoxCenterROI.x + offset.x, frontBoxCenterROI.y + offset.y);
+    rearBoxCenterScene = QPointF(rearBoxCenterROI.x + offset.x, rearBoxCenterROI.y + offset.y);
     
     result.stripFrontBoxCenter[pattern.id] = frontBoxCenterScene;
     result.stripFrontBoxSize[pattern.id] = QSizeF(frontBoxSz.width, frontBoxSz.height);
