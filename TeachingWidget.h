@@ -389,15 +389,6 @@ private:
     QLabel* insThreshLabel = nullptr;
     QLabel* insCompareLabel = nullptr;
     QLabel* insTemplateImg = nullptr;
-    QWidget* insBinaryPanel = nullptr;
-
-    // INS 이진화 패널 관련 위젯
-    QSpinBox* insThreshSpin = nullptr;
-    QDoubleSpinBox* insThresholdSpin = nullptr;
-    QLabel* insThresholdLabel = nullptr;
-    QLabel* insLowerLabel = nullptr;
-    QLabel* insUpperLabel = nullptr;
-    QLabel* insRatioTypeLabel = nullptr;
 
     // STRIP 검사 패널 관련 위젯
     QGroupBox* insStripPanel = nullptr;
@@ -517,15 +508,10 @@ private:
     QDoubleSpinBox* insPassThreshSpin = nullptr;
     QComboBox* insMethodCombo = nullptr; 
     QWidget* insPatternMatchPanel = nullptr;
-    QSpinBox* insBinaryThreshSpin = nullptr;
     QCheckBox* insRotationCheck = nullptr;
     QDoubleSpinBox* insMinAngleSpin = nullptr;
     QDoubleSpinBox* insMaxAngleSpin = nullptr;
     QDoubleSpinBox* insAngleStepSpin = nullptr;
-    QComboBox* insCompareCombo = nullptr;
-    QDoubleSpinBox* insLowerSpin = nullptr;
-    QDoubleSpinBox* insUpperSpin = nullptr;
-    QComboBox* insRatioTypeCombo = nullptr;
 
     // 패턴 기본 정보 관련 위젯들
     QLabel* patternIdValue = nullptr;      

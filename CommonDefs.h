@@ -256,10 +256,7 @@ struct PatternInfo {
     int crimpShapeBoxHeight = 100;          // SHAPE 박스 높이 (픽셀)
     double crimpShapeMatchRate = 80.0;      // 매칭율 (%)
 
-    // DIFF 검사 파라미터 (COLOR, EDGE, BINARY 통합)
-    int compareMethod = 0;            // 비교 방식 (0: 이상, 1: 이하, 2: 범위 내)
-    double lowerThreshold = 0.0;      // 하한 임계값 (범위 검사용)
-    double upperThreshold = 100.0;    // 상한 임계값 (범위 검사용)
+    // DIFF 검사 파라미터 (COLOR, EDGE 통합)
     QList<FilterInfo> filters;  // 패턴에 적용된 필터 목록
 };
 

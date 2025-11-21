@@ -1409,21 +1409,7 @@ bool InsProcessor::checkDiff(const cv::Mat& image, const PatternInfo& pattern, d
         // 비교 방식에 따른 결과 판단
         // score는 0-1 범위, pattern.passThreshold는 0-100 범위이므로 score를 백분율로 변환해서 비교
         double scorePercentage = score * 100.0;
-        bool passed = false;
-        switch (pattern.compareMethod) {
-            case 0:  // 이상 (>=)
-                passed = (scorePercentage >= pattern.passThreshold);
-                break;
-            case 1:  // 이하 (<=)
-                passed = (scorePercentage <= pattern.passThreshold);
-                break;
-            case 2:  // 범위 내
-                passed = (scorePercentage >= pattern.lowerThreshold && scorePercentage <= pattern.upperThreshold);
-                break;
-            default:
-                passed = (scorePercentage >= pattern.passThreshold);
-                break;
-        }
+        bool passed = (scorePercentage >= pattern.passThreshold);
         
         // ===== 4. 결과 저장: DIFF MASK 생성 =====
         result.insProcessedImages[pattern.id] = binary;  // 이진 이미지 저장

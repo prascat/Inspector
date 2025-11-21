@@ -1028,11 +1028,7 @@ void CameraView::showContextMenu(const QPoint& pos) {
                 newPattern.runInspection = true;
                 newPattern.inspectionMethod = InspectionMethod::DIFF;
                 newPattern.passThreshold = 80.0;  // 80%
-                newPattern.compareMethod = 0;
                 newPattern.angle = 0.0;  // 각도 명시적으로 0으로 설정
-                
-                newPattern.lowerThreshold = 0.0;
-                newPattern.upperThreshold = 1.0;
                 newPattern.stripCrimpMode = currentStripCrimpMode;
                 
                 addPattern(newPattern);

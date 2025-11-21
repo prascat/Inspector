@@ -3473,78 +3473,6 @@ void TeachingWidget::createPropertyPanels() {
 
     insMainLayout->addWidget(basicInspectionGroup);
 
-    // === 이진화 검사 설정 그룹 ===
-    insBinaryPanel = new QGroupBox("이진화 검사 설정", insPropWidget);
-    insBinaryPanel->setStyleSheet(
-        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
-        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
-    );
-    QFormLayout* insBinaryLayout = new QFormLayout(insBinaryPanel);
-    insBinaryLayout->setVerticalSpacing(5);
-    insBinaryLayout->setContentsMargins(10, 15, 10, 10);
-    insBinaryLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    insBinaryLayout->setFormAlignment(Qt::AlignCenter);
-
-    // 이진화 임계값
-    insThreshLabel = new QLabel("이진화 임계값:", insBinaryPanel);
-    insThreshSpin = new QSpinBox(insBinaryPanel);
-    insThreshSpin->setRange(0, 255);
-    insThreshSpin->setValue(128);
-    insBinaryLayout->addRow(insThreshLabel, insThreshSpin);
-
-    // 비교 방식
-    insCompareLabel = new QLabel("비교 방식:", insBinaryPanel);
-    insCompareCombo = new QComboBox(insBinaryPanel);
-    insCompareCombo->addItem("이상 (>=)");
-    insCompareCombo->addItem("이하 (<=)");
-    insCompareCombo->addItem("범위 내");
-    insBinaryLayout->addRow(insCompareLabel, insCompareCombo);
-
-    // 합격 기준
-    insThresholdLabel = new QLabel("합격 기준:", insBinaryPanel);
-    insThresholdSpin = new QDoubleSpinBox(insBinaryPanel);
-    insThresholdSpin->setRange(0.0, 100.0);
-    insThresholdSpin->setSingleStep(1.0);
-    insThresholdSpin->setValue(50.0);
-    insThresholdSpin->setSuffix("%");
-    insBinaryLayout->addRow(insThresholdLabel, insThresholdSpin);
-
-    // 범위 설정 (범위 내 옵션용)
-    QWidget* rangeWidget = new QWidget(insBinaryPanel);
-    QHBoxLayout* rangeLayout = new QHBoxLayout(rangeWidget);
-    rangeLayout->setContentsMargins(0, 0, 0, 0);
-    rangeLayout->setSpacing(5);
-    
-    insLowerLabel = new QLabel("하한:", rangeWidget);
-    insLowerSpin = new QDoubleSpinBox(rangeWidget);
-    insLowerSpin->setRange(0.0, 1.0);
-    insLowerSpin->setSingleStep(0.01);
-    insLowerSpin->setValue(0.3);
-    
-    insUpperLabel = new QLabel("상한:", rangeWidget);
-    insUpperSpin = new QDoubleSpinBox(rangeWidget);
-    insUpperSpin->setRange(0.0, 1.0);
-    insUpperSpin->setSingleStep(0.01);
-    insUpperSpin->setValue(0.7);
-    
-    rangeLayout->addStretch();
-    rangeLayout->addWidget(insLowerLabel);
-    rangeLayout->addWidget(insLowerSpin);
-    rangeLayout->addWidget(insUpperLabel);
-    rangeLayout->addWidget(insUpperSpin);
-    rangeLayout->addStretch();
-    
-    insBinaryLayout->addRow("범위 설정:", rangeWidget);
-
-    // 측정 대상
-    insRatioTypeLabel = new QLabel("측정 대상:", insBinaryPanel);
-    insRatioTypeCombo = new QComboBox(insBinaryPanel);
-    insRatioTypeCombo->addItem("흰색 픽셀 비율");
-    insRatioTypeCombo->addItem("검은색 픽셀 비율");
-    insBinaryLayout->addRow(insRatioTypeLabel, insRatioTypeCombo);
-
-    insMainLayout->addWidget(insBinaryPanel);
-
     // === 템플릿 이미지 그룹 ===
     QGroupBox* templateGroup = new QGroupBox("템플릿 이미지", insPropWidget);
     templateGroup->setStyleSheet(
@@ -4081,16 +4009,13 @@ void TeachingWidget::createPropertyPanels() {
 
     // 여백 추가
     insMainLayout->addStretch();
-
     // 패널 초기 설정 - 검사 방법에 따라 표시
-    insBinaryPanel->setVisible(false);  // 처음에는 숨김
     insStripPanel->setVisible(false);   // STRIP 패널도 처음에는 숨김
     insCrimpPanel->setVisible(false);   // CRIMP 패널도 처음에는 숨김
 
     // 검사 방법에 따른 패널 표시 설정
     connect(insMethodCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), 
         [this](int index) {
-            insBinaryPanel->setVisible(index == InspectionMethod::DIFF);  // 이진화
             insStripPanel->setVisible(index == InspectionMethod::STRIP);    // STRIP
             insCrimpPanel->setVisible(index == InspectionMethod::CRIMP);    // CRIMP
             // 결과 반전 옵션은 BINARY, STRIP, CRIMP에서만 표시 (안함)
@@ -4958,11 +4883,6 @@ void TeachingWidget::connectPropertyPanelEvents() {
                     if (pattern && pattern->type == PatternType::INS) {
                         pattern->inspectionMethod = index;
                         
-                        // 이진화 검사 패널 표시 설정
-                        if (insBinaryPanel) {
-                            insBinaryPanel->setVisible(index == InspectionMethod::DIFF);
-                        }
-                        
                         // STRIP 검사 패널 및 그룹들 표시 설정
                         bool isStripMethod = (index == InspectionMethod::STRIP);
                         if (insStripPanel) {
@@ -5195,85 +5115,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
     
     // 이진화 검사 관련 연결
     // 이진화 임계값
-    // Binary threshold removed - DIFF inspection no longer uses binary threshold
-    
-    // 비교 방식
-    if (insCompareCombo) {
-        connect(insCompareCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), 
-                [this](int index) {
-            QTreeWidgetItem* selectedItem = patternTree->currentItem();
-            if (selectedItem) {
-                QUuid patternId = getPatternIdFromItem(selectedItem);
-                if (!patternId.isNull()) {
-                    PatternInfo* pattern = cameraView->getPatternById(patternId);
-                    if (pattern && pattern->type == PatternType::INS) {
-                        pattern->compareMethod = index;
-                        cameraView->updatePatternById(patternId, *pattern);
-                    }
-                }
-            }
-        });
-    }
-    
-    // 하한 임계값
-    if (insLowerSpin) {
-        connect(insLowerSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), 
-                [this](double value) {
-            QTreeWidgetItem* selectedItem = patternTree->currentItem();
-            if (selectedItem) {
-                QUuid patternId = getPatternIdFromItem(selectedItem);
-                if (!patternId.isNull()) {
-                    PatternInfo* pattern = cameraView->getPatternById(patternId);
-                    if (pattern && pattern->type == PatternType::INS) {
-                        pattern->lowerThreshold = value;
-                        cameraView->updatePatternById(patternId, *pattern);
-                    }
-                }
-            }
-        });
-    }
-    
-    // 상한 임계값
 
-    if (insUpperSpin) {
-        connect(insUpperSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), 
-                [this](double value) {
-            QTreeWidgetItem* selectedItem = patternTree->currentItem();
-            if (selectedItem) {
-                QUuid patternId = getPatternIdFromItem(selectedItem);
-                if (!patternId.isNull()) {
-                    PatternInfo* pattern = cameraView->getPatternById(patternId);
-                    if (pattern && pattern->type == PatternType::INS) {
-                        pattern->upperThreshold = value;
-                        cameraView->updatePatternById(patternId, *pattern);
-                    }
-                }
-            }
-        });
-    }
-    
-    // 비율 타입
-    if (insRatioTypeCombo) {
-        connect(insRatioTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), 
-                [this](int index) {
-                    QTreeWidgetItem* selectedItem = patternTree->currentItem();
-                    if (selectedItem) {
-                        QUuid patternId = getPatternIdFromItem(selectedItem);
-                        PatternInfo* pattern = cameraView->getPatternById(patternId);
-                        if (pattern && pattern->type == PatternType::INS) {
-                            // ratioType removed - DIFF inspection no longer uses ratio type
-                            
-                            // 비율 타입 변경 후 템플릿 이미지 업데이트
-                            
-                            // 템플릿 이미지 업데이트 (이진화 타입이 반영되도록)
-                            updateInsTemplateImage(pattern, pattern->rect);
-                            
-                            cameraView->update();
-                        }
-                    }
-                });
-    }
-    
     // === STRIP 검사 파라미터 이벤트 연결 ===
     
     // 컨투어 마진
@@ -6318,11 +6160,6 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insInvertCheck->setChecked(visible ? pattern->invertResult : false);
                     }
                     
-                    // 이진화 패널 표시 설정
-                    if (insBinaryPanel) {
-                        insBinaryPanel->setVisible(pattern->inspectionMethod == InspectionMethod::DIFF);
-                    }
-                    
                     // STRIP 패널 표시 설정
                     if (insStripPanel) {
                         insStripPanel->setVisible(pattern->inspectionMethod == InspectionMethod::STRIP);
@@ -6607,26 +6444,6 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insEdgeEndPercentSpin->blockSignals(true);
                         insEdgeEndPercentSpin->setValue(pattern->edgeEndPercent);
                         insEdgeEndPercentSpin->blockSignals(false);
-                    }
-                    
-                    if (insBinaryThreshSpin) {
-                        // binaryThreshold removed - DIFF inspection no longer uses binary threshold
-                    }
-                    
-                    if (insCompareCombo) {
-                        insCompareCombo->setCurrentIndex(pattern->compareMethod);
-                    }
-                    
-                    if (insLowerSpin) {
-                        insLowerSpin->setValue(pattern->lowerThreshold);
-                    }
-                    
-                    if (insUpperSpin) {
-                        insUpperSpin->setValue(pattern->upperThreshold);
-                    }
-                    
-                    if (insRatioTypeCombo) {
-                        // ratioType removed - DIFF inspection no longer uses ratio type
                     }
                     
                     // CRIMP SHAPE 검사 파라미터 로드
@@ -10756,11 +10573,6 @@ void TeachingWidget::addPattern() {
             pattern.passThreshold = 90.0;  // 90%
             pattern.invertResult = false;
             pattern.inspectionMethod = 0;
-            // binaryThreshold removed - DIFF inspection no longer uses binary threshold
-            pattern.compareMethod = 0;
-            pattern.lowerThreshold = 0.5;
-            pattern.upperThreshold = 1.0;
-            // ratioType removed - DIFF inspection no longer uses ratio type
             
             // EDGE 검사 관련 기본값 설정
             pattern.edgeEnabled = true;

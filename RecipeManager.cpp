@@ -914,11 +914,6 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("inspectionMethod", QString::number(pattern.inspectionMethod));
     xml.writeAttribute("passThreshold", QString::number(pattern.passThreshold));
     if (pattern.invertResult) xml.writeAttribute("invertResult", "true");
-    // binaryThreshold removed - DIFF inspection no longer uses binary threshold
-    xml.writeAttribute("compareMethod", QString::number(pattern.compareMethod));
-    xml.writeAttribute("lowerThreshold", QString::number(pattern.lowerThreshold));
-    xml.writeAttribute("upperThreshold", QString::number(pattern.upperThreshold));
-    // ratioType removed - DIFF inspection no longer uses ratio type
     if (pattern.useRotation) xml.writeAttribute("useRotation", "true");
     xml.writeAttribute("minAngle", QString::number(pattern.minAngle));
     xml.writeAttribute("maxAngle", QString::number(pattern.maxAngle));
@@ -1603,11 +1598,6 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     pattern.inspectionMethod = xml.attributes().value("inspectionMethod").toInt();
     pattern.passThreshold = xml.attributes().value("passThreshold").toDouble();
     pattern.invertResult = (xml.attributes().value("invertResult").toString() == "true");
-    // binaryThreshold removed - DIFF inspection no longer uses binary threshold
-    pattern.compareMethod = xml.attributes().value("compareMethod").toInt();
-    pattern.lowerThreshold = xml.attributes().value("lowerThreshold").toDouble();
-    pattern.upperThreshold = xml.attributes().value("upperThreshold").toDouble();
-    // ratioType removed - DIFF inspection no longer uses ratio type
     pattern.useRotation = (xml.attributes().value("useRotation").toString() == "true");
     pattern.minAngle = xml.attributes().value("minAngle").toDouble();
     pattern.maxAngle = xml.attributes().value("maxAngle").toDouble();
