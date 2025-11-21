@@ -964,20 +964,44 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("crimpCentralBarrelBoxHeight", QString::number(pattern.crimpCentralBarrelBoxHeight));
     xml.writeAttribute("crimpCentralBarrelMatchRate", QString::number(pattern.crimpCentralBarrelMatchRate, 'f', 1));
     
+    // 템플릿 이미지 저장 (DIFF용 기본 템플릿)
     if (!pattern.templateImage.isNull()) {
         QByteArray ba;
         QBuffer buffer(&ba);
         buffer.open(QIODevice::WriteOnly);
-        // BMP 포맷 사용 (손실 없음, PNG보다 빠름)
         pattern.templateImage.save(&buffer, "BMP");
         xml.writeAttribute("templateImage", ba.toBase64());
-        qDebug() << QString("INS 패턴 '%1' 템플릿 이미지 저장: 크기=%2x%3, base64 길이=%4")
+        qDebug() << QString("INS 패턴 '%1' DIFF 템플릿 이미지 저장: 크기=%2x%3, base64 길이=%4")
                     .arg(pattern.name)
                     .arg(pattern.templateImage.width())
                     .arg(pattern.templateImage.height())
                     .arg(ba.size());
-    } else {
-        qDebug() << QString("INS 패턴 '%1' 템플릿 이미지가 null입니다!").arg(pattern.name);
+    }
+    
+    // STRIP 전용 템플릿 이미지 저장
+    if (!pattern.stripTemplateImage.isNull()) {
+        QByteArray ba;
+        QBuffer buffer(&ba);
+        buffer.open(QIODevice::WriteOnly);
+        pattern.stripTemplateImage.save(&buffer, "BMP");
+        xml.writeAttribute("stripTemplateImage", ba.toBase64());
+        qDebug() << QString("INS 패턴 '%1' STRIP 템플릿 이미지 저장: 크기=%2x%3")
+                    .arg(pattern.name)
+                    .arg(pattern.stripTemplateImage.width())
+                    .arg(pattern.stripTemplateImage.height());
+    }
+    
+    // CRIMP 전용 템플릿 이미지 저장
+    if (!pattern.crimpTemplateImage.isNull()) {
+        QByteArray ba;
+        QBuffer buffer(&ba);
+        buffer.open(QIODevice::WriteOnly);
+        pattern.crimpTemplateImage.save(&buffer, "BMP");
+        xml.writeAttribute("crimpTemplateImage", ba.toBase64());
+        qDebug() << QString("INS 패턴 '%1' CRIMP 템플릿 이미지 저장: 크기=%2x%3")
+                    .arg(pattern.name)
+                    .arg(pattern.crimpTemplateImage.width())
+                    .arg(pattern.crimpTemplateImage.height());
     }
     
     xml.writeEndElement();
@@ -1768,13 +1792,14 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
         pattern.crimpCentralBarrelMatchRate = crimpCentralBarrelMatchRateStr.toDouble();
     }
     
+    // 기본 템플릿 이미지 로드 (DIFF용 또는 레거시)
     QString imageStr = xml.attributes().value("templateImage").toString();
     qDebug() << QString("INS 패턴 '%1' templateImage 속성 길이: %2").arg(pattern.name).arg(imageStr.length());
     
     if (!imageStr.isEmpty()) {
         QByteArray imageData = QByteArray::fromBase64(imageStr.toLatin1());
-        bool loadSuccess = pattern.templateImage.loadFromData(imageData);  // 포맷 자동 감지
-        qDebug() << QString("INS 패턴 '%1' 템플릿 이미지 로드: base64 길이=%2, 이미지 크기=%3x%4, null=%5, 로드성공=%6")
+        bool loadSuccess = pattern.templateImage.loadFromData(imageData);
+        qDebug() << QString("INS 패턴 '%1' 기본 템플릿 이미지 로드: base64 길이=%2, 이미지 크기=%3x%4, null=%5, 로드성공=%6")
                     .arg(pattern.name)
                     .arg(imageData.size())
                     .arg(pattern.templateImage.width())
@@ -1783,6 +1808,30 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
                     .arg(loadSuccess);
     } else {
         qDebug() << QString("INS 패턴 '%1' templateImage 속성이 비어있습니다!").arg(pattern.name);
+    }
+    
+    // STRIP 전용 템플릿 이미지 로드
+    QString stripImageStr = xml.attributes().value("stripTemplateImage").toString();
+    if (!stripImageStr.isEmpty()) {
+        QByteArray imageData = QByteArray::fromBase64(stripImageStr.toLatin1());
+        bool loadSuccess = pattern.stripTemplateImage.loadFromData(imageData);
+        qDebug() << QString("INS 패턴 '%1' STRIP 템플릿 이미지 로드: 크기=%2x%3, 로드성공=%4")
+                    .arg(pattern.name)
+                    .arg(pattern.stripTemplateImage.width())
+                    .arg(pattern.stripTemplateImage.height())
+                    .arg(loadSuccess);
+    }
+    
+    // CRIMP 전용 템플릿 이미지 로드
+    QString crimpImageStr = xml.attributes().value("crimpTemplateImage").toString();
+    if (!crimpImageStr.isEmpty()) {
+        QByteArray imageData = QByteArray::fromBase64(crimpImageStr.toLatin1());
+        bool loadSuccess = pattern.crimpTemplateImage.loadFromData(imageData);
+        qDebug() << QString("INS 패턴 '%1' CRIMP 템플릿 이미지 로드: 크기=%2x%3, 로드성공=%4")
+                    .arg(pattern.name)
+                    .arg(pattern.crimpTemplateImage.width())
+                    .arg(pattern.crimpTemplateImage.height())
+                    .arg(loadSuccess);
     }
     
     xml.skipCurrentElement();

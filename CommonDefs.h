@@ -190,7 +190,9 @@ struct PatternInfo {
     double minAngle = -15.0;
     double maxAngle = 15.0;
     double angleStep = 1.0;
-    QImage templateImage;
+    QImage templateImage;  // DIFF 검사용 또는 레거시 템플릿
+    QImage stripTemplateImage;  // STRIP 모드 전용 템플릿
+    QImage crimpTemplateImage;  // CRIMP 모드 전용 템플릿
     int fidMatchMethod = 0;     // FID 템플릿 매칭 방법 (0: Coefficient, 1: Correlation)
     bool runInspection = true;  // 추가: 매칭 검사 활성화 여부
     

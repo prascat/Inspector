@@ -4595,13 +4595,31 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo* pattern, const QRectF& 
         }
     }
     
-    // 패턴의 템플릿 이미지 업데이트
-    pattern->templateImage = qimg.copy();
+    // 패턴의 템플릿 이미지 업데이트 (검사 방법과 모드에 따라 분리 저장)
+    if (pattern->inspectionMethod == InspectionMethod::STRIP) {
+        // STRIP 모드 전용 템플릿
+        pattern->stripTemplateImage = qimg.copy();
+        pattern->templateImage = qimg.copy();  // 레거시 호환성
+    } else if (pattern->inspectionMethod == InspectionMethod::CRIMP) {
+        // CRIMP 모드 전용 템플릿
+        pattern->crimpTemplateImage = qimg.copy();
+        pattern->templateImage = qimg.copy();  // 레거시 호환성
+    } else {
+        // DIFF 또는 기타 검사는 기본 템플릿 사용
+        pattern->templateImage = qimg.copy();
+    }
     
-    // UI 업데이트
+    // UI 업데이트 (현재 검사 방법에 맞는 템플릿 표시)
+    QImage* currentTemplateImage = &pattern->templateImage;
+    if (pattern->inspectionMethod == InspectionMethod::STRIP && !pattern->stripTemplateImage.isNull()) {
+        currentTemplateImage = &pattern->stripTemplateImage;
+    } else if (pattern->inspectionMethod == InspectionMethod::CRIMP && !pattern->crimpTemplateImage.isNull()) {
+        currentTemplateImage = &pattern->crimpTemplateImage;
+    }
+    
     if (insTemplateImg) {
-        if (!pattern->templateImage.isNull()) {
-            QPixmap pixmap = QPixmap::fromImage(pattern->templateImage);
+        if (!currentTemplateImage->isNull()) {
+            QPixmap pixmap = QPixmap::fromImage(*currentTemplateImage);
             if (!pixmap.isNull()) {
                 insTemplateImg->setPixmap(pixmap.scaled(
                     insTemplateImg->width(), insTemplateImg->height(), Qt::KeepAspectRatio));

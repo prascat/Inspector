@@ -1610,11 +1610,13 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
             }
         }
         
-        // 템플릿 이미지 로드 (패턴에 저장된 템플릿 이미지 사용)
+        // STRIP 전용 템플릿 이미지 로드
         cv::Mat templateImage;
-        if (!pattern.templateImage.isNull()) {
+        const QImage* stripTemplate = pattern.stripTemplateImage.isNull() ? &pattern.templateImage : &pattern.stripTemplateImage;
+        
+        if (!stripTemplate->isNull()) {
             // QImage를 cv::Mat으로 변환
-            QImage qImg = pattern.templateImage.convertToFormat(QImage::Format_RGB888);
+            QImage qImg = stripTemplate->convertToFormat(QImage::Format_RGB888);
             templateImage = cv::Mat(qImg.height(), qImg.width(), CV_8UC3, (void*)qImg.constBits(), qImg.bytesPerLine());
             templateImage = templateImage.clone(); // 데이터 복사
             cv::cvtColor(templateImage, templateImage, cv::COLOR_RGB2BGR);
