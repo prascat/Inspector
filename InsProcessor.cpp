@@ -2020,6 +2020,8 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         float edgeOffsetX = (-pattern.rect.width()/2.0f) + pattern.edgeOffsetX; // 중심 기준 오프셋
         QPointF edgeBoxRelativeCenter(edgeOffsetX, 0); // Y는 패턴 중심과 동일
         result.edgeBoxCenter[pattern.id] = edgeBoxRelativeCenter;
+        
+        // EDGE 박스 크기 저장 (원본 크기 - 회전 투영은 CameraView에서 적용)
         result.edgeBoxSize[pattern.id] = QSizeF(pattern.edgeBoxWidth, pattern.edgeBoxHeight);
         
         // EDGE 포인트들을 절대좌표로 변환 (회전 없이 오프셋만 적용)

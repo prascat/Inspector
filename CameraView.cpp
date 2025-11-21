@@ -2595,20 +2595,53 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 QPointF edgeCenterViewport = mapFromScene(edgeBoxCenterScene);
                 QPointF edgeRotatedCenter = rotatePoint(edgeCenterViewport, centerViewport);
                 
+                // ===== EDGE 노란색 박스 (축정렬, 회전 투영 고려) =====
+                QTransform t = transform();
+                double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
+                
+                // 회전 투영을 적용하여 노란색 박스 크기 계산 (REAR/FRONT와 동일)
+                double w = edgeBoxSize.width();
+                double h = edgeBoxSize.height();
+                double projX = std::abs(w * cosA) + std::abs(h * sinA);
+                double projY = std::abs(w * sinA) + std::abs(h * cosA);
+                double edgeYellowWidth = projX * currentScale;
+                double edgeYellowHeight = projY * currentScale;
+                
+                // 노란색 박스 (축정렬) - edgeCenterViewport 기준으로 그리기
+                painter.setPen(QPen(QColor(255, 255, 0), 3));
+                painter.setBrush(Qt::NoBrush);
+                
+                QPointF edgeTopLeft(edgeCenterViewport.x() - edgeYellowWidth/2, edgeCenterViewport.y() - edgeYellowHeight/2);
+                QPointF edgeTopRight(edgeCenterViewport.x() + edgeYellowWidth/2, edgeCenterViewport.y() - edgeYellowHeight/2);
+                QPointF edgeBottomLeft(edgeCenterViewport.x() - edgeYellowWidth/2, edgeCenterViewport.y() + edgeYellowHeight/2);
+                QPointF edgeBottomRight(edgeCenterViewport.x() + edgeYellowWidth/2, edgeCenterViewport.y() + edgeYellowHeight/2);
+                
+                QPolygonF edgeYellowPolygon;
+                edgeYellowPolygon << edgeTopLeft << edgeTopRight << edgeBottomRight << edgeBottomLeft;
+                painter.drawPolygon(edgeYellowPolygon);
+                
+                // 각 꼭짓점에 원 그리기
+                painter.setBrush(QColor(255, 255, 0));
+                painter.drawEllipse(edgeTopLeft, 4, 4);
+                painter.drawEllipse(edgeTopRight, 4, 4);
+                painter.drawEllipse(edgeBottomLeft, 4, 4);
+                painter.drawEllipse(edgeBottomRight, 4, 4);
+                
+                // ===== EDGE 청록색 박스 (회전) =====
                 int edgeBoxWidth = int(edgeBoxSize.width() * currentScale);
                 int edgeBoxHeight = int(edgeBoxSize.height() * currentScale);
                 
                 painter.save();
-                painter.translate(edgeRotatedCenter);
+                painter.translate(edgeCenterViewport);
                 painter.rotate(insAngle);
-                painter.translate(-edgeRotatedCenter);
+                painter.translate(-edgeCenterViewport);
                 
                 QPen edgePen(QColor(255, 128, 0), 2);
                 edgePen.setStyle(Qt::DashLine);
                 painter.setPen(edgePen);
                 painter.setBrush(Qt::NoBrush);  // 내부 칠하지 않음
-                painter.drawRect(QRectF(edgeRotatedCenter.x() - edgeBoxWidth/2,
-                                       edgeRotatedCenter.y() - edgeBoxHeight/2,
+                painter.drawRect(QRectF(edgeCenterViewport.x() - edgeBoxWidth/2,
+                                       edgeCenterViewport.y() - edgeBoxHeight/2,
                                        edgeBoxWidth, edgeBoxHeight));
                 
                 int edgeOutlierCount = result.edgeIrregularityCount.value(patternId, 0);
@@ -2639,8 +2672,8 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 int edgeTextH = boxFm.height();
                 
                 // PASS/NG에 따라 배경색 변경
-                QRectF edgeLabelRect(edgeRotatedCenter.x() - edgeTextW/2 - 3,
-                                    edgeRotatedCenter.y() - edgeBoxHeight/2 - edgeTextH - 5,
+                QRectF edgeLabelRect(edgeCenterViewport.x() - edgeTextW/2 - 3,
+                                    edgeCenterViewport.y() - edgeYellowHeight/2 - edgeTextH - 5,
                                     edgeTextW + 6, edgeTextH);
                 painter.fillRect(edgeLabelRect, QBrush(QColor(0, 0, 0, 180)));
                 painter.setPen(QColor(255, 255, 255));  // 흰색
@@ -2651,8 +2684,8 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 QColor edgePassColor = edgePassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
                 int passTextW = boxFm.horizontalAdvance(edgePassText);
                 
-                QRectF edgePassRect(edgeRotatedCenter.x() - passTextW/2 - 3,
-                                   edgeRotatedCenter.y() - edgeBoxHeight/2 - edgeTextH*2 - 7,
+                QRectF edgePassRect(edgeCenterViewport.x() - passTextW/2 - 3,
+                                   edgeCenterViewport.y() - edgeYellowHeight/2 - edgeTextH*2 - 7,
                                    passTextW + 6, edgeTextH);
                 painter.fillRect(edgePassRect, QBrush(QColor(0, 0, 0, 180)));
                 painter.setPen(edgePassColor);
