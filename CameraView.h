@@ -369,6 +369,14 @@ private:
                                const QPointF& center, double angle, double scale);
     void drawPassNGLabel(QPainter& painter, bool passed, const QRectF& rect, const QFont& font);
     
+    // paintEvent 세부 렌더링 함수들
+    void drawTeachingModePatterns(QPainter& painter);
+    void drawSelectedPatternHandles(QPainter& painter);
+    void drawStripGradientRange(QPainter& painter, const PatternInfo& pattern);
+    void drawStripThicknessBoxes(QPainter& painter, const PatternInfo& pattern);
+    void drawMeasurementLine(QPainter& painter);
+    void drawCurrentDrawingRect(QPainter& painter);
+    
     // 그룹 바운딩 박스 그리기 함수
     void drawGroupBoundingBox(QPainter& painter, const QList<PatternInfo>& groupPatterns);
 
