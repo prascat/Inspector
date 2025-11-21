@@ -1619,9 +1619,12 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult& res
 }
 
 void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult& result) {
-    bool hasSelectedPattern = !selectedInspectionPatternId.isNull();
-    
-    // ========== ROI 패턴 먼저 그리기 ==========
+    drawROIPatterns(painter, result);
+    drawFIDPatterns(painter, result);
+    drawINSPatterns(painter, result);
+}
+
+void CameraView::drawROIPatterns(QPainter& painter, const InspectionResult& result) {
     for (const PatternInfo& pattern : patterns) {
         if (pattern.type != PatternType::ROI || !pattern.enabled) continue;
         
@@ -1670,8 +1673,11 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         
         painter.restore();
     }
+}
+
+void CameraView::drawFIDPatterns(QPainter& painter, const InspectionResult& result) {
+    bool hasSelectedPattern = !selectedInspectionPatternId.isNull();
     
-    // ========== FID 패턴 검사 결과 그리기 ==========
     for (auto it = result.fidResults.begin(); it != result.fidResults.end(); ++it) {
         QUuid patternId = it.key();
         bool passed = it.value();
@@ -1776,8 +1782,11 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         fidYellowPolygon << fidTopLeft << fidTopRight << fidBottomRight << fidBottomLeft;
         painter.drawPolygon(fidYellowPolygon);
     }
+}
+
+void CameraView::drawINSPatterns(QPainter& painter, const InspectionResult& result) {
+    bool hasSelectedPattern = !selectedInspectionPatternId.isNull();
     
-    // ========== INS 패턴 검사 결과 그리기 ==========
     for (auto it = result.insResults.begin(); it != result.insResults.end(); ++it) {
         QUuid patternId = it.key();
         bool passed = it.value();
@@ -1896,74 +1905,89 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             painter.restore();
         }
         
-        // ===== INS STRIP/DIFF 검사 결과 시각화 (검사 결과 데이터 사용) =====
-        if (patternInfo->type == PatternType::INS && 
-            (patternInfo->inspectionMethod == InspectionMethod::STRIP || 
-             patternInfo->inspectionMethod == InspectionMethod::DIFF)) {
-            
-            // 현재 줌 스케일 계산
-            QTransform t = transform();
-            double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
-            
-            // ===== INS 패턴 노란색 박스 (축정렬, 회전 투영 고려) =====
-            // 원본 크기
-            double insWidth = inspRectScene.width();
-            double insHeight = inspRectScene.height();
-            
-            // 회전 투영 적용
-            double radians2 = insAngle * M_PI / 180.0;
-            double cosA2 = std::cos(radians2);
-            double sinA2 = std::sin(radians2);
-            double projX = std::abs(insWidth * cosA2) + std::abs(insHeight * sinA2);
-            double projY = std::abs(insWidth * sinA2) + std::abs(insHeight * cosA2);
-            
-            // INS 중심 (viewport 좌표)
-            QPointF insCenter = mapFromScene(inspRectScene.center());
-            
-            // 노란색 박스 크기
-            double yellowWidth = projX * currentScale;
-            double yellowHeight = projY * currentScale;
-            
-            // 노란색 박스 (축정렬)
-            painter.setPen(QPen(QColor(255, 255, 0), 1.5));
-            painter.setBrush(Qt::NoBrush);
-            
-            QPointF insTopLeft(insCenter.x() - yellowWidth/2, insCenter.y() - yellowHeight/2);
-            QPointF insTopRight(insCenter.x() + yellowWidth/2, insCenter.y() - yellowHeight/2);
-            QPointF insBottomLeft(insCenter.x() - yellowWidth/2, insCenter.y() + yellowHeight/2);
-            QPointF insBottomRight(insCenter.x() + yellowWidth/2, insCenter.y() + yellowHeight/2);
-            
-            QPolygonF insYellowPolygon;
-            insYellowPolygon << insTopLeft << insTopRight << insBottomRight << insBottomLeft;
-            painter.drawPolygon(insYellowPolygon);
-            
-            // 패턴 중심 (scene 좌표)
-            QPointF patternCenterScene = inspRectScene.center();
-            
-            // INS 박스의 회전된 좌표들을 얻기 위해 4개 모서리점 변환
-            QPointF topLeftScene = inspRectScene.topLeft();
-            QPointF topRightScene(inspRectScene.right(), inspRectScene.top());
-            QPointF bottomLeftScene(inspRectScene.left(), inspRectScene.bottom());
-            QPointF bottomRightScene = inspRectScene.bottomRight();
-            
-            // Viewport로 변환
-            QPointF topLeftVP = mapFromScene(topLeftScene);
-            QPointF topRightVP = mapFromScene(topRightScene);
-            QPointF bottomLeftVP = mapFromScene(bottomLeftScene);
-            QPointF bottomRightVP = mapFromScene(bottomRightScene);
-            
-            // 회전 각도를 라디안으로 변환
-            double radians = insAngle * M_PI / 180.0;
-            double cosA = std::cos(radians);
-            double sinA = std::sin(radians);
-            
-            // 회전 변환 함수: 중심 기준 회전
-            auto rotatePoint = [&](QPointF pt, QPointF center) -> QPointF {
-                double dx = pt.x() - center.x();
-                double dy = pt.y() - center.y();
-                double newX = center.x() + dx * cosA - dy * sinA;
-                double newY = center.y() + dx * sinA + dy * cosA;
-                return QPointF(newX, newY);
+        // 검사 방법별 시각화 호출
+        switch (patternInfo->inspectionMethod) {
+            case InspectionMethod::STRIP:
+                drawINSStripVisualization(painter, result, patternId, patternInfo, inspRectScene, insAngle);
+                break;
+            case InspectionMethod::DIFF:
+                drawINSDiffVisualization(painter, result, patternId, patternInfo, inspRectScene, insAngle);
+                break;
+            case InspectionMethod::CRIMP:
+                drawINSCrimpVisualization(painter, result, patternId, patternInfo, inspRectScene, insAngle);
+                break;
+        }
+    }
+}
+
+// ===== STRIP 검사 시각화 =====
+void CameraView::drawINSStripVisualization(QPainter& painter, const InspectionResult& result,
+                                            const QUuid& patternId, const PatternInfo* patternInfo,
+                                            const QRectF& inspRectScene, double insAngle) {
+    // 현재 줌 스케일 계산
+    QTransform t = transform();
+    double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
+    
+    // 회전 각도를 라디안으로 변환
+    double radians = insAngle * M_PI / 180.0;
+    double cosA = std::cos(radians);
+    double sinA = std::sin(radians);
+    
+    QPointF centerViewport = mapFromScene(inspRectScene.center());
+    QPointF patternCenterScene = inspRectScene.center();
+    
+    // 공통 컨텍스트 생성
+    StripDrawContext ctx(painter, result, patternId, patternInfo, inspRectScene,
+                        insAngle, currentScale, centerViewport, cosA, sinA);
+    
+    // ===== 1. INS 패턴 노란색 바운딩 박스 (축정렬, 회전 투영 고려) =====
+    // 원본 크기
+    double insWidth = inspRectScene.width();
+    double insHeight = inspRectScene.height();
+    
+    // 회전 투영 적용
+    double projX = std::abs(insWidth * cosA) + std::abs(insHeight * sinA);
+    double projY = std::abs(insWidth * sinA) + std::abs(insHeight * cosA);
+    
+    // INS 중심 (viewport 좌표)
+    QPointF insCenter = centerViewport;
+    
+    // 노란색 박스 크기
+    double yellowWidth = projX * currentScale;
+    double yellowHeight = projY * currentScale;
+    
+    // 노란색 박스 (축정렬)
+    painter.setPen(QPen(QColor(255, 255, 0), 1.5));
+    painter.setBrush(Qt::NoBrush);
+    
+    QPointF insTopLeft(insCenter.x() - yellowWidth/2, insCenter.y() - yellowHeight/2);
+    QPointF insTopRight(insCenter.x() + yellowWidth/2, insCenter.y() - yellowHeight/2);
+    QPointF insBottomLeft(insCenter.x() - yellowWidth/2, insCenter.y() + yellowHeight/2);
+    QPointF insBottomRight(insCenter.x() + yellowWidth/2, insCenter.y() + yellowHeight/2);
+    
+    QPolygonF insYellowPolygon;
+    insYellowPolygon << insTopLeft << insTopRight << insBottomRight << insBottomLeft;
+    painter.drawPolygon(insYellowPolygon);
+    
+    // INS 박스의 회전된 좌표들을 얻기 위해 4개 모서리점 변환
+    QPointF topLeftScene = inspRectScene.topLeft();
+    QPointF topRightScene(inspRectScene.right(), inspRectScene.top());
+    QPointF bottomLeftScene(inspRectScene.left(), inspRectScene.bottom());
+    QPointF bottomRightScene = inspRectScene.bottomRight();
+    
+    // Viewport로 변환
+    QPointF topLeftVP = mapFromScene(topLeftScene);
+    QPointF topRightVP = mapFromScene(topRightScene);
+    QPointF bottomLeftVP = mapFromScene(bottomLeftScene);
+    QPointF bottomRightVP = mapFromScene(bottomRightScene);
+    
+    // 회전 변환 함수: 중심 기준 회전
+    auto rotatePoint = [&](QPointF pt, QPointF center) -> QPointF {
+        double dx = pt.x() - center.x();
+        double dy = pt.y() - center.y();
+        double newX = center.x() + dx * cosA - dy * sinA;
+        double newY = center.y() + dx * sinA + dy * cosA;
+        return QPointF(newX, newY);
             };
             
             // 회전 후의 실제 좌표 계산
@@ -2021,7 +2045,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 }
             }
             
-            // ===== STRIP 4개 컨투어 포인트 그리기 =====
+    // ===== 2. REAR 박스 시각화 (stripGradientEndPercent 위치) =====
             if (result.stripRearBoxSize.contains(patternId)) {
                 // INS 박스의 회전된 좌표들을 얻기 위해 4개 모서리점 변환
                 QPointF topLeftScene = inspRectScene.topLeft();
@@ -2299,7 +2323,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 }
             }
             
-            // ===== FRONT 박스 시각화 (stripGradientStartPercent 위치 - INS 각도 적용) =====
+    // ===== 3. FRONT 박스 시각화 (stripGradientStartPercent 위치) =====
             if (result.stripFrontBoxSize.contains(patternId)) {
                 // INS 박스의 회전된 좌표들을 얻기 위해 4개 모서리점 변환
                 QPointF topLeftScene = inspRectScene.topLeft();
@@ -2569,7 +2593,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 }
             }
             
-            // ===== STRIP 4개 컨투어 포인트 그리기 =====
+    // ===== 4. STRIP 4개 컨투어 포인트 그리기 =====
             if (result.stripPointsValid.value(patternId, false)) {
                 QVector<QPoint> stripPoints;
                 if (result.stripPoint1.contains(patternId)) stripPoints.push_back(result.stripPoint1[patternId]);
@@ -2627,7 +2651,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             
             // 두께 검사 결과는 박스 채우기로 표현 (아래 FRONT/REAR 박스 시각화에서 처리)
             
-            // ===== EDGE 박스 시각화 =====
+    // ===== 5. EDGE 박스 시각화 (심선 끝 절단면 품질 검사) =====
             if (result.edgeBoxCenter.contains(patternId) && result.edgeBoxSize.contains(patternId)) {
                 QPointF edgeBoxCenterRel = result.edgeBoxCenter[patternId];
                 QSizeF edgeBoxSize = result.edgeBoxSize[patternId];
@@ -3020,9 +3044,94 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 }
             }
         }
-        }  // 패턴 루프 종료
-    }  // 검사 모드 체크 종료
-}  // drawInspectionResults 함수 종료
+}
+
+// ===== DIFF 검사 시각화 =====
+void CameraView::drawINSDiffVisualization(QPainter& painter, const InspectionResult& result,
+                                           const QUuid& patternId, const PatternInfo* patternInfo,
+                                           const QRectF& inspRectScene, double insAngle) {
+    if (!result.diffMask.contains(patternId)) return;
+    
+    cv::Mat diffMaskMat = result.diffMask[patternId];
+    if (diffMaskMat.empty()) return;
+    
+    // zoom scale 적용
+    QTransform t = transform();
+    double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
+    
+    // INS 패턴 정보
+    QRectF rectF = patternInfo->rect;
+    QPointF center(rectF.x() + rectF.width() / 2.0, rectF.y() + rectF.height() / 2.0);
+    QPointF viewCenter = mapFromScene(center);
+    
+    double insWidth = rectF.width() * currentScale;
+    double insHeight = rectF.height() * currentScale;
+    
+    // diffMask 크기 (스케일 적용)
+    int scaledWidth = static_cast<int>(diffMaskMat.cols * currentScale);
+    int scaledHeight = static_cast<int>(diffMaskMat.rows * currentScale);
+    
+    QPointF topLeft(viewCenter.x() - scaledWidth / 2.0, 
+                   viewCenter.y() - scaledHeight / 2.0);
+    
+    // 회전각 (도 단위)
+    double angle = patternInfo->angle;
+    double angleRad = angle * M_PI / 180.0;
+    double cosA = std::cos(angleRad);
+    double sinA = std::sin(angleRad);
+    
+    // diffMask를 픽셀 단위로 검사하면서 그리기
+    for (int py = 0; py < diffMaskMat.rows; py++) {
+        for (int px = 0; px < diffMaskMat.cols; px++) {
+            uchar pixelValue;
+            if (diffMaskMat.channels() == 3) {
+                cv::Vec3b pixel = diffMaskMat.at<cv::Vec3b>(py, px);
+                pixelValue = pixel[0];
+            } else {
+                pixelValue = diffMaskMat.at<uchar>(py, px);
+            }
+            
+            // 뷰 좌표로 변환 (스케일 적용)
+            double vx = topLeft.x() + px * currentScale;
+            double vy = topLeft.y() + py * currentScale;
+            
+            // 중심을 기준으로 상대 좌표 계산
+            double relX = vx - viewCenter.x();
+            double relY = vy - viewCenter.y();
+            
+            // 역회전: 회전된 좌표를 원래 좌표로 변환
+            double unrotatedX = relX * cosA + relY * sinA;
+            double unrotatedY = -relX * sinA + relY * cosA;
+            
+            // INS 영역 범위 확인
+            if (std::abs(unrotatedX) <= insWidth / 2.0 && 
+                std::abs(unrotatedY) <= insHeight / 2.0) {
+                
+                // 색상 결정
+                QColor pixelColor;
+                if (pixelValue > 0) {
+                    pixelColor = QColor(255, 0, 0);  // 빨강 (차이)
+                } else {
+                    pixelColor = QColor(0, 255, 0);  // 초록 (유사)
+                }
+                
+                // 알파 값 적용
+                pixelColor.setAlpha(179);  // 0.7 * 255
+                
+                // 픽셀 그리기
+                painter.fillRect(QRectF(vx, vy, currentScale, currentScale), pixelColor);
+            }
+        }
+    }
+}
+
+// ===== CRIMP 검사 시각화 =====
+void CameraView::drawINSCrimpVisualization(QPainter& painter, const InspectionResult& result,
+                                            const QUuid& patternId, const PatternInfo* patternInfo,
+                                            const QRectF& inspRectScene, double insAngle) {
+    // CRIMP 검사는 현재 별도 시각화가 없음 (필요시 추가)
+    // 기본 INS 박스는 drawINSPatterns에서 이미 그려짐
+}
 
 
 void CameraView::paintEvent(QPaintEvent *event) {
@@ -4757,22 +4866,6 @@ void CameraView::drawGroupBoundingBox(QPainter& painter, const QList<PatternInfo
     
     // 그룹 바운딩 박스를 점선으로 그리기
     painter.drawRect(screenRect);
-    
-    // 그룹 라벨은 표시하지 않음 (사용자 요청에 따라 제거)
-    // if (!groupPatterns.isEmpty()) {
-    //     QString groupLabel = QString("GROUP");
-    //     QFont font = painter.font();
-    //     font.setPointSize(font.pointSize() - 1);
-    //     painter.setFont(font);
-    //     
-    //     QPen textPen(UIColors::GROUP_COLOR);   // 그룹과 같은 마젠타 색상
-    //     painter.setPen(textPen);
-    //     
-    //     // 바운딩 박스 중심점 위쪽에 라벨 표시
-    //     QPoint centerDisplay = originalToDisplay(boundingBox.center().toPoint());
-    //     QRect textRect(centerDisplay.x() - 30, centerDisplay.y() - boundingBox.height()/2*zoomFactor - 25, 60, 20);
-    //     painter.drawText(textRect, Qt::AlignCenter, groupLabel);
-    // }
 }
 
 QPixmap CameraView::getBackgroundPixmap() const {

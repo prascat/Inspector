@@ -457,7 +457,6 @@ namespace UIColors {
                 return ::Qt::gray; // ::Qt로 전역 네임스페이스 참조
         }
     }
-    
     inline QString messageBoxStyle() {
         return QString(
             "QMessageBox {"
@@ -713,5 +712,26 @@ namespace UIColors {
         .arg(SLIDER_ACTIVE_COLOR.name());
     }
 }
+
+// ========== STRIP 검사 시각화용 공통 구조체 ==========
+struct StripDrawContext {
+    QPainter& painter;
+    const InspectionResult& result;
+    const QUuid& patternId;
+    const PatternInfo* patternInfo;
+    const QRectF& inspRectScene;
+    double insAngle;
+    double currentScale;
+    QPointF centerViewport;
+    double cosA;
+    double sinA;
+    
+    StripDrawContext(QPainter& p, const InspectionResult& r, const QUuid& id,
+                     const PatternInfo* info, const QRectF& rect, double angle, double scale,
+                     const QPointF& center, double cos, double sin)
+        : painter(p), result(r), patternId(id), patternInfo(info),
+          inspRectScene(rect), insAngle(angle), currentScale(scale),
+          centerViewport(center), cosA(cos), sinA(sin) {}
+};
 
 #endif // COMMONDEFS_H

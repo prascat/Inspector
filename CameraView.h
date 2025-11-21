@@ -324,6 +324,41 @@ private:
 
     void drawInspectionResults(QPainter& painter, const InspectionResult& result);
     
+    // 검사 결과 시각화 서브 함수들
+    void drawROIPatterns(QPainter& painter, const InspectionResult& result);
+    void drawFIDPatterns(QPainter& painter, const InspectionResult& result);
+    void drawINSPatterns(QPainter& painter, const InspectionResult& result);
+    
+    // INS 검사방법별 시각화 함수들
+    void drawINSStripVisualization(QPainter& painter, const InspectionResult& result,
+                                    const QUuid& patternId, const PatternInfo* patternInfo,
+                                    const QRectF& inspRectScene, double insAngle);
+    void drawINSDiffVisualization(QPainter& painter, const InspectionResult& result,
+                                   const QUuid& patternId, const PatternInfo* patternInfo,
+                                   const QRectF& inspRectScene, double insAngle);
+    void drawINSCrimpVisualization(QPainter& painter, const InspectionResult& result,
+                                    const QUuid& patternId, const PatternInfo* patternInfo,
+                                    const QRectF& inspRectScene, double insAngle);
+    
+    // STRIP 세부 시각화 함수들
+    void drawStripRearBox(QPainter& painter, const InspectionResult& result,
+                          const QUuid& patternId, const PatternInfo* patternInfo,
+                          const QRectF& inspRectScene, double insAngle,
+                          double currentScale, double cosA, double sinA,
+                          const QPointF& centerViewport, const QPointF& rearBoxCenterVP);
+    void drawStripFrontBox(QPainter& painter, const InspectionResult& result,
+                           const QUuid& patternId, const PatternInfo* patternInfo,
+                           const QRectF& inspRectScene, double insAngle,
+                           double currentScale, double cosA, double sinA,
+                           const QPointF& centerViewport, const QPointF& frontBoxCenterVP);
+    void drawStripEdgeVisualization(QPainter& painter, const InspectionResult& result,
+                                     const QUuid& patternId, const PatternInfo* patternInfo,
+                                     const QRectF& inspRectScene, double insAngle,
+                                     double currentScale, double cosA, double sinA,
+                                     const QPointF& centerViewport, const QPointF& patternCenterScene);
+    void drawStripContourPoints(QPainter& painter, const InspectionResult& result,
+                                 const QUuid& patternId);
+    
     // 그룹 바운딩 박스 그리기 함수
     void drawGroupBoundingBox(QPainter& painter, const QList<PatternInfo>& groupPatterns);
 
