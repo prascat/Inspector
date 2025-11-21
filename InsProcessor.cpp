@@ -1826,33 +1826,11 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     // ImageProcessor에서 이미 계산된 두께 값을 그대로 사용
     // (잘못된 Y좌표 범위 계산 제거됨)
     
-    // FRONT 포인트 디버그 정보
-    if (!frontPointsConverted.isEmpty()) {
-        int minX = INT_MAX, maxX = INT_MIN, minY = INT_MAX, maxY = INT_MIN;
-        for (const QPoint& pt : frontPointsConverted) {
-            minX = qMin(minX, pt.x());
-            maxX = qMax(maxX, pt.x());
-            minY = qMin(minY, pt.y());
-            maxY = qMax(maxY, pt.y());
-        }
-    } else {
-        qDebug() << "[FRONT] 포인트가 없음!";
-    }
+    // FRONT 두께 포인트는 (index, thickness) 그래프 데이터이므로 공간 좌표 변환 안함
+    // frontPointsConverted는 의도적으로 비어있음 (frontThicknessPoints 사용)
     
-    // REAR 포인트 디버그 정보
-    if (!rearPointsConverted.isEmpty()) {
-        int minX = INT_MAX, maxX = INT_MIN, minY = INT_MAX, maxY = INT_MIN;
-        for (const QPoint& pt : rearPointsConverted) {
-            minX = qMin(minX, pt.x());
-            maxX = qMax(maxX, pt.x());
-            minY = qMin(minY, pt.y());
-            maxY = qMax(maxY, pt.y());
-        }
-        
-        // 좌표 변환 디버그 정보
-    } else {
-        qDebug() << "[REAR] 포인트가 없음!";
-    }
+    // REAR 두께 포인트는 (index, thickness) 그래프 데이터이므로 공간 좌표 변환 안함
+    // rearPointsConverted는 의도적으로 비어있음 (rearThicknessPoints 사용)
     
     // OpenCV에서 검출된 gradientPoints를 사용 (4개 포인트)
     QPoint absPoint1, absPoint2, absPoint3, absPoint4;
