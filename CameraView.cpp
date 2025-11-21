@@ -1869,6 +1869,38 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             QTransform t = transform();
             double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
             
+            // ===== INS 패턴 노란색 박스 (축정렬, 회전 투영 고려) =====
+            // 원본 크기
+            double insWidth = inspRectScene.width();
+            double insHeight = inspRectScene.height();
+            
+            // 회전 투영 적용
+            double radians2 = insAngle * M_PI / 180.0;
+            double cosA2 = std::cos(radians2);
+            double sinA2 = std::sin(radians2);
+            double projX = std::abs(insWidth * cosA2) + std::abs(insHeight * sinA2);
+            double projY = std::abs(insWidth * sinA2) + std::abs(insHeight * cosA2);
+            
+            // INS 중심 (viewport 좌표)
+            QPointF insCenter = mapFromScene(inspRectScene.center());
+            
+            // 노란색 박스 크기
+            double yellowWidth = projX * currentScale;
+            double yellowHeight = projY * currentScale;
+            
+            // 노란색 박스 (축정렬)
+            painter.setPen(QPen(QColor(255, 255, 0), 1.5));
+            painter.setBrush(Qt::NoBrush);
+            
+            QPointF insTopLeft(insCenter.x() - yellowWidth/2, insCenter.y() - yellowHeight/2);
+            QPointF insTopRight(insCenter.x() + yellowWidth/2, insCenter.y() - yellowHeight/2);
+            QPointF insBottomLeft(insCenter.x() - yellowWidth/2, insCenter.y() + yellowHeight/2);
+            QPointF insBottomRight(insCenter.x() + yellowWidth/2, insCenter.y() + yellowHeight/2);
+            
+            QPolygonF insYellowPolygon;
+            insYellowPolygon << insTopLeft << insTopRight << insBottomRight << insBottomLeft;
+            painter.drawPolygon(insYellowPolygon);
+            
             // 패턴 중심 (scene 좌표)
             QPointF patternCenterScene = inspRectScene.center();
             
@@ -2191,7 +2223,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                  << ", boxCenter(viewport, cyan과동일)=" << rearBoxCenterVP;
                         
                         // 박스 bounding box 그리기 (노란색 테두리) - 축정렬 사각형(회전 없음)
-                        painter.setPen(QPen(QColor(255, 255, 0), 3));  // 노란색, 더 굵게
+                        painter.setPen(QPen(QColor(255, 255, 0), 1.5));  // 노란색, 더 얇게
                         painter.setBrush(Qt::NoBrush);
                         
                         // 4개 포인트 계산 (viewport 좌표계에서) - 회전하지 않음
@@ -2204,13 +2236,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         QPolygonF polygon;
                         polygon << topLeft << topRight << bottomRight << bottomLeft;
                         painter.drawPolygon(polygon);
-                        
-                        // 각 꼭짓점에 원 그리기 (강조)
-                        painter.setBrush(QColor(255, 255, 0));
-                        painter.drawEllipse(topLeft, 4, 4);      // top-left
-                        painter.drawEllipse(topRight, 4, 4);     // top-right
-                        painter.drawEllipse(bottomLeft, 4, 4);   // bottom-left
-                        painter.drawEllipse(bottomRight, 4, 4);  // bottom-right
                         
                         painter.setPen(Qt::NoPen);
                         painter.setBrush(QColor(255, 0, 0, 200));  // 더 불투명하게
@@ -2475,7 +2500,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                                  << ", boxCenter(viewport, cyan과동일)=" << frontBoxCenterVP;
                         
                         // 박스 bounding box 그리기 (노란색 테두리) - 축정렬 사각형(회전 없음)
-                        painter.setPen(QPen(QColor(255, 255, 0), 3));  // 노란색, 더 굵게
+                        painter.setPen(QPen(QColor(255, 255, 0), 1.5));  // 노란색, 더 얇게
                         painter.setBrush(Qt::NoBrush);
                         
                         // 4개 포인트 계산 (viewport 좌표계에서) - 회전하지 않음
@@ -2488,13 +2513,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         QPolygonF polygon;
                         polygon << topLeft << topRight << bottomRight << bottomLeft;
                         painter.drawPolygon(polygon);
-                        
-                        // 각 꼭짓점에 원 그리기 (강조)
-                        painter.setBrush(QColor(255, 255, 0));
-                        painter.drawEllipse(topLeft, 4, 4);      // top-left
-                        painter.drawEllipse(topRight, 4, 4);     // top-right
-                        painter.drawEllipse(bottomLeft, 4, 4);   // bottom-left
-                        painter.drawEllipse(bottomRight, 4, 4);  // bottom-right
                         
                         painter.setPen(Qt::NoPen);
                         painter.setBrush(QColor(255, 0, 0, 200));  // 더 불투명하게
@@ -2608,7 +2626,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 double edgeYellowHeight = projY * currentScale;
                 
                 // 노란색 박스 (축정렬) - edgeCenterViewport 기준으로 그리기
-                painter.setPen(QPen(QColor(255, 255, 0), 3));
+                painter.setPen(QPen(QColor(255, 255, 0), 1.5));
                 painter.setBrush(Qt::NoBrush);
                 
                 QPointF edgeTopLeft(edgeCenterViewport.x() - edgeYellowWidth/2, edgeCenterViewport.y() - edgeYellowHeight/2);
@@ -2619,13 +2637,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                 QPolygonF edgeYellowPolygon;
                 edgeYellowPolygon << edgeTopLeft << edgeTopRight << edgeBottomRight << edgeBottomLeft;
                 painter.drawPolygon(edgeYellowPolygon);
-                
-                // 각 꼭짓점에 원 그리기
-                painter.setBrush(QColor(255, 255, 0));
-                painter.drawEllipse(edgeTopLeft, 4, 4);
-                painter.drawEllipse(edgeTopRight, 4, 4);
-                painter.drawEllipse(edgeBottomLeft, 4, 4);
-                painter.drawEllipse(edgeBottomRight, 4, 4);
                 
                 // ===== EDGE 청록색 박스 (회전) =====
                 int edgeBoxWidth = int(edgeBoxSize.width() * currentScale);
@@ -2982,6 +2993,34 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     
                     // 박스 회전 각도
                     double boxAngle = std::atan2(widthVectorY, widthVectorX) * 180.0 / M_PI;
+                    
+                    // ===== INS 노란색 박스 (축정렬, 회전 투영 고려) =====
+                    double w = patternInfo->crimpShapeBoxWidth;
+                    double h = patternInfo->crimpShapeBoxHeight;
+                    double projX = std::abs(w * cosA) + std::abs(h * sinA);
+                    double projY = std::abs(w * sinA) + std::abs(h * cosA);
+                    double insYellowWidth = projX * currentScale;
+                    double insYellowHeight = projY * currentScale;
+                    
+                    // INS 노란색 박스 (축정렬) - shapeTopLeft 기준으로 그리기
+                    painter.setPen(QPen(QColor(255, 255, 0), 3));
+                    painter.setBrush(Qt::NoBrush);
+                    
+                    QPointF insTopLeft(shapeTopLeft.x() - insYellowWidth/2, shapeTopLeft.y() - insYellowHeight/2);
+                    QPointF insTopRight(shapeTopLeft.x() + insYellowWidth/2, shapeTopLeft.y() - insYellowHeight/2);
+                    QPointF insBottomLeft(shapeTopLeft.x() - insYellowWidth/2, shapeTopLeft.y() + insYellowHeight/2);
+                    QPointF insBottomRight(shapeTopLeft.x() + insYellowWidth/2, shapeTopLeft.y() + insYellowHeight/2);
+                    
+                    QPolygonF insYellowPolygon;
+                    insYellowPolygon << insTopLeft << insTopRight << insBottomRight << insBottomLeft;
+                    painter.drawPolygon(insYellowPolygon);
+                    
+                    // 각 꼭짓점에 원 그리기
+                    painter.setBrush(QColor(255, 255, 0));
+                    painter.drawEllipse(insTopLeft, 4, 4);
+                    painter.drawEllipse(insTopRight, 4, 4);
+                    painter.drawEllipse(insBottomLeft, 4, 4);
+                    painter.drawEllipse(insBottomRight, 4, 4);
                     
                     // 박스 색상: 티칭 모드와 동일한 보라색
                     QColor shapeBoxColor = QColor(147, 112, 219);  // Medium Purple
