@@ -141,13 +141,6 @@ struct InspectionResult {
     QString edgeResult;                            // EDGE 결과 (PASS/NG)
     QString edgeDetail;                            // EDGE 세부 정보
     
-    // CRIMP SHAPE 검사 결과
-    QMap<QUuid, QList<QVector<QPoint>>> crimpCurrentContours;    // 현재 형상 윤곽선 (패턴 ID -> 윤곽선 리스트)
-    QMap<QUuid, QList<QVector<QPoint>>> crimpTemplateContours;   // 템플릿 형상 윤곽선 (패턴 ID -> 윤곽선 리스트)
-    QMap<QUuid, cv::Mat> crimpDiffMask;                          // 차이 마스크 (패턴 ID -> 차이 영역)
-    QMap<QUuid, QPointF> crimpBoxCenter;                         // SHAPE 박스 중심 상대좌표
-    QMap<QUuid, QSizeF> crimpBoxSize;                            // SHAPE 박스 크기
-    
     // DIFF 검사 차이 마스크 (패턴 ID -> 차이 영역)
     QMap<QUuid, cv::Mat> diffMask;
 };
@@ -249,12 +242,28 @@ struct PatternInfo {
     // DIFF 평균선 거리 검사 파라미터
     double edgeDistanceMax = 0.5;           // 평균선에서 최대 허용 거리 (mm)
 
-    // CRIMP SHAPE 검사 파라미터
-    bool crimpShapeEnabled = true;          // CRIMP SHAPE 검사 활성화 여부
-    int crimpShapeOffsetX = 10;             // 패턴 왼쪽에서의 오프셋 (픽셀)
-    int crimpShapeBoxWidth = 100;           // SHAPE 박스 너비 (픽셀)
-    int crimpShapeBoxHeight = 100;          // SHAPE 박스 높이 (픽셀)
-    double crimpShapeMatchRate = 80.0;      // 매칭율 (%)
+    // BARREL 기준 왼쪽 스트리핑 길이 검사 파라미터
+    bool barrelLeftStripEnabled = true;          // 활성화 여부
+    int barrelLeftStripOffsetX = 0;              // 오프셋 (픽셀, 기본값 = 중앙)
+    int barrelLeftStripBoxWidth = 100;           // 검사 박스 너비 (픽셀)
+    int barrelLeftStripBoxHeight = 76;           // 검사 박스 높이 (픽셀) - INS 패턴 높이의 80% (95 * 0.8 = 76)
+    double barrelLeftStripLengthMin = 5.7;       // 최소 길이 (mm)
+    double barrelLeftStripLengthMax = 6.0;       // 최대 길이 (mm)
+    
+    // BARREL 기준 오른쪽 스트리핑 길이 검사 파라미터
+    bool barrelRightStripEnabled = true;         // 활성화 여부
+    int barrelRightStripOffsetX = 0;             // 오프셋 (픽셀, 기본값 = 중앙)
+    int barrelRightStripBoxWidth = 100;          // 검사 박스 너비 (픽셀)
+    int barrelRightStripBoxHeight = 76;          // 검사 박스 높이 (픽셀) - INS 패턴 높이의 80% (95 * 0.8 = 76)
+    double barrelRightStripLengthMin = 5.7;      // 최소 길이 (mm)
+    double barrelRightStripLengthMax = 6.0;      // 최대 길이 (mm)
+
+    // CRIMP 중앙 배럴(Central Barrel) 검사 파라미터
+    bool crimpCentralBarrelEnabled = true;          // CRIMP 중앙 배럴 검사 활성화 여부
+    int crimpCentralBarrelOffsetX = 10;             // 패턴 왼쪽에서의 오프셋 (픽셀)
+    int crimpCentralBarrelBoxWidth = 100;           // 중앙 배럴 박스 너비 (픽셀)
+    int crimpCentralBarrelBoxHeight = 100;          // 중앙 배럴 박스 높이 (픽셀)
+    double crimpCentralBarrelMatchRate = 80.0;      // 매칭율 (%)
 
     // DIFF 검사 파라미터 (COLOR, EDGE 통합)
     QList<FilterInfo> filters;  // 패턴에 적용된 필터 목록

@@ -3454,7 +3454,7 @@ void TeachingWidget::createPropertyPanels() {
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::DIFF));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::STRIP));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::CRIMP));
-    insMethodCombo->setCurrentIndex(0);  // 기본값을 DIFF로 설정
+    insMethodCombo->setCurrentIndex(2);  // 기본값을 CRIMP로 설정
     basicInspectionLayout->addRow(insMethodLabel, insMethodCombo);
 
     // 합격 임계값
@@ -3907,104 +3907,194 @@ void TeachingWidget::createPropertyPanels() {
     insMainLayout->addWidget(insEdgeGroup);
 
     // === CRIMP 검사 파라미터 그룹 ===
-    insCrimpPanel = new QGroupBox("CRIMP 검사 파라미터", insPropWidget);
+    insCrimpPanel = new QGroupBox("CRIMP 검사", insPropWidget);
     insCrimpPanel->setStyleSheet(
         "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
     );
-    QFormLayout* insCrimpLayout = new QFormLayout(insCrimpPanel);
-    insCrimpLayout->setVerticalSpacing(5);
+    QVBoxLayout* insCrimpLayout = new QVBoxLayout(insCrimpPanel);
+    insCrimpLayout->setSpacing(10);
     insCrimpLayout->setContentsMargins(10, 15, 10, 10);
-    insCrimpLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    insCrimpLayout->setFormAlignment(Qt::AlignCenter);
 
-    // 템플릿 이미지만 표시 (STRIP과 동일)
-    QLabel* crimpTemplateLabel = new QLabel("템플릿 이미지:", insCrimpPanel);
-    insCrimpLayout->addRow(crimpTemplateLabel);
-
-    // === CRIMP SHAPE 검사 그룹 ===
-    insCrimpShapeGroup = new QGroupBox("SHAPE 검사 활성화", insCrimpPanel);
-    insCrimpShapeGroup->setCheckable(true);
-    insCrimpShapeGroup->setChecked(true);
-    insCrimpShapeGroup->setStyleSheet(
+    // === CRIMP BARREL 기준 왼쪽 스트리핑 길이 검사 ===
+    insBarrelLeftStripGroup = new QGroupBox("BARREL 기준 왼쪽 스트리핑 길이 검사", insCrimpPanel);
+    insBarrelLeftStripGroup->setCheckable(true);
+    insBarrelLeftStripGroup->setChecked(true);
+    insBarrelLeftStripGroup->setStyleSheet(
         "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
         "QGroupBox::indicator { width: 13px; height: 13px; }"
         "QGroupBox::indicator:unchecked { background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150); }"
         "QGroupBox::indicator:checked { background-color: #4CAF50; border: 1px solid #45a049; }"
     );
-    QFormLayout* crimpShapeLayout = new QFormLayout(insCrimpShapeGroup);
-    crimpShapeLayout->setVerticalSpacing(5);
-    crimpShapeLayout->setContentsMargins(10, 15, 10, 10);
-    crimpShapeLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    crimpShapeLayout->setFormAlignment(Qt::AlignCenter);
+    QFormLayout* leftStripLayout = new QFormLayout(insBarrelLeftStripGroup);
+    leftStripLayout->setVerticalSpacing(5);
+    leftStripLayout->setContentsMargins(10, 15, 10, 10);
     
-    // 박스 위치 오프셋 (패턴 왼쪽에서의 거리)
-    insCrimpShapeOffsetXLabel = new QLabel("패턴 왼쪽 오프셋:", insCrimpShapeGroup);
-    insCrimpShapeOffsetXSlider = new QSlider(Qt::Horizontal, insCrimpShapeGroup);
-    insCrimpShapeOffsetXSlider->setRange(0, 500);
-    insCrimpShapeOffsetXSlider->setValue(10);
-    insCrimpShapeOffsetXSlider->setStyleSheet(UIColors::sliderStyle());
-    insCrimpShapeOffsetXValueLabel = new QLabel("10", insCrimpShapeGroup);
+    // 왼쪽: 오프셋
+    QWidget* leftOffsetWidget = new QWidget();
+    QHBoxLayout* leftOffsetLayout = new QHBoxLayout(leftOffsetWidget);
+    leftOffsetLayout->setContentsMargins(0, 0, 0, 0);
+    leftOffsetLayout->setSpacing(5);
+    insBarrelLeftStripOffsetSlider = new QSlider(Qt::Horizontal, leftOffsetWidget);
+    insBarrelLeftStripOffsetSlider->setRange(-250, 250);
+    insBarrelLeftStripOffsetSlider->setValue(0);
+    insBarrelLeftStripOffsetSlider->setStyleSheet(UIColors::sliderStyle());
+    insBarrelLeftStripOffsetValueLabel = new QLabel("0px", leftOffsetWidget);
+    insBarrelLeftStripOffsetValueLabel->setMinimumWidth(40);
+    leftOffsetLayout->addWidget(insBarrelLeftStripOffsetSlider);
+    leftOffsetLayout->addWidget(insBarrelLeftStripOffsetValueLabel);
+    leftStripLayout->addRow("오프셋:", leftOffsetWidget);
     
-    QWidget* crimpShapeOffsetWidget = new QWidget(insCrimpShapeGroup);
-    QHBoxLayout* crimpShapeOffsetLayout = new QHBoxLayout(crimpShapeOffsetWidget);
-    crimpShapeOffsetLayout->setContentsMargins(0, 0, 0, 0);
-    crimpShapeOffsetLayout->addWidget(insCrimpShapeOffsetXSlider);
-    crimpShapeOffsetLayout->addWidget(insCrimpShapeOffsetXValueLabel);
+    // 왼쪽: 너비
+    QWidget* leftWidthWidget = new QWidget();
+    QHBoxLayout* leftWidthLayout = new QHBoxLayout(leftWidthWidget);
+    leftWidthLayout->setContentsMargins(0, 0, 0, 0);
+    leftWidthLayout->setSpacing(5);
+    insBarrelLeftStripWidthSlider = new QSlider(Qt::Horizontal, leftWidthWidget);
+    insBarrelLeftStripWidthSlider->setRange(10, 500);
+    insBarrelLeftStripWidthSlider->setValue(100);
+    insBarrelLeftStripWidthSlider->setStyleSheet(UIColors::sliderStyle());
+    insBarrelLeftStripWidthValueLabel = new QLabel("100px", leftWidthWidget);
+    insBarrelLeftStripWidthValueLabel->setMinimumWidth(40);
+    leftWidthLayout->addWidget(insBarrelLeftStripWidthSlider);
+    leftWidthLayout->addWidget(insBarrelLeftStripWidthValueLabel);
+    leftStripLayout->addRow("너비:", leftWidthWidget);
     
-    // 박스 너비
-    insCrimpShapeWidthLabel = new QLabel("너비:", insCrimpShapeGroup);
-    insCrimpShapeWidthSlider = new QSlider(Qt::Horizontal, insCrimpShapeGroup);
-    insCrimpShapeWidthSlider->setRange(10, 500);
-    insCrimpShapeWidthSlider->setValue(100);
-    insCrimpShapeWidthSlider->setStyleSheet(UIColors::sliderStyle());
-    insCrimpShapeWidthValueLabel = new QLabel("100", insCrimpShapeGroup);
+    // 왼쪽: 높이
+    QWidget* leftHeightWidget = new QWidget();
+    QHBoxLayout* leftHeightLayout = new QHBoxLayout(leftHeightWidget);
+    leftHeightLayout->setContentsMargins(0, 0, 0, 0);
+    leftHeightLayout->setSpacing(5);
+    insBarrelLeftStripHeightSlider = new QSlider(Qt::Horizontal, leftHeightWidget);
+    insBarrelLeftStripHeightSlider->setRange(10, 500);
+    insBarrelLeftStripHeightSlider->setValue(100);
+    insBarrelLeftStripHeightSlider->setStyleSheet(UIColors::sliderStyle());
+    insBarrelLeftStripHeightValueLabel = new QLabel("100px", leftHeightWidget);
+    insBarrelLeftStripHeightValueLabel->setMinimumWidth(40);
+    leftHeightLayout->addWidget(insBarrelLeftStripHeightSlider);
+    leftHeightLayout->addWidget(insBarrelLeftStripHeightValueLabel);
+    leftStripLayout->addRow("높이:", leftHeightWidget);
     
-    QWidget* crimpShapeWidthWidget = new QWidget(insCrimpShapeGroup);
-    QHBoxLayout* crimpShapeWidthLayout = new QHBoxLayout(crimpShapeWidthWidget);
-    crimpShapeWidthLayout->setContentsMargins(0, 0, 0, 0);
-    crimpShapeWidthLayout->addWidget(insCrimpShapeWidthLabel);
-    crimpShapeWidthLayout->addWidget(insCrimpShapeWidthSlider);
-    crimpShapeWidthLayout->addWidget(insCrimpShapeWidthValueLabel);
+    // 왼쪽: 최소 길이 (라인에디터)
+    QWidget* leftMinWidget = new QWidget();
+    QHBoxLayout* leftMinLayout = new QHBoxLayout(leftMinWidget);
+    leftMinLayout->setContentsMargins(0, 0, 0, 0);
+    leftMinLayout->setSpacing(5);
+    insBarrelLeftStripMinEdit = new QLineEdit(leftMinWidget);
+    insBarrelLeftStripMinEdit->setText("5.70");
+    insBarrelLeftStripMinEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insBarrelLeftStripMinEdit));
+    QLabel* leftMinUnitLabel = new QLabel("mm", leftMinWidget);
+    leftMinUnitLabel->setMinimumWidth(30);
+    leftMinLayout->addWidget(insBarrelLeftStripMinEdit);
+    leftMinLayout->addWidget(leftMinUnitLabel);
+    leftStripLayout->addRow("최소 길이:", leftMinWidget);
     
-    // 박스 높이
-    insCrimpShapeHeightLabel = new QLabel("높이:", insCrimpShapeGroup);
-    insCrimpShapeHeightSlider = new QSlider(Qt::Horizontal, insCrimpShapeGroup);
-    insCrimpShapeHeightSlider->setRange(10, 500);
-    insCrimpShapeHeightSlider->setValue(100);
-    insCrimpShapeHeightSlider->setStyleSheet(UIColors::sliderStyle());
-    insCrimpShapeHeightValueLabel = new QLabel("100", insCrimpShapeGroup);
+    // 왼쪽: 최대 길이 (라인에디터)
+    QWidget* leftMaxWidget = new QWidget();
+    QHBoxLayout* leftMaxLayout = new QHBoxLayout(leftMaxWidget);
+    leftMaxLayout->setContentsMargins(0, 0, 0, 0);
+    leftMaxLayout->setSpacing(5);
+    insBarrelLeftStripMaxEdit = new QLineEdit(leftMaxWidget);
+    insBarrelLeftStripMaxEdit->setText("6.00");
+    insBarrelLeftStripMaxEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insBarrelLeftStripMaxEdit));
+    QLabel* leftMaxUnitLabel = new QLabel("mm", leftMaxWidget);
+    leftMaxUnitLabel->setMinimumWidth(30);
+    leftMaxLayout->addWidget(insBarrelLeftStripMaxEdit);
+    leftMaxLayout->addWidget(leftMaxUnitLabel);
+    leftStripLayout->addRow("최대 길이:", leftMaxWidget);
     
-    QWidget* crimpShapeHeightWidget = new QWidget(insCrimpShapeGroup);
-    QHBoxLayout* crimpShapeHeightLayout = new QHBoxLayout(crimpShapeHeightWidget);
-    crimpShapeHeightLayout->setContentsMargins(0, 0, 0, 0);
-    crimpShapeHeightLayout->addWidget(insCrimpShapeHeightLabel);
-    crimpShapeHeightLayout->addWidget(insCrimpShapeHeightSlider);
-    crimpShapeHeightLayout->addWidget(insCrimpShapeHeightValueLabel);
+    insCrimpLayout->addWidget(insBarrelLeftStripGroup);
     
-    // 크기 범위 위젯
-    QWidget* crimpShapeSizeWidget = new QWidget(insCrimpShapeGroup);
-    QVBoxLayout* crimpShapeSizeLayout = new QVBoxLayout(crimpShapeSizeWidget);
-    crimpShapeSizeLayout->setContentsMargins(0, 0, 0, 0);
-    crimpShapeSizeLayout->setSpacing(3);
-    crimpShapeSizeLayout->addWidget(crimpShapeWidthWidget);
-    crimpShapeSizeLayout->addWidget(crimpShapeHeightWidget);
+    // === CRIMP BARREL 기준 오른쪽 스트리핑 길이 검사 ===
+    insBarrelRightStripGroup = new QGroupBox("BARREL 기준 오른쪽 스트리핑 길이 검사", insCrimpPanel);
+    insBarrelRightStripGroup->setCheckable(true);
+    insBarrelRightStripGroup->setChecked(true);
+    insBarrelRightStripGroup->setStyleSheet(
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
+        "QGroupBox::indicator { width: 13px; height: 13px; }"
+        "QGroupBox::indicator:unchecked { background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150); }"
+        "QGroupBox::indicator:checked { background-color: #4CAF50; border: 1px solid #45a049; }"
+    );
+    QFormLayout* rightStripLayout = new QFormLayout(insBarrelRightStripGroup);
+    rightStripLayout->setVerticalSpacing(5);
+    rightStripLayout->setContentsMargins(10, 15, 10, 10);
     
-    // 매칭율
-    insCrimpShapeMatchRateLabel = new QLabel("매칭율:", insCrimpShapeGroup);
-    insCrimpShapeMatchRateSpin = new QDoubleSpinBox(insCrimpShapeGroup);
-    insCrimpShapeMatchRateSpin->setRange(0.0, 100.0);
-    insCrimpShapeMatchRateSpin->setValue(80.0);
-    insCrimpShapeMatchRateSpin->setSuffix(" %");
-    insCrimpShapeMatchRateSpin->setDecimals(1);
+    // 오른쪽: 오프셋
+    QWidget* rightOffsetWidget = new QWidget();
+    QHBoxLayout* rightOffsetLayout = new QHBoxLayout(rightOffsetWidget);
+    rightOffsetLayout->setContentsMargins(0, 0, 0, 0);
+    rightOffsetLayout->setSpacing(5);
+    insBarrelRightStripOffsetSlider = new QSlider(Qt::Horizontal, rightOffsetWidget);
+    insBarrelRightStripOffsetSlider->setRange(-250, 250);
+    insBarrelRightStripOffsetSlider->setValue(0);
+    insBarrelRightStripOffsetSlider->setStyleSheet(UIColors::sliderStyle());
+    insBarrelRightStripOffsetValueLabel = new QLabel("0px", rightOffsetWidget);
+    insBarrelRightStripOffsetValueLabel->setMinimumWidth(40);
+    rightOffsetLayout->addWidget(insBarrelRightStripOffsetSlider);
+    rightOffsetLayout->addWidget(insBarrelRightStripOffsetValueLabel);
+    rightStripLayout->addRow("오프셋:", rightOffsetWidget);
     
-    crimpShapeLayout->addRow(insCrimpShapeOffsetXLabel, crimpShapeOffsetWidget);
-    crimpShapeLayout->addRow("SHAPE 박스 크기:", crimpShapeSizeWidget);
-    crimpShapeLayout->addRow(insCrimpShapeMatchRateLabel, insCrimpShapeMatchRateSpin);
+    // 오른쪽: 너비
+    QWidget* rightWidthWidget = new QWidget();
+    QHBoxLayout* rightWidthLayout = new QHBoxLayout(rightWidthWidget);
+    rightWidthLayout->setContentsMargins(0, 0, 0, 0);
+    rightWidthLayout->setSpacing(5);
+    insBarrelRightStripWidthSlider = new QSlider(Qt::Horizontal, rightWidthWidget);
+    insBarrelRightStripWidthSlider->setRange(10, 500);
+    insBarrelRightStripWidthSlider->setValue(100);
+    insBarrelRightStripWidthSlider->setStyleSheet(UIColors::sliderStyle());
+    insBarrelRightStripWidthValueLabel = new QLabel("100px", rightWidthWidget);
+    insBarrelRightStripWidthValueLabel->setMinimumWidth(40);
+    rightWidthLayout->addWidget(insBarrelRightStripWidthSlider);
+    rightWidthLayout->addWidget(insBarrelRightStripWidthValueLabel);
+    rightStripLayout->addRow("너비:", rightWidthWidget);
     
-    insCrimpLayout->addRow(insCrimpShapeGroup);
+    // 오른쪽: 높이
+    QWidget* rightHeightWidget = new QWidget();
+    QHBoxLayout* rightHeightLayout = new QHBoxLayout(rightHeightWidget);
+    rightHeightLayout->setContentsMargins(0, 0, 0, 0);
+    rightHeightLayout->setSpacing(5);
+    insBarrelRightStripHeightSlider = new QSlider(Qt::Horizontal, rightHeightWidget);
+    insBarrelRightStripHeightSlider->setRange(10, 500);
+    insBarrelRightStripHeightSlider->setValue(100);
+    insBarrelRightStripHeightSlider->setStyleSheet(UIColors::sliderStyle());
+    insBarrelRightStripHeightValueLabel = new QLabel("100px", rightHeightWidget);
+    insBarrelRightStripHeightValueLabel->setMinimumWidth(40);
+    rightHeightLayout->addWidget(insBarrelRightStripHeightSlider);
+    rightHeightLayout->addWidget(insBarrelRightStripHeightValueLabel);
+    rightStripLayout->addRow("높이:", rightHeightWidget);
+    
+    // 오른쪽: 최소 길이 (라인에디터)
+    QWidget* rightMinWidget = new QWidget();
+    QHBoxLayout* rightMinLayout = new QHBoxLayout(rightMinWidget);
+    rightMinLayout->setContentsMargins(0, 0, 0, 0);
+    rightMinLayout->setSpacing(5);
+    insBarrelRightStripMinEdit = new QLineEdit(rightMinWidget);
+    insBarrelRightStripMinEdit->setText("5.70");
+    insBarrelRightStripMinEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insBarrelRightStripMinEdit));
+    QLabel* rightMinUnitLabel = new QLabel("mm", rightMinWidget);
+    rightMinUnitLabel->setMinimumWidth(30);
+    rightMinLayout->addWidget(insBarrelRightStripMinEdit);
+    rightMinLayout->addWidget(rightMinUnitLabel);
+    rightStripLayout->addRow("최소 길이:", rightMinWidget);
+    
+    // 오른쪽: 최대 길이 (라인에디터)
+    QWidget* rightMaxWidget = new QWidget();
+    QHBoxLayout* rightMaxLayout = new QHBoxLayout(rightMaxWidget);
+    rightMaxLayout->setContentsMargins(0, 0, 0, 0);
+    rightMaxLayout->setSpacing(5);
+    insBarrelRightStripMaxEdit = new QLineEdit(rightMaxWidget);
+    insBarrelRightStripMaxEdit->setText("6.00");
+    insBarrelRightStripMaxEdit->setValidator(new QDoubleValidator(0.0, 9999.0, 2, insBarrelRightStripMaxEdit));
+    QLabel* rightMaxUnitLabel = new QLabel("mm", rightMaxWidget);
+    rightMaxUnitLabel->setMinimumWidth(30);
+    rightMaxLayout->addWidget(insBarrelRightStripMaxEdit);
+    rightMaxLayout->addWidget(rightMaxUnitLabel);
+    rightStripLayout->addRow("최대 길이:", rightMaxWidget);
 
+    insCrimpLayout->addWidget(insBarrelRightStripGroup);
     insMainLayout->addWidget(insCrimpPanel);
 
     // 여백 추가
@@ -5767,16 +5857,16 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
     }
     
-    // CRIMP SHAPE 검사 활성화
-    if (insCrimpShapeGroup) {
-        connect(insCrimpShapeGroup, &QGroupBox::toggled, [this](bool checked) {
+    // === 왼쪽 스트리핑 길이 검사 신호 연결 ===
+    if (insBarrelLeftStripGroup) {
+        connect(insBarrelLeftStripGroup, &QGroupBox::toggled, [this](bool checked) {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->crimpShapeEnabled = checked;
+                        pattern->barrelLeftStripEnabled = checked;
                         cameraView->updatePatternById(patternId, *pattern);
                         cameraView->update();
                     }
@@ -5785,17 +5875,16 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
     }
     
-    // CRIMP SHAPE 오프셋 X
-    if (insCrimpShapeOffsetXSlider && insCrimpShapeOffsetXValueLabel) {
-        connect(insCrimpShapeOffsetXSlider, &QSlider::valueChanged, [this](int value) {
-            insCrimpShapeOffsetXValueLabel->setText(QString::number(value));
+    if (insBarrelLeftStripOffsetSlider && insBarrelLeftStripOffsetValueLabel) {
+        connect(insBarrelLeftStripOffsetSlider, &QSlider::valueChanged, [this](int value) {
+            insBarrelLeftStripOffsetValueLabel->setText(QString::number(value) + "px");
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->crimpShapeOffsetX = value;
+                        pattern->barrelLeftStripOffsetX = value;
                         cameraView->updatePatternById(patternId, *pattern);
                         cameraView->update();
                     }
@@ -5804,17 +5893,16 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
     }
     
-    // CRIMP SHAPE 박스 너비
-    if (insCrimpShapeWidthSlider && insCrimpShapeWidthValueLabel) {
-        connect(insCrimpShapeWidthSlider, &QSlider::valueChanged, [this](int value) {
-            insCrimpShapeWidthValueLabel->setText(QString::number(value));
+    if (insBarrelLeftStripWidthSlider && insBarrelLeftStripWidthValueLabel) {
+        connect(insBarrelLeftStripWidthSlider, &QSlider::valueChanged, [this](int value) {
+            insBarrelLeftStripWidthValueLabel->setText(QString::number(value) + "px");
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->crimpShapeBoxWidth = value;
+                        pattern->barrelLeftStripBoxWidth = value;
                         cameraView->updatePatternById(patternId, *pattern);
                         cameraView->update();
                     }
@@ -5823,17 +5911,16 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
     }
     
-    // CRIMP SHAPE 박스 높이
-    if (insCrimpShapeHeightSlider && insCrimpShapeHeightValueLabel) {
-        connect(insCrimpShapeHeightSlider, &QSlider::valueChanged, [this](int value) {
-            insCrimpShapeHeightValueLabel->setText(QString::number(value));
+    if (insBarrelLeftStripHeightSlider && insBarrelLeftStripHeightValueLabel) {
+        connect(insBarrelLeftStripHeightSlider, &QSlider::valueChanged, [this](int value) {
+            insBarrelLeftStripHeightValueLabel->setText(QString::number(value) + "px");
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->crimpShapeBoxHeight = value;
+                        pattern->barrelLeftStripBoxHeight = value;
                         cameraView->updatePatternById(patternId, *pattern);
                         cameraView->update();
                     }
@@ -5842,18 +5929,156 @@ void TeachingWidget::connectPropertyPanelEvents() {
         });
     }
     
-    // CRIMP SHAPE 매칭율
-    if (insCrimpShapeMatchRateSpin) {
-        connect(insCrimpShapeMatchRateSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), 
-                [this](double value) {
+    if (insBarrelLeftStripMinEdit) {
+        connect(insBarrelLeftStripMinEdit, &QLineEdit::textChanged, [this](const QString& text) {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->crimpShapeMatchRate = value;
+                        bool ok;
+                        double value = text.toDouble(&ok);
+                        if (ok) {
+                            pattern->barrelLeftStripLengthMin = value;
+                            cameraView->updatePatternById(patternId, *pattern);
+                            cameraView->update();
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    if (insBarrelLeftStripMaxEdit) {
+        connect(insBarrelLeftStripMaxEdit, &QLineEdit::textChanged, [this](const QString& text) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        bool ok;
+                        double value = text.toDouble(&ok);
+                        if (ok) {
+                            pattern->barrelLeftStripLengthMax = value;
+                            cameraView->updatePatternById(patternId, *pattern);
+                            cameraView->update();
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    // === 오른쪽 스트리핑 길이 검사 신호 연결 ===
+    if (insBarrelRightStripGroup) {
+        connect(insBarrelRightStripGroup, &QGroupBox::toggled, [this](bool checked) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->barrelRightStripEnabled = checked;
                         cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    if (insBarrelRightStripOffsetSlider && insBarrelRightStripOffsetValueLabel) {
+        connect(insBarrelRightStripOffsetSlider, &QSlider::valueChanged, [this](int value) {
+            insBarrelRightStripOffsetValueLabel->setText(QString::number(value) + "px");
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->barrelRightStripOffsetX = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    if (insBarrelRightStripWidthSlider && insBarrelRightStripWidthValueLabel) {
+        connect(insBarrelRightStripWidthSlider, &QSlider::valueChanged, [this](int value) {
+            insBarrelRightStripWidthValueLabel->setText(QString::number(value) + "px");
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->barrelRightStripBoxWidth = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    if (insBarrelRightStripHeightSlider && insBarrelRightStripHeightValueLabel) {
+        connect(insBarrelRightStripHeightSlider, &QSlider::valueChanged, [this](int value) {
+            insBarrelRightStripHeightValueLabel->setText(QString::number(value) + "px");
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->barrelRightStripBoxHeight = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                        cameraView->update();
+                    }
+                }
+            }
+        });
+    }
+    
+    if (insBarrelRightStripMinEdit) {
+        connect(insBarrelRightStripMinEdit, &QLineEdit::textChanged, [this](const QString& text) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        bool ok;
+                        double value = text.toDouble(&ok);
+                        if (ok) {
+                            pattern->barrelRightStripLengthMin = value;
+                            cameraView->updatePatternById(patternId, *pattern);
+                            cameraView->update();
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    if (insBarrelRightStripMaxEdit) {
+        connect(insBarrelRightStripMaxEdit, &QLineEdit::textChanged, [this](const QString& text) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        bool ok;
+                        double value = text.toDouble(&ok);
+                        if (ok) {
+                            pattern->barrelRightStripLengthMax = value;
+                            cameraView->updatePatternById(patternId, *pattern);
+                            cameraView->update();
+                        }
                     }
                 }
             }
@@ -6446,38 +6671,102 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insEdgeEndPercentSpin->blockSignals(false);
                     }
                     
-                    // CRIMP SHAPE 검사 파라미터 로드
-                    if (insCrimpShapeGroup) {
-                        insCrimpShapeGroup->blockSignals(true);
-                        insCrimpShapeGroup->setChecked(pattern->crimpShapeEnabled);
-                        insCrimpShapeGroup->blockSignals(false);
+                    // BARREL 기준 왼쪽 스트리핑 길이 검사 파라미터 로드
+                    if (insBarrelLeftStripGroup) {
+                        insBarrelLeftStripGroup->blockSignals(true);
+                        insBarrelLeftStripGroup->setChecked(pattern->barrelLeftStripEnabled);
+                        insBarrelLeftStripGroup->blockSignals(false);
                     }
                     
-                    if (insCrimpShapeOffsetXSlider && insCrimpShapeOffsetXValueLabel) {
-                        insCrimpShapeOffsetXSlider->blockSignals(true);
-                        insCrimpShapeOffsetXSlider->setValue(pattern->crimpShapeOffsetX);
-                        insCrimpShapeOffsetXValueLabel->setText(QString::number(pattern->crimpShapeOffsetX));
-                        insCrimpShapeOffsetXSlider->blockSignals(false);
+                    if (insBarrelLeftStripOffsetSlider && insBarrelLeftStripOffsetValueLabel) {
+                        int maxOffsetX = pattern->rect.width();
+                        insBarrelLeftStripOffsetSlider->blockSignals(true);
+                        insBarrelLeftStripOffsetSlider->setMaximum(maxOffsetX);
+                        int offsetValue = qMin(pattern->barrelLeftStripOffsetX, maxOffsetX);
+                        insBarrelLeftStripOffsetSlider->setValue(offsetValue);
+                        insBarrelLeftStripOffsetValueLabel->setText(QString::number(offsetValue) + "px");
+                        insBarrelLeftStripOffsetSlider->blockSignals(false);
                     }
                     
-                    if (insCrimpShapeWidthSlider && insCrimpShapeWidthValueLabel) {
-                        insCrimpShapeWidthSlider->blockSignals(true);
-                        insCrimpShapeWidthSlider->setValue(pattern->crimpShapeBoxWidth);
-                        insCrimpShapeWidthValueLabel->setText(QString::number(pattern->crimpShapeBoxWidth));
-                        insCrimpShapeWidthSlider->blockSignals(false);
+                    if (insBarrelLeftStripWidthSlider && insBarrelLeftStripWidthValueLabel) {
+                        int maxWidth = pattern->rect.width();
+                        insBarrelLeftStripWidthSlider->blockSignals(true);
+                        insBarrelLeftStripWidthSlider->setMaximum(maxWidth);
+                        int widthValue = qMin(pattern->barrelLeftStripBoxWidth, maxWidth);
+                        insBarrelLeftStripWidthSlider->setValue(widthValue);
+                        insBarrelLeftStripWidthValueLabel->setText(QString::number(widthValue) + "px");
+                        insBarrelLeftStripWidthSlider->blockSignals(false);
                     }
                     
-                    if (insCrimpShapeHeightSlider && insCrimpShapeHeightValueLabel) {
-                        insCrimpShapeHeightSlider->blockSignals(true);
-                        insCrimpShapeHeightSlider->setValue(pattern->crimpShapeBoxHeight);
-                        insCrimpShapeHeightValueLabel->setText(QString::number(pattern->crimpShapeBoxHeight));
-                        insCrimpShapeHeightSlider->blockSignals(false);
+                    if (insBarrelLeftStripHeightSlider && insBarrelLeftStripHeightValueLabel) {
+                        int maxHeight = pattern->rect.height();
+                        insBarrelLeftStripHeightSlider->blockSignals(true);
+                        insBarrelLeftStripHeightSlider->setMaximum(maxHeight);
+                        int heightValue = qMin(pattern->barrelLeftStripBoxHeight, maxHeight);
+                        insBarrelLeftStripHeightSlider->setValue(heightValue);
+                        insBarrelLeftStripHeightValueLabel->setText(QString::number(heightValue) + "px");
+                        insBarrelLeftStripHeightSlider->blockSignals(false);
                     }
                     
-                    if (insCrimpShapeMatchRateSpin) {
-                        insCrimpShapeMatchRateSpin->blockSignals(true);
-                        insCrimpShapeMatchRateSpin->setValue(pattern->crimpShapeMatchRate);
-                        insCrimpShapeMatchRateSpin->blockSignals(false);
+                    if (insBarrelLeftStripMinEdit) {
+                        insBarrelLeftStripMinEdit->blockSignals(true);
+                        insBarrelLeftStripMinEdit->setText(QString::number(pattern->barrelLeftStripLengthMin, 'f', 2));
+                        insBarrelLeftStripMinEdit->blockSignals(false);
+                    }
+                    
+                    if (insBarrelLeftStripMaxEdit) {
+                        insBarrelLeftStripMaxEdit->blockSignals(true);
+                        insBarrelLeftStripMaxEdit->setText(QString::number(pattern->barrelLeftStripLengthMax, 'f', 2));
+                        insBarrelLeftStripMaxEdit->blockSignals(false);
+                    }
+                    
+                    // BARREL 기준 오른쪽 스트리핑 길이 검사 파라미터 로드
+                    if (insBarrelRightStripGroup) {
+                        insBarrelRightStripGroup->blockSignals(true);
+                        insBarrelRightStripGroup->setChecked(pattern->barrelRightStripEnabled);
+                        insBarrelRightStripGroup->blockSignals(false);
+                    }
+                    
+                    if (insBarrelRightStripOffsetSlider && insBarrelRightStripOffsetValueLabel) {
+                        int maxOffsetX = pattern->rect.width();
+                        insBarrelRightStripOffsetSlider->blockSignals(true);
+                        insBarrelRightStripOffsetSlider->setMaximum(maxOffsetX);
+                        int offsetValue = qMin(pattern->barrelRightStripOffsetX, maxOffsetX);
+                        insBarrelRightStripOffsetSlider->setValue(offsetValue);
+                        insBarrelRightStripOffsetValueLabel->setText(QString::number(offsetValue) + "px");
+                        insBarrelRightStripOffsetSlider->blockSignals(false);
+                    }
+                    
+                    if (insBarrelRightStripWidthSlider && insBarrelRightStripWidthValueLabel) {
+                        int maxWidth = pattern->rect.width();
+                        insBarrelRightStripWidthSlider->blockSignals(true);
+                        insBarrelRightStripWidthSlider->setMaximum(maxWidth);
+                        int widthValue = qMin(pattern->barrelRightStripBoxWidth, maxWidth);
+                        insBarrelRightStripWidthSlider->setValue(widthValue);
+                        insBarrelRightStripWidthValueLabel->setText(QString::number(widthValue) + "px");
+                        insBarrelRightStripWidthSlider->blockSignals(false);
+                    }
+                    
+                    if (insBarrelRightStripHeightSlider && insBarrelRightStripHeightValueLabel) {
+                        int maxHeight = pattern->rect.height();
+                        insBarrelRightStripHeightSlider->blockSignals(true);
+                        insBarrelRightStripHeightSlider->setMaximum(maxHeight);
+                        int heightValue = qMin(pattern->barrelRightStripBoxHeight, maxHeight);
+                        insBarrelRightStripHeightSlider->setValue(heightValue);
+                        insBarrelRightStripHeightValueLabel->setText(QString::number(heightValue) + "px");
+                        insBarrelRightStripHeightSlider->blockSignals(false);
+                    }
+                    
+                    if (insBarrelRightStripMinEdit) {
+                        insBarrelRightStripMinEdit->blockSignals(true);
+                        insBarrelRightStripMinEdit->setText(QString::number(pattern->barrelRightStripLengthMin, 'f', 2));
+                        insBarrelRightStripMinEdit->blockSignals(false);
+                    }
+                    
+                    if (insBarrelRightStripMaxEdit) {
+                        insBarrelRightStripMaxEdit->blockSignals(true);
+                        insBarrelRightStripMaxEdit->setText(QString::number(pattern->barrelRightStripLengthMax, 'f', 2));
+                        insBarrelRightStripMaxEdit->blockSignals(false);
                     }
                     
                     // INS 패턴의 템플릿 이미지 업데이트
@@ -10572,7 +10861,7 @@ void TeachingWidget::addPattern() {
         else if (currentPatternType == PatternType::INS) {
             pattern.passThreshold = 90.0;  // 90%
             pattern.invertResult = false;
-            pattern.inspectionMethod = 0;
+            pattern.inspectionMethod = 2;  // CRIMP 방법
             
             // EDGE 검사 관련 기본값 설정
             pattern.edgeEnabled = true;

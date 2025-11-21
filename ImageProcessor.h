@@ -89,13 +89,7 @@ public:
                                      cv::Point* rearMinScanTop = nullptr, cv::Point* rearMinScanBottom = nullptr,
                                      cv::Point* rearMaxScanTop = nullptr, cv::Point* rearMaxScanBottom = nullptr);
     
-    // CRIMP SHAPE 검사 관련 함수
-    static bool performShapeMatching(const cv::Mat& roiImage, const cv::Mat& templateImage,
-                                   const PatternInfo& pattern,
-                                   double& matchScore, cv::Point& matchLocation,
-                                   std::vector<std::vector<cv::Point>>& currentContours,
-                                   std::vector<std::vector<cv::Point>>& templateContours,
-                                   cv::Mat& diffMask);
+    // CRIMP 검사 관련 함수는 현재 비활성화됨 (향후 구현 예정)
 };
 
 #endif // IMAGEPROCESSOR_H

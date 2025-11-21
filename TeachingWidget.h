@@ -425,19 +425,27 @@ private:
     // CRIMP 검사 패널 관련 위젯
     QGroupBox* insCrimpPanel = nullptr;
     
-    // CRIMP SHAPE 검사 관련 위젯들
-    QGroupBox* insCrimpShapeGroup = nullptr;
-    QLabel* insCrimpShapeOffsetXLabel = nullptr;
-    QSlider* insCrimpShapeOffsetXSlider = nullptr;
-    QLabel* insCrimpShapeOffsetXValueLabel = nullptr;
-    QLabel* insCrimpShapeWidthLabel = nullptr;
-    QSlider* insCrimpShapeWidthSlider = nullptr;
-    QLabel* insCrimpShapeWidthValueLabel = nullptr;
-    QLabel* insCrimpShapeHeightLabel = nullptr;
-    QSlider* insCrimpShapeHeightSlider = nullptr;
-    QLabel* insCrimpShapeHeightValueLabel = nullptr;
-    QLabel* insCrimpShapeMatchRateLabel = nullptr;
-    QDoubleSpinBox* insCrimpShapeMatchRateSpin = nullptr;
+    // CRIMP BARREL 기준 왼쪽/오른쪽 스트리핑 길이 검사 관련 위젯들
+    QGroupBox* insBarrelLeftStripGroup = nullptr;
+    QSlider* insBarrelLeftStripOffsetSlider = nullptr;
+    QLabel* insBarrelLeftStripOffsetValueLabel = nullptr;
+    QSlider* insBarrelLeftStripWidthSlider = nullptr;
+    QLabel* insBarrelLeftStripWidthValueLabel = nullptr;
+    QSlider* insBarrelLeftStripHeightSlider = nullptr;
+    QLabel* insBarrelLeftStripHeightValueLabel = nullptr;
+    QLineEdit* insBarrelLeftStripMinEdit = nullptr;
+    QLineEdit* insBarrelLeftStripMaxEdit = nullptr;
+    
+    // 베럴 기준 오른쪽 스트리핑 길이 검사
+    QGroupBox* insBarrelRightStripGroup = nullptr;
+    QSlider* insBarrelRightStripOffsetSlider = nullptr;
+    QLabel* insBarrelRightStripOffsetValueLabel = nullptr;
+    QSlider* insBarrelRightStripWidthSlider = nullptr;
+    QLabel* insBarrelRightStripWidthValueLabel = nullptr;
+    QSlider* insBarrelRightStripHeightSlider = nullptr;
+    QLabel* insBarrelRightStripHeightValueLabel = nullptr;
+    QLineEdit* insBarrelRightStripMinEdit = nullptr;
+    QLineEdit* insBarrelRightStripMaxEdit = nullptr;
     
     // STRIP 두께 측정 관련 컨트롤
     // FRONT 두께 측정 관련 위젯들

@@ -958,11 +958,11 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("stripRearThicknessBoxWidth", QString::number(pattern.stripRearThicknessBoxWidth));
     xml.writeAttribute("stripRearThicknessBoxHeight", QString::number(pattern.stripRearThicknessBoxHeight));
     
-    // CRIMP SHAPE 검사 관련 속성 저장
-    xml.writeAttribute("crimpShapeOffsetX", QString::number(pattern.crimpShapeOffsetX));
-    xml.writeAttribute("crimpShapeBoxWidth", QString::number(pattern.crimpShapeBoxWidth));
-    xml.writeAttribute("crimpShapeBoxHeight", QString::number(pattern.crimpShapeBoxHeight));
-    xml.writeAttribute("crimpShapeMatchRate", QString::number(pattern.crimpShapeMatchRate, 'f', 1));
+    // CRIMP 중앙 배럴 검사 관련 속성 저장
+    xml.writeAttribute("crimpCentralBarrelOffsetX", QString::number(pattern.crimpCentralBarrelOffsetX));
+    xml.writeAttribute("crimpCentralBarrelBoxWidth", QString::number(pattern.crimpCentralBarrelBoxWidth));
+    xml.writeAttribute("crimpCentralBarrelBoxHeight", QString::number(pattern.crimpCentralBarrelBoxHeight));
+    xml.writeAttribute("crimpCentralBarrelMatchRate", QString::number(pattern.crimpCentralBarrelMatchRate, 'f', 1));
     
     if (!pattern.templateImage.isNull()) {
         QByteArray ba;
@@ -1747,25 +1747,25 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
         pattern.stripRearThicknessBoxHeight = stripRearThicknessBoxHeightStr.toInt();
     }
     
-    // CRIMP SHAPE 검사 관련 속성 읽기
-    QString crimpShapeOffsetXStr = xml.attributes().value("crimpShapeOffsetX").toString();
-    if (!crimpShapeOffsetXStr.isEmpty()) {
-        pattern.crimpShapeOffsetX = crimpShapeOffsetXStr.toInt();
+    // CRIMP 중앙 배럴 검사 관련 속성 읽기
+    QString crimpCentralBarrelOffsetXStr = xml.attributes().value("crimpCentralBarrelOffsetX").toString();
+    if (!crimpCentralBarrelOffsetXStr.isEmpty()) {
+        pattern.crimpCentralBarrelOffsetX = crimpCentralBarrelOffsetXStr.toInt();
     }
     
-    QString crimpShapeBoxWidthStr = xml.attributes().value("crimpShapeBoxWidth").toString();
-    if (!crimpShapeBoxWidthStr.isEmpty()) {
-        pattern.crimpShapeBoxWidth = crimpShapeBoxWidthStr.toInt();
+    QString crimpCentralBarrelBoxWidthStr = xml.attributes().value("crimpCentralBarrelBoxWidth").toString();
+    if (!crimpCentralBarrelBoxWidthStr.isEmpty()) {
+        pattern.crimpCentralBarrelBoxWidth = crimpCentralBarrelBoxWidthStr.toInt();
     }
     
-    QString crimpShapeBoxHeightStr = xml.attributes().value("crimpShapeBoxHeight").toString();
-    if (!crimpShapeBoxHeightStr.isEmpty()) {
-        pattern.crimpShapeBoxHeight = crimpShapeBoxHeightStr.toInt();
+    QString crimpCentralBarrelBoxHeightStr = xml.attributes().value("crimpCentralBarrelBoxHeight").toString();
+    if (!crimpCentralBarrelBoxHeightStr.isEmpty()) {
+        pattern.crimpCentralBarrelBoxHeight = crimpCentralBarrelBoxHeightStr.toInt();
     }
     
-    QString crimpShapeMatchRateStr = xml.attributes().value("crimpShapeMatchRate").toString();
-    if (!crimpShapeMatchRateStr.isEmpty()) {
-        pattern.crimpShapeMatchRate = crimpShapeMatchRateStr.toDouble();
+    QString crimpCentralBarrelMatchRateStr = xml.attributes().value("crimpCentralBarrelMatchRate").toString();
+    if (!crimpCentralBarrelMatchRateStr.isEmpty()) {
+        pattern.crimpCentralBarrelMatchRate = crimpCentralBarrelMatchRateStr.toDouble();
     }
     
     QString imageStr = xml.attributes().value("templateImage").toString();
