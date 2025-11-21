@@ -3454,7 +3454,7 @@ void TeachingWidget::createPropertyPanels() {
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::DIFF));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::STRIP));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::CRIMP));
-    insMethodCombo->setCurrentIndex(2);  // 기본값을 CRIMP로 설정
+    insMethodCombo->setCurrentIndex(0);  // 기본값을 DIFF로 설정
     basicInspectionLayout->addRow(insMethodLabel, insMethodCombo);
 
     // 합격 임계값
@@ -10861,7 +10861,7 @@ void TeachingWidget::addPattern() {
         else if (currentPatternType == PatternType::INS) {
             pattern.passThreshold = 90.0;  // 90%
             pattern.invertResult = false;
-            pattern.inspectionMethod = 2;  // CRIMP 방법
+            pattern.inspectionMethod = 0;  // DIFF 방법
             
             // EDGE 검사 관련 기본값 설정
             pattern.edgeEnabled = true;
