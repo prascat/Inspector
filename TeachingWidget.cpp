@@ -2084,24 +2084,6 @@ void TeachingWidget::connectEvents() {
         // 정규화된 각도로 패턴 업데이트
         pattern->angle = angle;
         
-        // INS 패턴의 STRIP 검사 박스 크기를 각도에 따라 재설정
-        if (pattern->type == PatternType::INS && pattern->inspectionMethod == InspectionMethod::STRIP) {
-            int patternWidth = pattern->rect.width();
-            int patternHeight = pattern->rect.height();
-            
-            // 각도가 거의 0이면 원본 크기로, 아니면 기본값 유지 (UI에서 조정 가능)
-            if (std::abs(angle) < 0.1) {
-                // 각도 0: 박스 크기를 패턴 크기 기반으로 재설정
-                pattern->stripThicknessBoxWidth = patternWidth / 2;
-                pattern->stripThicknessBoxHeight = patternHeight;
-                pattern->stripRearThicknessBoxWidth = patternWidth / 2;
-                pattern->stripRearThicknessBoxHeight = patternHeight;
-                qDebug() << "[각도 변경] angle=0 -> 박스 크기 재설정:" 
-                         << "FRONT=" << pattern->stripThicknessBoxWidth << "x" << pattern->stripThicknessBoxHeight
-                         << "REAR=" << pattern->stripRearThicknessBoxWidth << "x" << pattern->stripRearThicknessBoxHeight;
-            }
-        }
-        
         cameraView->updatePatternById(id, *pattern);
         
         // INS 패턴의 경우 회전 시 템플릿 이미지 재생성

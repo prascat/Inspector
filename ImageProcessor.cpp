@@ -1824,19 +1824,9 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                         if (i < linePoints.size()) {
                             cv::Point pt = linePoints[i];
                             
-                            // 점이 회전된 박스 내부에 있는지 체크
-                            // 박스 중심에서의 상대 좌표
-                            float dx = pt.x - boxCenterX;
-                            float dy = pt.y - boxCenterY;
-                            
-                            // 역회전 변환 (박스의 로컬 좌표계로)
-                            float localX = dx * cosA + dy * sinA;
-                            float localY = -dx * sinA + dy * cosA;
-                            
-                            // 로컬 좌표가 박스 범위 내에 있는지 체크 (원본 박스 크기 사용)
-                            if (std::abs(localX) <= thicknessBoxWidth/2.0f && std::abs(localY) <= thicknessBoxHeight/2.0f) {
-                                blackRegionPoints.push_back(pt);
-                            }
+                            // 바운딩 박스 범위 내의 모든 점 저장 (회전 체크 제거)
+                            // 각도가 있을 때 양쪽 끝까지 포함하도록 함
+                            blackRegionPoints.push_back(pt);
                         }
                     }
                 }
@@ -2050,23 +2040,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                             }
                             blackRegions_rear.push_back({regionStart, i});
                             
-                            // 회전된 박스 내부에 있는 포인트만 저장
+                            // 바운딩 박스 내부의 모든 검은색 포인트 저장 (회전 체크 제거)
                             if (regionStart < linePoints_rear.size() && i - 1 < linePoints_rear.size()) {
                                 for (int idx = regionStart; idx < i && idx < linePoints_rear.size(); idx++) {
                                     cv::Point pt = linePoints_rear[idx];
-                                    
-                                    // 점이 회전된 박스 내부에 있는지 체크
-                                    float dx = pt.x - boxCenterX_rear;
-                                    float dy = pt.y - boxCenterY_rear;
-                                    
-                                    // 역회전 변환
-                                    float localX = dx * cosA_rear + dy * sinA_rear;
-                                    float localY = -dx * sinA_rear + dy * cosA_rear;
-                                    
-                                    // 로컬 좌표가 박스 범위 내에 있는지 체크
-                                    if (std::abs(localX) <= rearThicknessBoxWidth/2.0f && std::abs(localY) <= rearThicknessBoxHeight/2.0f) {
-                                        blackRegionPoints_rear.push_back(pt);
-                                    }
+                                    blackRegionPoints_rear.push_back(pt);
                                 }
                             }
                         }
@@ -2085,23 +2063,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     }
                     blackRegions_rear.push_back({regionStart, it.count});
                     
-                    // 회전된 박스 내부에 있는 포인트만 저장
+                    // 바운딩 박스 내부의 모든 검은색 포인트 저장 (회전 체크 제거)
                     if (regionStart < linePoints_rear.size() && it.count - 1 < linePoints_rear.size()) {
                         for (int idx = regionStart; idx < it.count && idx < linePoints_rear.size(); idx++) {
                             cv::Point pt = linePoints_rear[idx];
-                            
-                            // 점이 회전된 박스 내부에 있는지 체크
-                            float dx = pt.x - boxCenterX_rear;
-                            float dy = pt.y - boxCenterY_rear;
-                            
-                            // 역회전 변환
-                            float localX = dx * cosA_rear + dy * sinA_rear;
-                            float localY = -dx * sinA_rear + dy * cosA_rear;
-                            
-                            // 로컬 좌표가 박스 범위 내에 있는지 체크
-                            if (std::abs(localX) <= rearThicknessBoxWidth/2.0f && std::abs(localY) <= rearThicknessBoxHeight/2.0f) {
-                                blackRegionPoints_rear.push_back(pt);
-                            }
+                            blackRegionPoints_rear.push_back(pt);
                         }
                     }
                 }

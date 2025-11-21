@@ -2015,12 +2015,35 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     // zoom scale 적용
                     QTransform t = transform();
                     double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
-                    double boxWidth = patternInfo->stripRearThicknessBoxWidth * currentScale;
-                    double boxHeight = patternInfo->stripRearThicknessBoxHeight * currentScale;
                     
-                    qDebug() << "[REAR cyan박스] insAngle=" << insAngle 
-                             << ", boxWidth=" << boxWidth << ", boxHeight=" << boxHeight
-                             << ", 원본=" << patternInfo->stripRearThicknessBoxWidth << "x" << patternInfo->stripRearThicknessBoxHeight;
+                    // ImageProcessor가 계산한 바운딩 박스 크기 사용 (Yellow 박스와 동일)
+                    double boxWidth = 0, boxHeight = 0;
+                    qDebug() << "[REAR cyan박스 DEBUG] patternId=" << patternId << ", result.stripRearBoxSize.contains=" << result.stripRearBoxSize.contains(patternId);
+                    if (result.stripRearBoxSize.contains(patternId)) {
+                        QSizeF rearBoxSize = result.stripRearBoxSize[patternId];
+                        boxWidth = rearBoxSize.width() * currentScale;
+                        boxHeight = rearBoxSize.height() * currentScale;
+                        qDebug() << "[REAR cyan박스 DEBUG] ImageProcessor 결과 사용: 바운딩=" << rearBoxSize.width() << "x" << rearBoxSize.height();
+                    } else {
+                        qDebug() << "[REAR cyan박스 DEBUG] fallback 계산 사용";
+                        // fallback: 원본 크기에서 바운딩 박스 계산
+                        if (std::abs(patternInfo->angle) < 0.1) {
+                            boxWidth = patternInfo->stripRearThicknessBoxWidth * currentScale;
+                            boxHeight = patternInfo->stripRearThicknessBoxHeight * currentScale;
+                        } else {
+                            double angleRad = patternInfo->angle * M_PI / 180.0;
+                            double cosA = std::abs(std::cos(angleRad));
+                            double sinA = std::abs(std::sin(angleRad));
+                            double boundingWidth = patternInfo->stripRearThicknessBoxWidth * cosA + patternInfo->stripRearThicknessBoxHeight * sinA;
+                            double boundingHeight = patternInfo->stripRearThicknessBoxWidth * sinA + patternInfo->stripRearThicknessBoxHeight * cosA;
+                            boxWidth = boundingWidth * currentScale;
+                            boxHeight = boundingHeight * currentScale;
+                        }
+                    }
+                    
+                    qDebug() << "[REAR cyan박스] angle=" << patternInfo->angle
+                             << ", 원본=" << patternInfo->stripRearThicknessBoxWidth << "x" << patternInfo->stripRearThicknessBoxHeight
+                             << ", 바운딩scaled=" << boxWidth << "x" << boxHeight;
                     
                     painter.save();
                     painter.translate(rearBoxCenterVP);
@@ -2145,46 +2168,76 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     
                     if (!rearBlackPoints.isEmpty() && result.stripRearBoxCenter.contains(patternId) && result.stripRearBoxSize.contains(patternId)) {
                         QPointF rearBoxCenterScene = result.stripRearBoxCenter[patternId];
-                        QSizeF rearBoxSize = result.stripRearBoxSize[patternId];
+                        QSizeF rearBoxSize = result.stripRearBoxSize[patternId];  // ImageProcessor가 계산한 바운딩 박스 크기
                         
-                        // 각도가 0일 때는 원본 박스 크기 사용
-                        if (std::abs(patternInfo->angle) < 0.1) {
-                            rearBoxSize = QSizeF(patternInfo->stripRearThicknessBoxWidth, patternInfo->stripRearThicknessBoxHeight);
-                        }
-                        
-                        // zoom scale 계산 (cyan 박스와 동일하게)
+                        // zoom scale 계산
                         QTransform t = transform();
                         double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
-                        double boxWidth = rearBoxSize.width() * currentScale;
-                        double boxHeight = rearBoxSize.height() * currentScale;
+                        
+                        // 노란색 박스는 검사 범위 (회전된 cyan을 담을 수 있는 축정렬 박스)
+                        // 회전각도를 고려한 bounding box 계산
+                        double w = rearBoxSize.width();
+                        double h = rearBoxSize.height();
+                        double projX = std::abs(w * cosA) + std::abs(h * sinA);
+                        double projY = std::abs(w * sinA) + std::abs(h * cosA);
+                        
+                        double boxWidth = projX * currentScale;
+                        double boxHeight = projY * currentScale;
                         
                         qDebug() << "[REAR 노란박스] angle=" << patternInfo->angle 
-                                 << ", boxSize=" << rearBoxSize.width() << "x" << rearBoxSize.height()
+                                 << ", 원본=" << patternInfo->stripRearThicknessBoxWidth << "x" << patternInfo->stripRearThicknessBoxHeight
+                                 << ", 바운딩=" << boxWidth/currentScale << "x" << boxHeight/currentScale
                                  << ", scaled=" << boxWidth << "x" << boxHeight
                                  << ", boxCenter(viewport, cyan과동일)=" << rearBoxCenterVP;
                         
-                        // 박스 범위 계산 (scene 좌표)
-                        int boxLeft = rearBoxCenterScene.x() - rearBoxSize.width() / 2;
-                        int boxRight = rearBoxCenterScene.x() + rearBoxSize.width() / 2;
-                        int boxTop = rearBoxCenterScene.y() - rearBoxSize.height() / 2;
-                        int boxBottom = rearBoxCenterScene.y() + rearBoxSize.height() / 2;
-                        
-                        // 박스 bounding box 그리기 (노란색 테두리) - Cyan 박스와 동일한 중심 사용
-                        painter.setPen(QPen(QColor(255, 255, 0), 2));  // 노란색
+                        // 박스 bounding box 그리기 (노란색 테두리) - 축정렬 사각형(회전 없음)
+                        painter.setPen(QPen(QColor(255, 255, 0), 3));  // 노란색, 더 굵게
                         painter.setBrush(Qt::NoBrush);
-                        painter.drawRect(QRectF(rearBoxCenterVP.x() - boxWidth/2, 
-                                               rearBoxCenterVP.y() - boxHeight/2, 
-                                               boxWidth, boxHeight));
+                        
+                        // 4개 포인트 계산 (viewport 좌표계에서) - 회전하지 않음
+                        QPointF topLeft(rearBoxCenterVP.x() - boxWidth/2, rearBoxCenterVP.y() - boxHeight/2);
+                        QPointF topRight(rearBoxCenterVP.x() + boxWidth/2, rearBoxCenterVP.y() - boxHeight/2);
+                        QPointF bottomLeft(rearBoxCenterVP.x() - boxWidth/2, rearBoxCenterVP.y() + boxHeight/2);
+                        QPointF bottomRight(rearBoxCenterVP.x() + boxWidth/2, rearBoxCenterVP.y() + boxHeight/2);
+                        
+                        // 4개 포인트를 연결하는 사각형 그리기 (축정렬)
+                        QPolygonF polygon;
+                        polygon << topLeft << topRight << bottomRight << bottomLeft;
+                        painter.drawPolygon(polygon);
+                        
+                        // 각 꼭짓점에 원 그리기 (강조)
+                        painter.setBrush(QColor(255, 255, 0));
+                        painter.drawEllipse(topLeft, 4, 4);      // top-left
+                        painter.drawEllipse(topRight, 4, 4);     // top-right
+                        painter.drawEllipse(bottomLeft, 4, 4);   // bottom-left
+                        painter.drawEllipse(bottomRight, 4, 4);  // bottom-right
                         
                         painter.setPen(Qt::NoPen);
                         painter.setBrush(QColor(255, 0, 0, 200));  // 더 불투명하게
                         
+                        // 각도 고려한 포인트 필터링
+                        double angleRad = patternInfo->angle * M_PI / 180.0;
+                        double cosA = std::cos(angleRad);
+                        double sinA = std::sin(angleRad);
+                        
                         for (const QPoint& pt : rearBlackPoints) {
-                            // 박스 범위 내에 있는 점만 그리기
-                            if (pt.x() >= boxLeft && pt.x() <= boxRight && pt.y() >= boxTop && pt.y() <= boxBottom) {
+                            // 박스 중심에서의 상대 좌표
+                            double dx = pt.x() - rearBoxCenterScene.x();
+                            double dy = pt.y() - rearBoxCenterScene.y();
+                            
+                            // 역회전 변환 (박스의 로컬 좌표계로)
+                            double localX = dx * cosA + dy * sinA;
+                            double localY = -dx * sinA + dy * cosA;
+                            
+                            // 원본 박스 크기로 체크 (항상 원본 크기 사용)
+                            double origWidth = patternInfo->stripRearThicknessBoxWidth;
+                            double origHeight = patternInfo->stripRearThicknessBoxHeight;
+                            
+                            // 로컬 좌표가 원본 박스 범위 내에 있는지 체크
+                            if (std::abs(localX) <= origWidth/2.0 && std::abs(localY) <= origHeight/2.0) {
                                 QPointF ptScene(pt.x(), pt.y());
                                 QPointF ptVP = mapFromScene(ptScene);
-                                painter.drawEllipse(ptVP, 2.0, 2.0);  // 크기 증가
+                                painter.drawEllipse(ptVP, 2.0, 2.0);
                             }
                         }
                     }
@@ -2251,12 +2304,35 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     // zoom scale 적용
                     QTransform t = transform();
                     double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
-                    double boxWidth = patternInfo->stripThicknessBoxWidth * currentScale;
-                    double boxHeight = patternInfo->stripThicknessBoxHeight * currentScale;
                     
-                    qDebug() << "[FRONT cyan박스] insAngle=" << insAngle 
-                             << ", boxWidth=" << boxWidth << ", boxHeight=" << boxHeight
-                             << ", 원본=" << patternInfo->stripThicknessBoxWidth << "x" << patternInfo->stripThicknessBoxHeight;
+                    // ImageProcessor가 계산한 바운딩 박스 크기 사용 (Yellow 박스와 동일)
+                    double boxWidth = 0, boxHeight = 0;
+                    qDebug() << "[FRONT cyan박스 DEBUG] patternId=" << patternId << ", result.stripFrontBoxSize.contains=" << result.stripFrontBoxSize.contains(patternId);
+                    if (result.stripFrontBoxSize.contains(patternId)) {
+                        QSizeF frontBoxSize = result.stripFrontBoxSize[patternId];
+                        boxWidth = frontBoxSize.width() * currentScale;
+                        boxHeight = frontBoxSize.height() * currentScale;
+                        qDebug() << "[FRONT cyan박스 DEBUG] ImageProcessor 결과 사용: 바운딩=" << frontBoxSize.width() << "x" << frontBoxSize.height();
+                    } else {
+                        qDebug() << "[FRONT cyan박스 DEBUG] fallback 계산 사용";
+                        // fallback: 원본 크기에서 바운딩 박스 계산
+                        if (std::abs(patternInfo->angle) < 0.1) {
+                            boxWidth = patternInfo->stripThicknessBoxWidth * currentScale;
+                            boxHeight = patternInfo->stripThicknessBoxHeight * currentScale;
+                        } else {
+                            double angleRad = patternInfo->angle * M_PI / 180.0;
+                            double cosA = std::abs(std::cos(angleRad));
+                            double sinA = std::abs(std::sin(angleRad));
+                            double boundingWidth = patternInfo->stripThicknessBoxWidth * cosA + patternInfo->stripThicknessBoxHeight * sinA;
+                            double boundingHeight = patternInfo->stripThicknessBoxWidth * sinA + patternInfo->stripThicknessBoxHeight * cosA;
+                            boxWidth = boundingWidth * currentScale;
+                            boxHeight = boundingHeight * currentScale;
+                        }
+                    }
+                    
+                    qDebug() << "[FRONT cyan박스] angle=" << patternInfo->angle
+                             << ", 원본=" << patternInfo->stripThicknessBoxWidth << "x" << patternInfo->stripThicknessBoxHeight
+                             << ", 바운딩scaled=" << boxWidth << "x" << boxHeight;
                     
                     painter.save();
                     painter.translate(frontBoxCenterVP);
@@ -2377,46 +2453,75 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     
                     if (!frontBlackPoints.isEmpty() && result.stripFrontBoxCenter.contains(patternId) && result.stripFrontBoxSize.contains(patternId)) {
                         QPointF frontBoxCenterScene = result.stripFrontBoxCenter[patternId];
-                        QSizeF frontBoxSize = result.stripFrontBoxSize[patternId];
+                        QSizeF frontBoxSize = result.stripFrontBoxSize[patternId];  // ImageProcessor가 계산한 바운딩 박스 크기
                         
-                        // 각도가 0일 때는 원본 박스 크기 사용
-                        if (std::abs(patternInfo->angle) < 0.1) {
-                            frontBoxSize = QSizeF(patternInfo->stripThicknessBoxWidth, patternInfo->stripThicknessBoxHeight);
-                        }
-                        
-                        // zoom scale 계산 (cyan 박스와 동일하게)
+                        // zoom scale 계산
                         QTransform t = transform();
                         double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
-                        double boxWidth = frontBoxSize.width() * currentScale;
-                        double boxHeight = frontBoxSize.height() * currentScale;
+                        
+                        // 노란색 박스는 검사 범위 (회전된 cyan을 담을 수 있는 축정렬 박스)
+                        // 회전각도를 고려한 bounding box 계산
+                        double w = frontBoxSize.width();
+                        double h = frontBoxSize.height();
+                        double projX = std::abs(w * cosA) + std::abs(h * sinA);
+                        double projY = std::abs(w * sinA) + std::abs(h * cosA);
+                        
+                        double boxWidth = projX * currentScale;
+                        double boxHeight = projY * currentScale;
                         
                         qDebug() << "[FRONT 노란박스] angle=" << patternInfo->angle 
-                                 << ", boxSize=" << frontBoxSize.width() << "x" << frontBoxSize.height()
+                                 << ", ImageProcessor 바운딩=" << frontBoxSize.width() << "x" << frontBoxSize.height()
                                  << ", scaled=" << boxWidth << "x" << boxHeight
                                  << ", boxCenter(viewport, cyan과동일)=" << frontBoxCenterVP;
                         
-                        // 박스 범위 계산 (scene 좌표)
-                        int boxLeft = frontBoxCenterScene.x() - frontBoxSize.width() / 2;
-                        int boxRight = frontBoxCenterScene.x() + frontBoxSize.width() / 2;
-                        int boxTop = frontBoxCenterScene.y() - frontBoxSize.height() / 2;
-                        int boxBottom = frontBoxCenterScene.y() + frontBoxSize.height() / 2;
-                        
-                        // 박스 bounding box 그리기 (노란색 테두리) - Cyan 박스와 동일한 중심 사용
-                        painter.setPen(QPen(QColor(255, 255, 0), 2));  // 노란색
+                        // 박스 bounding box 그리기 (노란색 테두리) - 축정렬 사각형(회전 없음)
+                        painter.setPen(QPen(QColor(255, 255, 0), 3));  // 노란색, 더 굵게
                         painter.setBrush(Qt::NoBrush);
-                        painter.drawRect(QRectF(frontBoxCenterVP.x() - boxWidth/2, 
-                                               frontBoxCenterVP.y() - boxHeight/2, 
-                                               boxWidth, boxHeight));
+                        
+                        // 4개 포인트 계산 (viewport 좌표계에서) - 회전하지 않음
+                        QPointF topLeft(frontBoxCenterVP.x() - boxWidth/2, frontBoxCenterVP.y() - boxHeight/2);
+                        QPointF topRight(frontBoxCenterVP.x() + boxWidth/2, frontBoxCenterVP.y() - boxHeight/2);
+                        QPointF bottomLeft(frontBoxCenterVP.x() - boxWidth/2, frontBoxCenterVP.y() + boxHeight/2);
+                        QPointF bottomRight(frontBoxCenterVP.x() + boxWidth/2, frontBoxCenterVP.y() + boxHeight/2);
+                        
+                        // 4개 포인트를 연결하는 사각형 그리기 (축정렬)
+                        QPolygonF polygon;
+                        polygon << topLeft << topRight << bottomRight << bottomLeft;
+                        painter.drawPolygon(polygon);
+                        
+                        // 각 꼭짓점에 원 그리기 (강조)
+                        painter.setBrush(QColor(255, 255, 0));
+                        painter.drawEllipse(topLeft, 4, 4);      // top-left
+                        painter.drawEllipse(topRight, 4, 4);     // top-right
+                        painter.drawEllipse(bottomLeft, 4, 4);   // bottom-left
+                        painter.drawEllipse(bottomRight, 4, 4);  // bottom-right
                         
                         painter.setPen(Qt::NoPen);
                         painter.setBrush(QColor(255, 0, 0, 200));  // 더 불투명하게
                         
+                        // 각도 고려한 포인트 필터링
+                        double angleRad = patternInfo->angle * M_PI / 180.0;
+                        double cosA = std::cos(angleRad);
+                        double sinA = std::sin(angleRad);
+                        
                         for (const QPoint& pt : frontBlackPoints) {
-                            // 박스 범위 내에 있는 점만 그리기
-                            if (pt.x() >= boxLeft && pt.x() <= boxRight && pt.y() >= boxTop && pt.y() <= boxBottom) {
+                            // 박스 중심에서의 상대 좌표
+                            double dx = pt.x() - frontBoxCenterScene.x();
+                            double dy = pt.y() - frontBoxCenterScene.y();
+                            
+                            // 역회전 변환 (박스의 로컬 좌표계로)
+                            double localX = dx * cosA + dy * sinA;
+                            double localY = -dx * sinA + dy * cosA;
+                            
+                            // 원본 박스 크기로 체크 (항상 원본 크기 사용)
+                            double origWidth = patternInfo->stripThicknessBoxWidth;
+                            double origHeight = patternInfo->stripThicknessBoxHeight;
+                            
+                            // 로컬 좌표가 원본 박스 범위 내에 있는지 체크
+                            if (std::abs(localX) <= origWidth/2.0 && std::abs(localY) <= origHeight/2.0) {
                                 QPointF ptScene(pt.x(), pt.y());
                                 QPointF ptVP = mapFromScene(ptScene);
-                                painter.drawEllipse(ptVP, 2.0, 2.0);  // 크기 증가
+                                painter.drawEllipse(ptVP, 2.0, 2.0);
                             }
                         }
                     }
