@@ -1746,6 +1746,39 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
         painter.drawText(labelRect, Qt::AlignCenter, label);
         
         painter.restore();
+        
+        // ===== FID 패턴 노란색 박스 (축정렬, 회전 투영 고려) =====
+        // 현재 줌 스케일 계산
+        QTransform t = transform();
+        double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
+        
+        // 원본 크기
+        double fidWidth = patternInfo->rect.width();
+        double fidHeight = patternInfo->rect.height();
+        
+        // 회전 투영 적용
+        double radians = detectedAngle * M_PI / 180.0;
+        double cosA = std::cos(radians);
+        double sinA = std::sin(radians);
+        double projX = std::abs(fidWidth * cosA) + std::abs(fidHeight * sinA);
+        double projY = std::abs(fidWidth * sinA) + std::abs(fidHeight * cosA);
+        
+        // 노란색 박스 크기
+        double yellowWidth = projX * currentScale;
+        double yellowHeight = projY * currentScale;
+        
+        // 노란색 박스 (축정렬)
+        painter.setPen(QPen(QColor(255, 255, 0), 1.5));
+        painter.setBrush(Qt::NoBrush);
+        
+        QPointF fidTopLeft(centerViewport.x() - yellowWidth/2, centerViewport.y() - yellowHeight/2);
+        QPointF fidTopRight(centerViewport.x() + yellowWidth/2, centerViewport.y() - yellowHeight/2);
+        QPointF fidBottomLeft(centerViewport.x() - yellowWidth/2, centerViewport.y() + yellowHeight/2);
+        QPointF fidBottomRight(centerViewport.x() + yellowWidth/2, centerViewport.y() + yellowHeight/2);
+        
+        QPolygonF fidYellowPolygon;
+        fidYellowPolygon << fidTopLeft << fidTopRight << fidBottomRight << fidBottomLeft;
+        painter.drawPolygon(fidYellowPolygon);
     }
     
     // ========== INS 패턴 검사 결과 그리기 ==========
@@ -1861,9 +1894,10 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
             painter.restore();
         }
         
-        // ===== INS STRIP 검사 결과 시각화 (검사 결과 데이터 사용) =====
+        // ===== INS STRIP/DIFF 검사 결과 시각화 (검사 결과 데이터 사용) =====
         if (patternInfo->type == PatternType::INS && 
-            patternInfo->inspectionMethod == InspectionMethod::STRIP) {
+            (patternInfo->inspectionMethod == InspectionMethod::STRIP || 
+             patternInfo->inspectionMethod == InspectionMethod::DIFF)) {
             
             // 현재 줌 스케일 계산
             QTransform t = transform();
@@ -2042,7 +2076,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         (posEndTop.y() + posEndBottom.y()) / 2.0f
                     );
                     
-                    qDebug() << "[REAR cyan박스] boxCenter(viewport)=" << rearBoxCenterVP;
+
                     
                     // zoom scale 적용
                     QTransform t = transform();
@@ -2050,14 +2084,14 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     
                     // ImageProcessor가 계산한 바운딩 박스 크기 사용 (Yellow 박스와 동일)
                     double boxWidth = 0, boxHeight = 0;
-                    qDebug() << "[REAR cyan박스 DEBUG] patternId=" << patternId << ", result.stripRearBoxSize.contains=" << result.stripRearBoxSize.contains(patternId);
+
                     if (result.stripRearBoxSize.contains(patternId)) {
                         QSizeF rearBoxSize = result.stripRearBoxSize[patternId];
                         boxWidth = rearBoxSize.width() * currentScale;
                         boxHeight = rearBoxSize.height() * currentScale;
-                        qDebug() << "[REAR cyan박스 DEBUG] ImageProcessor 결과 사용: 바운딩=" << rearBoxSize.width() << "x" << rearBoxSize.height();
+
                     } else {
-                        qDebug() << "[REAR cyan박스 DEBUG] fallback 계산 사용";
+
                         // fallback: 원본 크기에서 바운딩 박스 계산
                         if (std::abs(patternInfo->angle) < 0.1) {
                             boxWidth = patternInfo->stripRearThicknessBoxWidth * currentScale;
@@ -2073,9 +2107,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         }
                     }
                     
-                    qDebug() << "[REAR cyan박스] angle=" << patternInfo->angle
-                             << ", 원본=" << patternInfo->stripRearThicknessBoxWidth << "x" << patternInfo->stripRearThicknessBoxHeight
-                             << ", 바운딩scaled=" << boxWidth << "x" << boxHeight;
+
                     
                     painter.save();
                     painter.translate(rearBoxCenterVP);
@@ -2216,11 +2248,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         double boxWidth = projX * currentScale;
                         double boxHeight = projY * currentScale;
                         
-                        qDebug() << "[REAR 노란박스] angle=" << patternInfo->angle 
-                                 << ", 원본=" << patternInfo->stripRearThicknessBoxWidth << "x" << patternInfo->stripRearThicknessBoxHeight
-                                 << ", 바운딩=" << boxWidth/currentScale << "x" << boxHeight/currentScale
-                                 << ", scaled=" << boxWidth << "x" << boxHeight
-                                 << ", boxCenter(viewport, cyan과동일)=" << rearBoxCenterVP;
+
                         
                         // 박스 bounding box 그리기 (노란색 테두리) - 축정렬 사각형(회전 없음)
                         painter.setPen(QPen(QColor(255, 255, 0), 1.5));  // 노란색, 더 얇게
@@ -2332,14 +2360,14 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                     
                     // ImageProcessor가 계산한 바운딩 박스 크기 사용 (Yellow 박스와 동일)
                     double boxWidth = 0, boxHeight = 0;
-                    qDebug() << "[FRONT cyan박스 DEBUG] patternId=" << patternId << ", result.stripFrontBoxSize.contains=" << result.stripFrontBoxSize.contains(patternId);
+
                     if (result.stripFrontBoxSize.contains(patternId)) {
                         QSizeF frontBoxSize = result.stripFrontBoxSize[patternId];
                         boxWidth = frontBoxSize.width() * currentScale;
                         boxHeight = frontBoxSize.height() * currentScale;
-                        qDebug() << "[FRONT cyan박스 DEBUG] ImageProcessor 결과 사용: 바운딩=" << frontBoxSize.width() << "x" << frontBoxSize.height();
+
                     } else {
-                        qDebug() << "[FRONT cyan박스 DEBUG] fallback 계산 사용";
+
                         // fallback: 원본 크기에서 바운딩 박스 계산
                         if (std::abs(patternInfo->angle) < 0.1) {
                             boxWidth = patternInfo->stripThicknessBoxWidth * currentScale;
@@ -2354,10 +2382,6 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                             boxHeight = boundingHeight * currentScale;
                         }
                     }
-                    
-                    qDebug() << "[FRONT cyan박스] angle=" << patternInfo->angle
-                             << ", 원본=" << patternInfo->stripThicknessBoxWidth << "x" << patternInfo->stripThicknessBoxHeight
-                             << ", 바운딩scaled=" << boxWidth << "x" << boxHeight;
                     
                     painter.save();
                     painter.translate(frontBoxCenterVP);
@@ -2494,10 +2518,7 @@ void CameraView::drawInspectionResults(QPainter& painter, const InspectionResult
                         double boxWidth = projX * currentScale;
                         double boxHeight = projY * currentScale;
                         
-                        qDebug() << "[FRONT 노란박스] angle=" << patternInfo->angle 
-                                 << ", ImageProcessor 바운딩=" << frontBoxSize.width() << "x" << frontBoxSize.height()
-                                 << ", scaled=" << boxWidth << "x" << boxHeight
-                                 << ", boxCenter(viewport, cyan과동일)=" << frontBoxCenterVP;
+
                         
                         // 박스 bounding box 그리기 (노란색 테두리) - 축정렬 사각형(회전 없음)
                         painter.setPen(QPen(QColor(255, 255, 0), 1.5));  // 노란색, 더 얇게
