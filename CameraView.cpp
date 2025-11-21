@@ -1940,34 +1940,13 @@ void CameraView::drawINSStripVisualization(QPainter& painter, const InspectionRe
     StripDrawContext ctx(painter, result, patternId, patternInfo, inspRectScene,
                         insAngle, currentScale, centerViewport, cosA, sinA);
     
-    // ===== 1. INS 패턴 노란색 바운딩 박스 (축정렬, 회전 투영 고려) =====
-    // 원본 크기
+    // 원본 크기 및 중심
     double insWidth = inspRectScene.width();
     double insHeight = inspRectScene.height();
-    
-    // 회전 투영 적용
-    double projX = std::abs(insWidth * cosA) + std::abs(insHeight * sinA);
-    double projY = std::abs(insWidth * sinA) + std::abs(insHeight * cosA);
-    
-    // INS 중심 (viewport 좌표)
     QPointF insCenter = centerViewport;
     
-    // 노란색 박스 크기
-    double yellowWidth = projX * currentScale;
-    double yellowHeight = projY * currentScale;
-    
-    // 노란색 박스 (축정렬)
-    painter.setPen(QPen(QColor(255, 255, 0), 1.5));
-    painter.setBrush(Qt::NoBrush);
-    
-    QPointF insTopLeft(insCenter.x() - yellowWidth/2, insCenter.y() - yellowHeight/2);
-    QPointF insTopRight(insCenter.x() + yellowWidth/2, insCenter.y() - yellowHeight/2);
-    QPointF insBottomLeft(insCenter.x() - yellowWidth/2, insCenter.y() + yellowHeight/2);
-    QPointF insBottomRight(insCenter.x() + yellowWidth/2, insCenter.y() + yellowHeight/2);
-    
-    QPolygonF insYellowPolygon;
-    insYellowPolygon << insTopLeft << insTopRight << insBottomRight << insBottomLeft;
-    painter.drawPolygon(insYellowPolygon);
+    // ===== 1. INS 패턴 노란색 바운딩 박스 (축정렬, 회전 투영 고려) =====
+    drawYellowBoundingBox(painter, QSizeF(insWidth, insHeight), insCenter, insAngle, currentScale);
     
     // INS 박스의 회전된 좌표들을 얻기 위해 4개 모서리점 변환
     QPointF topLeftScene = inspRectScene.topLeft();
@@ -3445,35 +3424,27 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         double boxWidth = pattern.stripThicknessBoxWidth * currentScale;
                         double boxHeight = pattern.stripThicknessBoxHeight * currentScale;
                         
-                        painter.save();
-                        painter.translate(frontBoxCenter);
-                        painter.rotate(boxAngle);
-                        
+                        // FRONT 박스 그리기
+                        QRectF frontBoxRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
                         QPen frontPen(Qt::cyan, 2);
                         frontPen.setStyle(Qt::DashLine);
-                        painter.setPen(frontPen);
-                        painter.setBrush(Qt::NoBrush);
+                        drawRotatedBox(painter, frontBoxRect, frontBoxCenter, boxAngle, frontPen);
                         
-                        painter.drawRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
-                        
+                        // FRONT 라벨 그리기
                         QString frontLabel = QString("FRONT:%1~%2mm")
                                             .arg(pattern.stripThicknessMin)
                                             .arg(pattern.stripThicknessMax);
                         QFont frontFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
-                        painter.setFont(frontFont);
                         QFontMetrics frontFm(frontFont);
                         int frontTextW = frontFm.horizontalAdvance(frontLabel);
                         int frontTextH = frontFm.height();
-                        
-                        QRect frontTextRect(-frontTextW/2 - 2, -boxHeight/2 - frontTextH - 2, frontTextW + 4, frontTextH);
-                        painter.fillRect(frontTextRect, QBrush(QColor(0, 0, 0, 180)));
-                        painter.setPen(Qt::cyan);
-                        painter.drawText(frontTextRect, Qt::AlignCenter, frontLabel);
+                        QRectF frontTextRect(-frontTextW/2 - 2, -boxHeight/2 - frontTextH - 2, frontTextW + 4, frontTextH);
+                        drawRotatedLabel(painter, frontLabel, frontTextRect, frontBoxCenter, boxAngle, 
+                                       QColor(0, 0, 0, 180), Qt::cyan, frontFont);
                         
                         // PASS/NG 표시 (티칭 모드에서는 표시 안함)
                         // 티칭 모드는 검사 결과가 없으므로 생략
-                        
-                        painter.restore();
+
                     }
                 }
             }
@@ -3523,34 +3494,26 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         double boxWidth = pattern.stripRearThicknessBoxWidth * currentScale;
                         double boxHeight = pattern.stripRearThicknessBoxHeight * currentScale;
                         
-                        painter.save();
-                        painter.translate(rearBoxCenter);
-                        painter.rotate(boxAngle);
-                        
+                        // REAR 박스 그리기
+                        QRectF rearBoxRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
                         QPen rearPen(QColor(0, 191, 255), 2);  // 하늘색
                         rearPen.setStyle(Qt::DashLine);
-                        painter.setPen(rearPen);
-                        painter.setBrush(Qt::NoBrush);
+                        drawRotatedBox(painter, rearBoxRect, rearBoxCenter, boxAngle, rearPen);
                         
-                        painter.drawRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
-                        
+                        // REAR 라벨 그리기
                         QString rearLabel = QString("REAR:%1~%2mm")
                                           .arg(pattern.stripRearThicknessMin)
                                           .arg(pattern.stripRearThicknessMax);
                         QFont rearFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
-                        painter.setFont(rearFont);
                         QFontMetrics rearFm(rearFont);
                         int rearTextW = rearFm.horizontalAdvance(rearLabel);
                         int rearTextH = rearFm.height();
-                        
-                        QRect rearTextRect(-rearTextW/2 - 2, -boxHeight/2 - rearTextH - 2, rearTextW + 4, rearTextH);
-                        painter.fillRect(rearTextRect, QBrush(QColor(0, 0, 0, 180)));
-                        painter.setPen(QColor(0, 191, 255));
-                        painter.drawText(rearTextRect, Qt::AlignCenter, rearLabel);
+                        QRectF rearTextRect(-rearTextW/2 - 2, -boxHeight/2 - rearTextH - 2, rearTextW + 4, rearTextH);
+                        drawRotatedLabel(painter, rearLabel, rearTextRect, rearBoxCenter, boxAngle, 
+                                       QColor(0, 0, 0, 180), QColor(0, 191, 255), rearFont);
                         
                         // PASS/NG 표시 (티칭 모드에서는 표시 안함)
-                        
-                        painter.restore();
+
                     }
                 }
             }
@@ -3610,32 +3573,24 @@ void CameraView::paintEvent(QPaintEvent *event) {
                         double boxWidth = pattern.edgeBoxWidth * currentScale;
                         double boxHeight = pattern.edgeBoxHeight * currentScale;
                         
-                        painter.save();
-                        painter.translate(edgeBoxCenterVP);
-                        painter.rotate(boxAngle);
-                        
+                        // EDGE 박스 그리기
+                        QRectF edgeBoxRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
                         QPen edgePen(QColor(255, 128, 0), 2);  // 주황색
                         edgePen.setStyle(Qt::DashLine);
-                        painter.setPen(edgePen);
-                        painter.setBrush(Qt::NoBrush);
+                        drawRotatedBox(painter, edgeBoxRect, edgeBoxCenterVP, boxAngle, edgePen);
                         
-                        painter.drawRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
-                        
+                        // EDGE 라벨 그리기
                         QString edgeLabel = "EDGE";
                         QFont edgeFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
-                        painter.setFont(edgeFont);
                         QFontMetrics edgeFm(edgeFont);
                         int edgeTextW = edgeFm.horizontalAdvance(edgeLabel);
                         int edgeTextH = edgeFm.height();
-                        
-                        QRect edgeTextRect(-edgeTextW/2 - 2, -boxHeight/2 - edgeTextH - 2, edgeTextW + 4, edgeTextH);
-                        painter.fillRect(edgeTextRect, QBrush(QColor(0, 0, 0, 180)));
-                        painter.setPen(QColor(255, 128, 0));
-                        painter.drawText(edgeTextRect, Qt::AlignCenter, edgeLabel);
+                        QRectF edgeTextRect(-edgeTextW/2 - 2, -boxHeight/2 - edgeTextH - 2, edgeTextW + 4, edgeTextH);
+                        drawRotatedLabel(painter, edgeLabel, edgeTextRect, edgeBoxCenterVP, boxAngle, 
+                                       QColor(0, 0, 0, 180), QColor(255, 128, 0), edgeFont);
                         
                         // PASS/NG 표시 (티칭 모드에서는 표시 안함)
-                        
-                        painter.restore();
+
                     }
                 }
             }
@@ -4870,4 +4825,83 @@ void CameraView::drawGroupBoundingBox(QPainter& painter, const QList<PatternInfo
 
 QPixmap CameraView::getBackgroundPixmap() const {
     return backgroundPixmap;
+}
+
+// ========== 공통 헬퍼 함수들 ==========
+
+// 회전된 박스 그리기 (중심 기준 회전)
+void CameraView::drawRotatedBox(QPainter& painter, const QRectF& rect, const QPointF& center, 
+                                 double angle, const QPen& pen, const QBrush& brush) {
+    painter.save();
+    painter.translate(center);
+    painter.rotate(angle);
+    painter.translate(-center);
+    
+    painter.setPen(pen);
+    painter.setBrush(brush);
+    painter.drawRect(rect);
+    
+    painter.restore();
+}
+
+// 회전된 텍스트 라벨 그리기 (배경 + 텍스트)
+void CameraView::drawRotatedLabel(QPainter& painter, const QString& text, const QRectF& rect,
+                                   const QPointF& center, double angle, const QColor& bgColor,
+                                   const QColor& textColor, const QFont& font) {
+    painter.save();
+    painter.translate(center);
+    painter.rotate(angle);
+    painter.translate(-center);
+    
+    painter.setFont(font);
+    painter.fillRect(rect, QBrush(bgColor));
+    painter.setPen(textColor);
+    painter.drawText(rect, Qt::AlignCenter, text);
+    
+    painter.restore();
+}
+
+// 노란색 바운딩 박스 그리기 (축정렬, 회전 투영 적용)
+void CameraView::drawYellowBoundingBox(QPainter& painter, const QSizeF& originalSize, 
+                                        const QPointF& center, double angle, double scale) {
+    // 회전 투영 적용
+    double radians = angle * M_PI / 180.0;
+    double cosA = std::abs(std::cos(radians));
+    double sinA = std::abs(std::sin(radians));
+    double projX = originalSize.width() * cosA + originalSize.height() * sinA;
+    double projY = originalSize.width() * sinA + originalSize.height() * cosA;
+    
+    // 스케일 적용
+    double boxWidth = projX * scale;
+    double boxHeight = projY * scale;
+    
+    // 축정렬 박스 그리기
+    painter.setPen(QPen(QColor(255, 255, 0), 1.5));
+    painter.setBrush(Qt::NoBrush);
+    
+    QPointF topLeft(center.x() - boxWidth/2, center.y() - boxHeight/2);
+    QPointF topRight(center.x() + boxWidth/2, center.y() - boxHeight/2);
+    QPointF bottomLeft(center.x() - boxWidth/2, center.y() + boxHeight/2);
+    QPointF bottomRight(center.x() + boxWidth/2, center.y() + boxHeight/2);
+    
+    QPolygonF polygon;
+    polygon << topLeft << topRight << bottomRight << bottomLeft;
+    painter.drawPolygon(polygon);
+}
+
+// PASS/NG 라벨 그리기
+void CameraView::drawPassNGLabel(QPainter& painter, bool passed, const QRectF& rect,
+                                  const QFont& font) {
+    QString text = passed ? "PASS" : "NG";
+    QColor color = passed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+    
+    painter.setFont(font);
+    QFontMetrics fm(font);
+    int textW = fm.horizontalAdvance(text);
+    int textH = fm.height();
+    
+    QRectF bgRect(rect.center().x() - textW/2 - 2, rect.y(), textW + 4, textH);
+    painter.fillRect(bgRect, QBrush(QColor(0, 0, 0, 180)));
+    painter.setPen(color);
+    painter.drawText(bgRect, Qt::AlignCenter, text);
 }

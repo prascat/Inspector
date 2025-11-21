@@ -359,6 +359,16 @@ private:
     void drawStripContourPoints(QPainter& painter, const InspectionResult& result,
                                  const QUuid& patternId);
     
+    // 공통 헬퍼 함수들
+    void drawRotatedBox(QPainter& painter, const QRectF& rect, const QPointF& center,
+                        double angle, const QPen& pen, const QBrush& brush = Qt::NoBrush);
+    void drawRotatedLabel(QPainter& painter, const QString& text, const QRectF& rect,
+                          const QPointF& center, double angle, const QColor& bgColor,
+                          const QColor& textColor, const QFont& font);
+    void drawYellowBoundingBox(QPainter& painter, const QSizeF& originalSize,
+                               const QPointF& center, double angle, double scale);
+    void drawPassNGLabel(QPainter& painter, bool passed, const QRectF& rect, const QFont& font);
+    
     // 그룹 바운딩 박스 그리기 함수
     void drawGroupBoundingBox(QPainter& painter, const QList<PatternInfo>& groupPatterns);
 
