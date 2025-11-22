@@ -2230,82 +2230,36 @@ void CameraView::drawINSStripVisualization(QPainter& painter, const InspectionRe
                     
                     painter.restore();
                 }
-                
-                // REAR 검은색 검출 영역 표시 (회전 변환 밖에서)
-                if (result.stripRearBlackRegionPoints.contains(patternId)) {
-                    const QList<QPoint>& rearBlackPoints = result.stripRearBlackRegionPoints[patternId];
-                    
-                    if (!rearBlackPoints.isEmpty() && result.stripRearBoxCenter.contains(patternId) && result.stripRearBoxSize.contains(patternId)) {
-                        QPointF rearBoxCenterScene = result.stripRearBoxCenter[patternId];
-                        QSizeF rearBoxSize = result.stripRearBoxSize[patternId];  // ImageProcessor가 계산한 바운딩 박스 크기
-                        
-                        // zoom scale 계산
-                        QTransform t = transform();
-                        double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
-                        
-                        // 노란색 박스는 검사 범위 (회전된 cyan을 담을 수 있는 축정렬 박스)
-                        // 회전각도를 고려한 bounding box 계산
-                        double w = rearBoxSize.width();
-                        double h = rearBoxSize.height();
-                        double projX = std::abs(w * cosA) + std::abs(h * sinA);
-                        double projY = std::abs(w * sinA) + std::abs(h * cosA);
-                        
-                        double boxWidth = projX * currentScale;
-                        double boxHeight = projY * currentScale;
-                        
-
-                        
-                        // 박스 bounding box 그리기 (노란색 테두리) - 축정렬 사각형(회전 없음)
-                        painter.setPen(QPen(QColor(255, 255, 0), 1.5));  // 노란색, 더 얇게
-                        painter.setBrush(Qt::NoBrush);
-                        
-                        // 4개 포인트 계산 (viewport 좌표계에서) - 회전하지 않음
-                        QPointF topLeft(rearBoxCenterVP.x() - boxWidth/2, rearBoxCenterVP.y() - boxHeight/2);
-                        QPointF topRight(rearBoxCenterVP.x() + boxWidth/2, rearBoxCenterVP.y() - boxHeight/2);
-                        QPointF bottomLeft(rearBoxCenterVP.x() - boxWidth/2, rearBoxCenterVP.y() + boxHeight/2);
-                        QPointF bottomRight(rearBoxCenterVP.x() + boxWidth/2, rearBoxCenterVP.y() + boxHeight/2);
-                        
-                        // 4개 포인트를 연결하는 사각형 그리기 (축정렬)
-                        QPolygonF polygon;
-                        polygon << topLeft << topRight << bottomRight << bottomLeft;
-                        painter.drawPolygon(polygon);
-                        
-                        painter.setPen(Qt::NoPen);
-                        painter.setBrush(QColor(255, 0, 0, 200));  // 더 불투명하게
-                        
-                        // 각도 고려한 포인트 필터링
-                        double angleRad = patternInfo->angle * M_PI / 180.0;
-                        double cosA = std::cos(angleRad);
-                        double sinA = std::sin(angleRad);
-                        
-                        for (const QPoint& pt : rearBlackPoints) {
-                            // 박스 중심에서의 상대 좌표
-                            double dx = pt.x() - rearBoxCenterScene.x();
-                            double dy = pt.y() - rearBoxCenterScene.y();
-                            
-                            // 역회전 변환 (박스의 로컬 좌표계로)
-                            double localX = dx * cosA + dy * sinA;
-                            double localY = -dx * sinA + dy * cosA;
-                            
-                            // 원본 박스 크기로 체크 (항상 원본 크기 사용)
-                            double origWidth = patternInfo->stripRearThicknessBoxWidth;
-                            double origHeight = patternInfo->stripRearThicknessBoxHeight;
-                            
-                            // 로컬 좌표가 원본 박스 범위 내에 있는지 체크
-                            if (std::abs(localX) <= origWidth/2.0 && std::abs(localY) <= origHeight/2.0) {
-                                QPointF ptScene(pt.x(), pt.y());
-                                QPointF ptVP = mapFromScene(ptScene);
-                                painter.drawEllipse(ptVP, 2.0, 2.0);
-                            }
-                        }
-                    }
-                }
             }
             
-    // ===== 3. FRONT 박스 시각화 (stripGradientStartPercent 위치) =====
-            if (result.stripFrontBoxSize.contains(patternId)) {
-                // INS 박스의 회전된 좌표들을 얻기 위해 4개 모서리점 변환
-                QPointF topLeftScene = inspRectScene.topLeft();
+    // ===== 스캔 라인 시각화 (디버그) =====
+    // FRONT 스캔 라인
+    if (result.stripFrontScanLines.contains(patternId)) {
+        const QList<QPair<QPoint, QPoint>>& scanLines = result.stripFrontScanLines[patternId];
+        painter.setPen(QPen(QColor(0, 255, 255, 100), 1));  // 반투명 시안색
+        
+        for (const auto& line : scanLines) {
+            QPointF pt1VP = mapFromScene(QPointF(line.first.x(), line.first.y()));
+            QPointF pt2VP = mapFromScene(QPointF(line.second.x(), line.second.y()));
+            painter.drawLine(pt1VP, pt2VP);
+        }
+    }
+    
+    // REAR 스캔 라인
+    if (result.stripRearScanLines.contains(patternId)) {
+        const QList<QPair<QPoint, QPoint>>& scanLines = result.stripRearScanLines[patternId];
+        painter.setPen(QPen(QColor(255, 255, 0, 100), 1));  // 반투명 노란색
+        
+        for (const auto& line : scanLines) {
+            QPointF pt1VP = mapFromScene(QPointF(line.first.x(), line.first.y()));
+            QPointF pt2VP = mapFromScene(QPointF(line.second.x(), line.second.y()));
+            painter.drawLine(pt1VP, pt2VP);
+        }
+    }
+            
+    // ===== 4. STRIP 4개 컨투어 포인트 그리기 =====
+            if (result.stripPointsValid.value(patternId, false)) {
+                QVector<QPoint> stripPoints;
                 QPointF topRightScene(inspRectScene.right(), inspRectScene.top());
                 QPointF bottomLeftScene(inspRectScene.left(), inspRectScene.bottom());
                 QPointF bottomRightScene = inspRectScene.bottomRight();
@@ -2500,76 +2454,6 @@ void CameraView::drawINSStripVisualization(QPainter& painter, const InspectionRe
                     
                     painter.restore();
                 }
-                
-                // FRONT 검은색 검출 영역 표시 (회전 변환 밖에서)
-                if (result.stripFrontBlackRegionPoints.contains(patternId)) {
-                    const QList<QPoint>& frontBlackPoints = result.stripFrontBlackRegionPoints[patternId];
-                    
-                    if (!frontBlackPoints.isEmpty() && result.stripFrontBoxCenter.contains(patternId) && result.stripFrontBoxSize.contains(patternId)) {
-                        QPointF frontBoxCenterScene = result.stripFrontBoxCenter[patternId];
-                        QSizeF frontBoxSize = result.stripFrontBoxSize[patternId];  // ImageProcessor가 계산한 바운딩 박스 크기
-                        
-                        // zoom scale 계산
-                        QTransform t = transform();
-                        double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
-                        
-                        // 노란색 박스는 검사 범위 (회전된 cyan을 담을 수 있는 축정렬 박스)
-                        // 회전각도를 고려한 bounding box 계산
-                        double w = frontBoxSize.width();
-                        double h = frontBoxSize.height();
-                        double projX = std::abs(w * cosA) + std::abs(h * sinA);
-                        double projY = std::abs(w * sinA) + std::abs(h * cosA);
-                        
-                        double boxWidth = projX * currentScale;
-                        double boxHeight = projY * currentScale;
-                        
-
-                        
-                        // 박스 bounding box 그리기 (노란색 테두리) - 축정렬 사각형(회전 없음)
-                        painter.setPen(QPen(QColor(255, 255, 0), 1.5));  // 노란색, 더 얇게
-                        painter.setBrush(Qt::NoBrush);
-                        
-                        // 4개 포인트 계산 (viewport 좌표계에서) - 회전하지 않음
-                        QPointF topLeft(frontBoxCenterVP.x() - boxWidth/2, frontBoxCenterVP.y() - boxHeight/2);
-                        QPointF topRight(frontBoxCenterVP.x() + boxWidth/2, frontBoxCenterVP.y() - boxHeight/2);
-                        QPointF bottomLeft(frontBoxCenterVP.x() - boxWidth/2, frontBoxCenterVP.y() + boxHeight/2);
-                        QPointF bottomRight(frontBoxCenterVP.x() + boxWidth/2, frontBoxCenterVP.y() + boxHeight/2);
-                        
-                        // 4개 포인트를 연결하는 사각형 그리기 (축정렬)
-                        QPolygonF polygon;
-                        polygon << topLeft << topRight << bottomRight << bottomLeft;
-                        painter.drawPolygon(polygon);
-                        
-                        painter.setPen(Qt::NoPen);
-                        painter.setBrush(QColor(255, 0, 0, 200));  // 더 불투명하게
-                        
-                        // 각도 고려한 포인트 필터링
-                        double angleRad = patternInfo->angle * M_PI / 180.0;
-                        double cosA = std::cos(angleRad);
-                        double sinA = std::sin(angleRad);
-                        
-                        for (const QPoint& pt : frontBlackPoints) {
-                            // 박스 중심에서의 상대 좌표
-                            double dx = pt.x() - frontBoxCenterScene.x();
-                            double dy = pt.y() - frontBoxCenterScene.y();
-                            
-                            // 역회전 변환 (박스의 로컬 좌표계로)
-                            double localX = dx * cosA + dy * sinA;
-                            double localY = -dx * sinA + dy * cosA;
-                            
-                            // 원본 박스 크기로 체크 (항상 원본 크기 사용)
-                            double origWidth = patternInfo->stripThicknessBoxWidth;
-                            double origHeight = patternInfo->stripThicknessBoxHeight;
-                            
-                            // 로컬 좌표가 원본 박스 범위 내에 있는지 체크
-                            if (std::abs(localX) <= origWidth/2.0 && std::abs(localY) <= origHeight/2.0) {
-                                QPointF ptScene(pt.x(), pt.y());
-                                QPointF ptVP = mapFromScene(ptScene);
-                                painter.drawEllipse(ptVP, 2.0, 2.0);
-                            }
-                        }
-                    }
-                }
             }
             
     // ===== 4. STRIP 4개 컨투어 포인트 그리기 =====
@@ -2627,6 +2511,31 @@ void CameraView::drawINSStripVisualization(QPainter& painter, const InspectionRe
                     }
                 }
             }
+            
+    // ===== 스캔 라인 시각화 (디버그) =====
+    // FRONT 스캔 라인
+    if (result.stripFrontScanLines.contains(patternId)) {
+        const QList<QPair<QPoint, QPoint>>& scanLines = result.stripFrontScanLines[patternId];
+        painter.setPen(QPen(QColor(0, 255, 255, 100), 1));  // 반투명 시안색
+        
+        for (const auto& line : scanLines) {
+            QPointF pt1VP = mapFromScene(QPointF(line.first.x(), line.first.y()));
+            QPointF pt2VP = mapFromScene(QPointF(line.second.x(), line.second.y()));
+            painter.drawLine(pt1VP, pt2VP);
+        }
+    }
+    
+    // REAR 스캔 라인
+    if (result.stripRearScanLines.contains(patternId)) {
+        const QList<QPair<QPoint, QPoint>>& scanLines = result.stripRearScanLines[patternId];
+        painter.setPen(QPen(QColor(255, 255, 0, 100), 1));  // 반투명 노란색
+        
+        for (const auto& line : scanLines) {
+            QPointF pt1VP = mapFromScene(QPointF(line.first.x(), line.first.y()));
+            QPointF pt2VP = mapFromScene(QPointF(line.second.x(), line.second.y()));
+            painter.drawLine(pt1VP, pt2VP);
+        }
+    }
             
             // 두께 검사 결과는 박스 채우기로 표현 (아래 FRONT/REAR 박스 시각화에서 처리)
             

@@ -1719,22 +1719,49 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             int boxTopY = boxCenterY - actualBoxHeight/2;
             int boxBottomY = boxCenterY + actualBoxHeight/2;
             
-            // 박스 영역에서 세로 방향으로 스캔하여 검은색 픽셀 두께 측정
-            // 박스 전체 너비를 정확히 채우도록 스캔
+            // 스캔 라인 저장용 벡터 (디버그/시각화)
+            std::vector<std::pair<cv::Point, cv::Point>> scanLines;
+            
+            // 박스 영역에서 회전 각도를 고려하여 스캔
+            // angle이 있으면 회전된 방향으로 스캔해야 함
             
             int firstDx = 0;
             int lastDx = actualBoxWidth;
             
+            // 각도를 라디안으로 변환
+            double frontAngleRad = angle * M_PI / 180.0;
+            double cosAngle = std::cos(frontAngleRad);
+            double sinAngle = std::sin(frontAngleRad);
+            
             for (int dx = firstDx; dx < lastDx; dx += 1) {
                 cv::Point scanTop, scanBottom;
                 
-                // ROI는 회전이 없으므로 단순 수직 스캔 (회전 변환 제거)
-                int scanX = boxCenterX - actualBoxWidth/2 + dx;
-                int scanTopY = boxCenterY - actualBoxHeight/2 + 1;
-                int scanBottomY = boxCenterY + actualBoxHeight/2 - 1;
-                
-                scanTop = cv::Point(scanX, scanTopY);
-                scanBottom = cv::Point(scanX, scanBottomY);
+                if (std::abs(angle) < 0.1) {
+                    // 각도가 거의 없으면 단순 수직 스캔
+                    int scanX = boxCenterX - actualBoxWidth/2 + dx;
+                    int scanTopY = boxCenterY - actualBoxHeight/2 + 1;
+                    int scanBottomY = boxCenterY + actualBoxHeight/2 - 1;
+                    
+                    scanTop = cv::Point(scanX, scanTopY);
+                    scanBottom = cv::Point(scanX, scanBottomY);
+                } else {
+                    // 각도가 있으면 회전된 방향으로 스캔
+                    // 박스 로컬 좌표계에서의 위치
+                    int localX = dx - actualBoxWidth/2;
+                    int localTopY = -actualBoxHeight/2 + 1;
+                    int localBottomY = actualBoxHeight/2 - 1;
+                    
+                    // 회전 변환 적용 (박스 중심 기준)
+                    double topXRot = localX * cosAngle - localTopY * sinAngle + boxCenterX;
+                    double topYRot = localX * sinAngle + localTopY * cosAngle + boxCenterY;
+                    double bottomXRot = localX * cosAngle - localBottomY * sinAngle + boxCenterX;
+                    double bottomYRot = localX * sinAngle + localBottomY * cosAngle + boxCenterY;
+                    
+                    scanTop = cv::Point(static_cast<int>(std::round(topXRot)), 
+                                       static_cast<int>(std::round(topYRot)));
+                    scanBottom = cv::Point(static_cast<int>(std::round(bottomXRot)), 
+                                          static_cast<int>(std::round(bottomYRot)));
+                }
                 
                 // 스캔 라인이 이미지 범위를 벗어나면 건너뛰기
                 if (scanTop.x < 0 || scanTop.y < 0 || scanBottom.x < 0 || scanBottom.y < 0 ||
@@ -1742,6 +1769,9 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     scanBottom.x >= processed.cols || scanBottom.y >= processed.rows) {
                     continue;
                 }
+                
+                // 스캔 라인 저장 (시각화용)
+                scanLines.push_back(std::make_pair(scanTop, scanBottom));
                 
                 // 모든 스캔 라인의 시작-끝점을 저장 (검은색 유무 관계없이)
                 blackPixelPoints.push_back(scanTop);
@@ -1973,8 +2003,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         int boxTopY_rear = boxCenterY_rear - actualBoxHeight_rear/2;
         int boxBottomY_rear = boxCenterY_rear + actualBoxHeight_rear/2;
         
-        // 박스 영역에서 세로 방향으로 스캔하여 검은색 픽셀 두께 측정 (REAR)
-        // 박스 전체 너비를 정확히 채우도록 스캔
+        // 박스 영역에서 회전 각도를 고려하여 스캔 (REAR)
         
         int firstDx_rear = 0;
         int lastDx_rear = actualBoxWidth_rear;
@@ -1982,13 +2011,32 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         for (int dx = firstDx_rear; dx < lastDx_rear; dx += 1) {
             cv::Point scanTop_rear, scanBottom_rear;
             
-            // ROI는 회전이 없으므로 단순 수직 스캔 (회전 변환 제거)
-            int scanX_rear = boxCenterX_rear - actualBoxWidth_rear/2 + dx;
-            int scanTopY_rear = boxCenterY_rear - actualBoxHeight_rear/2 + 1;
-            int scanBottomY_rear = boxCenterY_rear + actualBoxHeight_rear/2 - 1;
-            
-            scanTop_rear = cv::Point(scanX_rear, scanTopY_rear);
-            scanBottom_rear = cv::Point(scanX_rear, scanBottomY_rear);
+            if (std::abs(angle) < 0.1) {
+                // 각도가 거의 없으면 단순 수직 스캔
+                int scanX_rear = boxCenterX_rear - actualBoxWidth_rear/2 + dx;
+                int scanTopY_rear = boxCenterY_rear - actualBoxHeight_rear/2 + 1;
+                int scanBottomY_rear = boxCenterY_rear + actualBoxHeight_rear/2 - 1;
+                
+                scanTop_rear = cv::Point(scanX_rear, scanTopY_rear);
+                scanBottom_rear = cv::Point(scanX_rear, scanBottomY_rear);
+            } else {
+                // 각도가 있으면 회전된 방향으로 스캔
+                // 박스 로컬 좌표계에서의 위치
+                int localX = dx - actualBoxWidth_rear/2;
+                int localTopY = -actualBoxHeight_rear/2 + 1;
+                int localBottomY = actualBoxHeight_rear/2 - 1;
+                
+                // 회전 변환 적용 (박스 중심 기준)
+                double topXRot = localX * cosAngle - localTopY * sinAngle + boxCenterX_rear;
+                double topYRot = localX * sinAngle + localTopY * cosAngle + boxCenterY_rear;
+                double bottomXRot = localX * cosAngle - localBottomY * sinAngle + boxCenterX_rear;
+                double bottomYRot = localX * sinAngle + localBottomY * cosAngle + boxCenterY_rear;
+                
+                scanTop_rear = cv::Point(static_cast<int>(std::round(topXRot)), 
+                                       static_cast<int>(std::round(topYRot)));
+                scanBottom_rear = cv::Point(static_cast<int>(std::round(bottomXRot)), 
+                                          static_cast<int>(std::round(bottomYRot)));
+            }
             
             // 스캔 라인이 이미지 범위를 벗어나면 건너뛰기
             if (scanTop_rear.x < 0 || scanTop_rear.y < 0 || scanBottom_rear.x < 0 || scanBottom_rear.y < 0 ||

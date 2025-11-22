@@ -1823,6 +1823,99 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     result.stripFrontBlackRegionPoints[pattern.id] = frontBlackPointsConverted;
     result.stripRearBlackRegionPoints[pattern.id] = rearBlackPointsConverted;
     
+    // 스캔 라인 생성 및 저장 (시각화용)
+    QList<QPair<QPoint, QPoint>> frontScanLinesAbs;
+    QList<QPair<QPoint, QPoint>> rearScanLinesAbs;
+    
+    // FRONT 스캔 라인 재생성
+    if (frontBoxSz.width > 0 && frontBoxSz.height > 0) {
+        double angleRad = pattern.angle * M_PI / 180.0;
+        double cosAngle = std::cos(angleRad);
+        double sinAngle = std::sin(angleRad);
+        
+        int actualBoxWidth = frontBoxSz.width;
+        int actualBoxHeight = frontBoxSz.height;
+        int boxCenterX = frontBoxCenterROI.x;
+        int boxCenterY = frontBoxCenterROI.y;
+        
+        for (int dx = 0; dx < actualBoxWidth; dx += 5) {  // 5픽셀 간격으로 샘플링 (성능 고려)
+            cv::Point scanTop, scanBottom;
+            
+            if (std::abs(pattern.angle) < 0.1) {
+                int scanX = boxCenterX - actualBoxWidth/2 + dx;
+                int scanTopY = boxCenterY - actualBoxHeight/2 + 1;
+                int scanBottomY = boxCenterY + actualBoxHeight/2 - 1;
+                scanTop = cv::Point(scanX, scanTopY);
+                scanBottom = cv::Point(scanX, scanBottomY);
+            } else {
+                int localX = dx - actualBoxWidth/2;
+                int localTopY = -actualBoxHeight/2 + 1;
+                int localBottomY = actualBoxHeight/2 - 1;
+                
+                double topXRot = localX * cosAngle - localTopY * sinAngle + boxCenterX;
+                double topYRot = localX * sinAngle + localTopY * cosAngle + boxCenterY;
+                double bottomXRot = localX * cosAngle - localBottomY * sinAngle + boxCenterX;
+                double bottomYRot = localX * sinAngle + localBottomY * cosAngle + boxCenterY;
+                
+                scanTop = cv::Point(static_cast<int>(std::round(topXRot)), 
+                                   static_cast<int>(std::round(topYRot)));
+                scanBottom = cv::Point(static_cast<int>(std::round(bottomXRot)), 
+                                      static_cast<int>(std::round(bottomYRot)));
+            }
+            
+            // ROI 좌표를 절대 좌표로 변환
+            QPoint absTop(bboxRoi.x + scanTop.x, bboxRoi.y + scanTop.y);
+            QPoint absBottom(bboxRoi.x + scanBottom.x, bboxRoi.y + scanBottom.y);
+            frontScanLinesAbs.append(qMakePair(absTop, absBottom));
+        }
+    }
+    
+    // REAR 스캔 라인 재생성
+    if (rearBoxSz.width > 0 && rearBoxSz.height > 0) {
+        double angleRad = pattern.angle * M_PI / 180.0;
+        double cosAngle = std::cos(angleRad);
+        double sinAngle = std::sin(angleRad);
+        
+        int actualBoxWidth = rearBoxSz.width;
+        int actualBoxHeight = rearBoxSz.height;
+        int boxCenterX = rearBoxCenterROI.x;
+        int boxCenterY = rearBoxCenterROI.y;
+        
+        for (int dx = 0; dx < actualBoxWidth; dx += 5) {  // 5픽셀 간격으로 샘플링
+            cv::Point scanTop, scanBottom;
+            
+            if (std::abs(pattern.angle) < 0.1) {
+                int scanX = boxCenterX - actualBoxWidth/2 + dx;
+                int scanTopY = boxCenterY - actualBoxHeight/2 + 1;
+                int scanBottomY = boxCenterY + actualBoxHeight/2 - 1;
+                scanTop = cv::Point(scanX, scanTopY);
+                scanBottom = cv::Point(scanX, scanBottomY);
+            } else {
+                int localX = dx - actualBoxWidth/2;
+                int localTopY = -actualBoxHeight/2 + 1;
+                int localBottomY = actualBoxHeight/2 - 1;
+                
+                double topXRot = localX * cosAngle - localTopY * sinAngle + boxCenterX;
+                double topYRot = localX * sinAngle + localTopY * cosAngle + boxCenterY;
+                double bottomXRot = localX * cosAngle - localBottomY * sinAngle + boxCenterX;
+                double bottomYRot = localX * sinAngle + localBottomY * cosAngle + boxCenterY;
+                
+                scanTop = cv::Point(static_cast<int>(std::round(topXRot)), 
+                                   static_cast<int>(std::round(topYRot)));
+                scanBottom = cv::Point(static_cast<int>(std::round(bottomXRot)), 
+                                      static_cast<int>(std::round(bottomYRot)));
+            }
+            
+            // ROI 좌표를 절대 좌표로 변환
+            QPoint absTop(bboxRoi.x + scanTop.x, bboxRoi.y + scanTop.y);
+            QPoint absBottom(bboxRoi.x + scanBottom.x, bboxRoi.y + scanBottom.y);
+            rearScanLinesAbs.append(qMakePair(absTop, absBottom));
+        }
+    }
+    
+    result.stripFrontScanLines[pattern.id] = frontScanLinesAbs;
+    result.stripRearScanLines[pattern.id] = rearScanLinesAbs;
+    
     // ImageProcessor에서 이미 계산된 두께 값을 그대로 사용
     // (잘못된 Y좌표 범위 계산 제거됨)
     

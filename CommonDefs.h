@@ -95,6 +95,10 @@ struct InspectionResult {
     QMap<QUuid, QList<QPoint>> stripFrontBlackRegionPoints;  // FRONT 검은색 검출 구간만 (빨간색)
     QMap<QUuid, QList<QPoint>> stripRearBlackRegionPoints;   // REAR 검은색 검출 구간만 (빨간색)
     
+    // STRIP 스캔 라인 정보 (디버그/시각화용)
+    QMap<QUuid, QList<QPair<QPoint, QPoint>>> stripFrontScanLines;  // FRONT 모든 스캔 라인 (시작점, 끝점)
+    QMap<QUuid, QList<QPair<QPoint, QPoint>>> stripRearScanLines;   // REAR 모든 스캔 라인 (시작점, 끝점)
+    
     // STRIP 실제 측정 지점 (절대좌표 - 검사 로그의 실제 검출된 위치)
     QMap<QUuid, QPoint> stripStartPoint;            // STRIP 측정 시작점 (절대좌표)
     QMap<QUuid, QPoint> stripMaxGradientPoint;      // STRIP 최대 Gradient 지점 (절대좌표)
