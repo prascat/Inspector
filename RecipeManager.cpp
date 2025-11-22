@@ -925,8 +925,8 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     // EDGE 검사 관련 속성 저장
     xml.writeAttribute("edgeEnabled", pattern.edgeEnabled ? "true" : "false");
     xml.writeAttribute("edgeOffsetX", QString::number(pattern.edgeOffsetX));
-    xml.writeAttribute("edgeBoxWidth", QString::number(pattern.edgeBoxWidth));
-    xml.writeAttribute("edgeBoxHeight", QString::number(pattern.edgeBoxHeight));
+    xml.writeAttribute("stripEdgeBoxWidth", QString::number(pattern.stripEdgeBoxWidth));
+    xml.writeAttribute("stripEdgeBoxHeight", QString::number(pattern.stripEdgeBoxHeight));
     xml.writeAttribute("edgeMaxOutliers", QString::number(pattern.edgeMaxOutliers));
     xml.writeAttribute("edgeDistanceMax", QString::number(pattern.edgeDistanceMax, 'f', 2));
     xml.writeAttribute("edgeStartPercent", QString::number(pattern.edgeStartPercent));
@@ -1647,14 +1647,14 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
         pattern.edgeOffsetX = edgeOffsetXStr.toInt();
     } // 비어있으면 CommonDefs.h의 기본값(75) 사용
     
-    QString edgeBoxWidthStr = xml.attributes().value("edgeBoxWidth").toString();
+    QString edgeBoxWidthStr = xml.attributes().value("stripEdgeBoxWidth").toString();
     if (!edgeBoxWidthStr.isEmpty()) {
-        pattern.edgeBoxWidth = edgeBoxWidthStr.toInt();
+        pattern.stripEdgeBoxWidth = edgeBoxWidthStr.toInt();
     } // 비어있으면 CommonDefs.h의 기본값(90) 사용
     
-    QString edgeBoxHeightStr = xml.attributes().value("edgeBoxHeight").toString();
+    QString edgeBoxHeightStr = xml.attributes().value("stripEdgeBoxHeight").toString();
     if (!edgeBoxHeightStr.isEmpty()) {
-        pattern.edgeBoxHeight = edgeBoxHeightStr.toInt();
+        pattern.stripEdgeBoxHeight = edgeBoxHeightStr.toInt();
     } // 비어있으면 CommonDefs.h의 기본값(150) 사용
     
     QString edgeMaxOutliersStr = xml.attributes().value("edgeMaxOutliers").toString();

@@ -661,6 +661,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                                            double* stripMeasuredLengthPx,
                                            cv::Point* frontBoxCenter, cv::Size* frontBoxSize,
                                            cv::Point* rearBoxCenter, cv::Size* rearBoxSize,
+                                           cv::Point* edgeBoxCenter, cv::Size* edgeBoxSize,
                                            cv::Point* frontMinScanTop, cv::Point* frontMinScanBottom,
                                            cv::Point* frontMaxScanTop, cv::Point* frontMaxScanBottom,
                                            cv::Point* rearMinScanTop, cv::Point* rearMinScanBottom,
@@ -725,8 +726,8 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
     // EDGE 관련 로컬 파라미터 (패턴에서 가져옴)
     bool edgeEnabled = pattern.edgeEnabled;
     int edgeOffsetX = pattern.edgeOffsetX;
-    int edgeBoxWidth = pattern.edgeBoxWidth;
-    int edgeBoxHeight = pattern.edgeBoxHeight;
+    int edgeBoxWidth = pattern.stripEdgeBoxWidth;
+    int edgeBoxHeight = pattern.stripEdgeBoxHeight;
     int edgeMaxOutliers = pattern.edgeMaxOutliers;
     // 이전 시그니처의 out-parameters (placeholder)
     int* edgeIrregularityCount = nullptr;
@@ -2255,12 +2256,18 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         if (stripLengthEndPoint) *stripLengthEndPoint = cv::Point(0, 0);
         
         // EDGE 검사 영역 중심점 계산 (STRIP 길이 측정용)
+        // 기본 위치: 패턴 왼쪽에서 +30, edgeOffsetX는 이 기본값에서의 오프셋
         cv::Point2f edgeCenter(roiImage.cols / 2.0f, roiImage.rows / 2.0f);
-        float edgeOffsetFromCenter = (-patternWidth/2.0f) + edgeOffsetX;
-        cv::Point edgeBoxCenter = cv::Point(
-            static_cast<int>(edgeCenter.x + edgeOffsetFromCenter),
+        float baseEdgeOffsetFromCenter = -(patternWidth / 2.0f) + 30.0f;  // 패턴 왼쪽에서 +30
+        float totalEdgeOffsetFromCenter = baseEdgeOffsetFromCenter + edgeOffsetX;  // 기본값 + 사용자 오프셋
+        cv::Point edgeBoxCenterLocal = cv::Point(
+            static_cast<int>(edgeCenter.x + totalEdgeOffsetFromCenter),
             static_cast<int>(edgeCenter.y)
         );
+        
+        // EDGE 박스 중심과 크기 반환 (ROI 좌표계)
+        if (edgeBoxCenter) *edgeBoxCenter = edgeBoxCenterLocal;
+        if (edgeBoxSize) *edgeBoxSize = cv::Size(edgeBoxWidth, edgeBoxHeight);
         
         if (pattern.stripLengthEnabled && gradientPoints.size() >= 4) {
             // P3(상단 두번째), P4(하단 두번째) 점들 사용
@@ -2324,7 +2331,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 
             } else {
                 // 폴백: EDGE 검사 영역 중심점 사용
-                edgeStartPoint = edgeBoxCenter;
+                edgeStartPoint = edgeBoxCenterLocal;
             }
             
             // 두 점 사이의 픽셀 거리 계산
@@ -2376,7 +2383,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
 
                 
                 // 이미 계산된 EDGE 검사 박스 중심점 사용
-                cv::Point2f edgeCenter(edgeBoxCenter.x, edgeBoxCenter.y);
+                cv::Point2f edgeCenter(edgeBoxCenterLocal.x, edgeBoxCenterLocal.y);
                 
                 // EDGE 검사 박스 꼭짓점 계산 (수직 박스, 회전 없음)
                 float halfWidth = edgeBoxWidth / 2.0f;

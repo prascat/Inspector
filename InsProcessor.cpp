@@ -1663,8 +1663,8 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         
     // performStripInspection 호출을 간소화: PatternInfo 전체를 전달
     std::vector<cv::Point> frontBlackRegionPoints, rearBlackRegionPoints; // 검은색 구간 포인트 (빨간색 표시용)
-    cv::Point frontBoxCenterROI, rearBoxCenterROI;  // ROI 좌표계의 박스 중심
-    cv::Size frontBoxSz, rearBoxSz;  // 박스 크기
+    cv::Point frontBoxCenterROI, rearBoxCenterROI, edgeBoxCenterROI;  // ROI 좌표계의 박스 중심
+    cv::Size frontBoxSz, rearBoxSz, edgeBoxSz;  // 박스 크기
     
     // 최소/최대 스캔 라인
     cv::Point frontMinScanTop, frontMinScanBottom, frontMaxScanTop, frontMaxScanBottom;
@@ -1682,6 +1682,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
                                     &stripMeasuredLengthPx,
                                     &frontBoxCenterROI, &frontBoxSz,
                                     &rearBoxCenterROI, &rearBoxSz,
+                                    &edgeBoxCenterROI, &edgeBoxSz,
                                     &frontMinScanTop, &frontMinScanBottom, &frontMaxScanTop, &frontMaxScanBottom,
                                     &rearMinScanTop, &rearMinScanBottom, &rearMaxScanTop, &rearMaxScanBottom,
                                     &frontScanLinesROI, &rearScanLinesROI);
@@ -1901,14 +1902,21 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     
     QPointF frontBoxCenterScene(0, 0);
     QPointF rearBoxCenterScene(0, 0);
+    QPointF edgeBoxCenterScene(0, 0);
     
     frontBoxCenterScene = QPointF(frontBoxCenterROI.x + offset.x, frontBoxCenterROI.y + offset.y);
     rearBoxCenterScene = QPointF(rearBoxCenterROI.x + offset.x, rearBoxCenterROI.y + offset.y);
+    edgeBoxCenterScene = QPointF(edgeBoxCenterROI.x + offset.x, edgeBoxCenterROI.y + offset.y);
     
     result.stripFrontBoxCenter[pattern.id] = frontBoxCenterScene;
-    result.stripFrontBoxSize[pattern.id] = QSizeF(frontBoxSz.width, frontBoxSz.height);
+    // 원본 박스 크기 저장 (회전 투영은 CameraView에서 처리)
+    result.stripFrontBoxSize[pattern.id] = QSizeF(pattern.stripThicknessBoxWidth, pattern.stripThicknessBoxHeight);
     result.stripRearBoxCenter[pattern.id] = rearBoxCenterScene;
-    result.stripRearBoxSize[pattern.id] = QSizeF(rearBoxSz.width, rearBoxSz.height);
+    result.stripRearBoxSize[pattern.id] = QSizeF(pattern.stripRearThicknessBoxWidth, pattern.stripRearThicknessBoxHeight);
+    
+    // EDGE 박스도 절대좌표로 저장
+    result.edgeBoxCenter[pattern.id] = edgeBoxCenterScene;
+    result.edgeBoxSize[pattern.id] = QSizeF(pattern.stripEdgeBoxWidth, pattern.stripEdgeBoxHeight);
     
     // STRIP 길이 측정 점들을 절대 좌표로 변환
     QPoint absStripLengthStart = QPoint(stripLengthStartPoint.x + offset.x, stripLengthStartPoint.y + offset.y);
@@ -2006,14 +2014,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         // 이 섹션은 REAR 검사가 실패한 경우 fallback으로 상대좌표를 사용했던 legacy 코드입니다.
         
         // fallback 제거 - 계산된 박스 정보를 신뢰합니다
-        
-        // EDGE 박스 상대좌표 계산 (패턴 왼쪽에서 edgeOffsetX만큼 떨어진 위치)
-        float edgeOffsetX = (-pattern.rect.width()/2.0f) + pattern.edgeOffsetX; // 중심 기준 오프셋
-        QPointF edgeBoxRelativeCenter(edgeOffsetX, 0); // Y는 패턴 중심과 동일
-        result.edgeBoxCenter[pattern.id] = edgeBoxRelativeCenter;
-        
-        // EDGE 박스 크기 저장 (원본 크기 - 회전 투영은 CameraView에서 적용)
-        result.edgeBoxSize[pattern.id] = QSizeF(pattern.edgeBoxWidth, pattern.edgeBoxHeight);
+        // EDGE 박스는 위에서 절대좌표로 이미 저장됨
         
         // EDGE 포인트들을 절대좌표로 변환 (회전 없이 오프셋만 적용)
         QList<QPoint> absoluteEdgePoints;

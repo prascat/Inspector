@@ -238,9 +238,9 @@ struct PatternInfo {
 
     // DIFF 검사 관련 파라미터 (이전 EDGE 검사 파라미터)
     bool edgeEnabled = true;                 // DIFF 검사 활성화 여부
-    int edgeOffsetX = 75;                    // 패턴 왼쪽에서의 오프셋 (픽셀)
-    int edgeBoxWidth = 90;                   // DIFF 검사 박스 너비 (픽셀)
-    int edgeBoxHeight = 150;                 // DIFF 검사 박스 높이 (픽셀)
+    int edgeOffsetX = -50;                   // 패턴 중심에서의 오프셋 (픽셀, 0=패턴왼쪽+30)
+    int stripEdgeBoxWidth = 90;              // DIFF 검사 박스 너비 (픽셀)
+    int stripEdgeBoxHeight = 150;            // DIFF 검사 박스 높이 (픽셀)
     int edgeMaxOutliers = 4;                 // 허용 최대 불량 포인트 개수 (평균선 거리 기준)
     int edgeStartPercent = 3;                // DIFF 시작 제외 퍼센트 (1-50%)
     int edgeEndPercent = 3;                  // DIFF 끝 제외 퍼센트 (1-50%)
@@ -396,6 +396,11 @@ namespace UIColors {
     const QColor INSPECTION_COLOR = QColor("#8BCB8B"); // 연한 초록색 (INS)
     const QColor FILTER_COLOR = QColor("#FFB74D"); // 연한 오렌지색 (FILTER)
     const QColor GROUP_COLOR = QColor("#FF00FF");  // 마젠타 (GROUP)
+    
+    // STRIP 검사 박스 색상
+    const QColor STRIP_EDGE_COLOR = QColor("#FF8C00");   // 주황색 (EDGE)
+    const QColor STRIP_FRONT_COLOR = QColor("#00FFFF");  // 시안색 (FRONT)
+    const QColor STRIP_REAR_COLOR = QColor("#87CEFA");   // 하늘색 (REAR)
     
     // CAM, RUN 등 토글 버튼용 색상 - 더 부드러운 색상으로 변경
     const QColor BTN_CAM_OFF_COLOR = QColor("#E57373");  // 연한 빨간색(OFF)

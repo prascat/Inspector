@@ -5754,7 +5754,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->edgeBoxWidth = value;
+                        pattern->stripEdgeBoxWidth = value;
                         // 메인 카메라뷰만 간단히 갱신 (패턴 전체 업데이트 불필요)
                         cameraView->update();
                     }
@@ -5779,7 +5779,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->edgeBoxHeight = value;
+                        pattern->stripEdgeBoxHeight = value;
                         // 메인 카메라뷰만 간단히 갱신 (패턴 전체 업데이트 불필요)
                         cameraView->update();
                     }
@@ -6651,15 +6651,15 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                     
                     if (insEdgeWidthSlider) {
                         insEdgeWidthSlider->blockSignals(true);
-                        insEdgeWidthSlider->setValue(pattern->edgeBoxWidth);
-                        insEdgeWidthValueLabel->setText(QString("%1px").arg(pattern->edgeBoxWidth));
+                        insEdgeWidthSlider->setValue(pattern->stripEdgeBoxWidth);
+                        insEdgeWidthValueLabel->setText(QString("%1px").arg(pattern->stripEdgeBoxWidth));
                         insEdgeWidthSlider->blockSignals(false);
                     }
                     
                     if (insEdgeHeightSlider) {
                         insEdgeHeightSlider->blockSignals(true);
-                        insEdgeHeightSlider->setValue(pattern->edgeBoxHeight);
-                        insEdgeHeightValueLabel->setText(QString("%1px").arg(pattern->edgeBoxHeight));
+                        insEdgeHeightSlider->setValue(pattern->stripEdgeBoxHeight);
+                        insEdgeHeightValueLabel->setText(QString("%1px").arg(pattern->stripEdgeBoxHeight));
                         insEdgeHeightSlider->blockSignals(false);
                     }
                     
@@ -10884,8 +10884,8 @@ void TeachingWidget::addPattern() {
             // EDGE 검사 관련 기본값 설정
             pattern.edgeEnabled = true;
             pattern.edgeOffsetX = 90;
-            pattern.edgeBoxWidth = 150;
-            pattern.edgeBoxHeight = 150;
+            pattern.stripEdgeBoxWidth = 150;
+            pattern.stripEdgeBoxHeight = 150;
             pattern.edgeMaxOutliers = 5;
             pattern.edgeDistanceMax = 10;
             pattern.edgeStartPercent = 10;

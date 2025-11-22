@@ -84,6 +84,7 @@ public:
                                      double* stripMeasuredLengthPx = nullptr,
                                      cv::Point* frontBoxCenter = nullptr, cv::Size* frontBoxSize = nullptr,
                                      cv::Point* rearBoxCenter = nullptr, cv::Size* rearBoxSize = nullptr,
+                                     cv::Point* edgeBoxCenter = nullptr, cv::Size* edgeBoxSize = nullptr,
                                      cv::Point* frontMinScanTop = nullptr, cv::Point* frontMinScanBottom = nullptr,
                                      cv::Point* frontMaxScanTop = nullptr, cv::Point* frontMaxScanBottom = nullptr,
                                      cv::Point* rearMinScanTop = nullptr, cv::Point* rearMinScanBottom = nullptr,

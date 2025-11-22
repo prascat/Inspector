@@ -2118,7 +2118,7 @@ void CameraView::drawINSStripVisualization(QPainter& painter, const InspectionRe
                     painter.translate(rearBoxCenterVP);
                     painter.rotate(insAngle);
                     
-                    QPen rearPen(QColor(0, 191, 255), 2);
+                    QPen rearPen(UIColors::STRIP_REAR_COLOR, 2);
                     rearPen.setStyle(Qt::DashLine);
                     painter.setPen(rearPen);
                     painter.setBrush(Qt::NoBrush);  // 채우기 없음
@@ -2346,7 +2346,7 @@ void CameraView::drawINSStripVisualization(QPainter& painter, const InspectionRe
                     painter.translate(frontBoxCenterVP);
                     painter.rotate(insAngle);
                     
-                    QPen frontPen(Qt::cyan, 2);
+                    QPen frontPen(UIColors::STRIP_FRONT_COLOR, 2);
                     frontPen.setStyle(Qt::DashLine);
                     painter.setPen(frontPen);
                     painter.setBrush(Qt::NoBrush);  // 채우기 없음
@@ -2540,102 +2540,100 @@ void CameraView::drawINSStripVisualization(QPainter& painter, const InspectionRe
             // 두께 검사 결과는 박스 채우기로 표현 (아래 FRONT/REAR 박스 시각화에서 처리)
             
     // ===== 5. EDGE 박스 시각화 (심선 끝 절단면 품질 검사) =====
-            if (result.edgeBoxCenter.contains(patternId) && result.edgeBoxSize.contains(patternId)) {
-                QPointF edgeBoxCenterRel = result.edgeBoxCenter[patternId];
-                QSizeF edgeBoxSize = result.edgeBoxSize[patternId];
-                
-                QPointF edgeBoxCenterScene = patternCenterScene + edgeBoxCenterRel;
-                QPointF edgeCenterViewport = mapFromScene(edgeBoxCenterScene);
-                QPointF edgeRotatedCenter = rotatePoint(edgeCenterViewport, centerViewport);
-                
-                // ===== EDGE 노란색 박스 (축정렬, 회전 투영 고려) =====
+            // EDGE 박스는 검사 결과와 무관하게 티칭 위치 그대로 표시
+            if (patternInfo) {
                 QTransform t = transform();
                 double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
                 
-                // 회전 투영을 적용하여 노란색 박스 크기 계산 (REAR/FRONT와 동일)
-                double w = edgeBoxSize.width();
-                double h = edgeBoxSize.height();
-                double projX = std::abs(w * cosA) + std::abs(h * sinA);
-                double projY = std::abs(w * sinA) + std::abs(h * cosA);
-                double edgeYellowWidth = projX * currentScale;
-                double edgeYellowHeight = projY * currentScale;
-                
-                // 노란색 박스 (축정렬) - edgeCenterViewport 기준으로 그리기
-                painter.setPen(QPen(QColor(255, 255, 0), 1.5));
-                painter.setBrush(Qt::NoBrush);
-                
-                QPointF edgeTopLeft(edgeCenterViewport.x() - edgeYellowWidth/2, edgeCenterViewport.y() - edgeYellowHeight/2);
-                QPointF edgeTopRight(edgeCenterViewport.x() + edgeYellowWidth/2, edgeCenterViewport.y() - edgeYellowHeight/2);
-                QPointF edgeBottomLeft(edgeCenterViewport.x() - edgeYellowWidth/2, edgeCenterViewport.y() + edgeYellowHeight/2);
-                QPointF edgeBottomRight(edgeCenterViewport.x() + edgeYellowWidth/2, edgeCenterViewport.y() + edgeYellowHeight/2);
-                
-                QPolygonF edgeYellowPolygon;
-                edgeYellowPolygon << edgeTopLeft << edgeTopRight << edgeBottomRight << edgeBottomLeft;
-                painter.drawPolygon(edgeYellowPolygon);
-                
-                // ===== EDGE 청록색 박스 (회전) =====
-                int edgeBoxWidth = int(edgeBoxSize.width() * currentScale);
-                int edgeBoxHeight = int(edgeBoxSize.height() * currentScale);
+                // 티칭 모드와 동일하게 계산
+                QPointF center = patternInfo->rect.center();
+                QPointF centerDisplay = mapFromScene(center);
+                QSizeF displaySize(patternInfo->rect.width() * currentScale, patternInfo->rect.height() * currentScale);
+                QRectF displayRect(centerDisplay.x() - displaySize.width()/2, 
+                                  centerDisplay.y() - displaySize.height()/2,
+                                  displaySize.width(), displaySize.height());
                 
                 painter.save();
-                painter.translate(edgeCenterViewport);
-                painter.rotate(insAngle);
-                painter.translate(-edgeCenterViewport);
+                painter.translate(centerDisplay);
+                painter.rotate(patternInfo->angle);
+                painter.translate(-centerDisplay);
                 
-                QPen edgePen(QColor(255, 128, 0), 2);
-                edgePen.setStyle(Qt::DashLine);
-                painter.setPen(edgePen);
-                painter.setBrush(Qt::NoBrush);  // 내부 칠하지 않음
-                painter.drawRect(QRectF(edgeCenterViewport.x() - edgeBoxWidth/2,
-                                       edgeCenterViewport.y() - edgeBoxHeight/2,
-                                       edgeBoxWidth, edgeBoxHeight));
+                // displayRect의 회전된 코너들
+                QPoint topLeft(qRound(displayRect.left()), qRound(displayRect.top()));
+                QPoint topRight(qRound(displayRect.right()), qRound(displayRect.top()));
+                QPoint bottomLeft(qRound(displayRect.left()), qRound(displayRect.bottom()));
+                QPoint bottomRight(qRound(displayRect.right()), qRound(displayRect.bottom()));
                 
-                int edgeOutlierCount = result.edgeIrregularityCount.value(patternId, 0);
-                double edgeMaxDev = result.edgeMaxDeviation.value(patternId, 0.0);
-                double edgeMinDev = result.edgeMinDeviation.value(patternId, 0.0);
-                double edgeAvgDev = result.edgeAvgDeviation.value(patternId, 0.0);
-                bool edgePassed = result.edgeResults.value(patternId, false);
+                double widthVectorX = topRight.x() - topLeft.x();
+                double widthVectorY = topRight.y() - topLeft.y();
+                double vectorLen = std::sqrt(widthVectorX * widthVectorX + widthVectorY * widthVectorY);
                 
-                // 패턴 정보에서 최대 허용 불량 수 가져오기
-                int maxOutliers = 5;  // 기본값
-                for (const PatternInfo& p : patterns) {
-                    if (p.id == patternId) {
-                        maxOutliers = p.edgeMaxOutliers;
-                        break;
-                    }
+                if (vectorLen > 0.01) {
+                    double boxAngle = std::atan2(widthVectorY, widthVectorX) * 180.0 / M_PI;
+                    
+                    QPoint patternCenter((topLeft.x() + topRight.x() + bottomLeft.x() + bottomRight.x()) / 4,
+                                        (topLeft.y() + topRight.y() + bottomLeft.y() + bottomRight.y()) / 4);
+                    
+                    // EDGE 박스 위치 계산
+                    double patternWidth = patternInfo->rect.width();
+                    float baseEdgeOffsetX = -(patternWidth / 2.0f) + 30.0f;
+                    float totalEdgeOffsetX = baseEdgeOffsetX + patternInfo->edgeOffsetX;
+                    
+                    double cosAngle = std::cos(boxAngle * M_PI / 180.0);
+                    double sinAngle = std::sin(boxAngle * M_PI / 180.0);
+                    QPoint edgeBoxCenter(
+                        qRound(patternCenter.x() + totalEdgeOffsetX * currentScale * cosAngle),
+                        qRound(patternCenter.y() + totalEdgeOffsetX * currentScale * sinAngle)
+                    );
+                    
+                    double edgeBoxWidth = patternInfo->stripEdgeBoxWidth * currentScale;
+                    double edgeBoxHeight = patternInfo->stripEdgeBoxHeight * currentScale;
+                    
+                    painter.save();
+                    painter.translate(edgeBoxCenter);
+                    painter.rotate(boxAngle);
+                    
+                    QPen edgePen(UIColors::STRIP_EDGE_COLOR, 2);
+                    painter.setPen(edgePen);
+                    painter.setBrush(Qt::NoBrush);
+                    painter.drawRect(QRectF(-edgeBoxWidth/2, -edgeBoxHeight/2, edgeBoxWidth, edgeBoxHeight));
+                
+                    // 검사 결과 라벨
+                    int edgeOutlierCount = result.edgeIrregularityCount.value(patternId, 0);
+                    double edgeMaxDev = result.edgeMaxDeviation.value(patternId, 0.0);
+                    double edgeAvgDev = result.edgeAvgDeviation.value(patternId, 0.0);
+                    bool edgePassed = result.edgeResults.value(patternId, false);
+                    
+                    int maxOutliers = patternInfo->edgeMaxOutliers;
+                    
+                    QString edgeLabel = QString("EDGE: Max:%1 Avg:%2mm [%3/%4]")
+                        .arg(edgeMaxDev, 0, 'f', 2)
+                        .arg(edgeAvgDev, 0, 'f', 2)
+                        .arg(edgeOutlierCount)
+                        .arg(maxOutliers);
+                    
+                    QFont boxFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
+                    painter.setFont(boxFont);
+                    QFontMetrics boxFm(boxFont);
+                    int edgeTextW = boxFm.horizontalAdvance(edgeLabel);
+                    int edgeTextH = boxFm.height();
+                    
+                    QRect edgeTextRect(-edgeTextW/2 - 2, -edgeBoxHeight/2 - edgeTextH - 2, edgeTextW + 4, edgeTextH);
+                    painter.fillRect(edgeTextRect, QBrush(QColor(0, 0, 0, 180)));
+                    painter.setPen(QColor(255, 255, 255));
+                    painter.drawText(edgeTextRect, Qt::AlignCenter, edgeLabel);
+                    
+                    QString edgePassText = edgePassed ? "PASS" : "NG";
+                    QColor edgePassColor = edgePassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+                    int passTextW = boxFm.horizontalAdvance(edgePassText);
+                    
+                    QRect edgePassRect(-passTextW/2 - 2, -edgeBoxHeight/2 - edgeTextH*2 - 4, passTextW + 4, edgeTextH);
+                    painter.fillRect(edgePassRect, QBrush(QColor(0, 0, 0, 180)));
+                    painter.setPen(edgePassColor);
+                    painter.drawText(edgePassRect, Qt::AlignCenter, edgePassText);
+                    
+                    painter.restore();
                 }
-                
-                QString edgeLabel = QString("EDGE: Max:%1 Avg:%2mm [%3/%4]")
-                    .arg(edgeMaxDev, 0, 'f', 2)
-                    .arg(edgeAvgDev, 0, 'f', 2)
-                    .arg(edgeOutlierCount)
-                    .arg(maxOutliers);
-                
-                QFont boxFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
-                painter.setFont(boxFont);
-                QFontMetrics boxFm(boxFont);
-                int edgeTextW = boxFm.horizontalAdvance(edgeLabel);
-                int edgeTextH = boxFm.height();
-                
-                // PASS/NG에 따라 배경색 변경
-                QRectF edgeLabelRect(edgeCenterViewport.x() - edgeTextW/2 - 3,
-                                    edgeCenterViewport.y() - edgeYellowHeight/2 - edgeTextH - 5,
-                                    edgeTextW + 6, edgeTextH);
-                painter.fillRect(edgeLabelRect, QBrush(QColor(0, 0, 0, 180)));
-                painter.setPen(QColor(255, 255, 255));  // 흰색
-                painter.drawText(edgeLabelRect, Qt::AlignCenter, edgeLabel);
-                
-                // PASS/NG 표시 (이름표 위)
-                QString edgePassText = edgePassed ? "PASS" : "NG";
-                QColor edgePassColor = edgePassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
-                int passTextW = boxFm.horizontalAdvance(edgePassText);
-                
-                QRectF edgePassRect(edgeCenterViewport.x() - passTextW/2 - 3,
-                                   edgeCenterViewport.y() - edgeYellowHeight/2 - edgeTextH*2 - 7,
-                                   passTextW + 6, edgeTextH);
-                painter.fillRect(edgePassRect, QBrush(QColor(0, 0, 0, 180)));
-                painter.setPen(edgePassColor);
-                painter.drawText(edgePassRect, Qt::AlignCenter, edgePassText);
                 
                 painter.restore();
             }
@@ -4418,8 +4416,6 @@ void CameraView::drawStripThicknessBoxes(QPainter& painter, const PatternInfo& p
     if (vectorLen < 0.01) return;
     
     double boxAngle = std::atan2(widthVectorY, widthVectorX) * 180.0 / M_PI;
-    double boxWidth = pattern.stripThicknessBoxWidth * currentScale;
-    double boxHeight = pattern.stripThicknessBoxHeight * currentScale;
     
     // FRONT 박스
     float startPercent = pattern.stripGradientStartPercent / 100.0f;
@@ -4436,21 +4432,35 @@ void CameraView::drawStripThicknessBoxes(QPainter& painter, const PatternInfo& p
         (posStartTop.y() + posStartBottom.y()) / 2
     );
     
-    QRectF frontBoxRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
-    QPen frontPen(Qt::cyan, 2);
-    frontPen.setStyle(Qt::DashLine);
-    drawRotatedBox(painter, frontBoxRect, frontBoxCenter, boxAngle, frontPen);
+    // FRONT 박스 그리기
+    double frontBoxWidth = pattern.stripThicknessBoxWidth * currentScale;
+    double frontBoxHeight = pattern.stripThicknessBoxHeight * currentScale;
     
-    QString frontLabel = QString("FRONT:%1~%2mm")
-                        .arg(pattern.stripThicknessMin)
-                        .arg(pattern.stripThicknessMax);
+    painter.save();
+    painter.translate(frontBoxCenter);
+    painter.rotate(boxAngle);
+    
+    QPen frontPen(UIColors::STRIP_FRONT_COLOR, 2);
+    frontPen.setStyle(Qt::DashLine);
+    painter.setPen(frontPen);
+    painter.setBrush(Qt::NoBrush);
+    QRectF frontBoxRect(-frontBoxWidth/2, -frontBoxHeight/2, frontBoxWidth, frontBoxHeight);
+    painter.drawRect(frontBoxRect);
+    
+    // FRONT 텍스트
+    QString frontLabel = "FRONT";
     QFont frontFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
+    painter.setFont(frontFont);
     QFontMetrics frontFm(frontFont);
     int frontTextW = frontFm.horizontalAdvance(frontLabel);
     int frontTextH = frontFm.height();
-    QRectF frontTextRect(-frontTextW/2 - 2, -boxHeight/2 - frontTextH - 2, frontTextW + 4, frontTextH);
-    drawRotatedLabel(painter, frontLabel, frontTextRect, frontBoxCenter, boxAngle,
-                    QColor(0, 0, 0, 180), Qt::cyan, frontFont);
+    
+    QRectF frontTextRect(-frontTextW/2 - 2, -frontBoxHeight/2 - frontTextH - 5, frontTextW + 4, frontTextH);
+    painter.fillRect(frontTextRect, QBrush(QColor(0, 0, 0, 180)));
+    painter.setPen(UIColors::STRIP_FRONT_COLOR);
+    painter.drawText(frontTextRect, Qt::AlignCenter, frontLabel);
+    
+    painter.restore();
     
     // REAR 박스
     float endPercent = pattern.stripGradientEndPercent / 100.0f;
@@ -4467,21 +4477,82 @@ void CameraView::drawStripThicknessBoxes(QPainter& painter, const PatternInfo& p
         (posEndTop.y() + posEndBottom.y()) / 2
     );
     
-    QRectF rearBoxRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
-    QPen rearPen(QColor(135, 206, 250), 2); // 하늘색
-    rearPen.setStyle(Qt::DashLine);
-    drawRotatedBox(painter, rearBoxRect, rearBoxCenter, boxAngle, rearPen);
+    // REAR 박스 그리기
+    double rearBoxWidth = pattern.stripRearThicknessBoxWidth * currentScale;
+    double rearBoxHeight = pattern.stripRearThicknessBoxHeight * currentScale;
     
-    QString rearLabel = QString("REAR:%1~%2mm")
-                       .arg(pattern.stripThicknessMin)
-                       .arg(pattern.stripThicknessMax);
+    painter.save();
+    painter.translate(rearBoxCenter);
+    painter.rotate(boxAngle);
+    
+    QPen rearPen(UIColors::STRIP_REAR_COLOR, 2);
+    rearPen.setStyle(Qt::DashLine);
+    painter.setPen(rearPen);
+    painter.setBrush(Qt::NoBrush);
+    QRectF rearBoxRect(-rearBoxWidth/2, -rearBoxHeight/2, rearBoxWidth, rearBoxHeight);
+    painter.drawRect(rearBoxRect);
+    
+    // REAR 텍스트
+    QString rearLabel = "REAR";
     QFont rearFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
+    painter.setFont(rearFont);
     QFontMetrics rearFm(rearFont);
     int rearTextW = rearFm.horizontalAdvance(rearLabel);
     int rearTextH = rearFm.height();
-    QRectF rearTextRect(-rearTextW/2 - 2, -boxHeight/2 - rearTextH - 2, rearTextW + 4, rearTextH);
-    drawRotatedLabel(painter, rearLabel, rearTextRect, rearBoxCenter, boxAngle,
-                    QColor(0, 0, 0, 180), QColor(135, 206, 250), rearFont);
+    
+    QRectF rearTextRect(-rearTextW/2 - 2, -rearBoxHeight/2 - rearTextH - 5, rearTextW + 4, rearTextH);
+    painter.fillRect(rearTextRect, QBrush(QColor(0, 0, 0, 180)));
+    painter.setPen(UIColors::STRIP_REAR_COLOR);
+    painter.drawText(rearTextRect, Qt::AlignCenter, rearLabel);
+    
+    painter.restore();
+    
+    // EDGE 박스
+    // 기본 위치: 패턴 왼쪽에서 +30, edgeOffsetX는 이 기본값에서의 오프셋
+    double patternWidth = std::sqrt(widthVectorX * widthVectorX + widthVectorY * widthVectorY) / currentScale;
+    float baseEdgeOffsetX = -(patternWidth / 2.0f) + 30.0f;  // 패턴 왼쪽에서 +30
+    float totalEdgeOffsetX = baseEdgeOffsetX + pattern.edgeOffsetX;  // 기본값 + 사용자 오프셋
+    
+    QPoint patternCenter((topLeft.x() + topRight.x() + bottomLeft.x() + bottomRight.x()) / 4,
+                        (topLeft.y() + topRight.y() + bottomLeft.y() + bottomRight.y()) / 4);
+    
+    // totalEdgeOffsetX는 패턴 중심 기준 상대 좌표 (패턴의 가로 방향)
+    double cosAngle = std::cos(boxAngle * M_PI / 180.0);
+    double sinAngle = std::sin(boxAngle * M_PI / 180.0);
+    QPoint edgeBoxCenter(
+        qRound(patternCenter.x() + totalEdgeOffsetX * currentScale * cosAngle),
+        qRound(patternCenter.y() + totalEdgeOffsetX * currentScale * sinAngle)
+    );
+    
+    // EDGE 박스 그리기
+    double edgeBoxWidth = pattern.stripEdgeBoxWidth * currentScale;
+    double edgeBoxHeight = pattern.stripEdgeBoxHeight * currentScale;
+    
+    painter.save();
+    painter.translate(edgeBoxCenter);
+    painter.rotate(boxAngle);
+    
+    QPen edgePen(UIColors::STRIP_EDGE_COLOR, 2);
+    edgePen.setStyle(Qt::DashLine);
+    painter.setPen(edgePen);
+    painter.setBrush(Qt::NoBrush);
+    QRectF edgeBoxRect(-edgeBoxWidth/2, -edgeBoxHeight/2, edgeBoxWidth, edgeBoxHeight);
+    painter.drawRect(edgeBoxRect);
+    
+    // EDGE 텍스트
+    QString edgeLabel = "EDGE";
+    QFont edgeFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
+    painter.setFont(edgeFont);
+    QFontMetrics edgeFm(edgeFont);
+    int edgeTextW = edgeFm.horizontalAdvance(edgeLabel);
+    int edgeTextH = edgeFm.height();
+    
+    QRectF edgeTextRect(-edgeTextW/2 - 2, -edgeBoxHeight/2 - edgeTextH - 5, edgeTextW + 4, edgeTextH);
+    painter.fillRect(edgeTextRect, QBrush(QColor(0, 0, 0, 180)));
+    painter.setPen(UIColors::STRIP_EDGE_COLOR);
+    painter.drawText(edgeTextRect, Qt::AlignCenter, edgeLabel);
+    
+    painter.restore();
 }
 
 // 거리 측정 라인 그리기
