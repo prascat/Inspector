@@ -87,7 +87,9 @@ public:
                                      cv::Point* frontMinScanTop = nullptr, cv::Point* frontMinScanBottom = nullptr,
                                      cv::Point* frontMaxScanTop = nullptr, cv::Point* frontMaxScanBottom = nullptr,
                                      cv::Point* rearMinScanTop = nullptr, cv::Point* rearMinScanBottom = nullptr,
-                                     cv::Point* rearMaxScanTop = nullptr, cv::Point* rearMaxScanBottom = nullptr);
+                                     cv::Point* rearMaxScanTop = nullptr, cv::Point* rearMaxScanBottom = nullptr,
+                                     std::vector<std::pair<cv::Point, cv::Point>>* frontScanLines = nullptr,
+                                     std::vector<std::pair<cv::Point, cv::Point>>* rearScanLines = nullptr);
     
     // CRIMP 검사 관련 함수는 현재 비활성화됨 (향후 구현 예정)
 };

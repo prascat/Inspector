@@ -2121,7 +2121,7 @@ void CameraView::drawINSStripVisualization(QPainter& painter, const InspectionRe
                     QPen rearPen(QColor(0, 191, 255), 2);
                     rearPen.setStyle(Qt::DashLine);
                     painter.setPen(rearPen);
-                    painter.setBrush(QColor(0, 255, 0, 80));  // 녹색 반투명으로 채우기
+                    painter.setBrush(Qt::NoBrush);  // 채우기 없음
                     painter.drawRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
                     
                     // ===== REAR 스캔 라인 그리기 (옵션) =====
@@ -2349,7 +2349,7 @@ void CameraView::drawINSStripVisualization(QPainter& painter, const InspectionRe
                     QPen frontPen(Qt::cyan, 2);
                     frontPen.setStyle(Qt::DashLine);
                     painter.setPen(frontPen);
-                    painter.setBrush(QColor(0, 255, 0, 80));  // 녹색 반투명으로 채우기
+                    painter.setBrush(Qt::NoBrush);  // 채우기 없음
                     painter.drawRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight);
                     
                     // ===== FRONT 스캔 라인 그리기 (옵션) =====

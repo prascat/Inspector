@@ -664,7 +664,9 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                                            cv::Point* frontMinScanTop, cv::Point* frontMinScanBottom,
                                            cv::Point* frontMaxScanTop, cv::Point* frontMaxScanBottom,
                                            cv::Point* rearMinScanTop, cv::Point* rearMinScanBottom,
-                                           cv::Point* rearMaxScanTop, cv::Point* rearMaxScanBottom) {
+                                           cv::Point* rearMaxScanTop, cv::Point* rearMaxScanBottom,
+                                           std::vector<std::pair<cv::Point, cv::Point>>* frontScanLines,
+                                           std::vector<std::pair<cv::Point, cv::Point>>* rearScanLines) {
     
     try {
 
@@ -1770,9 +1772,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     continue;
                 }
                 
-                // 스캔 라인 저장 (시각화용)
-                scanLines.push_back(std::make_pair(scanTop, scanBottom));
-                
                 // 모든 스캔 라인의 시작-끝점을 저장 (검은색 유무 관계없이)
                 blackPixelPoints.push_back(scanTop);
                 blackPixelPoints.push_back(scanBottom);
@@ -1867,9 +1866,15 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 }
                 
                 // 검은색 구간이 발견된 경우 측정 라인 저장
-                if (!blackRegions.empty()) {
-                    measurementLines.push_back(scanTop);
-                    measurementLines.push_back(scanBottom);
+                if (!blackRegions.empty() && firstBlackIdx >= 0 && lastBlackIdx >= 0 &&
+                    firstBlackIdx < linePoints.size() && lastBlackIdx < linePoints.size()) {
+                    // 실제 검은색이 검출된 구간만 스캔 라인으로 저장
+                    cv::Point actualTop = linePoints[firstBlackIdx];
+                    cv::Point actualBottom = linePoints[lastBlackIdx];
+                    scanLines.push_back(std::make_pair(actualTop, actualBottom));
+                    
+                    measurementLines.push_back(actualTop);
+                    measurementLines.push_back(actualBottom);
                 }
             }
             
@@ -1903,6 +1908,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 // FRONT 검은색 구간 포인트들을 저장 (빨간색 표시용)
                 if (frontBlackRegionPoints) {
                     *frontBlackRegionPoints = blackRegionPoints;
+                }
+                
+                // FRONT 스캔 라인 저장 (시각화용)
+                if (frontScanLines) {
+                    *frontScanLines = scanLines;
                 }
                 
                 // FRONT 박스 정보 반환 (ROI 좌표계의 박스 중심)
@@ -1982,6 +1992,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         std::vector<cv::Point> measurementLines_rear; // 측정 라인 저장
         std::vector<cv::Point> blackPixelPoints_rear; // 검은색 픽셀 위치 저장 (시각화용 - 전체 스캔 라인)
         std::vector<cv::Point> blackRegionPoints_rear; // 검은색이 실제로 검출된 구간만 저장 (빨간색으로 표시용)
+        std::vector<std::pair<cv::Point, cv::Point>> scanLines_rear; // 실제 검은색 구간 스캔 라인 (시각화용)
         
         // 각도에 따른 bounding box 크기 계산 (템플릿 이미지와 동일한 방식)
         int actualBoxWidth_rear, actualBoxHeight_rear;
@@ -2064,6 +2075,9 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             
             // 다시 처음부터 스캔하여 검은색 픽셀 찾기 (두께 측정)
             it = cv::LineIterator(processed, scanTop_rear, scanBottom_rear, 8);
+            int firstBlackIdx_rear = -1;  // 첫 번째 검은색 픽셀 인덱스
+            int lastBlackIdx_rear = -1;   // 마지막 검은색 픽셀 인덱스
+            
             for (int i = 0; i < it.count; i++, ++it) {
                 // 이미 필터링된 이진 영상이므로 그레이스케일로 읽기
                 uchar pixelValue = processed.at<uchar>(it.pos());
@@ -2076,6 +2090,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                         // 검은색 구간 시작
                         regionStart = i;
                         inBlackRegion = true;
+                        
+                        // 첫 번째 검은색 구간의 시작점 기록
+                        if (firstBlackIdx_rear == -1) {
+                            firstBlackIdx_rear = i;
+                        }
                     }
                 } else {
                     if (inBlackRegion) {
@@ -2087,6 +2106,9 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                                 maxThicknessInLine_rear = thickness;
                             }
                             blackRegions_rear.push_back({regionStart, i});
+                            
+                            // 마지막 검은색 구간의 끝점 업데이트
+                            lastBlackIdx_rear = i - 1;
                             
                             // 바운딩 박스 내부의 모든 검은색 포인트 저장 (회전 체크 제거)
                             if (regionStart < linePoints_rear.size() && i - 1 < linePoints_rear.size()) {
@@ -2111,6 +2133,9 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                     }
                     blackRegions_rear.push_back({regionStart, it.count});
                     
+                    // 마지막 검은색 구간의 끝점 업데이트
+                    lastBlackIdx_rear = it.count - 1;
+                    
                     // 바운딩 박스 내부의 모든 검은색 포인트 저장 (회전 체크 제거)
                     if (regionStart < linePoints_rear.size() && it.count - 1 < linePoints_rear.size()) {
                         for (int idx = regionStart; idx < it.count && idx < linePoints_rear.size(); idx++) {
@@ -2126,10 +2151,16 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 thicknesses_rear.push_back(maxThicknessInLine_rear);
             }
             
-            // 검은색 구간이 발견된 경우 측정 라인 저장
-            if (!blackRegions_rear.empty()) {
-                measurementLines_rear.push_back(scanTop_rear);
-                measurementLines_rear.push_back(scanBottom_rear);
+            // 검은색 구간이 발견된 경우 측정 라인 저장 (실제 검은색 구간만)
+            if (!blackRegions_rear.empty() && firstBlackIdx_rear >= 0 && lastBlackIdx_rear >= 0 &&
+                firstBlackIdx_rear < linePoints_rear.size() && lastBlackIdx_rear < linePoints_rear.size()) {
+                // 실제 검은색이 검출된 구간만 스캔 라인으로 저장
+                cv::Point actualTop_rear = linePoints_rear[firstBlackIdx_rear];
+                cv::Point actualBottom_rear = linePoints_rear[lastBlackIdx_rear];
+                scanLines_rear.push_back(std::make_pair(actualTop_rear, actualBottom_rear));
+                
+                measurementLines_rear.push_back(actualTop_rear);
+                measurementLines_rear.push_back(actualBottom_rear);
             }
         }
         
@@ -2166,6 +2197,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 // REAR 검은색 구간 포인트들을 저장 (빨간색 표시용)
                 if (rearBlackRegionPoints) {
                     *rearBlackRegionPoints = blackRegionPoints_rear;
+                }
+                
+                // REAR 스캔 라인 저장 (시각화용)
+                if (rearScanLines) {
+                    *rearScanLines = scanLines_rear;
                 }
                 
                 // REAR 박스 정보 반환 (ROI 좌표계의 박스 중심)
