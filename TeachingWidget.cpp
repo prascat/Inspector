@@ -2616,9 +2616,6 @@ QUuid TeachingWidget::getPatternIdFromItem(QTreeWidgetItem* item) {
 
 void TeachingWidget::updatePatternTree() {
     
-    // ★★★ 트리 업데이트 전 항상 최신 패턴 정보로 동기화 ★★★
-    syncPatternsFromCameraView();
-    
     // 현재 선택된 패턴 ID 저장
     QUuid selectedId = cameraView->getSelectedPatternId();
     
@@ -2960,19 +2957,7 @@ void TeachingWidget::addFiltersToTreeItem(QTreeWidgetItem* parentItem, const Pat
 }
 
 // ★★★ CameraView에서 최신 패턴 정보를 가져와서 동기화 ★★★
-void TeachingWidget::syncPatternsFromCameraView() {
-    if (!cameraView) return;
-    
-    // CameraView에서 현재 패턴들을 가져옴
-    QList<PatternInfo> patterns = cameraView->getPatterns();
-    for (const PatternInfo& pattern : patterns) {
-        // 패턴 동기화 처리
-    }
-}
-
 void TeachingWidget::onPatternSelected(QTreeWidgetItem* current, QTreeWidgetItem* previous) {
-    // ★★★ 패턴 선택 시 항상 최신 정보로 동기화 ★★★
-    syncPatternsFromCameraView();
     
      // 삭제 버튼 활성화 상태 관리 - 함수 시작 부분에 추가
      QPushButton* removeButton = findChild<QPushButton*>("removeButton");
@@ -5557,6 +5542,8 @@ void TeachingWidget::connectPropertyPanelEvents() {
                         if (ok) {
                             pattern->stripLengthMin = value;
                             cameraView->updatePatternById(patternId, *pattern);
+                            cameraView->update();
+                            qDebug() << "[UI 변경] stripLengthMin 갱신:" << pattern->name << "->" << value;
                         }
                     }
                 }
@@ -5576,6 +5563,8 @@ void TeachingWidget::connectPropertyPanelEvents() {
                         if (ok) {
                             pattern->stripLengthMax = value;
                             cameraView->updatePatternById(patternId, *pattern);
+                            cameraView->update();
+                            qDebug() << "[UI 변경] stripLengthMax 갱신:" << pattern->name << "->" << value;
                         }
                     }
                 }
@@ -9418,6 +9407,34 @@ bool TeachingWidget::runInspect(const cv::Mat& frame, int specificCameraIndex) {
         return false;
     }
     
+    // ★★★ 검사 직전: 현재 선택된 패턴의 UI 프로퍼티 값들을 패턴에 강제 반영 ★★★
+    QTreeWidgetItem* selectedItem = patternTree->currentItem();
+    if (selectedItem) {
+        QUuid patternId = getPatternIdFromItem(selectedItem);
+        if (!patternId.isNull()) {
+            PatternInfo* pattern = cameraView->getPatternById(patternId);
+            if (pattern && pattern->type == PatternType::INS && pattern->inspectionMethod == InspectionMethod::STRIP) {
+                // UI 값을 패턴에 강제 반영
+                if (insStripLengthMinEdit) {
+                    bool ok;
+                    double value = insStripLengthMinEdit->text().toDouble(&ok);
+                    if (ok) {
+                        pattern->stripLengthMin = value;
+                        qDebug() << "[검사 직전 UI->패턴] stripLengthMin 강제 반영:" << value;
+                    }
+                }
+                if (insStripLengthMaxEdit) {
+                    bool ok;
+                    double value = insStripLengthMaxEdit->text().toDouble(&ok);
+                    if (ok) {
+                        pattern->stripLengthMax = value;
+                        qDebug() << "[검사 직전 UI->패턴] stripLengthMax 강제 반영:" << value;
+                    }
+                }
+            }
+        }
+    }
+    
     QList<PatternInfo> allPatterns = cameraView->getPatterns();
     QList<PatternInfo> cameraPatterns;
     
@@ -9437,6 +9454,13 @@ bool TeachingWidget::runInspect(const cv::Mat& frame, int specificCameraIndex) {
         // 시뮬레이션 모드거나 UUID가 일치하는 경우
         if (pattern.enabled && (camOff || pattern.cameraUuid == targetUuid || pattern.cameraUuid.isEmpty())) {
             cameraPatterns.append(pattern);
+            
+            // 디버그: STRIP 검사 패턴 값 확인
+            if (pattern.inspectionMethod == InspectionMethod::STRIP) {
+                qDebug() << "[검사 직전] STRIP 패턴:" << pattern.name 
+                         << "stripLengthMin:" << pattern.stripLengthMin 
+                         << "stripLengthMax:" << pattern.stripLengthMax;
+            }
         }
     }
 
@@ -12575,10 +12599,8 @@ void TeachingWidget::onRecipeSelected(const QString& recipeName) {
         // TODO: 현재 연결된 카메라의 패턴만 필터링하는 기능 추가 예정
         
         // 패턴 동기화 및 트리 업데이트
-        syncPatternsFromCameraView();
         updatePatternTree();
         
-        // 첫 번째 카메라로 전환 (camOn/camOff 공통)
         if (!cameraInfos.isEmpty()) {
             // 레시피에서 카메라 UUID 목록 가져오기
             QStringList recipeCameraUuids = manager.getRecipeCameraUuids(recipeName);

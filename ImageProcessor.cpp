@@ -2355,8 +2355,9 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 // 캘리브레이션이 안된 경우: 픽셀 값 그대로 사용
                 lengthDistance = lengthDistancePx;
                 
-                // 픽셀 기준으로 허용 범위 확인 (필요시)
-                lengthInRange = true;  // 캘리브레이션 전에는 일단 통과로 처리
+                // 픽셀 기준으로 허용 범위 확인 (항상 수행!)
+                lengthInRange = (lengthDistance >= pattern.stripLengthMin && 
+                               lengthDistance <= pattern.stripLengthMax);
             }
             
 

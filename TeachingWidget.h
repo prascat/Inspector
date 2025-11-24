@@ -263,7 +263,7 @@ private slots:
     void onPatternSelected(QTreeWidgetItem* current, QTreeWidgetItem* previous);
     void onPatternTableDropEvent(const QModelIndex &parent, int start, int end, const QModelIndex &destination, int row);
     void onPatternTreeDropCompleted();
-    void syncPatternsFromCameraView();
+
     void switchToRecipeMode();
     void switchToTestMode();
     bool runInspect(const cv::Mat& frame, int specificCameraIndex = -1);
