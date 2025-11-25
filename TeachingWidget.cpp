@@ -9549,6 +9549,10 @@ bool TeachingWidget::runInspect(const cv::Mat& frame, int specificCameraIndex) {
         if (!originalImage.isNull()) {
             QPixmap pixmap = QPixmap::fromImage(originalImage);
             cameraView->setBackgroundPixmap(pixmap);
+            
+            // ★ 현재 모드에 따라 검사 결과와 프레임 저장 (패턴 각도 업데이트 후)
+            cameraView->saveCurrentResultForMode(currentStripCrimpMode, pixmap);
+            
             cameraView->update();
         }
         
@@ -9975,6 +9979,14 @@ void TeachingWidget::setStripCrimpMode(int mode) {
                     cameraView->setStripCrimpMode(prevMode);
                 }
             }
+        }
+    } else {
+        // ★ CAM ON 상태: 저장된 검사 결과가 있으면 해당 모드의 결과로 전환
+        if (cameraView && cameraView->hasModeResult(mode)) {
+            cameraView->switchToModeResult(mode);
+            qDebug() << "[setStripCrimpMode] CAM ON 상태: " 
+                     << (mode == StripCrimpMode::STRIP_MODE ? "STRIP" : "CRIMP") 
+                     << " 검사 결과로 전환";
         }
     }
     

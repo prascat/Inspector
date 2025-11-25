@@ -159,6 +159,13 @@ public:
     // 검사 결과 접근자
     const InspectionResult& getLastInspectionResult() const { return lastInspectionResult; }
     bool hasLastInspectionResult() const { return hasInspectionResult; }
+    
+    // STRIP/CRIMP 모드별 검사 결과 접근자
+    void saveInspectionResultForMode(int mode, const InspectionResult& result, const QPixmap& frame);
+    void saveCurrentResultForMode(int mode, const QPixmap& frame);  // 현재 패턴 상태로 저장
+    bool switchToModeResult(int mode);  // 모드별 결과로 전환, 성공 시 true 반환
+    bool hasModeResult(int mode) const { return mode == 0 ? hasStripResult : hasCrimpResult; }
+    void clearModeResults() { hasStripResult = false; hasCrimpResult = false; }
 
     // 필터 관련 메서드들 (UUID 기반으로 통일)
     void addPatternFilter(const QUuid& patternId, int filterType);
@@ -262,6 +269,16 @@ private:
     int currentStripCrimpMode = 0;  // 0: STRIP, 1: CRIMP
 
     InspectionResult lastInspectionResult;
+    
+    // STRIP/CRIMP 모드별 검사 결과 및 프레임 저장
+    InspectionResult lastStripResult;
+    InspectionResult lastCrimpResult;
+    QPixmap lastStripFrame;
+    QPixmap lastCrimpFrame;
+    QList<PatternInfo> lastStripPatterns;  // STRIP 검사 시 패턴 상태
+    QList<PatternInfo> lastCrimpPatterns;  // CRIMP 검사 시 패턴 상태
+    bool hasStripResult = false;
+    bool hasCrimpResult = false;
     QUuid selectedInspectionPatternId; // 선택된 검사 결과 패턴 필터링
 
     // 거리 측정 관련 변수

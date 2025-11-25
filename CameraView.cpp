@@ -4624,3 +4624,86 @@ void CameraView::drawCurrentDrawingRect(QPainter& painter) {
     painter.setPen(QPen(currentDrawColor, 2, Qt::DashLine));
     painter.drawRect(displayRect);
 }
+
+// STRIP/CRIMP 모드별 검사 결과 저장
+void CameraView::saveInspectionResultForMode(int mode, const InspectionResult& result, const QPixmap& frame) {
+    if (mode == 0) {  // STRIP
+        lastStripResult = result;
+        lastStripFrame = frame;
+        lastStripPatterns = patterns;  // 현재 패턴 상태 저장
+        hasStripResult = true;
+        qDebug() << "[CameraView] STRIP 검사 결과 저장 완료 (패턴 수:" << patterns.size() << ")";
+    } else {  // CRIMP
+        lastCrimpResult = result;
+        lastCrimpFrame = frame;
+        lastCrimpPatterns = patterns;  // 현재 패턴 상태 저장
+        hasCrimpResult = true;
+        qDebug() << "[CameraView] CRIMP 검사 결과 저장 완료 (패턴 수:" << patterns.size() << ")";
+    }
+}
+
+// 현재 패턴 상태와 검사 결과를 모드별로 저장 (패턴 업데이트 후 호출용)
+void CameraView::saveCurrentResultForMode(int mode, const QPixmap& frame) {
+    if (mode == 0) {  // STRIP
+        lastStripResult = lastInspectionResult;  // 현재 검사 결과 사용
+        lastStripFrame = frame;
+        lastStripPatterns = patterns;  // 현재 패턴 상태 저장 (각도 업데이트된 상태)
+        hasStripResult = true;
+        
+        // 디버그: 패턴 각도 확인
+        for (const PatternInfo& p : patterns) {
+            if (p.type == PatternType::INS) {
+                qDebug() << "[CameraView] STRIP 저장 - INS 패턴:" << p.name << "각도:" << p.angle;
+            }
+        }
+        qDebug() << "[CameraView] STRIP 검사 결과 저장 완료 (패턴 수:" << patterns.size() << ")";
+    } else {  // CRIMP
+        lastCrimpResult = lastInspectionResult;
+        lastCrimpFrame = frame;
+        lastCrimpPatterns = patterns;
+        hasCrimpResult = true;
+        
+        // 디버그: 패턴 각도 확인
+        for (const PatternInfo& p : patterns) {
+            if (p.type == PatternType::INS) {
+                qDebug() << "[CameraView] CRIMP 저장 - INS 패턴:" << p.name << "각도:" << p.angle;
+            }
+        }
+        qDebug() << "[CameraView] CRIMP 검사 결과 저장 완료 (패턴 수:" << patterns.size() << ")";
+    }
+}
+
+// 모드별 검사 결과로 전환
+bool CameraView::switchToModeResult(int mode) {
+    InspectionResult* targetResult = nullptr;
+    QPixmap* targetFrame = nullptr;
+    QList<PatternInfo>* targetPatterns = nullptr;
+    
+    if (mode == 0 && hasStripResult) {  // STRIP
+        targetResult = &lastStripResult;
+        targetFrame = &lastStripFrame;
+        targetPatterns = &lastStripPatterns;
+        qDebug() << "[CameraView] STRIP 검사 결과로 전환 (패턴 수:" << lastStripPatterns.size() << ")";
+    } else if (mode == 1 && hasCrimpResult) {  // CRIMP
+        targetResult = &lastCrimpResult;
+        targetFrame = &lastCrimpFrame;
+        targetPatterns = &lastCrimpPatterns;
+        qDebug() << "[CameraView] CRIMP 검사 결과로 전환 (패턴 수:" << lastCrimpPatterns.size() << ")";
+    } else {
+        return false;
+    }
+    
+    // 검사 결과 복원
+    lastInspectionResult = *targetResult;
+    lastInspectionPassed = targetResult->isPassed;
+    hasInspectionResult = true;
+    
+    // 패턴 상태 복원 (각도, 위치 포함)
+    patterns = *targetPatterns;
+    
+    // 배경 이미지 설정
+    setBackgroundPixmap(*targetFrame);
+    update();
+    
+    return true;
+}

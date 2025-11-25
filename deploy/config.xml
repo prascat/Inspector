@@ -9,5 +9,5 @@
     <ServerPort>5000</ServerPort>
     <AutoConnect>true</AutoConnect>
     <ReconnectInterval>3</ReconnectInterval>
-    <CameraAutoConnect>false</CameraAutoConnect>
+    <CameraAutoConnect>true</CameraAutoConnect>
 </Config>
