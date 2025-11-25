@@ -264,13 +264,6 @@ struct PatternInfo {
     double barrelRightStripLengthMin = 5.7;      // 최소 길이 (mm)
     double barrelRightStripLengthMax = 6.0;      // 최대 길이 (mm)
 
-    // CRIMP 중앙 배럴(Central Barrel) 검사 파라미터
-    bool crimpCentralBarrelEnabled = true;          // CRIMP 중앙 배럴 검사 활성화 여부
-    int crimpCentralBarrelOffsetX = 10;             // 패턴 왼쪽에서의 오프셋 (픽셀)
-    int crimpCentralBarrelBoxWidth = 100;           // 중앙 배럴 박스 너비 (픽셀)
-    int crimpCentralBarrelBoxHeight = 100;          // 중앙 배럴 박스 높이 (픽셀)
-    double crimpCentralBarrelMatchRate = 80.0;      // 매칭율 (%)
-
     // DIFF 검사 파라미터 (COLOR, EDGE 통합)
     QList<FilterInfo> filters;  // 패턴에 적용된 필터 목록
 };

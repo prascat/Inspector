@@ -958,12 +958,6 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("stripRearThicknessBoxWidth", QString::number(pattern.stripRearThicknessBoxWidth));
     xml.writeAttribute("stripRearThicknessBoxHeight", QString::number(pattern.stripRearThicknessBoxHeight));
     
-    // CRIMP 중앙 배럴 검사 관련 속성 저장
-    xml.writeAttribute("crimpCentralBarrelOffsetX", QString::number(pattern.crimpCentralBarrelOffsetX));
-    xml.writeAttribute("crimpCentralBarrelBoxWidth", QString::number(pattern.crimpCentralBarrelBoxWidth));
-    xml.writeAttribute("crimpCentralBarrelBoxHeight", QString::number(pattern.crimpCentralBarrelBoxHeight));
-    xml.writeAttribute("crimpCentralBarrelMatchRate", QString::number(pattern.crimpCentralBarrelMatchRate, 'f', 1));
-    
     // 템플릿 이미지 저장 (DIFF용 기본 템플릿)
     if (!pattern.templateImage.isNull()) {
         QByteArray ba;
@@ -1769,27 +1763,6 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     QString stripRearThicknessBoxHeightStr = xml.attributes().value("stripRearThicknessBoxHeight").toString();
     if (!stripRearThicknessBoxHeightStr.isEmpty()) {
         pattern.stripRearThicknessBoxHeight = stripRearThicknessBoxHeightStr.toInt();
-    }
-    
-    // CRIMP 중앙 배럴 검사 관련 속성 읽기
-    QString crimpCentralBarrelOffsetXStr = xml.attributes().value("crimpCentralBarrelOffsetX").toString();
-    if (!crimpCentralBarrelOffsetXStr.isEmpty()) {
-        pattern.crimpCentralBarrelOffsetX = crimpCentralBarrelOffsetXStr.toInt();
-    }
-    
-    QString crimpCentralBarrelBoxWidthStr = xml.attributes().value("crimpCentralBarrelBoxWidth").toString();
-    if (!crimpCentralBarrelBoxWidthStr.isEmpty()) {
-        pattern.crimpCentralBarrelBoxWidth = crimpCentralBarrelBoxWidthStr.toInt();
-    }
-    
-    QString crimpCentralBarrelBoxHeightStr = xml.attributes().value("crimpCentralBarrelBoxHeight").toString();
-    if (!crimpCentralBarrelBoxHeightStr.isEmpty()) {
-        pattern.crimpCentralBarrelBoxHeight = crimpCentralBarrelBoxHeightStr.toInt();
-    }
-    
-    QString crimpCentralBarrelMatchRateStr = xml.attributes().value("crimpCentralBarrelMatchRate").toString();
-    if (!crimpCentralBarrelMatchRateStr.isEmpty()) {
-        pattern.crimpCentralBarrelMatchRate = crimpCentralBarrelMatchRateStr.toDouble();
     }
     
     // 기본 템플릿 이미지 로드 (DIFF용 또는 레거시)
