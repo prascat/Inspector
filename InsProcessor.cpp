@@ -1595,8 +1595,6 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         
         // 추출한 ROI 전체에 필터 적용
         if (!pattern.filters.isEmpty()) {
-            logDebug(QString("STRIP ROI(%1x%2)에 %3개 필터 순차 적용")
-                    .arg(roiImage.cols).arg(roiImage.rows).arg(pattern.filters.size()));
             
             ImageProcessor processor;
             for (const FilterInfo& filter : pattern.filters) {
@@ -1777,16 +1775,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
     }
     
     
-    qDebug() << "[FRONT 검출 영역 디버그]";
-    qDebug() << "  bboxRoi:" << bboxRoi.x << bboxRoi.y << bboxRoi.width << bboxRoi.height;
-    qDebug() << "  frontBoxCenter(ROI):" << frontBoxCenterROI.x << frontBoxCenterROI.y;
-    qDebug() << "  frontBoxSize:" << frontBoxSz.width << frontBoxSz.height;
-    qDebug() << "  검출 포인트 개수:" << frontBlackRegionPoints.size();
-    
-    if (!frontBlackRegionPoints.empty()) {
-        qDebug() << "  첫번째 포인트(로컬):" << frontBlackRegionPoints[0].x << frontBlackRegionPoints[0].y;
-        qDebug() << "  마지막 포인트(로컬):" << frontBlackRegionPoints.back().x << frontBlackRegionPoints.back().y;
-    }
+
     
     // 최소/최대 라인의 포인트만 필터링해서 표시
     // 검은색 포인트는 검출된 그대로만 절대좌표로 변환 (어떤 회전도 적용 금지)
@@ -1801,9 +1790,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         frontBlackPointsConverted.append(ptAbs);
     }
     
-    if (!frontBlackPointsConverted.isEmpty()) {
-        qDebug() << "[FRONT BLACK] 포인트 개수:" << frontBlackPointsConverted.size();
-    }
+
     
     QList<QPoint> rearBlackPointsConverted;
     
@@ -1818,9 +1805,7 @@ bool InsProcessor::checkStrip(const cv::Mat& image, const PatternInfo& pattern, 
         rearBlackPointsConverted.append(ptAbs);
     }
     
-    if (!rearBlackPointsConverted.isEmpty()) {
-        qDebug() << "[REAR BLACK] 포인트 개수:" << rearBlackPointsConverted.size();
-    }
+
     
     // 변환된 포인트 저장 (절대좌표)
     result.stripFrontThicknessPoints[pattern.id] = frontPointsConverted;

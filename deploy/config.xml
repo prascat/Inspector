@@ -2,12 +2,12 @@
 <Config>
     <Language>ko</Language>
     <AutoSave>true</AutoSave>
-    <LastRecipePath>20251114_183114_522</LastRecipePath>
+    <LastRecipePath>20251125_130215_110</LastRecipePath>
     <SerialPort>사용 가능한 포트 없음</SerialPort>
     <SerialBaudRate>115200</SerialBaudRate>
     <ServerIp>192.168.5.2</ServerIp>
     <ServerPort>5000</ServerPort>
-    <AutoConnect>false</AutoConnect>
+    <AutoConnect>true</AutoConnect>
     <ReconnectInterval>3</ReconnectInterval>
     <CameraAutoConnect>false</CameraAutoConnect>
 </Config>

@@ -1177,14 +1177,8 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                     // ★ STRIP/CRIMP 모드에 따라 imageIndex 결정
                     int imageIndex = (currentStripCrimpMode == StripCrimpMode::STRIP_MODE) ? 0 : 1;
                     
-                    qDebug() << "[RUN 체크] CAM OFF: imageIndex=" << imageIndex 
-                             << ", cameraFrames.size()=" << cameraFrames.size()
-                             << ", isEmpty=" << (imageIndex < cameraFrames.size() ? cameraFrames[imageIndex].empty() : true);
-                    
                     if (!cameraView || imageIndex < 0 || imageIndex >= static_cast<int>(cameraFrames.size()) || 
                         cameraFrames[imageIndex].empty()) {
-                        
-                        qDebug() << "[RUN 체크] CAM OFF: 프레임 검증 실패";
                         btn->blockSignals(true);
                         btn->setChecked(false);
                         btn->blockSignals(false);
@@ -1278,7 +1272,6 @@ void TeachingWidget::connectButtonEvents(QPushButton* modeToggleButton, QPushBut
                         }
                         inspectionFrame = cameraFrames[imageIndex].clone();
                         inspectionCameraIndex = imageIndex;
-                        qDebug() << "[RUN] CAM OFF: imageIndex=" << imageIndex << "검사 시작 (mode=" << currentStripCrimpMode << ")";
                     } else {
                         // **실제 카메라 모드: 트리거로 저장된 프레임 또는 실시간 획득**
                         // 1. 먼저 cameraFrames에 저장된 프레임이 있는지 확인 (트리거 신호로 저장된 프레임)
@@ -9429,7 +9422,6 @@ bool TeachingWidget::runInspect(const cv::Mat& frame, int specificCameraIndex) {
                     double value = insStripLengthMinEdit->text().toDouble(&ok);
                     if (ok) {
                         pattern->stripLengthMin = value;
-                        qDebug() << "[검사 직전 UI->패턴] stripLengthMin 강제 반영:" << value;
                     }
                 }
                 if (insStripLengthMaxEdit) {
@@ -9437,7 +9429,6 @@ bool TeachingWidget::runInspect(const cv::Mat& frame, int specificCameraIndex) {
                     double value = insStripLengthMaxEdit->text().toDouble(&ok);
                     if (ok) {
                         pattern->stripLengthMax = value;
-                        qDebug() << "[검사 직전 UI->패턴] stripLengthMax 강제 반영:" << value;
                     }
                 }
             }
@@ -9463,13 +9454,6 @@ bool TeachingWidget::runInspect(const cv::Mat& frame, int specificCameraIndex) {
         // 시뮬레이션 모드거나 UUID가 일치하는 경우
         if (pattern.enabled && (camOff || pattern.cameraUuid == targetUuid || pattern.cameraUuid.isEmpty())) {
             cameraPatterns.append(pattern);
-            
-            // 디버그: STRIP 검사 패턴 값 확인
-            if (pattern.inspectionMethod == InspectionMethod::STRIP) {
-                qDebug() << "[검사 직전] STRIP 패턴:" << pattern.name 
-                         << "stripLengthMin:" << pattern.stripLengthMin 
-                         << "stripLengthMax:" << pattern.stripLengthMax;
-            }
         }
     }
 

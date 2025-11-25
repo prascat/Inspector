@@ -757,9 +757,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         std::vector<std::vector<cv::Point>> contours;
         cv::findContours(maskedProcessed, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
         
-        qDebug() << "[STRIP] 컨투어 개수:" << contours.size();
         if (contours.empty()) {
-            qDebug() << "[STRIP] 컨투어 없음 - 검사 실패";
             score = 0.0;
             roiImage.copyTo(resultImage);
             return false;
@@ -772,9 +770,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             });
         
         cv::Rect boundRect = cv::boundingRect(largestContour);
-
-        qDebug() << "[STRIP] boundRect: x=" << boundRect.x << "y=" << boundRect.y 
-                 << "w=" << boundRect.width << "h=" << boundRect.height;
         
         // boundRect 유효성 검사
         if (boundRect.width <= 0 || boundRect.height <= 0 || 
@@ -790,19 +785,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         // 필터에서 THRESH_BINARY로 이미 처리됨 (검은색=0이 찾고자 하는 부분, 흰색=255)
         // 반전 없이 그대로 사용
         cv::Mat blackRegions = maskedProcessed.clone();
-        
-        // 디버그: 이미지 저장
-        cv::imwrite("/home/km/Inspector/deploy/logs/debug_maskedProcessed.png", maskedProcessed);
-        cv::imwrite("/home/km/Inspector/deploy/logs/debug_blackRegions.png", blackRegions);
-        
-        // 디버그: blackRegions 통계 확인
-        double blackMin, blackMax;
-        cv::minMaxLoc(blackRegions, &blackMin, &blackMax);
-        int blackNonZero = cv::countNonZero(blackRegions);
-        qDebug() << "[STRIP] maskedProcessed 통계: min=" << minVal << "max=" << maxVal << "nonZero=" << nonZero;
-        qDebug() << "[STRIP] blackRegions 통계: min=" << blackMin << "max=" << blackMax << "nonZero=" << blackNonZero;
-        qDebug() << "[STRIP] maskedProcessed.size:" << maskedProcessed.cols << "x" << maskedProcessed.rows;
-        qDebug() << "[STRIP] blackRegions.size:" << blackRegions.cols << "x" << blackRegions.rows;
         
         // X축 방향으로 스캔 - 상단 컨투어와 하단 컨투어 각각 탐색 (원래 방식 유지)
         
@@ -848,9 +830,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 foundCount++;
             }
         }
-        
-        qDebug() << "[STRIP] 상단 스캔: 총" << scanCount << "개 라인 스캔, 검은색 발견:" << foundCount << "개";
-        
         
         // 1-2. 상단 컨투어 역방향 스캔 (오른쪽→왼쪽)
         std::vector<cv::Point> topPositionsReverse;
@@ -922,9 +901,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 bottomFoundCount++;
             }
         }
-        
-        qDebug() << "[STRIP] 하단 스캔: 총" << bottomScanCount << "개 라인 스캔, 검은색 발견:" << bottomFoundCount << "개";
-        qDebug() << "[STRIP] topPositions.size:" << topPositions.size() << ", bottomPositions.size:" << bottomPositions.size();
         
         // 2-2. 하단 컨투어 역방향 스캔 (오른쪽→왼쪽)
         std::vector<cv::Point> bottomPositionsReverse;
@@ -1648,8 +1624,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         // angleRad는 이미 위에서 정의됨 (1073줄)
         
         // STRIP 두께 측정 - FRONT 지점 (무조건 측정)
-        qDebug() << "[STRIP FRONT] 측정 시작 - processed.channels:" << processed.channels() 
-                 << "size:" << processed.cols << "x" << processed.rows;
         
         float startPercent = gradientStartPercent / 100.0f;
             
@@ -1683,11 +1657,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             int clippedBoxCenterY = std::max(thicknessBoxHeight/4, 
                                              std::min(boxCenterY, roiImage.rows - thicknessBoxHeight/4));
             
-            qDebug() << "[STRIP FRONT] 진단정보 - roiPatternCenter:" << roiPatternCenter.x << "," << roiPatternCenter.y
-                     << ", startPercent:" << startPercent
-                     << ", boxCenterX:" << boxCenterX << ", patternWidth:" << patternWidth
-                     << ", originalY:" << boxCenterY << ", clippedY:" << clippedBoxCenterY
-                     << ", adjustment:" << (clippedBoxCenterY - boxCenterY);
+
             
             std::vector<int> frontThicknesses;
             std::vector<cv::Point> measurementLines; // 측정 라인 저장
@@ -1701,20 +1671,18 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             // cosA, sinA는 위에서 이미 계산됨
             int actualBoxWidth, actualBoxHeight;
             
-            qDebug() << "[STRIP FRONT] 각도 체크 - angle:" << angle << "std::abs(angle):" << std::abs(angle);
+
             
             if (std::abs(angle) < 0.1) {
                 // 각도가 거의 없으면 원본 크기 사용
                 actualBoxWidth = thicknessBoxWidth;
                 actualBoxHeight = thicknessBoxHeight;
-                qDebug() << "[STRIP FRONT] 원본 크기 사용 - " << thicknessBoxWidth << "x" << thicknessBoxHeight;
             } else {
                 // 각도가 있으면 bounding box 크기 계산
                 double rotatedBoxWidth = std::abs(thicknessBoxWidth * cosA) + std::abs(thicknessBoxHeight * sinA);
                 double rotatedBoxHeight = std::abs(thicknessBoxWidth * sinA) + std::abs(thicknessBoxHeight * cosA);
                 actualBoxWidth = static_cast<int>(std::round(rotatedBoxWidth));
                 actualBoxHeight = static_cast<int>(std::round(rotatedBoxHeight));
-                qDebug() << "[STRIP FRONT] Bounding box 크기 계산 - " << actualBoxWidth << "x" << actualBoxHeight;
             }
             
             // 박스 왼쪽 끝 계산 (bounding box 기준)
@@ -1881,22 +1849,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
             
                 // 두께 측정 결과 처리
             if (!frontThicknesses.empty()) {
-                qDebug() << "[STRIP FRONT] ✓ 포인트 수집 성공 - Count:" << frontThicknesses.size()
-                         << ", Min:" << *std::min_element(frontThicknesses.begin(), frontThicknesses.end())
-                         << ", Max:" << *std::max_element(frontThicknesses.begin(), frontThicknesses.end());
-                
-                qDebug() << "[STRIP FRONT COORD DEBUG] boxLeftX:" << boxLeftX << "boxTopY:" << boxTopY
-                         << "boxCenterX:" << boxCenterX << "boxCenterY:" << boxCenterY
-                         << "actualBoxWidth:" << actualBoxWidth << "actualBoxHeight:" << actualBoxHeight;
-                qDebug() << "[STRIP FRONT COORD DEBUG] ROI크기:" << roiImage.cols << "x" << roiImage.rows
-                         << "processed크기:" << processed.cols << "x" << processed.rows
-                         << "검은색포인트개수:" << blackRegionPoints.size();
-                
-                if (!blackRegionPoints.empty()) {
-                    qDebug() << "[STRIP FRONT] 검은색 포인트 샘플 (박스 기준 로컬):"
-                             << "첫번째:" << blackRegionPoints[0].x << blackRegionPoints[0].y
-                             << "마지막:" << blackRegionPoints.back().x << blackRegionPoints.back().y;
-                }
                 
                 // 각 라인별 두께를 frontThicknessPoints에 저장 (InsProcessor에서 통계 계산)
                 // cv::Point의 y값에 두께(픽셀)을 저장
@@ -1920,10 +1872,9 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 if (frontBoxCenter) *frontBoxCenter = cv::Point(boxCenterX, boxCenterY);
                 if (frontBoxSize) *frontBoxSize = cv::Size(actualBoxWidth, actualBoxHeight);
                 
-                qDebug() << "[STRIP FRONT] 반환좌표 - boxCenterX:" << boxCenterX << "boxCenterY:" << boxCenterY;
+
                 
             } else {
-                qDebug() << "[STRIP FRONT] ✗ 포인트 없음 - 검은색 픽셀을 찾지 못함";
                 isPassed = false;
             }
         
@@ -1964,14 +1915,6 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         int clippedBoxCenterY_rear = std::max(rearThicknessBoxHeight/4, 
                                               std::min(boxCenterY_rear, roiImage.rows - rearThicknessBoxHeight/4));
         int yAdjustment = clippedBoxCenterY_rear - boxCenterY_rear;
-        
-        qDebug() << "[STRIP REAR] 진단정보 - roiPatternCenter:" << roiPatternCenter_rear.x << "," << roiPatternCenter_rear.y
-                 << ", endPercent:" << endPercent
-                 << ", boxCenterX_rear:" << boxCenterX_rear << ", patternWidth:" << patternWidth
-                 << ", originalY:" << boxCenterY_rear << ", clippedY:" << clippedBoxCenterY_rear << ", adjustment:" << yAdjustment;
-        qDebug() << "[STRIP REAR] 측정 시작 - boxCenter:" << boxCenterX_rear << "," << clippedBoxCenterY_rear
-                 << ", boxSize:" << rearThicknessBoxWidth << "x" << rearThicknessBoxHeight;
-        qDebug() << "[STRIP REAR] ROI 크기:" << roiImage.cols << "x" << roiImage.rows;
         
         // 클립된 Y 좌표 사용
         boxCenterY_rear = clippedBoxCenterY_rear;
@@ -2153,26 +2096,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
         }
         
         // REAR 두께 측정 결과 처리
-        qDebug() << "[STRIP REAR] 측정 완료 - thicknesses_rear.size():" << thicknesses_rear.size() 
-                 << ", blackRegionPoints_rear.size():" << blackRegionPoints_rear.size()
-                 << ", totalLines스캔:" << (rearThicknessBoxWidth - 2);
-        
         if (!thicknesses_rear.empty()) {
-                qDebug() << "[STRIP REAR] ✓ 포인트 수집 성공 - Min:" << *std::min_element(thicknesses_rear.begin(), thicknesses_rear.end())
-                         << ", Max:" << *std::max_element(thicknesses_rear.begin(), thicknesses_rear.end());
-                
-                qDebug() << "[STRIP REAR COORD DEBUG] boxLeftX_rear:" << boxLeftX_rear << "boxTopY_rear:" << boxTopY_rear
-                         << "boxCenterX_rear:" << boxCenterX_rear << "boxCenterY_rear:" << boxCenterY_rear
-                         << "rearThicknessBoxWidth:" << rearThicknessBoxWidth << "rearThicknessBoxHeight:" << rearThicknessBoxHeight;
-                qDebug() << "[STRIP REAR COORD DEBUG] ROI크기:" << roiImage.cols << "x" << roiImage.rows
-                         << "processed크기:" << processed.cols << "x" << processed.rows
-                         << "검은색포인트개수:" << blackRegionPoints_rear.size();
-                
-                if (!blackRegionPoints_rear.empty()) {
-                    qDebug() << "[STRIP REAR] 검은색 포인트 샘플 (박스 기준 로컬):"
-                             << "첫번째:" << blackRegionPoints_rear[0].x << blackRegionPoints_rear[0].y
-                             << "마지막:" << blackRegionPoints_rear.back().x << blackRegionPoints_rear.back().y;
-                }
                 
                 // 각 라인별 두께를 rearThicknessPoints에 저장 (InsProcessor에서 통계 계산)
                 // cv::Point의 y값에 두께(픽셀)을 저장
@@ -2194,16 +2118,10 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 
                 // REAR 박스 정보 반환 (ROI 좌표계의 박스 중심)
                 if (rearBoxCenter) *rearBoxCenter = cv::Point(boxCenterX_rear, boxCenterY_rear);
-                if (rearBoxSize) *rearBoxSize = cv::Size(actualBoxWidth_rear, actualBoxHeight_rear);        qDebug() << "[STRIP REAR] 반환좌표 - boxCenterX_rear:" << boxCenterX_rear << "boxCenterY_rear:" << boxCenterY_rear;
+                if (rearBoxSize) *rearBoxSize = cv::Size(actualBoxWidth_rear, actualBoxHeight_rear);
                 
-                qDebug() << "[STRIP REAR] 측정 완료 - boxCenter:" << boxCenterX_rear << "," << boxCenterY_rear 
-                         << ", boxSize:" << rearThicknessBoxWidth << "x" << rearThicknessBoxHeight;
-        } else {
-            qDebug() << "[STRIP REAR] ✗ 포인트 없음 - 검은색 픽셀을 찾지 못함";
-            
-            qDebug() << "[STRIP REAR] 진단 - boxCenter:" << boxCenterX_rear << "," << boxCenterY_rear
-                     << ", boxSize:" << rearThicknessBoxWidth << "x" << rearThicknessBoxHeight
-                     << ", ROI크기:" << roiImage.cols << "x" << roiImage.rows;
+
+            } else {
             std::cout << "=== REAR 두께 측정 검사 ===" << std::endl;
             isPassed = false;
         }
