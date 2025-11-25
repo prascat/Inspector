@@ -9882,6 +9882,11 @@ void TeachingWidget::setStripCrimpMode(int mode) {
     // ★ cameraFrames[0]=STRIP, cameraFrames[1]=CRIMP을 직접 사용
     if (camOff) {
         int imageIndex = (mode == StripCrimpMode::STRIP_MODE) ? 0 : 1;
+        QString modeName = (mode == StripCrimpMode::STRIP_MODE) ? "STRIP" : "CRIMP";
+        
+        qDebug() << "[setStripCrimpMode] CAM OFF 상태: imageIndex=" << imageIndex 
+                 << ", cameraFrames.size()=" << cameraFrames.size()
+                 << ", mode=" << modeName;
         
         if (imageIndex < static_cast<int>(cameraFrames.size()) && !cameraFrames[imageIndex].empty()) {
             // OpenCV Mat를 QPixmap으로 변환
@@ -9896,9 +9901,80 @@ void TeachingWidget::setStripCrimpMode(int mode) {
                 cameraView->setBackgroundImage(pixmap);
             }
             
-            qDebug() << "[setStripCrimpMode] CAM OFF 상태: cameraFrames[" << imageIndex 
-                     << "] 화면 갱신 (mode=" << (mode == StripCrimpMode::STRIP_MODE ? "STRIP" : "CRIMP") << ")";
+            qDebug() << "[setStripCrimpMode] 이미지 갱신 성공 - cameraFrames[" << imageIndex << "]";
             updateCameraFrame();
+        } else {
+            qDebug() << "[setStripCrimpMode] 이미지 없음 - cameraFrames[" << imageIndex << "] is empty or out of range";
+            
+            // 이미지가 없으면 사용자에게 추가 여부 질문 (CustomMessageBox 사용)
+            CustomMessageBox msgBox(this, CustomMessageBox::Question,
+                tr("이미지 없음"),
+                tr("%1 모드 이미지가 없습니다.\n이미지를 추가하시겠습니까?").arg(modeName),
+                QMessageBox::Yes | QMessageBox::No);
+            int result = msgBox.exec();
+            
+            if (result == QMessageBox::Yes) {
+                // 이미지 파일 선택 다이얼로그
+                QString imagePath = QFileDialog::getOpenFileName(
+                    this,
+                    tr("%1 이미지 선택").arg(modeName),
+                    QDir::homePath(),
+                    tr("이미지 파일 (*.png *.jpg *.jpeg *.bmp)")
+                );
+                
+                if (!imagePath.isEmpty()) {
+                    cv::Mat loadedImage = cv::imread(imagePath.toStdString());
+                    if (!loadedImage.empty()) {
+                        // cameraFrames 배열 크기 확장
+                        if (imageIndex >= static_cast<int>(cameraFrames.size())) {
+                            cameraFrames.resize(imageIndex + 1);
+                        }
+                        cameraFrames[imageIndex] = loadedImage.clone();
+                        
+                        // stripModeImage/crimpModeImage도 업데이트
+                        if (imageIndex == 0) {
+                            stripModeImage = loadedImage.clone();
+                        } else if (imageIndex == 1) {
+                            crimpModeImage = loadedImage.clone();
+                        }
+                        
+                        // 화면에 표시
+                        cv::Mat displayImage;
+                        cv::cvtColor(loadedImage, displayImage, cv::COLOR_BGR2RGB);
+                        QImage qImage(displayImage.data, displayImage.cols, displayImage.rows, 
+                                     displayImage.step, QImage::Format_RGB888);
+                        QPixmap pixmap = QPixmap::fromImage(qImage.copy());
+                        
+                        if (cameraView) {
+                            cameraView->setBackgroundImage(pixmap);
+                        }
+                        
+                        qDebug() << "[setStripCrimpMode]" << modeName << "이미지 추가 완료:" << imagePath;
+                        updateCameraFrame();
+                        
+                        // 레시피 변경 표시
+                        hasUnsavedChanges = true;
+                    } else {
+                        CustomMessageBox errBox(this, CustomMessageBox::Warning,
+                            tr("오류"), tr("이미지를 로드할 수 없습니다."),
+                            QMessageBox::Ok);
+                        errBox.exec();
+                    }
+                }
+            } else {
+                // 사용자가 No를 선택하면 이전 모드로 복귀
+                int prevMode = (mode == StripCrimpMode::STRIP_MODE) ? StripCrimpMode::CRIMP_MODE : StripCrimpMode::STRIP_MODE;
+                if (stripCrimpButton) {
+                    stripCrimpButton->blockSignals(true);
+                    stripCrimpButton->setChecked(prevMode == StripCrimpMode::CRIMP_MODE);
+                    stripCrimpButton->setText(prevMode == StripCrimpMode::CRIMP_MODE ? "CRIMP" : "STRIP");
+                    stripCrimpButton->blockSignals(false);
+                }
+                currentStripCrimpMode = prevMode;
+                if (cameraView) {
+                    cameraView->setStripCrimpMode(prevMode);
+                }
+            }
         }
     }
     
