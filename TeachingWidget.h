@@ -46,6 +46,9 @@
 #include <QShortcut>
 #include <QTextEdit>
 #include <atomic>
+#include <QThreadPool>
+#include <QRunnable>
+#include <QDir>
 #include <opencv2/opencv.hpp>
 
 #include "CommonDefs.h"
@@ -280,6 +283,7 @@ private:
     void updateMainCameraUI(const InspectionResult& result, const cv::Mat& frameForInspection);
     void updatePreviewFrames();
     void initializeLanguageSystem();
+    void saveImageAsync(const cv::Mat& frame, int stripCrimpMode);
     PatternInfo* findPatternById(const QUuid& patternId);
     QString getFilterTypeName(int filterType);
     void updateTreeItemTexts(QTreeWidgetItem* item);
@@ -413,7 +417,7 @@ private:
     QLabel* insStripLengthMaxLabel = nullptr;
     QLineEdit* insStripLengthMaxEdit = nullptr;
     QLabel* insStripLengthConversionLabel = nullptr;
-    QDoubleSpinBox* insStripLengthConversionSpin = nullptr;
+    QLineEdit* insStripLengthConversionEdit = nullptr;
     QLabel* insStripLengthMeasuredLabel = nullptr;
     QPushButton* insStripLengthRefreshButton = nullptr;
     

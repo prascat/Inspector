@@ -3609,15 +3609,14 @@ void TeachingWidget::createPropertyPanels() {
     conversionLayout->setContentsMargins(0, 0, 0, 0);
     conversionLayout->setSpacing(5);
     
-    insStripLengthConversionSpin = new QDoubleSpinBox(insStripLengthGroup);
-    insStripLengthConversionSpin->setRange(0.001, 100.0);
-    insStripLengthConversionSpin->setDecimals(3);
-    insStripLengthConversionSpin->setSingleStep(0.001);
-    insStripLengthConversionSpin->setValue(6.0);
-    conversionLayout->addWidget(insStripLengthConversionSpin);
+    insStripLengthConversionEdit = new QLineEdit("6.0", insStripLengthGroup);
+    insStripLengthConversionEdit->setMaximumWidth(80);
+    conversionLayout->addWidget(insStripLengthConversionEdit);
     
     insStripLengthRefreshButton = new QPushButton("갱신", insStripLengthGroup);
     insStripLengthRefreshButton->setMaximumWidth(80);
+    insStripLengthRefreshButton->setEnabled(true);
+    insStripLengthRefreshButton->setFocusPolicy(Qt::StrongFocus);
     conversionLayout->addWidget(insStripLengthRefreshButton);
     
     stripLengthLayout->addRow(insStripLengthConversionLabel, conversionWidget);
@@ -5520,7 +5519,7 @@ void TeachingWidget::connectPropertyPanelEvents() {
                         // 길이검사 관련 위젯들 활성화/비활성화
                         if (insStripLengthMinEdit) insStripLengthMinEdit->setEnabled(enabled);
                         if (insStripLengthMaxEdit) insStripLengthMaxEdit->setEnabled(enabled);
-                        if (insStripLengthConversionSpin) insStripLengthConversionSpin->setEnabled(enabled);
+                        if (insStripLengthConversionEdit) insStripLengthConversionEdit->setEnabled(enabled);
                         
                         cameraView->updatePatternById(patternId, *pattern);
                         cameraView->update();
@@ -5570,23 +5569,31 @@ void TeachingWidget::connectPropertyPanelEvents() {
                 }
             }
         });
-        
-        // 길이검사 수치 변환 변경 이벤트
-        connect(insStripLengthConversionSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this](double value) {
+    }
+    
+    // 길이검사 수치 변환 변경 이벤트
+    if (insStripLengthConversionEdit) {
+        connect(insStripLengthConversionEdit, &QLineEdit::textChanged, [this](const QString& text) {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
                 QUuid patternId = getPatternIdFromItem(selectedItem);
                 if (!patternId.isNull()) {
                     PatternInfo* pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS) {
-                        pattern->stripLengthConversionMm = value;
-                        cameraView->updatePatternById(patternId, *pattern);
+                        bool ok;
+                        double value = text.toDouble(&ok);
+                        if (ok) {
+                            pattern->stripLengthConversionMm = value;
+                            cameraView->updatePatternById(patternId, *pattern);
+                        }
                     }
                 }
             }
         });
-        
-        // 길이 측정값 갱신 버튼
+    }
+    
+    // 길이 측정값 갱신 버튼
+    if (insStripLengthRefreshButton) {
         connect(insStripLengthRefreshButton, &QPushButton::clicked, [this]() {
             QTreeWidgetItem* selectedItem = patternTree->currentItem();
             if (selectedItem) {
@@ -5597,35 +5604,32 @@ void TeachingWidget::connectPropertyPanelEvents() {
                         // 마지막 검사 결과에서 측정된 길이 가져오기
                         const InspectionResult& result = cameraView->getLastInspectionResult();
                         if (result.stripMeasuredLengthPx.contains(patternId)) {
-                            double pixelLength = result.stripMeasuredLengthPx[patternId];  // 픽셀 원본값 사용
-                            double mmLength = pattern->stripLengthConversionMm;
+                            double pixelLength = result.stripMeasuredLengthPx[patternId];
+                            bool ok;
+                            double mmLength = insStripLengthConversionEdit->text().toDouble(&ok);
+                            if (!ok || mmLength <= 0) return;
                             
-                            
-                            
-                            // 캘리브레이션 값 저장
+                            pattern->stripLengthConversionMm = mmLength;
                             pattern->stripLengthCalibrationPx = pixelLength;
                             pattern->stripLengthCalibrated = true;
                             
+                            cameraView->updatePatternById(patternId, *pattern);
                             
-                            
-                            // 변환 비율 계산: pixel/mm
                             double conversionRatio = pixelLength / mmLength;
                             
-                            // 측정값 라벨 업데이트
                             if (insStripLengthMeasuredLabel) {
                                 insStripLengthMeasuredLabel->setText(
                                     QString("측정값: %1 px (%2 px/mm)").arg(pixelLength, 0, 'f', 1).arg(conversionRatio, 0, 'f', 2)
                                 );
                             }
                             
-                            // 갱신 버튼 색상 변경 (캘리브레이션 완료)
-                            if (insStripLengthRefreshButton) {
-                                insStripLengthRefreshButton->setStyleSheet(
-                                    "QPushButton { background-color: #4CAF50; color: white; font-weight: bold; }"
-                                    "QPushButton:hover { background-color: #45a049; }"
-                                );
-                            }
+                            insStripLengthRefreshButton->setStyleSheet(
+                                "QPushButton { background-color: #4CAF50; color: white; font-weight: bold; }"
+                                "QPushButton:hover { background-color: #45a049; }"
+                            );
                             
+                            cameraView->update();
+                            update();
                             
                         } else {
                             if (insStripLengthMeasuredLabel) {
@@ -6564,10 +6568,10 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                         insStripLengthMaxEdit->blockSignals(false);
                     }
                     
-                    if (insStripLengthConversionSpin) {
-                        insStripLengthConversionSpin->blockSignals(true);
-                        insStripLengthConversionSpin->setValue(pattern->stripLengthConversionMm);
-                        insStripLengthConversionSpin->blockSignals(false);
+                    if (insStripLengthConversionEdit) {
+                        insStripLengthConversionEdit->blockSignals(true);
+                        insStripLengthConversionEdit->setText(QString::number(pattern->stripLengthConversionMm, 'f', 3));
+                        insStripLengthConversionEdit->blockSignals(false);
                     }
                     
                     // 캘리브레이션 정보 표시
@@ -6586,6 +6590,8 @@ void TeachingWidget::updatePropertyPanel(PatternInfo* pattern, const FilterInfo*
                     
                     // 캘리브레이션 완료 여부에 따라 갱신 버튼 색상 변경
                     if (insStripLengthRefreshButton) {
+                        insStripLengthRefreshButton->setEnabled(true);
+                        
                         if (pattern->stripLengthCalibrated && pattern->stripLengthCalibrationPx > 0) {
                             // 캘리브레이션 완료: 녹색
                             insStripLengthRefreshButton->setStyleSheet(
@@ -7398,6 +7404,9 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat& frame, int cameraInd
     // **트리거 처리 시작**
     qDebug() << "[onTriggerSignalReceived] ✓ 트리거 프레임 수신! 크기:" << frame.cols << "x" << frame.rows;
     triggerProcessing = true;
+    
+    // **비동기 이미지 저장 (트리거 처리와 독립적으로 실행)**
+    saveImageAsync(frame, currentStripCrimpMode);
     
     // **프레임을 cameraFrames에 저장**
     processGrabbedFrame(frame, cameraIndex);
@@ -12797,4 +12806,46 @@ void TeachingWidget::toggleFullScreenMode() {
         showMaximized();
         isFullScreenMode = true;
     }
+}
+
+// 비동기 이미지 저장 함수
+void TeachingWidget::saveImageAsync(const cv::Mat& frame, int stripCrimpMode) {
+    if (frame.empty()) {
+        return;
+    }
+    
+    // 이미지 복사 (비동기 작업에서 안전하게 사용)
+    cv::Mat frameCopy = frame.clone();
+    
+    // QRunnable 람다로 비동기 작업 생성
+    QThreadPool::globalInstance()->start([frameCopy, stripCrimpMode]() {
+        // 현재 시간으로 파일명 생성 (yyyyMMdd_HHmmss_zzz)
+        QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss_zzz");
+        
+        // 저장 경로 설정
+        QString folderName = (stripCrimpMode == 0) ? "strip" : "crimp";
+        QString basePath = "../deploy/data/" + folderName;
+        
+        // 디렉토리 생성 (없으면)
+        QDir dir;
+        if (!dir.exists(basePath)) {
+            dir.mkpath(basePath);
+        }
+        
+        // 파일 경로 생성
+        QString filePath = basePath + "/" + timestamp + ".png";
+        
+        // 이미지 저장
+        std::vector<int> compression_params;
+        compression_params.push_back(cv::IMWRITE_PNG_COMPRESSION);
+        compression_params.push_back(3); // 압축 레벨 (0-9, 3은 중간)
+        
+        bool success = cv::imwrite(filePath.toStdString(), frameCopy, compression_params);
+        
+        if (success) {
+            qDebug() << "[비동기 저장 성공]" << filePath;
+        } else {
+            qDebug() << "[비동기 저장 실패]" << filePath;
+        }
+    });
 }

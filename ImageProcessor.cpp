@@ -1920,20 +1920,7 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 if (frontBoxCenter) *frontBoxCenter = cv::Point(boxCenterX, boxCenterY);
                 if (frontBoxSize) *frontBoxSize = cv::Size(actualBoxWidth, actualBoxHeight);
                 
-                qDebug() << "[STRIP FRONT] 반환좌표 - boxCenterX:" << boxCenterX << "boxCenterY:" << boxCenterY;                // FRONT 영역을 잘라내서 PNG로 저장 (디버그용)
-                int x1_f = std::max(0, boxCenterX - thicknessBoxWidth/2);
-                int y1_f = std::max(0, boxCenterY - thicknessBoxHeight/2);
-                int x2_f = std::min(roiImage.cols, boxCenterX + thicknessBoxWidth/2);
-                int y2_f = std::min(roiImage.rows, boxCenterY + thicknessBoxHeight/2);
-                
-                if (x1_f < x2_f && y1_f < y2_f) {
-                    cv::Mat frontRegion = processed(cv::Rect(x1_f, y1_f, x2_f-x1_f, y2_f-y1_f));
-                    std::vector<int> compression_params;
-                    compression_params.push_back(cv::IMWRITE_PNG_COMPRESSION);
-                    compression_params.push_back(9);
-                    cv::imwrite("../deploy/front_region.png", frontRegion, compression_params);
-                    qDebug() << "[STRIP FRONT] 영역 저장 - ../deploy/front_region.png ("<<(x2_f-x1_f)<<"x"<<(y2_f-y1_f)<<")";
-                }
+                qDebug() << "[STRIP FRONT] 반환좌표 - boxCenterX:" << boxCenterX << "boxCenterY:" << boxCenterY;
                 
             } else {
                 qDebug() << "[STRIP FRONT] ✗ 포인트 없음 - 검은색 픽셀을 찾지 못함";
@@ -2207,40 +2194,12 @@ bool ImageProcessor::performStripInspection(const cv::Mat& roiImage, const cv::M
                 
                 // REAR 박스 정보 반환 (ROI 좌표계의 박스 중심)
                 if (rearBoxCenter) *rearBoxCenter = cv::Point(boxCenterX_rear, boxCenterY_rear);
-                if (rearBoxSize) *rearBoxSize = cv::Size(actualBoxWidth_rear, actualBoxHeight_rear);        qDebug() << "[STRIP REAR] 반환좌표 - boxCenterX_rear:" << boxCenterX_rear << "boxCenterY_rear:" << boxCenterY_rear;                // REAR 영역을 잘라내서 PNG로 저장 (디버그용)
-                int x1 = std::max(0, boxCenterX_rear - rearThicknessBoxWidth/2);
-                int y1 = std::max(0, boxCenterY_rear - rearThicknessBoxHeight/2);
-                int x2 = std::min(roiImage.cols, boxCenterX_rear + rearThicknessBoxWidth/2);
-                int y2 = std::min(roiImage.rows, boxCenterY_rear + rearThicknessBoxHeight/2);
-                
-                if (x1 < x2 && y1 < y2) {
-                    cv::Mat rearRegion = processed(cv::Rect(x1, y1, x2-x1, y2-y1));
-                    std::vector<int> compression_params;
-                    compression_params.push_back(cv::IMWRITE_PNG_COMPRESSION);
-                    compression_params.push_back(9);
-                    cv::imwrite("../deploy/rear_region.png", rearRegion, compression_params);
-                    qDebug() << "[STRIP REAR] 영역 저장 - ../deploy/rear_region.png ("<<(x2-x1)<<"x"<<(y2-y1)<<")";
-                }
+                if (rearBoxSize) *rearBoxSize = cv::Size(actualBoxWidth_rear, actualBoxHeight_rear);        qDebug() << "[STRIP REAR] 반환좌표 - boxCenterX_rear:" << boxCenterX_rear << "boxCenterY_rear:" << boxCenterY_rear;
                 
                 qDebug() << "[STRIP REAR] 측정 완료 - boxCenter:" << boxCenterX_rear << "," << boxCenterY_rear 
                          << ", boxSize:" << rearThicknessBoxWidth << "x" << rearThicknessBoxHeight;
         } else {
             qDebug() << "[STRIP REAR] ✗ 포인트 없음 - 검은색 픽셀을 찾지 못함";
-            
-            // REAR 영역을 잘라내서 PNG로 저장 (디버그용)
-            int x1 = std::max(0, boxCenterX_rear - rearThicknessBoxWidth/2);
-            int y1 = std::max(0, boxCenterY_rear - rearThicknessBoxHeight/2);
-            int x2 = std::min(roiImage.cols, boxCenterX_rear + rearThicknessBoxWidth/2);
-            int y2 = std::min(roiImage.rows, boxCenterY_rear + rearThicknessBoxHeight/2);
-            
-            if (x1 < x2 && y1 < y2) {
-                cv::Mat rearRegion = processed(cv::Rect(x1, y1, x2-x1, y2-y1));
-                std::vector<int> compression_params;
-                compression_params.push_back(cv::IMWRITE_PNG_COMPRESSION);
-                compression_params.push_back(9);
-                cv::imwrite("../deploy/rear_region_empty.png", rearRegion, compression_params);
-                qDebug() << "[STRIP REAR] 영역 저장 (포인트없음) - ../deploy/rear_region_empty.png ("<<(x2-x1)<<"x"<<(y2-y1)<<")";
-            }
             
             qDebug() << "[STRIP REAR] 진단 - boxCenter:" << boxCenterX_rear << "," << boxCenterY_rear
                      << ", boxSize:" << rearThicknessBoxWidth << "x" << rearThicknessBoxHeight
