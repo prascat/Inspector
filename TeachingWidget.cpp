@@ -3512,15 +3512,13 @@ void TeachingWidget::createPropertyPanels()
     specialPropStack = new QStackedWidget(scrollContent);
     mainContentLayout->addWidget(specialPropStack);
 
-    // 1. ROI 속성 - 체크박스 왼쪽 정렬
+    // 1. ROI 속성 (전체 카메라 영역 포함 기능 제거됨)
     QWidget *roiPropWidget = new QWidget(specialPropStack);
     QVBoxLayout *roiLayout = new QVBoxLayout(roiPropWidget);
     roiLayout->setContentsMargins(0, 0, 0, 0);
     roiLayout->setSpacing(3);
-    roiLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop); // 왼쪽 상단 정렬
-
-    roiIncludeAllCheck = new QCheckBox("전체 카메라 영역 포함", roiPropWidget);
-    roiLayout->addWidget(roiIncludeAllCheck);
+    roiLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    // ROI에 특별한 속성 없음
     specialPropStack->addWidget(roiPropWidget);
 
     // 2. FID 속성 - 그룹박스로 묶기
@@ -5266,23 +5264,7 @@ void TeachingWidget::connectPropertyPanelEvents()
             } });
     }
 
-    // ROI 전체 카메라 영역 포함 체크박스
-    if (includeAllCameraCheck)
-    {
-        connect(includeAllCameraCheck, &QCheckBox::toggled, [this](bool checked)
-                {
-            QTreeWidgetItem* selectedItem = patternTree->currentItem();
-            if (selectedItem) {
-                QUuid patternId = QUuid(selectedItem->data(0, Qt::UserRole).toString());
-                if (!patternId.isNull()) {
-                    PatternInfo* pattern = cameraView->getPatternById(patternId);
-                    if (pattern && pattern->type == PatternType::ROI) {
-                        pattern->includeAllCamera = checked;
-                        cameraView->update();
-                    }
-                }
-            } });
-    }
+    // includeAllCameraCheck 제거됨
 
     // FID 패턴 매칭 방법 콤보박스
     if (fidMatchMethodCombo)
@@ -6971,10 +6953,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
             case PatternType::ROI:
             {
                 specialPropStack->setCurrentIndex(0);
-                if (includeAllCameraCheck)
-                {
-                    includeAllCameraCheck->setChecked(pattern->includeAllCamera);
-                }
+                // includeAllCameraCheck 제거됨
                 break;
             }
             case PatternType::FID:
@@ -12563,7 +12542,7 @@ void TeachingWidget::addPattern()
         // 패턴 타입별 기본값 설정
         if (currentPatternType == PatternType::ROI)
         {
-            pattern.includeAllCamera = false;
+            // includeAllCamera 제거됨
         }
         else if (currentPatternType == PatternType::FID)
         {

@@ -873,7 +873,7 @@ void RecipeManager::writePatternRect(QXmlStreamWriter& xml, const PatternInfo& p
 
 void RecipeManager::writeROIDetails(QXmlStreamWriter& xml, const PatternInfo& pattern) {
     xml.writeStartElement("ROIDetails");
-    if (pattern.includeAllCamera) xml.writeAttribute("includeAllCamera", "true");
+    // includeAllCamera 제거됨
     xml.writeEndElement();
 }
 
@@ -1591,7 +1591,7 @@ void RecipeManager::readPatternDetails(QXmlStreamReader& xml, PatternInfo& patte
 }
 
 void RecipeManager::readROIDetails(QXmlStreamReader& xml, PatternInfo& pattern) {
-    pattern.includeAllCamera = (xml.attributes().value("includeAllCamera").toString() == "true");
+    // includeAllCamera 제거됨
     xml.skipCurrentElement();
 }
 

@@ -216,8 +216,7 @@ struct PatternInfo {
     QList<QUuid> childIds;  // 자식 패턴의 ID 목록
     
     // 각 패턴 타입별 특수 속성들
-    // ROI 속성
-    bool includeAllCamera = false;
+    // ROI 속성 (includeAllCamera 제거됨)
     
     // Fiducial 속성
     double matchThreshold = 75.0;  // 매칭 임계값 (0-100%)

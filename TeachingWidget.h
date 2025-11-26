@@ -377,7 +377,7 @@ private:
     QStackedWidget* specialPropStack = nullptr;
     
     // ROI 속성
-    QCheckBox* includeAllCameraCheck = nullptr;
+    // includeAllCameraCheck 제거됨
     
     // FID 속성
     QGroupBox* fidMatchCheckBox = nullptr;  // GroupBox를 체크박스로 사용
@@ -506,7 +506,7 @@ private:
     QLabel* filterInfoLabel = nullptr;
     
     // ROI 속성 위젯들
-    QCheckBox* roiIncludeAllCheck = nullptr;
+    // roiIncludeAllCheck 제거됨
 
     // FID 속성 위젯들
     QDoubleSpinBox* fidMatchThreshSpin = nullptr;

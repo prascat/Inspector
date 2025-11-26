@@ -671,32 +671,21 @@ bool InsProcessor::matchFiducial(const cv::Mat &image, const PatternInfo &patter
         bool roiDefined = false;
 
         // ★★★ 수정: 패턴 중심 기반으로 검색 영역 결정 (항상 패턴 주변 영역 사용) ★★★
-        // 모든 ROI 패턴 검색
+        // 모든 ROI 패턴 검색 (현재 FID 패턴과 같은 stripCrimpMode만)
         for (const PatternInfo &roi : allPatterns)
         {
             // ROI 패턴인지 확인하고 활성화된 상태인지 확인
-            if (roi.type == PatternType::ROI && roi.enabled)
+            // ★★★ 중요: FID와 같은 stripCrimpMode의 ROI만 사용 ★★★
+            if (roi.type == PatternType::ROI && roi.enabled && roi.stripCrimpMode == pattern.stripCrimpMode)
             {
-                // "전체 카메라 영역 포함" 체크 여부 확인
-                if (roi.includeAllCamera)
+                // FID 패턴이 이 ROI 내부에 있는지 확인 (중심점 기준)
+                QPoint fidCenter = QPoint(
+                    static_cast<int>(pattern.rect.center().x()),
+                    static_cast<int>(pattern.rect.center().y()));
+                if (roi.rect.contains(fidCenter))
                 {
-                    // 전체 이미지 영역 사용 (하지만 패턴 주변 검색 영역으로 제한)
                     roiDefined = true;
-                    logDebug(QString("ROI 패턴 '%1': 전체 카메라 영역 포함 옵션 활성화됨 (패턴 주변 검색)")
-                                 .arg(roi.name));
-                    break;
-                }
-                else
-                {
-                    // FID 패턴이 이 ROI 내부에 있는지 확인 (중심점 기준)
-                    QPoint fidCenter = QPoint(
-                        static_cast<int>(pattern.rect.center().x()),
-                        static_cast<int>(pattern.rect.center().y()));
-                    if (roi.rect.contains(fidCenter))
-                    {
-                        roiDefined = true;
-                        break; // 첫 번째로 찾은 포함하는 ROI 사용
-                    }
+                    break; // 첫 번째로 찾은 포함하는 ROI 사용
                 }
             }
         }

@@ -1133,7 +1133,6 @@ void CameraView::showContextMenu(const QPoint &pos)
                 newPattern.color = UIColors::ROI_COLOR;
                 newPattern.enabled = true;
                 newPattern.cameraUuid = currentCameraUuid;
-                newPattern.includeAllCamera = false;
                 newPattern.stripCrimpMode = currentStripCrimpMode;
 
                 addPattern(newPattern);
