@@ -389,7 +389,7 @@ private:
     // INS 속성
     QLabel* insPassThreshLabel = nullptr;
     QLabel* insMethodLabel = nullptr;
-    QCheckBox* insInvertCheck = nullptr;
+    // insInvertCheck 제거됨
     QLabel* insThreshLabel = nullptr;
     QLabel* insCompareLabel = nullptr;
     QLabel* insTemplateImg = nullptr;
@@ -530,6 +530,8 @@ private:
     QLabel* ssimNgThreshLabel = nullptr;
     QSlider* ssimNgThreshSlider = nullptr;
     QLabel* ssimNgThreshValue = nullptr;
+    QSlider* allowedNgRatioSlider = nullptr;
+    QLabel* allowedNgRatioValue = nullptr;
     QLabel* ssimColorBar = nullptr;
 
     // 패턴 기본 정보 관련 위젯들

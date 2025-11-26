@@ -5668,3 +5668,49 @@ bool CameraView::switchToModeResult(int mode)
 
     return true;
 }
+
+// SSIM 히트맵 실시간 갱신 (임계값 변경 시)
+void CameraView::updateSSIMHeatmap(const QUuid &patternId, double ssimNgThreshold)
+{
+    if (!hasInspectionResult) {
+        return;
+    }
+    
+    // 원본 diffMap 확인
+    if (!lastInspectionResult.ssimDiffMap.contains(patternId)) {
+        return;
+    }
+    
+    const cv::Mat& diffMap = lastInspectionResult.ssimDiffMap[patternId];
+    if (diffMap.empty()) {
+        return;
+    }
+    
+    // 임계값 계산 (ssimNgThreshold는 유사도 임계값, diffMap은 차이값)
+    double ngThreshold = 1.0 - (ssimNgThreshold / 100.0);
+    
+    // 임계값 이하의 픽셀은 0으로 설정 (히트맵에서 제거)
+    cv::Mat maskedDiffMap = diffMap.clone();
+    for (int y = 0; y < maskedDiffMap.rows; y++) {
+        double* row = maskedDiffMap.ptr<double>(y);
+        for (int x = 0; x < maskedDiffMap.cols; x++) {
+            if (row[x] < ngThreshold) {
+                row[x] = 0.0;
+            }
+        }
+    }
+    
+    // 0-255 범위로 변환하여 히트맵 생성
+    cv::Mat heatmap;
+    maskedDiffMap.convertTo(heatmap, CV_8U, 255.0);
+    
+    // 컬러 히트맵으로 변환 (COLORMAP_JET: 파랑→초록→빨강)
+    cv::Mat colorHeatmap;
+    cv::applyColorMap(heatmap, colorHeatmap, cv::COLORMAP_JET);
+    
+    // 히트맵 갱신
+    lastInspectionResult.ssimHeatmap[patternId] = colorHeatmap.clone();
+    
+    // 화면 갱신
+    viewport()->update();
+}

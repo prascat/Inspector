@@ -536,16 +536,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 break;
             }
 
-            // 결과 반전이 활성화된 경우 결과를 반전
-            if (pattern.invertResult)
-            {
-                inspPassed = !inspPassed;
-                logDebug(QString("INS 패턴 '%1': 결과 반전 적용됨 (%2 -> %3)")
-                             .arg(pattern.name)
-                             .arg(!inspPassed ? "합격" : "불합격")
-                             .arg(inspPassed ? "합격" : "불합격"));
-            }
-
             // 결과 기록
             result.insResults[pattern.id] = inspPassed;
             result.insScores[pattern.id] = inspScore;
@@ -1509,6 +1499,26 @@ bool InsProcessor::checkSSIM(const cv::Mat &image, const PatternInfo &pattern, d
         currentROI = image(validRoi).clone();
     }
 
+    // 티칭 때 적용한 필터를 검사 대상 이미지에도 순서대로 적용
+    if (!pattern.filters.isEmpty())
+    {
+        cv::Mat processedROI = currentROI.clone();
+        ImageProcessor processor;
+        for (const FilterInfo &filter : pattern.filters)
+        {
+            if (filter.enabled)
+            {
+                cv::Mat tempFiltered;
+                processor.applyFilter(processedROI, tempFiltered, filter);
+                if (!tempFiltered.empty())
+                {
+                    processedROI = tempFiltered.clone();
+                }
+            }
+        }
+        currentROI = processedROI;
+    }
+
     // 템플릿 이미지 가져오기
     QImage templateQImage = pattern.templateImage;
     if (templateQImage.isNull())
@@ -1604,52 +1614,108 @@ bool InsProcessor::checkSSIM(const cv::Mat &image, const PatternInfo &pattern, d
     cv::Mat diffMap;
     cv::subtract(cv::Scalar(1.0), ssim_map, diffMap);
     
+    // ssimNgThreshold는 "유사도 임계값" (예: 95% → 유사도 95% 이하는 NG)
+    // diffMap = (1 - SSIM)이므로, 차이 임계값 = (1 - ssimNgThreshold/100)
+    double ngThreshold = 1.0 - (pattern.ssimNgThreshold / 100.0);
+    
+    // 임계값 이하의 픽셀은 0으로 설정 (히트맵에서 제거)
+    cv::Mat maskedDiffMap = diffMap.clone();
+    for (int y = 0; y < maskedDiffMap.rows; y++) {
+        double* row = maskedDiffMap.ptr<double>(y);
+        for (int x = 0; x < maskedDiffMap.cols; x++) {
+            if (row[x] < ngThreshold) {
+                row[x] = 0.0;
+            }
+        }
+    }
+    
     // 0-255 범위로 변환하여 히트맵 생성
     cv::Mat heatmap;
-    diffMap.convertTo(heatmap, CV_8U, 255.0);
+    maskedDiffMap.convertTo(heatmap, CV_8U, 255.0);
     
     // 컬러 히트맵으로 변환 (COLORMAP_JET: 파랑→초록→빨강)
     cv::Mat colorHeatmap;
     cv::applyColorMap(heatmap, colorHeatmap, cv::COLORMAP_JET);
     
-    // 히트맵 저장
+    // 원본 diffMap과 히트맵 저장
+    result.ssimDiffMap[pattern.id] = diffMap.clone();          // 원본 저장 (실시간 갱신용)
     result.ssimHeatmap[pattern.id] = colorHeatmap.clone();
     result.ssimHeatmapRect[pattern.id] = rectF;  // 패턴 위치 저장
 
     // 결과 저장
     result.insMethodTypes[pattern.id] = InspectionMethod::SSIM;
 
-    // NG 임계값 판정: 
-    // ssimNgThreshold% 이상 차이나는 픽셀이 (100 - passThreshold)% 이상이면 NG
-    // 예: passThreshold=90%, ssimNgThreshold=85% → 85% 이상 차이 픽셀이 10% 이상이면 NG
-    double ngThreshold = pattern.ssimNgThreshold / 100.0;  // 차이 임계값 (0-1 범위)
-    double allowedNgRatio = (100.0 - pattern.passThreshold) / 100.0;  // 허용 NG 비율
+    // NG 임계값 판정: 실제 패턴 박스 영역만 계산 (bounding box 전체가 아님)
+    // ngThreshold는 위에서 이미 계산됨: (1 - ssimNgThreshold/100)
     
     int ngPixelCount = 0;
-    int totalPixels = diffMap.rows * diffMap.cols;
+    int totalPixels = 0;
     
-    // 차이 맵에서 임계값 이상인 픽셀 수 계산
-    for (int y = 0; y < diffMap.rows; y++) {
-        const double* row = diffMap.ptr<double>(y);
-        for (int x = 0; x < diffMap.cols; x++) {
-            if (row[x] >= ngThreshold) {
-                ngPixelCount++;
+    // 회전이 있는 경우: 회전된 사각형 마스크 생성하여 내부 픽셀만 계산
+    if (std::abs(pattern.angle) > 0.1)
+    {
+        // diffMap 중심점 (bounding box 중심)
+        cv::Point2f diffCenter(diffMap.cols / 2.0f, diffMap.rows / 2.0f);
+        cv::Size2f patternSize(width, height);
+        
+        // 회전된 사각형 생성
+        cv::RotatedRect rotatedRect(diffCenter, patternSize, pattern.angle);
+        
+        // 마스크 생성
+        cv::Mat mask = cv::Mat::zeros(diffMap.size(), CV_8UC1);
+        cv::Point2f vertices[4];
+        rotatedRect.points(vertices);
+        
+        std::vector<cv::Point> points;
+        for (int i = 0; i < 4; i++) {
+            points.push_back(cv::Point(static_cast<int>(std::round(vertices[i].x)),
+                                      static_cast<int>(std::round(vertices[i].y))));
+        }
+        cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{points}, cv::Scalar(255));
+        
+        // 마스크 영역 내의 픽셀만 계산
+        for (int y = 0; y < diffMap.rows; y++) {
+            const double* diffRow = diffMap.ptr<double>(y);
+            const uchar* maskRow = mask.ptr<uchar>(y);
+            for (int x = 0; x < diffMap.cols; x++) {
+                if (maskRow[x] > 0) {  // 패턴 박스 내부
+                    totalPixels++;
+                    if (diffRow[x] >= ngThreshold) {
+                        ngPixelCount++;
+                    }
+                }
+            }
+        }
+    }
+    else
+    {
+        // 회전 없는 경우: 전체 diffMap 영역 사용 (패턴 rect 크기와 동일)
+        totalPixels = diffMap.rows * diffMap.cols;
+        for (int y = 0; y < diffMap.rows; y++) {
+            const double* row = diffMap.ptr<double>(y);
+            for (int x = 0; x < diffMap.cols; x++) {
+                if (row[x] >= ngThreshold) {
+                    ngPixelCount++;
+                }
             }
         }
     }
     
-    // NG 픽셀 비율 계산
+    // NG 픽셀 비율 계산 (패턴 박스 영역 대비)
     double ngRatio = (totalPixels > 0) ? (static_cast<double>(ngPixelCount) / totalPixels) : 0.0;
-    bool passed = (ngRatio < allowedNgRatio);  // NG 비율이 허용치 미만이면 PASS
+    double ngRatioPercent = ngRatio * 100.0;
+    
+    // allowedNgRatio: NG 픽셀이 이 값(%) 이하면 합격
+    bool passed = (ngRatioPercent <= pattern.allowedNgRatio);
 
-    // score는 (1 - ngRatio)로 설정 (NG가 적을수록 높은 점수)
-    score = 1.0 - ngRatio;
+    // score는 NG 임계값 이상 픽셀 비율로 설정 (0-1 범위, 낮을수록 좋음)
+    score = ngRatio;
 
     logDebug(QString("SSIM 검사: 패턴 '%1', 차이>%2%인 영역=%3%, 허용=%4%, 결과=%5")
                  .arg(pattern.name)
                  .arg(pattern.ssimNgThreshold, 0, 'f', 0)
-                 .arg(ngRatio * 100.0, 0, 'f', 2)
-                 .arg(allowedNgRatio * 100.0, 0, 'f', 1)
+                 .arg(ngRatioPercent, 0, 'f', 2)
+                 .arg(pattern.allowedNgRatio, 0, 'f', 1)
                  .arg(passed ? "PASS" : "FAIL"));
 
     return passed;

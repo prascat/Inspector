@@ -3738,16 +3738,36 @@ void TeachingWidget::createPropertyPanels()
     ssimLayout->addWidget(ssimNgThreshSlider);
     
     // 설명 라벨
-    QLabel* ssimDescLabel = new QLabel("(이 값 이상 차이나는 영역이 있으면 NG)", ssimSettingsWidget);
+    QLabel* ssimDescLabel = new QLabel("차이 NG 임계값 (이 값 이상 차이나는 픽셀을 NG로 판정)", ssimSettingsWidget);
     ssimDescLabel->setStyleSheet("color: #888888; font-size: 9px;");
     ssimLayout->addWidget(ssimDescLabel);
     
+    // 허용 NG 비율 레이블 + 값
+    QHBoxLayout* allowedLayout = new QHBoxLayout();
+    QLabel* allowedLabel = new QLabel("허용 NG 비율:", ssimSettingsWidget);
+    allowedLabel->setStyleSheet("color: white;");
+    allowedNgRatioValue = new QLabel("20%", ssimSettingsWidget);
+    allowedNgRatioValue->setStyleSheet("color: #00FF00; font-weight: bold;");
+    allowedLayout->addWidget(allowedLabel);
+    allowedLayout->addWidget(allowedNgRatioValue);
+    allowedLayout->addStretch();
+    ssimLayout->addLayout(allowedLayout);
+    
+    // 허용 NG 비율 슬라이더
+    allowedNgRatioSlider = new QSlider(Qt::Horizontal, ssimSettingsWidget);
+    allowedNgRatioSlider->setRange(1, 50);
+    allowedNgRatioSlider->setValue(20);
+    allowedNgRatioSlider->setTickPosition(QSlider::TicksBelow);
+    allowedNgRatioSlider->setTickInterval(5);
+    ssimLayout->addWidget(allowedNgRatioSlider);
+    
+    // 허용 비율 설명 라벨
+    QLabel* allowedDescLabel = new QLabel("(NG 픽셀이 이 값 이하면 합격)", ssimSettingsWidget);
+    allowedDescLabel->setStyleSheet("color: #888888; font-size: 9px;");
+    ssimLayout->addWidget(allowedDescLabel);
+    
     basicInspectionLayout->addRow("", ssimSettingsWidget);
     ssimSettingsWidget->setVisible(false);  // 초기에는 숨김 (SSIM 선택 시만 표시)
-
-    // 결과 반전
-    insInvertCheck = new QCheckBox("결과 반전 (예: 결함 검출)", basicInspectionGroup);
-    basicInspectionLayout->addRow("", insInvertCheck);
 
     insMainLayout->addWidget(basicInspectionGroup);
 
@@ -4378,15 +4398,19 @@ void TeachingWidget::createPropertyPanels()
                 insCrimpPanel->setVisible(index == InspectionMethod::CRIMP); // CRIMP
                 if (ssimSettingsWidget)
                     ssimSettingsWidget->setVisible(index == InspectionMethod::SSIM); // SSIM
-                // 결과 반전 옵션은 BINARY, STRIP, CRIMP에서만 표시 (안함)
-                if (insInvertCheck)
+                // 합격 임계값은 STRIP, SSIM, CRIMP에서 숨김
+                if (insPassThreshSpin && insPassThreshLabel)
                 {
-                    insInvertCheck->setVisible(false);
+                    bool passThreshVisible = (index != InspectionMethod::STRIP && 
+                                            index != InspectionMethod::SSIM && 
+                                            index != InspectionMethod::CRIMP);
+                    insPassThreshSpin->setVisible(passThreshVisible);
+                    insPassThreshLabel->setVisible(passThreshVisible);
                 }
-                // 합격임계값도 표시 안함
-                if (insPassThreshSpin)
+                // SSIM 선택 시 필터 실시간 업데이트
+                if (index == InspectionMethod::SSIM)
                 {
-                    insPassThreshSpin->setVisible(false);
+                    updateCameraFrame();
                 }
             });
     
@@ -4402,6 +4426,32 @@ void TeachingWidget::createPropertyPanels()
                 for (PatternInfo& pattern : allPatterns) {
                     if (pattern.id == currentSelectedId && pattern.type == PatternType::INS) {
                         pattern.ssimNgThreshold = static_cast<double>(value);
+                        
+                        // 검사 결과가 있으면 히트맵 실시간 갱신
+                        if (cameraView->hasLastInspectionResult()) {
+                            cameraView->updateSSIMHeatmap(currentSelectedId, static_cast<double>(value));
+                        }
+                        
+                        cameraView->viewport()->update();
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    
+    // 허용 NG 비율 슬라이더 연결
+    connect(allowedNgRatioSlider, &QSlider::valueChanged, [this](int value) {
+        allowedNgRatioValue->setText(QString("%1%").arg(value));
+        
+        // 선택된 패턴 찾기
+        if (cameraView) {
+            QUuid currentSelectedId = cameraView->getSelectedPatternId();
+            if (!currentSelectedId.isNull()) {
+                QList<PatternInfo>& allPatterns = cameraView->getPatterns();
+                for (PatternInfo& pattern : allPatterns) {
+                    if (pattern.id == currentSelectedId && pattern.type == PatternType::INS) {
+                        pattern.allowedNgRatio = static_cast<double>(value);
                         cameraView->viewport()->update();
                         break;
                     }
@@ -4832,9 +4882,10 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo *pattern, const QRectF &
             cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
             validImage.copyTo(templateRegion(resultRect));
 
-            // ===== DIFF/STRIP 검사: 전체 영역에 필터 먼저 적용 =====
+            // ===== DIFF/STRIP/SSIM 검사: 전체 영역에 필터 먼저 적용 =====
             if ((pattern->inspectionMethod == InspectionMethod::DIFF ||
-                 pattern->inspectionMethod == InspectionMethod::STRIP) &&
+                 pattern->inspectionMethod == InspectionMethod::STRIP ||
+                 pattern->inspectionMethod == InspectionMethod::SSIM) &&
                 !pattern->filters.isEmpty())
             {
                 qDebug() << QString("템플릿: 전체 영역(%1x%2)에 %3개 필터 순차 적용")
@@ -4884,9 +4935,10 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo *pattern, const QRectF &
         {
             cv::Mat insRegion = originalFrame(validRoi).clone();
 
-            // ===== DIFF/STRIP 검사: 필터 적용 =====
+            // ===== DIFF/STRIP/SSIM 검사: 필터 적용 =====
             if ((pattern->inspectionMethod == InspectionMethod::DIFF ||
-                 pattern->inspectionMethod == InspectionMethod::STRIP) &&
+                 pattern->inspectionMethod == InspectionMethod::STRIP ||
+                 pattern->inspectionMethod == InspectionMethod::SSIM) &&
                 !pattern->filters.isEmpty())
             {
                 qDebug() << QString("템플릿(회전 없음): INS 영역(%1x%2)에 %3개 필터 순차 적용")
@@ -5438,20 +5490,18 @@ void TeachingWidget::connectPropertyPanelEvents()
                                 if (insEdgeGroup)
                                     insEdgeGroup->setVisible(isStripMethod);
 
-                                // STRIP 검사에서는 검사 임계값과 결과 반전 옵션 필요 없음
+                                // STRIP과 SSIM 검사에서는 검사 임계값과 결과 반전 옵션 필요 없음
                                 if (insPassThreshSpin && insPassThreshLabel)
                                 {
-                                    bool threshVisible = (index != InspectionMethod::STRIP);
+                                    bool threshVisible = (index != InspectionMethod::STRIP && index != InspectionMethod::SSIM);
                                     insPassThreshSpin->setVisible(threshVisible);
                                     insPassThreshLabel->setVisible(threshVisible);
                                 }
 
-                                if (insInvertCheck)
+                                // SSIM 설정 위젯 표시/숨김
+                                if (ssimSettingsWidget)
                                 {
-                                    bool visible = (index != InspectionMethod::STRIP);
-                                    insInvertCheck->setVisible(visible);
-                                    if (!visible)
-                                        insInvertCheck->setChecked(false);
+                                    ssimSettingsWidget->setVisible(index == InspectionMethod::SSIM);
                                 }
 
                                 // 패턴 매칭 패널 표시 설정
@@ -5461,28 +5511,16 @@ void TeachingWidget::connectPropertyPanelEvents()
                                 }
 
                                 cameraView->updatePatternById(patternId, *pattern);
+                                
+                                // SSIM 선택 시 필터 실시간 업데이트
+                                if (index == InspectionMethod::SSIM)
+                                {
+                                    updateCameraFrame();
+                                }
                             }
                         }
                     }
                 });
-    }
-
-    // INS 결과 반전 체크박스
-    if (insInvertCheck)
-    {
-        connect(insInvertCheck, &QCheckBox::toggled, [this](bool checked)
-                {
-            QTreeWidgetItem* selectedItem = patternTree->currentItem();
-            if (selectedItem) {
-                QUuid patternId = getPatternIdFromItem(selectedItem);
-                if (!patternId.isNull()) {
-                    PatternInfo* pattern = cameraView->getPatternById(patternId);
-                    if (pattern && pattern->type == PatternType::INS) {
-                        pattern->invertResult = checked;
-                        cameraView->updatePatternById(patternId, *pattern);
-                    }
-                }
-            } });
     }
 
     // INS 회전 체크박스
@@ -7021,6 +7059,17 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                         
                         if (ssimNgThreshValue)
                             ssimNgThreshValue->setText(QString("%1%").arg(static_cast<int>(pattern->ssimNgThreshold)));
+                        
+                        // 허용 NG 비율 슬라이더도 업데이트
+                        if (allowedNgRatioSlider)
+                        {
+                            allowedNgRatioSlider->blockSignals(true);
+                            allowedNgRatioSlider->setValue(static_cast<int>(pattern->allowedNgRatio));
+                            allowedNgRatioSlider->blockSignals(false);
+                            
+                            if (allowedNgRatioValue)
+                                allowedNgRatioValue->setText(QString("%1%").arg(static_cast<int>(pattern->allowedNgRatio)));
+                        }
                     }
                 }
                 
@@ -7046,22 +7095,15 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
 
                 if (insPassThreshSpin)
                 {
-                    // STRIP 검사에서는 합격 임계값 숨김 (각 항목별 개별 판정)
-                    bool passThreshVisible = (pattern->inspectionMethod != InspectionMethod::STRIP);
+                    // STRIP과 SSIM 검사에서는 합격 임계값 숨김
+                    bool passThreshVisible = (pattern->inspectionMethod != InspectionMethod::STRIP 
+                                           && pattern->inspectionMethod != InspectionMethod::SSIM);
                     insPassThreshLabel->setVisible(passThreshVisible);
                     insPassThreshSpin->setVisible(passThreshVisible);
                     if (passThreshVisible)
                     {
                         insPassThreshSpin->setValue(pattern->passThreshold);
                     }
-                }
-
-                if (insInvertCheck)
-                {
-                    // STRIP에서는 결과 반전 숨김
-                    bool visible = (pattern->inspectionMethod != InspectionMethod::STRIP);
-                    insInvertCheck->setVisible(visible);
-                    insInvertCheck->setChecked(visible ? pattern->invertResult : false);
                 }
 
                 // STRIP 패널 표시 설정
@@ -7421,7 +7463,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                 {
                     int maxOffsetX = pattern->rect.width();
                     insBarrelLeftStripOffsetSlider->blockSignals(true);
-                    insBarrelLeftStripOffsetSlider->setMaximum(maxOffsetX);
+                    insBarrelLeftStripOffsetSlider->setRange(-250, qMax(250, maxOffsetX));
                     int offsetValue = qMin(pattern->barrelLeftStripOffsetX, maxOffsetX);
                     insBarrelLeftStripOffsetSlider->setValue(offsetValue);
                     insBarrelLeftStripOffsetValueLabel->setText(QString::number(offsetValue) + "px");
@@ -7432,7 +7474,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                 {
                     int maxWidth = pattern->rect.width();
                     insBarrelLeftStripWidthSlider->blockSignals(true);
-                    insBarrelLeftStripWidthSlider->setMaximum(maxWidth);
+                    insBarrelLeftStripWidthSlider->setRange(1, qMax(500, maxWidth));
                     int widthValue = qMin(pattern->barrelLeftStripBoxWidth, maxWidth);
                     insBarrelLeftStripWidthSlider->setValue(widthValue);
                     insBarrelLeftStripWidthValueLabel->setText(QString::number(widthValue) + "px");
@@ -7443,7 +7485,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                 {
                     int maxHeight = pattern->rect.height();
                     insBarrelLeftStripHeightSlider->blockSignals(true);
-                    insBarrelLeftStripHeightSlider->setMaximum(maxHeight);
+                    insBarrelLeftStripHeightSlider->setRange(1, qMax(500, maxHeight));
                     int heightValue = qMin(pattern->barrelLeftStripBoxHeight, maxHeight);
                     insBarrelLeftStripHeightSlider->setValue(heightValue);
                     insBarrelLeftStripHeightValueLabel->setText(QString::number(heightValue) + "px");
@@ -7476,7 +7518,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                 {
                     int maxOffsetX = pattern->rect.width();
                     insBarrelRightStripOffsetSlider->blockSignals(true);
-                    insBarrelRightStripOffsetSlider->setMaximum(maxOffsetX);
+                    insBarrelRightStripOffsetSlider->setRange(-250, qMax(250, maxOffsetX));
                     int offsetValue = qMin(pattern->barrelRightStripOffsetX, maxOffsetX);
                     insBarrelRightStripOffsetSlider->setValue(offsetValue);
                     insBarrelRightStripOffsetValueLabel->setText(QString::number(offsetValue) + "px");
@@ -7487,7 +7529,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                 {
                     int maxWidth = pattern->rect.width();
                     insBarrelRightStripWidthSlider->blockSignals(true);
-                    insBarrelRightStripWidthSlider->setMaximum(maxWidth);
+                    insBarrelRightStripWidthSlider->setRange(1, qMax(500, maxWidth));
                     int widthValue = qMin(pattern->barrelRightStripBoxWidth, maxWidth);
                     insBarrelRightStripWidthSlider->setValue(widthValue);
                     insBarrelRightStripWidthValueLabel->setText(QString::number(widthValue) + "px");
@@ -7498,7 +7540,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                 {
                     int maxHeight = pattern->rect.height();
                     insBarrelRightStripHeightSlider->blockSignals(true);
-                    insBarrelRightStripHeightSlider->setMaximum(maxHeight);
+                    insBarrelRightStripHeightSlider->setRange(1, qMax(500, maxHeight));
                     int heightValue = qMin(pattern->barrelRightStripBoxHeight, maxHeight);
                     insBarrelRightStripHeightSlider->setValue(heightValue);
                     insBarrelRightStripHeightValueLabel->setText(QString::number(heightValue) + "px");
@@ -12565,7 +12607,6 @@ void TeachingWidget::addPattern()
         else if (currentPatternType == PatternType::INS)
         {
             pattern.passThreshold = 90.0; // 90%
-            pattern.invertResult = false;
             pattern.inspectionMethod = 0; // DIFF 방법
 
             // EDGE 검사 관련 기본값 설정

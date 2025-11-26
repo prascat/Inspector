@@ -914,7 +914,8 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("inspectionMethod", QString::number(pattern.inspectionMethod));
     xml.writeAttribute("passThreshold", QString::number(pattern.passThreshold));
     xml.writeAttribute("ssimNgThreshold", QString::number(pattern.ssimNgThreshold));
-    if (pattern.invertResult) xml.writeAttribute("invertResult", "true");
+    xml.writeAttribute("allowedNgRatio", QString::number(pattern.allowedNgRatio));
+    // invertResult 제거됨
     if (pattern.useRotation) xml.writeAttribute("useRotation", "true");
     xml.writeAttribute("minAngle", QString::number(pattern.minAngle));
     xml.writeAttribute("maxAngle", QString::number(pattern.maxAngle));
@@ -1632,7 +1633,7 @@ void RecipeManager::readFIDDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
 void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) {
     pattern.inspectionMethod = xml.attributes().value("inspectionMethod").toInt();
     pattern.passThreshold = xml.attributes().value("passThreshold").toDouble();
-    pattern.invertResult = (xml.attributes().value("invertResult").toString() == "true");
+    // invertResult 제거됨
     pattern.useRotation = (xml.attributes().value("useRotation").toString() == "true");
     pattern.minAngle = xml.attributes().value("minAngle").toDouble();
     pattern.maxAngle = xml.attributes().value("maxAngle").toDouble();
@@ -1644,7 +1645,13 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
         pattern.ssimNgThreshold = ssimNgStr.toDouble();
     }
     
-    // 패턴의 실제 회전 각도 읽기 (Rect에서 읽은 것과 중복이지만 안전을 위해)
+    // SSIM 허용 NG 비율 읽기
+    QString allowedNgStr = xml.attributes().value("allowedNgRatio").toString();
+    if (!allowedNgStr.isEmpty()) {
+        pattern.allowedNgRatio = allowedNgStr.toDouble();
+    }
+    
+    // 패턴의 실제 회전 각도 읽기 (레시피에서 읽은 것과 중복이지만 안전을 위해)
     QString patternAngleStr = xml.attributes().value("patternAngle").toString();
     if (!patternAngleStr.isEmpty()) {
         pattern.angle = patternAngleStr.toDouble();

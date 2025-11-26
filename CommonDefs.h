@@ -177,6 +177,7 @@ struct InspectionResult {
     // SSIM 검사 히트맵 (패턴 ID -> 차이 히트맵)
     QMap<QUuid, cv::Mat> ssimHeatmap;              // SSIM 차이 히트맵 (0-255, 차이 클수록 밝음)
     QMap<QUuid, QRectF> ssimHeatmapRect;           // SSIM 히트맵 위치 (절대좌표)
+    QMap<QUuid, cv::Mat> ssimDiffMap;              // SSIM 원본 차이맵 (0-1 범위, double)
 };
 
 // 패턴 유형 열거형
@@ -232,12 +233,12 @@ struct PatternInfo {
     
     // Inspection 속성
     double passThreshold = 0.95;  // SSIM: NG 픽셀이 5% 이하일 때 합격 (100-95=5)
-    bool invertResult = false;
     int insMatchMethod = 0; // 추가: INS 매칭 방법 (0: 템플릿, 1: 특징점, 2: 윤곽선)
     int inspectionMethod = 0;
     
     // SSIM 검사 전용 파라미터
     double ssimNgThreshold = 30.0;  // SSIM 차이 NG 임계값 (%, 이 값 이상 차이나면 해당 영역 NG)
+    double allowedNgRatio = 20.0;   // SSIM 허용 NG 비율 (%, NG 픽셀이 이 값 이하면 합격)
 
     // STRIP 검사 전용 파라미터들
     int stripContourMargin = 10;        // 컨투어 검출 마진 (픽셀)

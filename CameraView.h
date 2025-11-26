@@ -192,6 +192,9 @@ public:
     // 검사 결과 접근자
     const InspectionResult &getLastInspectionResult() const { return lastInspectionResult; }
     bool hasLastInspectionResult() const { return hasInspectionResult; }
+    
+    // SSIM 히트맵 실시간 갱신
+    void updateSSIMHeatmap(const QUuid &patternId, double ssimNgThreshold);
 
     // STRIP/CRIMP 모드별 검사 결과 접근자
     void saveInspectionResultForMode(int mode, const InspectionResult &result, const QPixmap &frame);
