@@ -452,6 +452,7 @@ private:
     void drawSelectedPatternHandles(QPainter &painter);
     void drawStripGradientRange(QPainter &painter, const PatternInfo &pattern);
     void drawStripThicknessBoxes(QPainter &painter, const PatternInfo &pattern);
+    void drawCrimpBarrelBoxes(QPainter &painter, const PatternInfo &pattern);
     void drawMeasurementLine(QPainter &painter);
     void drawCurrentDrawingRect(QPainter &painter);
 

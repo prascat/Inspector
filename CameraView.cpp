@@ -4866,6 +4866,139 @@ void CameraView::drawSelectedPatternHandles(QPainter &painter)
             drawStripGradientRange(painter, pattern);
             drawStripThicknessBoxes(painter, pattern);
         }
+
+        // INS CRIMP 패턴의 추가 UI 요소 (배럴 좌우 박스)
+        if (pattern.type == PatternType::INS &&
+            pattern.inspectionMethod == InspectionMethod::CRIMP)
+        {
+            drawCrimpBarrelBoxes(painter, pattern);
+        }
+    }
+}
+
+// CRIMP BARREL 좌우 박스 그리기
+void CameraView::drawCrimpBarrelBoxes(QPainter &painter, const PatternInfo &pattern)
+{
+    QTransform t = transform();
+    double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
+
+    QVector<QPoint> rotatedCorners = getRotatedCorners();
+    if (rotatedCorners.size() != 4)
+        return;
+
+    QPoint topLeft = rotatedCorners[0];
+    QPoint topRight = rotatedCorners[1];
+    QPoint bottomLeft = rotatedCorners[3];
+    QPoint bottomRight = rotatedCorners[2];
+
+    double widthVectorX = topRight.x() - topLeft.x();
+    double widthVectorY = topRight.y() - topLeft.y();
+    double vectorLen = std::sqrt(widthVectorX * widthVectorX + widthVectorY * widthVectorY);
+
+    if (vectorLen < 0.01)
+        return;
+
+    double boxAngle = std::atan2(widthVectorY, widthVectorX) * 180.0 / M_PI;
+
+    // 패턴 중심 계산
+    QPoint patternCenter((topLeft.x() + topRight.x() + bottomLeft.x() + bottomRight.x()) / 4,
+                         (topLeft.y() + topRight.y() + bottomLeft.y() + bottomRight.y()) / 4);
+
+    double cosAngle = std::cos(boxAngle * M_PI / 180.0);
+    double sinAngle = std::sin(boxAngle * M_PI / 180.0);
+
+    // BARREL LEFT 박스 (패턴 내부 왼쪽 20% 위치)
+    if (pattern.barrelLeftStripEnabled)
+    {
+        // 박스 크기
+        double leftBoxWidth = pattern.barrelLeftStripBoxWidth * currentScale;
+        double leftBoxHeight = pattern.barrelLeftStripBoxHeight * currentScale;
+
+        // 패턴 내부 왼쪽 20% 위치에 박스 중심 배치 + 오프셋
+        double patternWidth = vectorLen / currentScale;
+        double leftOffsetX = -(patternWidth / 2.0) * 0.6 + pattern.barrelLeftStripOffsetX;  // 패턴 중심에서 왼쪽 30% 지점
+
+        // 박스가 패턴 내부에 머무르도록 제한 (박스 중심 기준)
+        double leftMinX = -(patternWidth / 2.0) + (pattern.barrelLeftStripBoxWidth / 2.0);  // 왼쪽 경계
+        double leftMaxX = (patternWidth / 2.0) - (pattern.barrelLeftStripBoxWidth / 2.0);   // 오른쪽 경계
+        leftOffsetX = qBound(leftMinX, leftOffsetX, leftMaxX);
+
+        QPoint leftBoxCenter(
+            qRound(patternCenter.x() + leftOffsetX * currentScale * cosAngle),
+            qRound(patternCenter.y() + leftOffsetX * currentScale * sinAngle));
+
+        painter.save();
+        painter.translate(leftBoxCenter);
+        painter.rotate(boxAngle);
+
+        QPen leftPen(QColor(0, 200, 255), 2);  // 시안 색상
+        leftPen.setStyle(Qt::DashLine);
+        painter.setPen(leftPen);
+        painter.setBrush(Qt::NoBrush);
+        QRectF leftBoxRect(-leftBoxWidth / 2, -leftBoxHeight / 2, leftBoxWidth, leftBoxHeight);
+        painter.drawRect(leftBoxRect);
+
+        // LEFT 텍스트
+        QString leftLabel = "LEFT";
+        QFont leftFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
+        painter.setFont(leftFont);
+        QFontMetrics leftFm(leftFont);
+        int leftTextW = leftFm.horizontalAdvance(leftLabel);
+        int leftTextH = leftFm.height();
+
+        QRectF leftTextRect(-leftTextW / 2 - 2, -leftBoxHeight / 2 - leftTextH - 5, leftTextW + 4, leftTextH);
+        painter.fillRect(leftTextRect, QBrush(QColor(0, 0, 0, 180)));
+        painter.setPen(QColor(0, 200, 255));
+        painter.drawText(leftTextRect, Qt::AlignCenter, leftLabel);
+
+        painter.restore();
+    }
+
+    // BARREL RIGHT 박스 (패턴 내부 오른쪽 20% 위치)
+    if (pattern.barrelRightStripEnabled)
+    {
+        // 박스 크기
+        double rightBoxWidth = pattern.barrelRightStripBoxWidth * currentScale;
+        double rightBoxHeight = pattern.barrelRightStripBoxHeight * currentScale;
+
+        // 패턴 내부 오른쪽 20% 위치에 박스 중심 배치 + 오프셋
+        double patternWidth = vectorLen / currentScale;
+        double rightOffsetX = (patternWidth / 2.0) * 0.6 + pattern.barrelRightStripOffsetX;  // 패턴 중심에서 오른쪽 30% 지점
+
+        // 박스가 패턴 내부에 머무르도록 제한 (박스 중심 기준)
+        double rightMinX = -(patternWidth / 2.0) + (pattern.barrelRightStripBoxWidth / 2.0);  // 왼쪽 경계
+        double rightMaxX = (patternWidth / 2.0) - (pattern.barrelRightStripBoxWidth / 2.0);   // 오른쪽 경계
+        rightOffsetX = qBound(rightMinX, rightOffsetX, rightMaxX);
+
+        QPoint rightBoxCenter(
+            qRound(patternCenter.x() + rightOffsetX * currentScale * cosAngle),
+            qRound(patternCenter.y() + rightOffsetX * currentScale * sinAngle));
+
+        painter.save();
+        painter.translate(rightBoxCenter);
+        painter.rotate(boxAngle);
+
+        QPen rightPen(QColor(255, 128, 0), 2);  // 오렌지 색상
+        rightPen.setStyle(Qt::DashLine);
+        painter.setPen(rightPen);
+        painter.setBrush(Qt::NoBrush);
+        QRectF rightBoxRect(-rightBoxWidth / 2, -rightBoxHeight / 2, rightBoxWidth, rightBoxHeight);
+        painter.drawRect(rightBoxRect);
+
+        // RIGHT 텍스트
+        QString rightLabel = "RIGHT";
+        QFont rightFont(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
+        painter.setFont(rightFont);
+        QFontMetrics rightFm(rightFont);
+        int rightTextW = rightFm.horizontalAdvance(rightLabel);
+        int rightTextH = rightFm.height();
+
+        QRectF rightTextRect(-rightTextW / 2 - 2, -rightBoxHeight / 2 - rightTextH - 5, rightTextW + 4, rightTextH);
+        painter.fillRect(rightTextRect, QBrush(QColor(0, 0, 0, 180)));
+        painter.setPen(QColor(255, 128, 0));
+        painter.drawText(rightTextRect, Qt::AlignCenter, rightLabel);
+
+        painter.restore();
     }
 }
 
