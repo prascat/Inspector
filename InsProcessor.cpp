@@ -669,8 +669,9 @@ bool InsProcessor::matchFiducial(const cv::Mat &image, const PatternInfo &patter
         // 검색 영역(ROI) 결정
         cv::Rect searchRoi;
         bool roiDefined = false;
+        QRectF roiRect;  // ROI 영역 저장
 
-        // ★★★ 수정: 패턴 중심 기반으로 검색 영역 결정 (항상 패턴 주변 영역 사용) ★★★
+        // ★★★ 수정: ROI가 있으면 ROI 전체 영역을 검색, 없으면 패턴 주변만 검색 ★★★
         // 모든 ROI 패턴 검색 (현재 FID 패턴과 같은 stripCrimpMode만)
         for (const PatternInfo &roi : allPatterns)
         {
@@ -685,22 +686,43 @@ bool InsProcessor::matchFiducial(const cv::Mat &image, const PatternInfo &patter
                 if (roi.rect.contains(fidCenter))
                 {
                     roiDefined = true;
+                    roiRect = roi.rect;  // ROI 영역 저장
+                    logDebug(QString("FID 패턴 '%1': ROI '%2' 영역 내부에 있음 (%3,%4,%5,%6)")
+                                 .arg(pattern.name)
+                                 .arg(roi.name)
+                                 .arg(static_cast<int>(roi.rect.x()))
+                                 .arg(static_cast<int>(roi.rect.y()))
+                                 .arg(static_cast<int>(roi.rect.width()))
+                                 .arg(static_cast<int>(roi.rect.height())));
                     break; // 첫 번째로 찾은 포함하는 ROI 사용
                 }
             }
         }
 
-        // ★★★ 항상 패턴 주변 영역을 검색 영역으로 사용 ★★★
-
-        // 패턴 중심 기반으로 검색 영역 결정 (패턴 크기의 2배 정도 마진)
-        int margin = std::max(static_cast<int>(pattern.rect.width()), static_cast<int>(pattern.rect.height()));
-        searchRoi = cv::Rect(
-            std::max(0, static_cast<int>(pattern.rect.x()) - margin),
-            std::max(0, static_cast<int>(pattern.rect.y()) - margin),
-            std::min(image.cols - std::max(0, static_cast<int>(pattern.rect.x()) - margin),
-                     static_cast<int>(pattern.rect.width()) + 2 * margin),
-            std::min(image.rows - std::max(0, static_cast<int>(pattern.rect.y()) - margin),
-                     static_cast<int>(pattern.rect.height()) + 2 * margin));
+        // ★★★ ROI가 있으면 ROI 전체 영역 사용, 없으면 패턴 주변만 사용 ★★★
+        if (roiDefined)
+        {
+            // ROI 전체 영역을 검색 영역으로 사용
+            searchRoi = cv::Rect(
+                std::max(0, static_cast<int>(roiRect.x())),
+                std::max(0, static_cast<int>(roiRect.y())),
+                std::min(image.cols - std::max(0, static_cast<int>(roiRect.x())),
+                         static_cast<int>(roiRect.width())),
+                std::min(image.rows - std::max(0, static_cast<int>(roiRect.y())),
+                         static_cast<int>(roiRect.height())));
+        }
+        else
+        {
+            // ROI 없음: 패턴 중심 기반으로 검색 영역 결정 (패턴 크기의 2배 정도 마진)
+            int margin = std::max(static_cast<int>(pattern.rect.width()), static_cast<int>(pattern.rect.height()));
+            searchRoi = cv::Rect(
+                std::max(0, static_cast<int>(pattern.rect.x()) - margin),
+                std::max(0, static_cast<int>(pattern.rect.y()) - margin),
+                std::min(image.cols - std::max(0, static_cast<int>(pattern.rect.x()) - margin),
+                         static_cast<int>(pattern.rect.width()) + 2 * margin),
+                std::min(image.rows - std::max(0, static_cast<int>(pattern.rect.y()) - margin),
+                         static_cast<int>(pattern.rect.height()) + 2 * margin));
+        }
 
         // 검색 영역 유효성 확인 및 로그
         if (searchRoi.width <= 0 || searchRoi.height <= 0 ||
