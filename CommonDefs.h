@@ -230,6 +230,15 @@ struct PatternInfo {
     int fidMatchMethod = 0;     // FID 템플릿 매칭 방법 (0: Coefficient, 1: Correlation)
     bool runInspection = true;  // 추가: 매칭 검사 활성화 여부
     
+    // 패턴 매칭 (Fine Alignment) 전용 속성
+    QImage matchTemplate;       // 패턴 매칭용 템플릿 (필터 적용 안 된 원본)
+    bool patternMatchEnabled = false;  // 패턴 매칭 활성화 여부
+    double patternMatchThreshold = 80.0;  // 패턴 매칭 임계값 (0-100%)
+    bool patternMatchUseRotation = false;  // 패턴 매칭 회전 사용 여부
+    double patternMatchMinAngle = -15.0;   // 패턴 매칭 최소 각도
+    double patternMatchMaxAngle = 15.0;    // 패턴 매칭 최대 각도
+    double patternMatchAngleStep = 1.0;    // 패턴 매칭 각도 스텝
+    
     // Inspection 속성
     double passThreshold = 0.95;  // SSIM: NG 픽셀이 5% 이하일 때 합격 (100-95=5)
     int insMatchMethod = 0; // 추가: INS 매칭 방법 (0: 템플릿, 1: 특징점, 2: 윤곽선)

@@ -108,14 +108,13 @@ cv::Mat TeachingWidget::getCurrentFilteredFrame() const
                         sourceFrame.copyTo(maskedImage, mask);
 
                         // 3. 확장된 ROI 계산
-                        double angleRad = std::abs(pattern.angle) * M_PI / 180.0;
                         double width = pattern.rect.width();
                         double height = pattern.rect.height();
 
-                        double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
-                        double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
+                        int rotatedWidth, rotatedHeight;
+                        calculateRotatedBoundingBox(width, height, pattern.angle, rotatedWidth, rotatedHeight);
 
-                        int maxSize = static_cast<int>(std::max(rotatedWidth, rotatedHeight));
+                        int maxSize = std::max(rotatedWidth, rotatedHeight);
                         int halfSize = maxSize / 2;
 
                         cv::Rect expandedRoi(
@@ -3777,26 +3776,124 @@ void TeachingWidget::createPropertyPanels()
     QVBoxLayout *templateLayout = new QVBoxLayout(templateGroup);
     templateLayout->setContentsMargins(10, 15, 10, 10);
 
-    // 템플릿 이미지 미리보기 - 중앙정렬
+    // 2개 이미지를 가로로 배치
+    QHBoxLayout *templateImagesLayout = new QHBoxLayout();
+    templateImagesLayout->setSpacing(10);
+
+    // 왼쪽: 매칭용 이미지 (matchTemplate)
+    QVBoxLayout *matchTemplateLayout = new QVBoxLayout();
+    QLabel *matchTemplateLabel = new QLabel("패턴 매칭용", templateGroup);
+    matchTemplateLabel->setStyleSheet("color: #888888; font-size: 9px;");
+    matchTemplateLabel->setAlignment(Qt::AlignCenter);
+    
+    insMatchTemplateImg = new QLabel(templateGroup);
+    insMatchTemplateImg->setFixedSize(100, 75);
+    insMatchTemplateImg->setAlignment(Qt::AlignCenter);
+    insMatchTemplateImg->setStyleSheet(
+        "background-color: rgb(60, 60, 60); "
+        "border: 1px solid rgb(100, 100, 100); "
+        "color: white;");
+    insMatchTemplateImg->setText("매칭용");
+    
+    matchTemplateLayout->addWidget(matchTemplateLabel);
+    matchTemplateLayout->addWidget(insMatchTemplateImg);
+    templateImagesLayout->addLayout(matchTemplateLayout);
+
+    // 오른쪽: 검사용 템플릿 이미지
+    QVBoxLayout *inspectTemplateLayout = new QVBoxLayout();
+    QLabel *inspectTemplateLabel = new QLabel("검사용", templateGroup);
+    inspectTemplateLabel->setStyleSheet("color: #888888; font-size: 9px;");
+    inspectTemplateLabel->setAlignment(Qt::AlignCenter);
+    
     insTemplateImg = new QLabel(templateGroup);
-    insTemplateImg->setFixedSize(120, 90);
+    insTemplateImg->setFixedSize(100, 75);
     insTemplateImg->setAlignment(Qt::AlignCenter);
     insTemplateImg->setStyleSheet(
         "background-color: rgb(60, 60, 60); "
         "border: 1px solid rgb(100, 100, 100); "
         "color: white;");
-    insTemplateImg->setText("클릭하여\n이미지 선택");
+    insTemplateImg->setText("검사용");
     insTemplateImg->setCursor(Qt::PointingHandCursor);
     insTemplateImg->installEventFilter(this);
+    
+    inspectTemplateLayout->addWidget(inspectTemplateLabel);
+    inspectTemplateLayout->addWidget(insTemplateImg);
+    templateImagesLayout->addLayout(inspectTemplateLayout);
 
-    // 이미지를 중앙에 배치
-    QHBoxLayout *insImageCenterLayout = new QHBoxLayout();
-    insImageCenterLayout->addStretch();
-    insImageCenterLayout->addWidget(insTemplateImg);
-    insImageCenterLayout->addStretch();
-
-    templateLayout->addLayout(insImageCenterLayout);
+    templateLayout->addLayout(templateImagesLayout);
     insMainLayout->addWidget(templateGroup);
+
+    // === 패턴 매칭 (Fine Alignment) 그룹 ===
+    insPatternMatchGroup = new QGroupBox("패턴 매칭 활성화", insPropWidget);
+    insPatternMatchGroup->setCheckable(true);
+    insPatternMatchGroup->setChecked(false);
+    insPatternMatchGroup->setStyleSheet(
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }"
+        "QGroupBox::indicator { width: 13px; height: 13px; }"
+        "QGroupBox::indicator:unchecked { background-color: rgb(60, 60, 60); border: 1px solid rgb(100, 100, 100); }"
+        "QGroupBox::indicator:checked { background-color: #4CAF50; border: 1px solid #45a049; }");
+    QFormLayout *patternMatchLayout = new QFormLayout(insPatternMatchGroup);
+    patternMatchLayout->setVerticalSpacing(5);
+    patternMatchLayout->setContentsMargins(10, 15, 10, 10);
+    patternMatchLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    patternMatchLayout->setFormAlignment(Qt::AlignCenter);
+
+    // 패턴 매칭 임계값
+    insPatternMatchThreshLabel = new QLabel("매칭 임계값:", insPatternMatchGroup);
+    insPatternMatchThreshSpin = new QDoubleSpinBox(insPatternMatchGroup);
+    insPatternMatchThreshSpin->setFixedHeight(22);
+    insPatternMatchThreshSpin->setRange(10.0, 100.0);
+    insPatternMatchThreshSpin->setSingleStep(5.0);
+    insPatternMatchThreshSpin->setValue(80.0);
+    insPatternMatchThreshSpin->setSuffix("%");
+    patternMatchLayout->addRow(insPatternMatchThreshLabel, insPatternMatchThreshSpin);
+
+    // 회전 사용 체크박스
+    insPatternMatchRotationCheck = new QCheckBox("회전 허용", insPatternMatchGroup);
+    insPatternMatchRotationCheck->setStyleSheet("color: white;");
+    patternMatchLayout->addRow("", insPatternMatchRotationCheck);
+
+    // 최소 각도
+    insPatternMatchMinAngleLabel = new QLabel("최소 각도:", insPatternMatchGroup);
+    insPatternMatchMinAngleSpin = new QDoubleSpinBox(insPatternMatchGroup);
+    insPatternMatchMinAngleSpin->setFixedHeight(22);
+    insPatternMatchMinAngleSpin->setRange(-180.0, 180.0);
+    insPatternMatchMinAngleSpin->setSingleStep(1.0);
+    insPatternMatchMinAngleSpin->setValue(-15.0);
+    insPatternMatchMinAngleSpin->setSuffix("°");
+    insPatternMatchMinAngleSpin->setEnabled(false);
+    patternMatchLayout->addRow(insPatternMatchMinAngleLabel, insPatternMatchMinAngleSpin);
+
+    // 최대 각도
+    insPatternMatchMaxAngleLabel = new QLabel("최대 각도:", insPatternMatchGroup);
+    insPatternMatchMaxAngleSpin = new QDoubleSpinBox(insPatternMatchGroup);
+    insPatternMatchMaxAngleSpin->setFixedHeight(22);
+    insPatternMatchMaxAngleSpin->setRange(-180.0, 180.0);
+    insPatternMatchMaxAngleSpin->setSingleStep(1.0);
+    insPatternMatchMaxAngleSpin->setValue(15.0);
+    insPatternMatchMaxAngleSpin->setSuffix("°");
+    insPatternMatchMaxAngleSpin->setEnabled(false);
+    patternMatchLayout->addRow(insPatternMatchMaxAngleLabel, insPatternMatchMaxAngleSpin);
+
+    // 각도 스텝
+    insPatternMatchStepLabel = new QLabel("각도 스텝:", insPatternMatchGroup);
+    insPatternMatchStepSpin = new QDoubleSpinBox(insPatternMatchGroup);
+    insPatternMatchStepSpin->setFixedHeight(22);
+    insPatternMatchStepSpin->setRange(0.1, 10.0);
+    insPatternMatchStepSpin->setSingleStep(0.5);
+    insPatternMatchStepSpin->setValue(1.0);
+    insPatternMatchStepSpin->setSuffix("°");
+    insPatternMatchStepSpin->setEnabled(false);
+    patternMatchLayout->addRow(insPatternMatchStepLabel, insPatternMatchStepSpin);
+
+    // 설명 라벨
+    QLabel *patternMatchDesc = new QLabel("FID 기반 대략 위치 → 패턴 매칭으로 정확한 위치/각도 찾기", insPatternMatchGroup);
+    patternMatchDesc->setStyleSheet("color: #888888; font-size: 9px;");
+    patternMatchDesc->setWordWrap(true);
+    patternMatchLayout->addRow("", patternMatchDesc);
+
+    insMainLayout->addWidget(insPatternMatchGroup);
 
     // === STRIP 검사 공통 파라미터 그룹 ===
     insStripPanel = new QGroupBox("STRIP 검사 공통 파라미터", insPropWidget);
@@ -4458,6 +4555,124 @@ void TeachingWidget::createPropertyPanels()
         }
     });
 
+    // 패턴 매칭 활성화 체크박스 연결
+    if (insPatternMatchGroup) {
+        connect(insPatternMatchGroup, &QGroupBox::toggled, [this](bool checked) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->patternMatchEnabled = checked;
+                        
+                        // 활성화 시 matchTemplate 이미지 업데이트
+                        if (checked) {
+                            updateInsMatchTemplate(pattern);
+                        }
+                        
+                        cameraView->updatePatternById(patternId, *pattern);
+                    }
+                }
+            }
+        });
+    }
+
+    // 패턴 매칭 임계값 연결
+    if (insPatternMatchThreshSpin) {
+        connect(insPatternMatchThreshSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+                [this](double value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->patternMatchThreshold = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                    }
+                }
+            }
+        });
+    }
+
+    // 패턴 매칭 회전 체크박스 연결
+    if (insPatternMatchRotationCheck) {
+        connect(insPatternMatchRotationCheck, &QCheckBox::toggled, [this](bool checked) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->useRotation = checked;
+                        
+                        // 회전 관련 위젯 활성화/비활성화
+                        if (insPatternMatchMinAngleSpin) insPatternMatchMinAngleSpin->setEnabled(checked);
+                        if (insPatternMatchMaxAngleSpin) insPatternMatchMaxAngleSpin->setEnabled(checked);
+                        if (insPatternMatchStepSpin) insPatternMatchStepSpin->setEnabled(checked);
+                        
+                        cameraView->updatePatternById(patternId, *pattern);
+                    }
+                }
+            }
+        });
+    }
+
+    // 패턴 매칭 최소 각도 연결
+    if (insPatternMatchMinAngleSpin) {
+        connect(insPatternMatchMinAngleSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+                [this](double value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->minAngle = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                    }
+                }
+            }
+        });
+    }
+
+    // 패턴 매칭 최대 각도 연결
+    if (insPatternMatchMaxAngleSpin) {
+        connect(insPatternMatchMaxAngleSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+                [this](double value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->maxAngle = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                    }
+                }
+            }
+        });
+    }
+
+    // 패턴 매칭 각도 스텝 연결
+    if (insPatternMatchStepSpin) {
+        connect(insPatternMatchStepSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+                [this](double value) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->angleStep = value;
+                        cameraView->updatePatternById(patternId, *pattern);
+                    }
+                }
+            }
+        });
+    }
+
     // 특수 속성 스택에 INS 패널 추가
     specialPropStack->addWidget(insPropWidget);
 
@@ -4852,16 +5067,9 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo *pattern, const QRectF &
         double width = newRect.width();
         double height = newRect.height();
 
-        // 회전 각도를 라디안으로 변환
-        double angleRad = std::abs(pattern->angle) * M_PI / 180.0;
-
         // 회전된 사각형의 실제 bounding box 크기 계산
-        double rotatedWidth = std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad));
-        double rotatedHeight = std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad));
-
-        // 회전된 bounding box 크기 (정사각형 아님, 실제 크기 사용)
-        int bboxWidth = static_cast<int>(rotatedWidth);
-        int bboxHeight = static_cast<int>(rotatedHeight);
+        int bboxWidth, bboxHeight;
+        calculateRotatedBoundingBox(width, height, pattern->angle, bboxWidth, bboxHeight);
 
         // ROI 영역 계산 (중심점 기준)
         cv::Rect bboxRoi(
@@ -4893,11 +5101,6 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo *pattern, const QRectF &
                  pattern->inspectionMethod == InspectionMethod::SSIM) &&
                 !pattern->filters.isEmpty())
             {
-                qDebug() << QString("템플릿: 전체 영역(%1x%2)에 %3개 필터 순차 적용")
-                                .arg(templateRegion.cols)
-                                .arg(templateRegion.rows)
-                                .arg(pattern->filters.size());
-
                 cv::Mat processedRegion = templateRegion.clone();
                 ImageProcessor processor;
                 for (const FilterInfo &filter : pattern->filters)
@@ -5057,6 +5260,9 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo *pattern, const QRectF &
             insTemplateImg->setText(TR("NO_IMAGE"));
         }
     }
+
+    // 패턴 매칭용 템플릿 이미지도 함께 업데이트
+    updateInsMatchTemplate(pattern);
 }
 
 void TeachingWidget::updateFidTemplateImage(PatternInfo *pattern, const QRectF &newRect)
@@ -5145,6 +5351,180 @@ void TeachingWidget::updateFidTemplateImage(PatternInfo *pattern, const QRectF &
         fidTemplateImg->setPixmap(QPixmap::fromImage(pattern->templateImage.scaled(
             fidTemplateImg->width(), fidTemplateImg->height(), Qt::KeepAspectRatio)));
     }
+}
+
+void TeachingWidget::updateInsMatchTemplate(PatternInfo *pattern)
+{
+    if (!pattern || pattern->type != PatternType::INS)
+    {
+        return;
+    }
+
+    // 검사 모드일 때는 템플릿 이미지 갱신 금지
+    if (cameraView && cameraView->getInspectionMode())
+    {
+        return;
+    }
+
+    // 패턴의 모드와 현재 모드가 일치하는지 확인
+    if (pattern->stripCrimpMode != currentStripCrimpMode)
+    {
+        return;
+    }
+
+    // CAM OFF 시뮬레이션 모드에서는 imageIndex 사용 (STRIP=0, CRIMP=1)
+    // CAM ON 일반 모드에서는 cameraIndex 사용
+    int frameIndex;
+    if (camOff)
+    {
+        frameIndex = (currentStripCrimpMode == StripCrimpMode::STRIP_MODE) ? 0 : 1;
+    }
+    else
+    {
+        frameIndex = cameraIndex;
+    }
+
+    cv::Mat sourceFrame;
+
+    // cameraFrames 유효성 검사 및 프레임 가져오기
+    if (frameIndex >= 0 && frameIndex < static_cast<int>(cameraFrames.size()) &&
+        !cameraFrames[frameIndex].empty())
+    {
+        sourceFrame = cameraFrames[frameIndex].clone();
+    }
+    else
+    {
+        return;
+    }
+
+    cv::Mat roiMat;
+
+    // 패턴이 회전되어 있는지 확인
+    if (std::abs(pattern->angle) > 0.1)
+    {
+        // 회전된 경우: bounding box 크기 계산
+        cv::Point2f center(pattern->rect.x() + pattern->rect.width() / 2.0f, 
+                          pattern->rect.y() + pattern->rect.height() / 2.0f);
+
+        double width = pattern->rect.width();
+        double height = pattern->rect.height();
+
+        // 회전된 사각형의 bounding box 크기 계산
+        int bboxWidth, bboxHeight;
+        calculateRotatedBoundingBox(width, height, pattern->angle, bboxWidth, bboxHeight);
+
+        // ROI 영역 계산 (중심점 기준)
+        cv::Rect bboxRoi(
+            static_cast<int>(center.x - bboxWidth / 2.0),
+            static_cast<int>(center.y - bboxHeight / 2.0),
+            bboxWidth,
+            bboxHeight);
+
+        // 이미지 경계와 교집합 구하기
+        cv::Rect imageBounds(0, 0, sourceFrame.cols, sourceFrame.rows);
+        cv::Rect validRoi = bboxRoi & imageBounds;
+
+        if (validRoi.width > 0 && validRoi.height > 0)
+        {
+            // bounding box 크기의 결과 이미지 생성 (검은색 배경)
+            cv::Mat templateRegion = cv::Mat::zeros(bboxHeight, bboxWidth, sourceFrame.type());
+
+            // 유효한 영역만 복사
+            int offsetX = validRoi.x - bboxRoi.x;
+            int offsetY = validRoi.y - bboxRoi.y;
+
+            cv::Mat validImage = sourceFrame(validRoi);
+            cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
+            validImage.copyTo(templateRegion(resultRect));
+
+            roiMat = templateRegion.clone();
+        }
+        else
+        {
+            return;
+        }
+    }
+    else
+    {
+        // 회전 없는 경우: 원본 사각형 영역만 추출
+        cv::Rect roi(
+            static_cast<int>(pattern->rect.x()),
+            static_cast<int>(pattern->rect.y()),
+            static_cast<int>(pattern->rect.width()),
+            static_cast<int>(pattern->rect.height()));
+
+        cv::Rect imageBounds(0, 0, sourceFrame.cols, sourceFrame.rows);
+        cv::Rect validRoi = roi & imageBounds;
+
+        if (validRoi.width > 0 && validRoi.height > 0)
+        {
+            roiMat = sourceFrame(validRoi).clone();
+        }
+        else
+        {
+            return;
+        }
+    }
+
+    if (roiMat.empty())
+    {
+        return;
+    }
+
+    // BGR -> RGB 변환
+    cv::cvtColor(roiMat, roiMat, cv::COLOR_BGR2RGB);
+
+    // QImage로 변환
+    QImage qimg(roiMat.data, roiMat.cols, roiMat.rows, roiMat.step, QImage::Format_RGB888);
+
+    // 패턴의 matchTemplate 이미지 업데이트 (RGB888 포맷으로 명시적 변환)
+    pattern->matchTemplate = qimg.copy().convertToFormat(QImage::Format_RGB888);
+
+    qDebug() << QString("INS 패턴 '%1' matchTemplate 업데이트: %2x%3, 포맷=%4")
+                    .arg(pattern->name)
+                    .arg(pattern->matchTemplate.width())
+                    .arg(pattern->matchTemplate.height())
+                    .arg(pattern->matchTemplate.format());
+
+    // UI 업데이트 (현재 선택된 패턴인 경우에만)
+    if (insMatchTemplateImg)
+    {
+        QTreeWidgetItem *currentItem = patternTree ? patternTree->currentItem() : nullptr;
+        if (currentItem)
+        {
+            QUuid selectedPatternId = getPatternIdFromItem(currentItem);
+            if (selectedPatternId == pattern->id)
+            {
+                if (!pattern->matchTemplate.isNull())
+                {
+                    QPixmap pixmap = QPixmap::fromImage(pattern->matchTemplate);
+                    if (!pixmap.isNull())
+                    {
+                        insMatchTemplateImg->setPixmap(pixmap.scaled(
+                            insMatchTemplateImg->width(), insMatchTemplateImg->height(), Qt::KeepAspectRatio));
+                        insMatchTemplateImg->setText("");
+                    }
+                    else
+                    {
+                        insMatchTemplateImg->setPixmap(QPixmap());
+                        insMatchTemplateImg->setText("변환\n실패");
+                    }
+                }
+                else
+                {
+                    insMatchTemplateImg->setPixmap(QPixmap());
+                    insMatchTemplateImg->setText("매칭용");
+                }
+            }
+        }
+    }
+}
+
+void TeachingWidget::calculateRotatedBoundingBox(double width, double height, double angle, int& bboxWidth, int& bboxHeight)
+{
+    double angleRad = std::abs(angle) * M_PI / 180.0;
+    bboxWidth = static_cast<int>(std::abs(width * std::cos(angleRad)) + std::abs(height * std::sin(angleRad)));
+    bboxHeight = static_cast<int>(std::abs(width * std::sin(angleRad)) + std::abs(height * std::cos(angleRad)));
 }
 
 cv::Mat TeachingWidget::extractRotatedRegion(const cv::Mat &image, const QRectF &rect, double angle)
@@ -7065,6 +7445,68 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                         }
                     }
                 }
+
+                // 패턴 매칭 그룹 표시/숨김 및 값 설정
+                if (insPatternMatchGroup)
+                {
+                    // FID 자식이 있는 INS 패턴만 표시
+                    bool hasFidParent = false;
+                    if (!pattern->parentId.isNull())
+                    {
+                        PatternInfo* parent = cameraView->getPatternById(pattern->parentId);
+                        if (parent && parent->type == PatternType::FID)
+                        {
+                            hasFidParent = true;
+                        }
+                    }
+                    
+                    insPatternMatchGroup->setVisible(hasFidParent);
+                    
+                    if (hasFidParent)
+                    {
+                        insPatternMatchGroup->blockSignals(true);
+                        insPatternMatchGroup->setChecked(pattern->patternMatchEnabled);
+                        insPatternMatchGroup->blockSignals(false);
+                        
+                        if (insPatternMatchThreshSpin)
+                        {
+                            insPatternMatchThreshSpin->blockSignals(true);
+                            insPatternMatchThreshSpin->setValue(pattern->patternMatchThreshold);
+                            insPatternMatchThreshSpin->blockSignals(false);
+                        }
+                        
+                        if (insPatternMatchRotationCheck)
+                        {
+                            insPatternMatchRotationCheck->blockSignals(true);
+                            insPatternMatchRotationCheck->setChecked(pattern->useRotation);
+                            insPatternMatchRotationCheck->blockSignals(false);
+                        }
+                        
+                        if (insPatternMatchMinAngleSpin)
+                        {
+                            insPatternMatchMinAngleSpin->blockSignals(true);
+                            insPatternMatchMinAngleSpin->setValue(pattern->minAngle);
+                            insPatternMatchMinAngleSpin->setEnabled(pattern->useRotation);
+                            insPatternMatchMinAngleSpin->blockSignals(false);
+                        }
+                        
+                        if (insPatternMatchMaxAngleSpin)
+                        {
+                            insPatternMatchMaxAngleSpin->blockSignals(true);
+                            insPatternMatchMaxAngleSpin->setValue(pattern->maxAngle);
+                            insPatternMatchMaxAngleSpin->setEnabled(pattern->useRotation);
+                            insPatternMatchMaxAngleSpin->blockSignals(false);
+                        }
+                        
+                        if (insPatternMatchStepSpin)
+                        {
+                            insPatternMatchStepSpin->blockSignals(true);
+                            insPatternMatchStepSpin->setValue(pattern->angleStep);
+                            insPatternMatchStepSpin->setEnabled(pattern->useRotation);
+                            insPatternMatchStepSpin->blockSignals(false);
+                        }
+                    }
+                }
                 
                 if (insRotationCheck)
                 {
@@ -7555,6 +7997,32 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                 }
 
                 // INS 패턴의 템플릿 이미지 업데이트
+                // 1. 매칭용 템플릿 이미지 (matchTemplate)
+                if (insMatchTemplateImg)
+                {
+                    if (!pattern->matchTemplate.isNull())
+                    {
+                        QPixmap pixmap = QPixmap::fromImage(pattern->matchTemplate);
+                        if (!pixmap.isNull())
+                        {
+                            insMatchTemplateImg->setPixmap(pixmap.scaled(
+                                insMatchTemplateImg->width(), insMatchTemplateImg->height(), Qt::KeepAspectRatio));
+                            insMatchTemplateImg->setText("");
+                        }
+                        else
+                        {
+                            insMatchTemplateImg->setPixmap(QPixmap());
+                            insMatchTemplateImg->setText("변환\n실패");
+                        }
+                    }
+                    else
+                    {
+                        insMatchTemplateImg->setPixmap(QPixmap());
+                        insMatchTemplateImg->setText("매칭용");
+                    }
+                }
+
+                // 2. 검사용 템플릿 이미지 (templateImage)
                 if (insTemplateImg)
                 {
                     if (!pattern->templateImage.isNull())

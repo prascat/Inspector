@@ -291,18 +291,189 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 static_cast<int>(pattern.rect.height()));
             QRect adjustedRect = originalRect;
 
-            // 부모 FID 정보가 있는 경우 처리
+            // ===== INS 패턴 매칭 디버그 =====
+            logDebug(QString("INS 패턴 '%1': patternMatchEnabled=%2, matchTemplate.isNull()=%3")
+                         .arg(pattern.name)
+                         .arg(pattern.patternMatchEnabled)
+                         .arg(pattern.matchTemplate.isNull()));
+
+            // ===== INS 패턴 매칭 (Fine Alignment) =====
+            // 부모 FID와 무관하게 독립적으로 동작
+            if (pattern.patternMatchEnabled && !pattern.matchTemplate.isNull())
+            {
+                logDebug(QString("INS 패턴 '%1': 패턴 매칭 시작 (독립 모드)")
+                             .arg(pattern.name));
+
+                // 검색 범위: 부모 ROI 전체 영역 (현재 STRIP/CRIMP 모드에 맞는 ROI)
+                cv::Rect searchROI;
+                
+                // 부모 ROI 찾기
+                QUuid parentRoiId;
+                for (const PatternInfo& p : patterns) {
+                    if (p.type == PatternType::ROI && p.stripCrimpMode == stripCrimpMode) {
+                        parentRoiId = p.id;
+                        searchROI = cv::Rect(
+                            static_cast<int>(p.rect.x()),
+                            static_cast<int>(p.rect.y()),
+                            static_cast<int>(p.rect.width()),
+                            static_cast<int>(p.rect.height())
+                        );
+                        logDebug(QString("INS 패턴 '%1': ROI 검색 영역=%2,%3,%4x%5")
+                                     .arg(pattern.name)
+                                     .arg(searchROI.x).arg(searchROI.y)
+                                     .arg(searchROI.width).arg(searchROI.height));
+                        break;
+                    }
+                }
+                
+                // ROI를 못 찾으면 전체 이미지 사용
+                if (searchROI.area() == 0) {
+                    searchROI = cv::Rect(0, 0, image.cols, image.rows);
+                    logDebug(QString("INS 패턴 '%1': ROI 없음, 전체 이미지 사용")
+                                 .arg(pattern.name));
+                }
+
+                // matchTemplate을 cv::Mat으로 변환
+                logDebug(QString("INS 패턴 '%1': matchTemplate 포맷=%2, 크기=%3x%4")
+                             .arg(pattern.name)
+                             .arg(pattern.matchTemplate.format())
+                             .arg(pattern.matchTemplate.width())
+                             .arg(pattern.matchTemplate.height()));
+                
+                cv::Mat templateMat;
+                if (pattern.matchTemplate.format() == QImage::Format_RGB888)
+                {
+                    templateMat = cv::Mat(
+                        pattern.matchTemplate.height(),
+                        pattern.matchTemplate.width(),
+                        CV_8UC3,
+                        const_cast<uchar*>(pattern.matchTemplate.bits()),
+                        pattern.matchTemplate.bytesPerLine()
+                    ).clone();
+                    cv::cvtColor(templateMat, templateMat, cv::COLOR_RGB2BGR);
+                    logDebug(QString("INS 패턴 '%1': matchTemplate RGB888 변환 성공 -> %2x%3")
+                                 .arg(pattern.name)
+                                 .arg(templateMat.cols)
+                                 .arg(templateMat.rows));
+                }
+                else if (pattern.matchTemplate.format() == QImage::Format_Grayscale8)
+                {
+                    templateMat = cv::Mat(
+                        pattern.matchTemplate.height(),
+                        pattern.matchTemplate.width(),
+                        CV_8UC1,
+                        const_cast<uchar*>(pattern.matchTemplate.bits()),
+                        pattern.matchTemplate.bytesPerLine()
+                    ).clone();
+                    logDebug(QString("INS 패턴 '%1': matchTemplate Grayscale8 변환 성공 -> %2x%3")
+                                 .arg(pattern.name)
+                                 .arg(templateMat.cols)
+                                 .arg(templateMat.rows));
+                }
+                else
+                {
+                    logDebug(QString("INS 패턴 '%1': matchTemplate 지원하지 않는 포맷=%2")
+                                 .arg(pattern.name)
+                                 .arg(pattern.matchTemplate.format()));
+                }
+
+                logDebug(QString("INS 패턴 '%1': templateMat.empty()=%2, searchROI=%3,%4,%5x%6")
+                             .arg(pattern.name)
+                             .arg(templateMat.empty())
+                             .arg(searchROI.x).arg(searchROI.y)
+                             .arg(searchROI.width).arg(searchROI.height));
+
+                if (!templateMat.empty() && searchROI.width > 0 && searchROI.height > 0)
+                {
+                    // 검색 영역 추출
+                    cv::Mat searchRegion = image(searchROI).clone();
+
+                    // 패턴 매칭 수행
+                    cv::Point matchLoc;
+                    double matchScore = 0.0;
+                    double matchAngle = pattern.angle;
+
+                    bool matched = performTemplateMatching(
+                        searchRegion,
+                        templateMat,
+                        matchLoc,
+                        matchScore,
+                        matchAngle,
+                        pattern,
+                        pattern.patternMatchUseRotation ? pattern.patternMatchMinAngle : 0.0,
+                        pattern.patternMatchUseRotation ? pattern.patternMatchMaxAngle : 0.0,
+                        pattern.patternMatchUseRotation ? pattern.patternMatchAngleStep : 1.0
+                    );
+
+                    logDebug(QString("INS 패턴 '%1': performTemplateMatching 결과 - matched=%2, score=%3%, angle=%4°")
+                                 .arg(pattern.name)
+                                 .arg(matched)
+                                 .arg(matchScore * 100.0, 0, 'f', 1)
+                                 .arg(matchAngle, 0, 'f', 1));
+
+                    if (matched && (matchScore * 100.0) >= pattern.patternMatchThreshold)
+                    {
+                        // 패턴 매칭 성공 - 찾은 위치로 검사 영역 업데이트
+                        int matchedCenterX = searchROI.x + matchLoc.x;
+                        int matchedCenterY = searchROI.y + matchLoc.y;
+
+                        logDebug(QString("INS 패턴 '%1': 패턴 매칭 성공 - 원본(%2,%3,%4°) → 매칭(%5,%6,%7°), Score=%8%")
+                                     .arg(pattern.name)
+                                     .arg(static_cast<int>(pattern.rect.center().x()))
+                                     .arg(static_cast<int>(pattern.rect.center().y()))
+                                     .arg(pattern.angle, 0, 'f', 1)
+                                     .arg(matchedCenterX).arg(matchedCenterY).arg(matchAngle, 0, 'f', 1)
+                                     .arg(matchScore * 100.0, 0, 'f', 1));
+
+                        // 검사 영역을 매칭된 위치로 업데이트
+                        adjustedRect = QRect(
+                            matchedCenterX - pattern.rect.width() / 2,
+                            matchedCenterY - pattern.rect.height() / 2,
+                            pattern.rect.width(),
+                            pattern.rect.height()
+                        );
+
+                        // 각도도 업데이트 (검사 시 사용)
+                        const_cast<PatternInfo&>(pattern).angle = matchAngle;
+                    }
+                    else
+                    {
+                        logDebug(QString("INS 패턴 '%1': 패턴 매칭 실패 (Score=%2% < Threshold=%3%), 원본 위치 사용")
+                                     .arg(pattern.name)
+                                     .arg(matchScore * 100.0, 0, 'f', 1)
+                                     .arg(pattern.patternMatchThreshold, 0, 'f', 1));
+                    }
+                }
+                else
+                {
+                    logDebug(QString("INS 패턴 '%1': 패턴 매칭 실패 - templateMat.empty()=%2, searchROI 유효=%3")
+                                 .arg(pattern.name)
+                                 .arg(templateMat.empty())
+                                 .arg(searchROI.width > 0 && searchROI.height > 0));
+                }
+            }
+
+            // 부모 FID 정보가 있는 경우 처리 (패턴 매칭 후에 추가 조정)
             cv::Point parentOffset(0, 0);
             double parentAngle = 0.0;
-            double parentFidTeachingAngle = 0.0; // 스코프 확장
+            double parentFidTeachingAngle = 0.0;
             bool hasParentInfo = false;
 
             // 부모 FID가 있는지 확인
             if (!pattern.parentId.isNull())
             {
+                logDebug(QString("INS 패턴 '%1': 부모 FID 확인 - result.fidResults.contains=%2")
+                             .arg(pattern.name)
+                             .arg(result.fidResults.contains(pattern.parentId)));
+
                 // 부모 FID의 매칭 결과가 있는지 확인
                 if (result.fidResults.contains(pattern.parentId))
                 {
+                    logDebug(QString("INS 패턴 '%1': 부모 FID 매칭 결과=%2, result.locations.contains=%3")
+                                 .arg(pattern.name)
+                                 .arg(result.fidResults[pattern.parentId])
+                                 .arg(result.locations.contains(pattern.parentId)));
+
                     // 부모 FID가 매칭에 실패했을 경우 이 INS 패턴은 FAIL (검사 불가)
                     if (!result.fidResults[pattern.parentId])
                     {
@@ -378,6 +549,152 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                             // INS 개별 각도는 무시하고 FID 매칭 각도로 덩어리째 회전
                             parentAngle = fidAngle;
                             hasParentInfo = true;
+
+                            // ===== 패턴 매칭 (Fine Alignment) 디버그 =====
+                            logDebug(QString("INS 패턴 '%1': patternMatchEnabled=%2, matchTemplate.isNull()=%3")
+                                         .arg(pattern.name)
+                                         .arg(pattern.patternMatchEnabled)
+                                         .arg(pattern.matchTemplate.isNull()));
+
+                            // ===== 패턴 매칭 (Fine Alignment) 수행 =====
+                            if (pattern.patternMatchEnabled && !pattern.matchTemplate.isNull())
+                            {
+                                logDebug(QString("INS 패턴 '%1': 패턴 매칭 시작 (Coarse: FID 기반, Fine: 템플릿 매칭)")
+                                             .arg(pattern.name));
+
+                                // 1. Coarse Alignment: FID 기반 대략 위치
+                                cv::Point coarseCenter(fidLoc.x, fidLoc.y);
+                                double coarseAngle = fidAngle;
+
+                                // 2. Fine Alignment: 부모 ROI 전체 영역에서 패턴 매칭
+                                cv::Rect searchROI;
+                                
+                                // 부모 ROI 찾기
+                                for (const PatternInfo& p : patterns) {
+                                    if (p.type == PatternType::ROI && p.stripCrimpMode == stripCrimpMode) {
+                                        searchROI = cv::Rect(
+                                            static_cast<int>(p.rect.x()),
+                                            static_cast<int>(p.rect.y()),
+                                            static_cast<int>(p.rect.width()),
+                                            static_cast<int>(p.rect.height())
+                                        );
+                                        logDebug(QString("INS 패턴 '%1': [FID기반] ROI 검색 영역=%2,%3,%4x%5")
+                                                     .arg(pattern.name)
+                                                     .arg(searchROI.x).arg(searchROI.y)
+                                                     .arg(searchROI.width).arg(searchROI.height));
+                                        break;
+                                    }
+                                }
+                                
+                                // ROI를 못 찾으면 전체 이미지 사용
+                                if (searchROI.area() == 0) {
+                                    searchROI = cv::Rect(0, 0, image.cols, image.rows);
+                                }
+
+                                // matchTemplate을 cv::Mat으로 변환
+                                logDebug(QString("INS 패턴 '%1': [FID기반] matchTemplate 포맷=%2, 크기=%3x%4")
+                                             .arg(pattern.name)
+                                             .arg(pattern.matchTemplate.format())
+                                             .arg(pattern.matchTemplate.width())
+                                             .arg(pattern.matchTemplate.height()));
+                                
+                                cv::Mat templateMat;
+                                if (pattern.matchTemplate.format() == QImage::Format_RGB888)
+                                {
+                                    templateMat = cv::Mat(
+                                        pattern.matchTemplate.height(),
+                                        pattern.matchTemplate.width(),
+                                        CV_8UC3,
+                                        const_cast<uchar*>(pattern.matchTemplate.bits()),
+                                        pattern.matchTemplate.bytesPerLine()
+                                    ).clone();
+                                    cv::cvtColor(templateMat, templateMat, cv::COLOR_RGB2BGR);
+                                    logDebug(QString("INS 패턴 '%1': [FID기반] RGB888 변환 성공 -> %2x%3")
+                                                 .arg(pattern.name)
+                                                 .arg(templateMat.cols)
+                                                 .arg(templateMat.rows));
+                                }
+                                else if (pattern.matchTemplate.format() == QImage::Format_Grayscale8)
+                                {
+                                    templateMat = cv::Mat(
+                                        pattern.matchTemplate.height(),
+                                        pattern.matchTemplate.width(),
+                                        CV_8UC1,
+                                        const_cast<uchar*>(pattern.matchTemplate.bits()),
+                                        pattern.matchTemplate.bytesPerLine()
+                                    ).clone();
+                                    logDebug(QString("INS 패턴 '%1': [FID기반] Grayscale8 변환 성공 -> %2x%3")
+                                                 .arg(pattern.name)
+                                                 .arg(templateMat.cols)
+                                                 .arg(templateMat.rows));
+                                }
+                                else
+                                {
+                                    logDebug(QString("INS 패턴 '%1': [FID기반] 지원하지 않는 포맷=%2")
+                                                 .arg(pattern.name)
+                                                 .arg(pattern.matchTemplate.format()));
+                                }
+
+                                if (templateMat.empty())
+                                {
+                                    logDebug(QString("INS 패턴 '%1': [FID기반] matchTemplate 변환 실패 - empty()=%2")
+                                                 .arg(pattern.name)
+                                                 .arg(templateMat.empty()));
+                                }
+                                else
+                                {
+                                    // 검색 영역 추출
+                                    cv::Mat searchRegion = image(searchROI).clone();
+
+                                    // 패턴 매칭 수행 (FID와 동일한 함수 사용)
+                                    cv::Point matchLoc;
+                                    double matchScore = 0.0;
+                                    double matchAngle = coarseAngle;
+
+                                    bool matched = performTemplateMatching(
+                                        searchRegion,
+                                        templateMat,
+                                        matchLoc,
+                                        matchScore,
+                                        matchAngle,
+                                        pattern,
+                                        pattern.patternMatchUseRotation ? pattern.patternMatchMinAngle : 0.0,
+                                        pattern.patternMatchUseRotation ? pattern.patternMatchMaxAngle : 0.0,
+                                        pattern.patternMatchUseRotation ? pattern.patternMatchAngleStep : 1.0
+                                    );
+
+                                    if (matched && (matchScore * 100.0) >= pattern.patternMatchThreshold)
+                                    {
+                                        // 패턴 매칭 성공 - Fine 위치/각도로 업데이트
+                                        int fineX = searchROI.x + matchLoc.x;
+                                        int fineY = searchROI.y + matchLoc.y;
+
+                                        logDebug(QString("INS 패턴 '%1': 패턴 매칭 성공 - Coarse(%2,%3,%4°) → Fine(%5,%6,%7°), Score=%8%")
+                                                     .arg(pattern.name)
+                                                     .arg(coarseCenter.x).arg(coarseCenter.y).arg(coarseAngle, 0, 'f', 1)
+                                                     .arg(fineX).arg(fineY).arg(matchAngle, 0, 'f', 1)
+                                                     .arg(matchScore * 100.0, 0, 'f', 1));
+
+                                        // Fine 위치로 fidLoc 업데이트
+                                        fidLoc.x = fineX;
+                                        fidLoc.y = fineY;
+                                        parentAngle = matchAngle;
+
+                                        // 오프셋 재계산
+                                        parentOffset = cv::Point(
+                                            fidLoc.x - originalFidCenter.x(),
+                                            fidLoc.y - originalFidCenter.y()
+                                        );
+                                    }
+                                    else
+                                    {
+                                        logDebug(QString("INS 패턴 '%1': 패턴 매칭 실패 (Score=%2% < Threshold=%3%), Coarse 위치 사용")
+                                                     .arg(pattern.name)
+                                                     .arg(matchScore * 100.0, 0, 'f', 1)
+                                                     .arg(pattern.patternMatchThreshold, 0, 'f', 1));
+                                    }
+                                }
+                            }
 
                             // 부모 FID 위치에 따른 검사 영역 조정 구현
                             // 1. 티칭 시점의 FID/INS 중심을 부동소수점으로 사용하여 상대 벡터 계산

@@ -1016,6 +1016,28 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
                     .arg(pattern.crimpTemplateImage.height());
     }
     
+    // 패턴 매칭 설정 저장
+    xml.writeAttribute("patternMatchEnabled", pattern.patternMatchEnabled ? "true" : "false");
+    xml.writeAttribute("patternMatchThreshold", QString::number(pattern.patternMatchThreshold, 'f', 1));
+    xml.writeAttribute("patternMatchUseRotation", pattern.patternMatchUseRotation ? "true" : "false");
+    xml.writeAttribute("patternMatchMinAngle", QString::number(pattern.patternMatchMinAngle, 'f', 1));
+    xml.writeAttribute("patternMatchMaxAngle", QString::number(pattern.patternMatchMaxAngle, 'f', 1));
+    xml.writeAttribute("patternMatchAngleStep", QString::number(pattern.patternMatchAngleStep, 'f', 1));
+    
+    // 패턴 매칭용 템플릿 이미지 저장
+    if (!pattern.matchTemplate.isNull()) {
+        QByteArray ba;
+        QBuffer buffer(&ba);
+        buffer.open(QIODevice::WriteOnly);
+        pattern.matchTemplate.save(&buffer, "BMP");
+        xml.writeAttribute("matchTemplate", ba.toBase64());
+        qDebug() << QString("INS 패턴 '%1' matchTemplate 저장: 크기=%2x%3, base64 길이=%4")
+                    .arg(pattern.name)
+                    .arg(pattern.matchTemplate.width())
+                    .arg(pattern.matchTemplate.height())
+                    .arg(ba.size());
+    }
+    
     xml.writeEndElement();
 }
 
@@ -1602,7 +1624,10 @@ void RecipeManager::readFIDDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     pattern.maxAngle = xml.attributes().value("maxAngle").toDouble();
     pattern.angleStep = xml.attributes().value("angleStep").toDouble();
     pattern.fidMatchMethod = xml.attributes().value("matchMethod").toInt();
-    pattern.runInspection = (xml.attributes().value("runInspection").toString() == "true");
+    
+    // runInspection 기본값은 true (XML에 값이 없으면 true)
+    QString runInspectionStr = xml.attributes().value("runInspection").toString();
+    pattern.runInspection = runInspectionStr.isEmpty() ? true : (runInspectionStr == "true");
     
     // 패턴의 실제 회전 각도 읽기 (Rect에서 읽은 것과 중복이지만 안전을 위해)
     QString patternAngleStr = xml.attributes().value("patternAngle").toString();
@@ -1887,6 +1912,55 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
                     .arg(pattern.crimpTemplateImage.width())
                     .arg(pattern.crimpTemplateImage.height())
                     .arg(loadSuccess);
+    }
+    
+    // 패턴 매칭 설정 로드
+    QString patternMatchEnabledStr = xml.attributes().value("patternMatchEnabled").toString();
+    if (!patternMatchEnabledStr.isEmpty()) {
+        pattern.patternMatchEnabled = (patternMatchEnabledStr == "true");
+    }
+    
+    QString patternMatchThresholdStr = xml.attributes().value("patternMatchThreshold").toString();
+    if (!patternMatchThresholdStr.isEmpty()) {
+        pattern.patternMatchThreshold = patternMatchThresholdStr.toDouble();
+    }
+    
+    QString patternMatchUseRotationStr = xml.attributes().value("patternMatchUseRotation").toString();
+    if (!patternMatchUseRotationStr.isEmpty()) {
+        pattern.patternMatchUseRotation = (patternMatchUseRotationStr == "true");
+    }
+    
+    QString patternMatchMinAngleStr = xml.attributes().value("patternMatchMinAngle").toString();
+    if (!patternMatchMinAngleStr.isEmpty()) {
+        pattern.patternMatchMinAngle = patternMatchMinAngleStr.toDouble();
+    }
+    
+    QString patternMatchMaxAngleStr = xml.attributes().value("patternMatchMaxAngle").toString();
+    if (!patternMatchMaxAngleStr.isEmpty()) {
+        pattern.patternMatchMaxAngle = patternMatchMaxAngleStr.toDouble();
+    }
+    
+    QString patternMatchAngleStepStr = xml.attributes().value("patternMatchAngleStep").toString();
+    if (!patternMatchAngleStepStr.isEmpty()) {
+        pattern.patternMatchAngleStep = patternMatchAngleStepStr.toDouble();
+    }
+    
+    // 패턴 매칭용 템플릿 이미지 로드
+    QString matchTemplateStr = xml.attributes().value("matchTemplate").toString();
+    if (!matchTemplateStr.isEmpty()) {
+        QByteArray imageData = QByteArray::fromBase64(matchTemplateStr.toLatin1());
+        QImage tempImage;
+        bool loadSuccess = tempImage.loadFromData(imageData);
+        if (loadSuccess) {
+            // RGB888 포맷으로 명시적 변환
+            pattern.matchTemplate = tempImage.convertToFormat(QImage::Format_RGB888);
+            qDebug() << QString("INS 패턴 '%1' matchTemplate 로드: 크기=%2x%3, 포맷=%4, 로드성공=%5")
+                        .arg(pattern.name)
+                        .arg(pattern.matchTemplate.width())
+                        .arg(pattern.matchTemplate.height())
+                        .arg(pattern.matchTemplate.format())
+                        .arg(loadSuccess);
+        }
     }
     
     xml.skipCurrentElement();

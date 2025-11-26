@@ -180,12 +180,17 @@ public:
     void updatePatternTree();
     void updatePatternFilters(int patternIndex);
     void updateFidTemplateImage(const QUuid& patternId);
-    void updateFidTemplateImage(PatternInfo* pattern, const QRectF& rect); 
+    void updateFidTemplateImage(PatternInfo* pattern, const QRectF& rect);
+    void updateInsMatchTemplate(PatternInfo* pattern); 
     void updateInsTemplateImage(const QUuid& patternId);
     void updateInsTemplateImage(PatternInfo* pattern, const QRectF& newRect);
     void updateAllPatternTemplateImages(); // 모든 패턴의 템플릿 이미지 갱신
     void updatePatternTemplateImage(const QUuid& patternId); // 개별 패턴의 템플릿 이미지 갱신
     cv::Mat extractRotatedRegion(const cv::Mat& image, const QRectF& rect, double angle);
+    
+    // 회전된 사각형의 bounding box 크기 계산
+    static void calculateRotatedBoundingBox(double width, double height, double angle, 
+                                           int& bboxWidth, int& bboxHeight);
     
     // TEACH 모드 관련
     void onTeachModeToggled(bool checked);
@@ -393,6 +398,19 @@ private:
     QLabel* insThreshLabel = nullptr;
     QLabel* insCompareLabel = nullptr;
     QLabel* insTemplateImg = nullptr;
+    QLabel* insMatchTemplateImg = nullptr;  // 패턴 매칭용 템플릿 이미지
+
+    // 패턴 매칭 (Fine Alignment) 관련 위젯
+    QGroupBox* insPatternMatchGroup = nullptr;
+    QLabel* insPatternMatchThreshLabel = nullptr;
+    QDoubleSpinBox* insPatternMatchThreshSpin = nullptr;
+    QCheckBox* insPatternMatchRotationCheck = nullptr;
+    QLabel* insPatternMatchMinAngleLabel = nullptr;
+    QDoubleSpinBox* insPatternMatchMinAngleSpin = nullptr;
+    QLabel* insPatternMatchMaxAngleLabel = nullptr;
+    QDoubleSpinBox* insPatternMatchMaxAngleSpin = nullptr;
+    QLabel* insPatternMatchStepLabel = nullptr;
+    QDoubleSpinBox* insPatternMatchStepSpin = nullptr;
 
     // STRIP 검사 패널 관련 위젯
     QGroupBox* insStripPanel = nullptr;
