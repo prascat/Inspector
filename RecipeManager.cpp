@@ -913,6 +913,7 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeStartElement("INSDetails");
     xml.writeAttribute("inspectionMethod", QString::number(pattern.inspectionMethod));
     xml.writeAttribute("passThreshold", QString::number(pattern.passThreshold));
+    xml.writeAttribute("ssimNgThreshold", QString::number(pattern.ssimNgThreshold));
     if (pattern.invertResult) xml.writeAttribute("invertResult", "true");
     if (pattern.useRotation) xml.writeAttribute("useRotation", "true");
     xml.writeAttribute("minAngle", QString::number(pattern.minAngle));
@@ -957,6 +958,22 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("stripThicknessBoxHeight", QString::number(pattern.stripThicknessBoxHeight));
     xml.writeAttribute("stripRearThicknessBoxWidth", QString::number(pattern.stripRearThicknessBoxWidth));
     xml.writeAttribute("stripRearThicknessBoxHeight", QString::number(pattern.stripRearThicknessBoxHeight));
+    
+    // BARREL LEFT 검사 파라미터 저장
+    xml.writeAttribute("barrelLeftStripEnabled", pattern.barrelLeftStripEnabled ? "true" : "false");
+    xml.writeAttribute("barrelLeftStripOffsetX", QString::number(pattern.barrelLeftStripOffsetX));
+    xml.writeAttribute("barrelLeftStripBoxWidth", QString::number(pattern.barrelLeftStripBoxWidth));
+    xml.writeAttribute("barrelLeftStripBoxHeight", QString::number(pattern.barrelLeftStripBoxHeight));
+    xml.writeAttribute("barrelLeftStripLengthMin", QString::number(pattern.barrelLeftStripLengthMin, 'f', 3));
+    xml.writeAttribute("barrelLeftStripLengthMax", QString::number(pattern.barrelLeftStripLengthMax, 'f', 3));
+    
+    // BARREL RIGHT 검사 파라미터 저장
+    xml.writeAttribute("barrelRightStripEnabled", pattern.barrelRightStripEnabled ? "true" : "false");
+    xml.writeAttribute("barrelRightStripOffsetX", QString::number(pattern.barrelRightStripOffsetX));
+    xml.writeAttribute("barrelRightStripBoxWidth", QString::number(pattern.barrelRightStripBoxWidth));
+    xml.writeAttribute("barrelRightStripBoxHeight", QString::number(pattern.barrelRightStripBoxHeight));
+    xml.writeAttribute("barrelRightStripLengthMin", QString::number(pattern.barrelRightStripLengthMin, 'f', 3));
+    xml.writeAttribute("barrelRightStripLengthMax", QString::number(pattern.barrelRightStripLengthMax, 'f', 3));
     
     // 템플릿 이미지 저장 (DIFF용 기본 템플릿)
     if (!pattern.templateImage.isNull()) {
@@ -1621,6 +1638,12 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     pattern.maxAngle = xml.attributes().value("maxAngle").toDouble();
     pattern.angleStep = xml.attributes().value("angleStep").toDouble();
     
+    // SSIM NG 임계값 읽기
+    QString ssimNgStr = xml.attributes().value("ssimNgThreshold").toString();
+    if (!ssimNgStr.isEmpty()) {
+        pattern.ssimNgThreshold = ssimNgStr.toDouble();
+    }
+    
     // 패턴의 실제 회전 각도 읽기 (Rect에서 읽은 것과 중복이지만 안전을 위해)
     QString patternAngleStr = xml.attributes().value("patternAngle").toString();
     if (!patternAngleStr.isEmpty()) {
@@ -1763,6 +1786,58 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     QString stripRearThicknessBoxHeightStr = xml.attributes().value("stripRearThicknessBoxHeight").toString();
     if (!stripRearThicknessBoxHeightStr.isEmpty()) {
         pattern.stripRearThicknessBoxHeight = stripRearThicknessBoxHeightStr.toInt();
+    }
+    
+    // BARREL LEFT 검사 파라미터 로드
+    QString barrelLeftEnabledStr = xml.attributes().value("barrelLeftStripEnabled").toString();
+    if (!barrelLeftEnabledStr.isEmpty()) {
+        pattern.barrelLeftStripEnabled = (barrelLeftEnabledStr == "true");
+    }
+    QString barrelLeftOffsetXStr = xml.attributes().value("barrelLeftStripOffsetX").toString();
+    if (!barrelLeftOffsetXStr.isEmpty()) {
+        pattern.barrelLeftStripOffsetX = barrelLeftOffsetXStr.toInt();
+    }
+    QString barrelLeftBoxWidthStr = xml.attributes().value("barrelLeftStripBoxWidth").toString();
+    if (!barrelLeftBoxWidthStr.isEmpty()) {
+        pattern.barrelLeftStripBoxWidth = barrelLeftBoxWidthStr.toInt();
+    }
+    QString barrelLeftBoxHeightStr = xml.attributes().value("barrelLeftStripBoxHeight").toString();
+    if (!barrelLeftBoxHeightStr.isEmpty()) {
+        pattern.barrelLeftStripBoxHeight = barrelLeftBoxHeightStr.toInt();
+    }
+    QString barrelLeftLengthMinStr = xml.attributes().value("barrelLeftStripLengthMin").toString();
+    if (!barrelLeftLengthMinStr.isEmpty()) {
+        pattern.barrelLeftStripLengthMin = barrelLeftLengthMinStr.toDouble();
+    }
+    QString barrelLeftLengthMaxStr = xml.attributes().value("barrelLeftStripLengthMax").toString();
+    if (!barrelLeftLengthMaxStr.isEmpty()) {
+        pattern.barrelLeftStripLengthMax = barrelLeftLengthMaxStr.toDouble();
+    }
+    
+    // BARREL RIGHT 검사 파라미터 로드
+    QString barrelRightEnabledStr = xml.attributes().value("barrelRightStripEnabled").toString();
+    if (!barrelRightEnabledStr.isEmpty()) {
+        pattern.barrelRightStripEnabled = (barrelRightEnabledStr == "true");
+    }
+    QString barrelRightOffsetXStr = xml.attributes().value("barrelRightStripOffsetX").toString();
+    if (!barrelRightOffsetXStr.isEmpty()) {
+        pattern.barrelRightStripOffsetX = barrelRightOffsetXStr.toInt();
+    }
+    QString barrelRightBoxWidthStr = xml.attributes().value("barrelRightStripBoxWidth").toString();
+    if (!barrelRightBoxWidthStr.isEmpty()) {
+        pattern.barrelRightStripBoxWidth = barrelRightBoxWidthStr.toInt();
+    }
+    QString barrelRightBoxHeightStr = xml.attributes().value("barrelRightStripBoxHeight").toString();
+    if (!barrelRightBoxHeightStr.isEmpty()) {
+        pattern.barrelRightStripBoxHeight = barrelRightBoxHeightStr.toInt();
+    }
+    QString barrelRightLengthMinStr = xml.attributes().value("barrelRightStripLengthMin").toString();
+    if (!barrelRightLengthMinStr.isEmpty()) {
+        pattern.barrelRightStripLengthMin = barrelRightLengthMinStr.toDouble();
+    }
+    QString barrelRightLengthMaxStr = xml.attributes().value("barrelRightStripLengthMax").toString();
+    if (!barrelRightLengthMaxStr.isEmpty()) {
+        pattern.barrelRightStripLengthMax = barrelRightLengthMaxStr.toDouble();
     }
     
     // 기본 템플릿 이미지 로드 (DIFF용 또는 레거시)

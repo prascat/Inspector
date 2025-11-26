@@ -524,6 +524,13 @@ private:
     QDoubleSpinBox* insMinAngleSpin = nullptr;
     QDoubleSpinBox* insMaxAngleSpin = nullptr;
     QDoubleSpinBox* insAngleStepSpin = nullptr;
+    
+    // SSIM 검사 전용 위젯들
+    QWidget* ssimSettingsWidget = nullptr;
+    QLabel* ssimNgThreshLabel = nullptr;
+    QSlider* ssimNgThreshSlider = nullptr;
+    QLabel* ssimNgThreshValue = nullptr;
+    QLabel* ssimColorBar = nullptr;
 
     // 패턴 기본 정보 관련 위젯들
     QLabel* patternIdValue = nullptr;      
@@ -559,6 +566,7 @@ private:
 
     // ===== 초기화 및 설정 함수 =====
     void initBasicSettings();
+    void initYoloModel();  // YOLO11-seg 모델 초기화
     void setupPatternTree();
     void setupPatternTypeButtons(QVBoxLayout *cameraLayout);
     void setupPreviewOverlay();

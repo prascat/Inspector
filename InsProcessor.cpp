@@ -515,8 +515,15 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
 
             case InspectionMethod::CRIMP:
             {
-                inspPassed = checkCrimp(image, adjustedPattern, inspScore, result);
+                inspPassed = checkCrimp(image, adjustedPattern, inspScore, result, patterns);
                 logDebug(QString("CRIMP 검사 수행: %1 (method=%2)").arg(pattern.name).arg(pattern.inspectionMethod));
+                break;
+            }
+
+            case InspectionMethod::SSIM:
+            {
+                inspPassed = checkSSIM(image, adjustedPattern, inspScore, result);
+                logDebug(QString("SSIM 검사 수행: %1 (method=%2)").arg(pattern.name).arg(pattern.inspectionMethod));
                 break;
             }
 
@@ -1427,6 +1434,225 @@ bool InsProcessor::performFeatureMatching(const cv::Mat &image, const cv::Mat &t
         angle = 0.0;
         return false;
     }
+}
+
+// SSIM (Structural Similarity Index) 검사
+bool InsProcessor::checkSSIM(const cv::Mat &image, const PatternInfo &pattern, double &score, InspectionResult &result)
+{
+    QRectF rectF = pattern.rect;
+    cv::Point2f center(rectF.x() + rectF.width() / 2.0f, rectF.y() + rectF.height() / 2.0f);
+
+    double width = rectF.width();
+    double height = rectF.height();
+
+    cv::Mat currentROI;
+
+    // 회전이 있는 경우
+    if (std::abs(pattern.angle) > 0.1)
+    {
+        // 회전 각도에 따른 bounding box 크기 계산 (티칭과 동일)
+        double angleRad = std::abs(pattern.angle) * M_PI / 180.0;
+        double rotatedWidth = std::abs(width * cos(angleRad)) + std::abs(height * sin(angleRad));
+        double rotatedHeight = std::abs(width * sin(angleRad)) + std::abs(height * cos(angleRad));
+
+        int bboxWidth = static_cast<int>(rotatedWidth);
+        int bboxHeight = static_cast<int>(rotatedHeight);
+
+        cv::Rect bboxRoi(
+            static_cast<int>(center.x - bboxWidth / 2.0),
+            static_cast<int>(center.y - bboxHeight / 2.0),
+            bboxWidth,
+            bboxHeight);
+
+        cv::Rect imageBounds(0, 0, image.cols, image.rows);
+        cv::Rect validRoi = bboxRoi & imageBounds;
+
+        if (validRoi.width <= 0 || validRoi.height <= 0)
+        {
+            logDebug(QString("SSIM 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
+            score = 0.0;
+            return false;
+        }
+
+        // bounding box 크기의 빈 이미지 생성 (티칭과 동일)
+        cv::Mat currentRegion = cv::Mat::zeros(bboxHeight, bboxWidth, image.type());
+
+        // 유효한 영역만 복사
+        int offsetX = validRoi.x - bboxRoi.x;
+        int offsetY = validRoi.y - bboxRoi.y;
+        cv::Mat validImage = image(validRoi);
+        cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
+        validImage.copyTo(currentRegion(resultRect));
+
+        // 티칭과 동일하게 역회전 없이 그대로 사용
+        currentROI = currentRegion;
+    }
+    else
+    {
+        // 회전이 없는 경우: INS 영역 직접 추출 (티칭과 동일)
+        cv::Rect roi(
+            static_cast<int>(rectF.x()),
+            static_cast<int>(rectF.y()),
+            static_cast<int>(width),
+            static_cast<int>(height));
+
+        cv::Rect imageBounds(0, 0, image.cols, image.rows);
+        cv::Rect validRoi = roi & imageBounds;
+
+        if (validRoi.width <= 0 || validRoi.height <= 0)
+        {
+            logDebug(QString("SSIM 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
+            score = 0.0;
+            return false;
+        }
+
+        currentROI = image(validRoi).clone();
+    }
+
+    // 템플릿 이미지 가져오기
+    QImage templateQImage = pattern.templateImage;
+    if (templateQImage.isNull())
+    {
+        logDebug(QString("SSIM 검사 실패: 템플릿 이미지 없음 - 패턴 '%1'").arg(pattern.name));
+        score = 0.0;
+        return false;
+    }
+
+    // QImage를 cv::Mat으로 변환
+    cv::Mat templateMat;
+    QImage convertedTemplate = templateQImage.convertToFormat(QImage::Format_RGB888);
+    cv::Mat tempMat(convertedTemplate.height(), convertedTemplate.width(), CV_8UC3,
+                    const_cast<uchar *>(convertedTemplate.bits()),
+                    static_cast<size_t>(convertedTemplate.bytesPerLine()));
+    cv::cvtColor(tempMat.clone(), templateMat, cv::COLOR_RGB2BGR);
+
+    logDebug(QString("SSIM: 템플릿 크기=%1x%2, 현재ROI 크기=%3x%4")
+                 .arg(templateMat.cols).arg(templateMat.rows)
+                 .arg(currentROI.cols).arg(currentROI.rows));
+
+    // 크기가 다르면 템플릿을 현재 ROI 크기에 맞춤
+    cv::Mat finalTemplate;
+    if (templateMat.size() != currentROI.size())
+    {
+        cv::resize(templateMat, finalTemplate, currentROI.size(), 0, 0, cv::INTER_LINEAR);
+    }
+    else
+    {
+        finalTemplate = templateMat;
+    }
+
+    // 그레이스케일 변환
+    cv::Mat gray1, gray2;
+    if (currentROI.channels() == 3)
+        cv::cvtColor(currentROI, gray1, cv::COLOR_BGR2GRAY);
+    else
+        gray1 = currentROI;
+
+    if (finalTemplate.channels() == 3)
+        cv::cvtColor(finalTemplate, gray2, cv::COLOR_BGR2GRAY);
+    else
+        gray2 = finalTemplate;
+
+    // SSIM 계산
+    const double C1 = 6.5025;   // (0.01 * 255)^2
+    const double C2 = 58.5225;  // (0.03 * 255)^2
+
+    cv::Mat I1, I2;
+    gray1.convertTo(I1, CV_64F);
+    gray2.convertTo(I2, CV_64F);
+
+    cv::Mat I1_2 = I1.mul(I1);   // I1^2
+    cv::Mat I2_2 = I2.mul(I2);   // I2^2
+    cv::Mat I1_I2 = I1.mul(I2);  // I1 * I2
+
+    cv::Mat mu1, mu2;
+    cv::GaussianBlur(I1, mu1, cv::Size(11, 11), 1.5);
+    cv::GaussianBlur(I2, mu2, cv::Size(11, 11), 1.5);
+
+    cv::Mat mu1_2 = mu1.mul(mu1);
+    cv::Mat mu2_2 = mu2.mul(mu2);
+    cv::Mat mu1_mu2 = mu1.mul(mu2);
+
+    cv::Mat sigma1_2, sigma2_2, sigma12;
+    cv::GaussianBlur(I1_2, sigma1_2, cv::Size(11, 11), 1.5);
+    sigma1_2 -= mu1_2;
+
+    cv::GaussianBlur(I2_2, sigma2_2, cv::Size(11, 11), 1.5);
+    sigma2_2 -= mu2_2;
+
+    cv::GaussianBlur(I1_I2, sigma12, cv::Size(11, 11), 1.5);
+    sigma12 -= mu1_mu2;
+
+    cv::Mat t1 = 2 * mu1_mu2 + C1;
+    cv::Mat t2 = 2 * sigma12 + C2;
+    cv::Mat t3 = t1.mul(t2);
+
+    t1 = mu1_2 + mu2_2 + C1;
+    t2 = sigma1_2 + sigma2_2 + C2;
+    t1 = t1.mul(t2);
+
+    cv::Mat ssim_map;
+    cv::divide(t3, t1, ssim_map);
+
+    cv::Scalar mssim = cv::mean(ssim_map);
+    double ssimValue = mssim[0];
+
+    // SSIM 값은 0-1 범위, score도 0-1로 저장 (출력 시 100 곱함)
+    score = ssimValue;
+
+    // 차이 히트맵 생성 (1 - SSIM으로 차이가 클수록 밝게)
+    cv::Mat diffMap;
+    cv::subtract(cv::Scalar(1.0), ssim_map, diffMap);
+    
+    // 0-255 범위로 변환하여 히트맵 생성
+    cv::Mat heatmap;
+    diffMap.convertTo(heatmap, CV_8U, 255.0);
+    
+    // 컬러 히트맵으로 변환 (COLORMAP_JET: 파랑→초록→빨강)
+    cv::Mat colorHeatmap;
+    cv::applyColorMap(heatmap, colorHeatmap, cv::COLORMAP_JET);
+    
+    // 히트맵 저장
+    result.ssimHeatmap[pattern.id] = colorHeatmap.clone();
+    result.ssimHeatmapRect[pattern.id] = rectF;  // 패턴 위치 저장
+
+    // 결과 저장
+    result.insMethodTypes[pattern.id] = InspectionMethod::SSIM;
+
+    // NG 임계값 판정: 
+    // ssimNgThreshold% 이상 차이나는 픽셀이 (100 - passThreshold)% 이상이면 NG
+    // 예: passThreshold=90%, ssimNgThreshold=85% → 85% 이상 차이 픽셀이 10% 이상이면 NG
+    double ngThreshold = pattern.ssimNgThreshold / 100.0;  // 차이 임계값 (0-1 범위)
+    double allowedNgRatio = (100.0 - pattern.passThreshold) / 100.0;  // 허용 NG 비율
+    
+    int ngPixelCount = 0;
+    int totalPixels = diffMap.rows * diffMap.cols;
+    
+    // 차이 맵에서 임계값 이상인 픽셀 수 계산
+    for (int y = 0; y < diffMap.rows; y++) {
+        const double* row = diffMap.ptr<double>(y);
+        for (int x = 0; x < diffMap.cols; x++) {
+            if (row[x] >= ngThreshold) {
+                ngPixelCount++;
+            }
+        }
+    }
+    
+    // NG 픽셀 비율 계산
+    double ngRatio = (totalPixels > 0) ? (static_cast<double>(ngPixelCount) / totalPixels) : 0.0;
+    bool passed = (ngRatio < allowedNgRatio);  // NG 비율이 허용치 미만이면 PASS
+
+    // score는 (1 - ngRatio)로 설정 (NG가 적을수록 높은 점수)
+    score = 1.0 - ngRatio;
+
+    logDebug(QString("SSIM 검사: 패턴 '%1', 차이>%2%인 영역=%3%, 허용=%4%, 결과=%5")
+                 .arg(pattern.name)
+                 .arg(pattern.ssimNgThreshold, 0, 'f', 0)
+                 .arg(ngRatio * 100.0, 0, 'f', 2)
+                 .arg(allowedNgRatio * 100.0, 0, 'f', 1)
+                 .arg(passed ? "PASS" : "FAIL"));
+
+    return passed;
 }
 
 bool InsProcessor::checkDiff(const cv::Mat &image, const PatternInfo &pattern, double &score, InspectionResult &result)
@@ -3008,12 +3234,167 @@ bool InsProcessor::checkStrip(const cv::Mat &image, const PatternInfo &pattern, 
 }
 
 // ===== CRIMP 검사는 현재 비활성화됨 =====
-bool InsProcessor::checkCrimp(const cv::Mat &image, const PatternInfo &pattern, double &score, InspectionResult &result)
+bool InsProcessor::checkCrimp(const cv::Mat &image, const PatternInfo &pattern, double &score, InspectionResult &result, const QList<PatternInfo>& patterns)
 {
-    // CRIMP 중앙 배럴 검사는 비활성화됨
-    score = 0.0;
     result.insMethodTypes[pattern.id] = InspectionMethod::CRIMP;
-    return false;
+    score = 1.0;  // 기본 점수 (0-1 범위)
+    
+    // YOLO 모델이 로드되어 있는지 확인
+    if (!ImageProcessor::isYoloSegModelLoaded()) {
+        qDebug() << "[CRIMP] YOLO 모델이 로드되지 않음 - 검사 건너뛰";
+        return false;
+    }
+    
+    // CRIMP 모드의 ROI 패턴 찾기 (부모 관계 상관없이)
+    PatternInfo roiPattern;
+    bool foundRoi = false;
+    
+    for (const PatternInfo& p : patterns) {
+        if (p.type == PatternType::ROI && p.stripCrimpMode == 1) {  // 1 = CRIMP 모드
+            roiPattern = p;
+            foundRoi = true;
+            break;
+        }
+    }
+    
+    if (!foundRoi) {
+        qDebug() << "[CRIMP]" << pattern.name << "CRIMP 모드 ROI 패턴을 찾을 수 없음";
+        return false;
+    }
+    
+    // ROI 패턴 영역으로 ROI 계산
+    int roiX = static_cast<int>(roiPattern.rect.x());
+    int roiY = static_cast<int>(roiPattern.rect.y());
+    int roiW = static_cast<int>(roiPattern.rect.width());
+    int roiH = static_cast<int>(roiPattern.rect.height());
+    
+    qDebug() << "[CRIMP]" << pattern.name << "ROI 패턴:" << roiPattern.name 
+             << "영역:" << roiX << roiY << roiW << roiH;
+    
+    // 이미지 범위 확인 및 클리핑
+    roiX = std::max(0, roiX);
+    roiY = std::max(0, roiY);
+    if (roiX + roiW > image.cols) roiW = image.cols - roiX;
+    if (roiY + roiH > image.rows) roiH = image.rows - roiY;
+    
+    if (roiW <= 0 || roiH <= 0) {
+        qDebug() << "[CRIMP] ROI 패턴 영역이 유효하지 않음";
+        return false;
+    }
+    
+    // ROI 패턴 영역 추출
+    cv::Mat roiImage = image(cv::Rect(roiX, roiY, roiW, roiH));
+    
+    // YOLO11-seg 추론 수행 (ROI 패턴 영역으로)
+    std::vector<YoloSegResult> segResults = ImageProcessor::runYoloSegInference(roiImage, 0.25f, 0.45f, 0.5f);
+    
+    qDebug() << "[CRIMP]" << pattern.name << "검출 개수:" << segResults.size();
+    
+    // LEFT/RIGHT 박스 영역 계산 (INS 패턴 기준으로 계산)
+    // INS 패턴의 barrelLeftStripBox, barrelRightStripBox 사용
+    QRectF insRect = pattern.rect;
+    double patternCenterX = insRect.center().x();
+    double patternCenterY = insRect.center().y();
+    
+    // LEFT 박스 (INS 패턴 내 30% 왼쪽 위치)
+    double leftBoxCenterX = patternCenterX - insRect.width() * 0.3;
+    double leftBoxCenterY = patternCenterY;
+    double leftBoxW = pattern.barrelLeftStripBoxWidth > 0 ? pattern.barrelLeftStripBoxWidth : 50;
+    double leftBoxH = pattern.barrelLeftStripBoxHeight > 0 ? pattern.barrelLeftStripBoxHeight : 100;
+    QRectF leftBoxRect(leftBoxCenterX - leftBoxW/2, leftBoxCenterY - leftBoxH/2, leftBoxW, leftBoxH);
+    
+    // RIGHT 박스 (INS 패턴 내 30% 오른쪽 위치)
+    double rightBoxCenterX = patternCenterX + insRect.width() * 0.3;
+    double rightBoxCenterY = patternCenterY;
+    double rightBoxW = pattern.barrelRightStripBoxWidth > 0 ? pattern.barrelRightStripBoxWidth : 50;
+    double rightBoxH = pattern.barrelRightStripBoxHeight > 0 ? pattern.barrelRightStripBoxHeight : 100;
+    QRectF rightBoxRect(rightBoxCenterX - rightBoxW/2, rightBoxCenterY - rightBoxH/2, rightBoxW, rightBoxH);
+    
+    // 박스 영역 저장
+    result.barrelLeftBoxRect[pattern.id] = leftBoxRect;
+    result.barrelRightBoxRect[pattern.id] = rightBoxRect;
+    
+    qDebug() << "[CRIMP] LEFT 박스:" << leftBoxRect.x() << leftBoxRect.y() << leftBoxRect.width() << leftBoxRect.height();
+    qDebug() << "[CRIMP] RIGHT 박스:" << rightBoxRect.x() << rightBoxRect.y() << rightBoxRect.width() << rightBoxRect.height();
+    
+    if (segResults.empty()) {
+        qDebug() << "[CRIMP] 객체가 검출되지 않았습니다";
+        result.barrelLeftResults[pattern.id] = false;
+        result.barrelRightResults[pattern.id] = false;
+        score = 0.0;
+        return false;
+    }
+    
+    // 검출 결과를 x좌표 기준으로 정렬 (왼쪽부터)
+    std::vector<YoloSegResult> sortedResults = segResults;
+    std::sort(sortedResults.begin(), sortedResults.end(), 
+        [](const YoloSegResult& a, const YoloSegResult& b) {
+            return a.bbox.x < b.bbox.x;
+        });
+    
+    // 초기화
+    result.barrelLeftResults[pattern.id] = false;
+    result.barrelRightResults[pattern.id] = false;
+    
+    // 검출 결과 로그 및 컨투어 좌표를 절대좌표로 변환하여 저장
+    for (size_t i = 0; i < sortedResults.size(); i++) {
+        const auto& seg = sortedResults[i];
+        
+        // 컨투어를 절대좌표로 변환 (ROI 오프셋 적용)
+        std::vector<cv::Point> absoluteContour;
+        for (const auto& pt : seg.contour) {
+            absoluteContour.push_back(cv::Point(pt.x + roiX, pt.y + roiY));
+        }
+        
+        // 컨투어의 바운딩 박스 계산 (너비/높이 측정)
+        cv::Rect contourBbox = cv::boundingRect(absoluteContour);
+        int contourWidth = contourBbox.width;
+        int contourHeight = contourBbox.height;
+        
+        // bbox 중심점 계산 (절대좌표)
+        double bboxCenterX = roiX + seg.bbox.x + seg.bbox.width / 2.0;
+        double bboxCenterY = roiY + seg.bbox.y + seg.bbox.height / 2.0;
+        
+        qDebug() << "[CRIMP] 검출" << i << ": class=" << seg.classId 
+                 << "conf=" << seg.confidence
+                 << "bbox=" << seg.bbox.x + roiX << seg.bbox.y + roiY << seg.bbox.width << seg.bbox.height
+                 << "contour=" << contourWidth << "x" << contourHeight
+                 << "center=" << bboxCenterX << bboxCenterY;
+        
+        // 컨투어 중심이 어느 박스에 속하는지 확인
+        bool isInLeftBox = leftBoxRect.contains(QPointF(bboxCenterX, bboxCenterY));
+        bool isInRightBox = rightBoxRect.contains(QPointF(bboxCenterX, bboxCenterY));
+        
+        if (isInLeftBox && !result.barrelLeftResults[pattern.id]) {
+            // LEFT 박스 내부에 있는 첫 번째 검출
+            result.barrelLeftContour[pattern.id] = absoluteContour;
+            result.barrelLeftContourWidth[pattern.id] = contourWidth;
+            result.barrelLeftContourHeight[pattern.id] = contourHeight;
+            result.barrelLeftResults[pattern.id] = true;
+            qDebug() << "[CRIMP] LEFT 박스 내부 검출 - PASS (" << contourWidth << "x" << contourHeight << ")";
+        } else if (isInRightBox && !result.barrelRightResults[pattern.id]) {
+            // RIGHT 박스 내부에 있는 첫 번째 검출
+            result.barrelRightContour[pattern.id] = absoluteContour;
+            result.barrelRightContourWidth[pattern.id] = contourWidth;
+            result.barrelRightContourHeight[pattern.id] = contourHeight;
+            result.barrelRightResults[pattern.id] = true;
+            qDebug() << "[CRIMP] RIGHT 박스 내부 검출 - PASS (" << contourWidth << "x" << contourHeight << ")";
+        } else {
+            qDebug() << "[CRIMP] 검출" << i << "은 LEFT/RIGHT 박스 외부 (무시)";
+        }
+    }
+    
+    // 최종 결과 판정: LEFT와 RIGHT 모두 검출되어야 PASS
+    bool leftPass = result.barrelLeftResults.value(pattern.id, false);
+    bool rightPass = result.barrelRightResults.value(pattern.id, false);
+    bool overallPass = leftPass && rightPass;
+    
+    qDebug() << "[CRIMP] 최종 결과 - LEFT:" << (leftPass ? "PASS" : "FAIL") 
+             << "RIGHT:" << (rightPass ? "PASS" : "FAIL")
+             << "전체:" << (overallPass ? "PASS" : "FAIL");
+    
+    score = overallPass ? 1.0 : 0.0;  // 0-1 범위
+    return overallPass;
 }
 
 // INS 패턴 내부 좌표점들을 역회전시켜 고정 위치로 변환하는 유틸리티 함수

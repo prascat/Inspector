@@ -417,6 +417,9 @@ private:
     void drawINSCrimpVisualization(QPainter &painter, const InspectionResult &result,
                                    const QUuid &patternId, const PatternInfo *patternInfo,
                                    const QRectF &inspRectScene, double insAngle);
+    void drawINSSSIMVisualization(QPainter &painter, const InspectionResult &result,
+                                  const QUuid &patternId, const PatternInfo *patternInfo,
+                                  const QRectF &inspRectScene, double insAngle);
 
     // STRIP 세부 시각화 함수들
     void drawStripRearBox(QPainter &painter, const InspectionResult &result,

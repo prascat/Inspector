@@ -2176,6 +2176,9 @@ void CameraView::drawINSPatterns(QPainter &painter, const InspectionResult &resu
         case InspectionMethod::CRIMP:
             drawINSCrimpVisualization(painter, result, patternId, patternInfo, inspRectScene, insAngle);
             break;
+        case InspectionMethod::SSIM:
+            drawINSSSIMVisualization(painter, result, patternId, patternInfo, inspRectScene, insAngle);
+            break;
         }
     }
 }
@@ -3376,8 +3379,274 @@ void CameraView::drawINSCrimpVisualization(QPainter &painter, const InspectionRe
                                            const QUuid &patternId, const PatternInfo *patternInfo,
                                            const QRectF &inspRectScene, double insAngle)
 {
-    // CRIMP 검사는 현재 별도 시각화가 없음 (필요시 추가)
-    // 기본 INS 박스는 drawINSPatterns에서 이미 그려짐
+    // CRIMP BARREL 검사 시각화: LEFT/RIGHT 박스와 세그멘테이션 컨투어 그리기
+    
+    QFont font(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
+    painter.setFont(font);
+    QFontMetrics fm(font);
+    
+    // 캘리브레이션 값 계산 - 현재 패턴 또는 다른 캘리브레이션된 패턴에서 가져옴
+    double pixelToMm = 0.0;
+    bool hasCalibration = false;
+    
+    // 먼저 현재 패턴에서 캘리브레이션 확인
+    if (patternInfo && patternInfo->stripLengthCalibrated &&
+        patternInfo->stripLengthCalibrationPx > 0.0 && 
+        patternInfo->stripLengthConversionMm > 0.0) {
+        pixelToMm = patternInfo->stripLengthConversionMm / patternInfo->stripLengthCalibrationPx;
+        hasCalibration = true;
+    }
+    
+    // 현재 패턴에 없으면 다른 패턴에서 캘리브레이션 값 찾기
+    if (!hasCalibration) {
+        for (const PatternInfo& p : patterns) {
+            if (p.stripLengthCalibrated && 
+                p.stripLengthCalibrationPx > 0.0 && 
+                p.stripLengthConversionMm > 0.0) {
+                pixelToMm = p.stripLengthConversionMm / p.stripLengthCalibrationPx;
+                hasCalibration = true;
+                break;
+            }
+        }
+    }
+    
+    // 픽셀 값을 캘리브레이션된 문자열로 변환하는 람다 함수
+    auto formatSize = [&](int widthPx, int heightPx) -> QString {
+        if (hasCalibration) {
+            double wMm = widthPx * pixelToMm;
+            double hMm = heightPx * pixelToMm;
+            // 1mm 이상이면 mm, 이하면 μm 단위로 표시
+            if (wMm >= 1.0 || hMm >= 1.0) {
+                return QString("%1x%2mm").arg(wMm, 0, 'f', 2).arg(hMm, 0, 'f', 2);
+            } else {
+                // μm로 변환 (1mm = 1000μm)
+                double wUm = wMm * 1000.0;
+                double hUm = hMm * 1000.0;
+                return QString("%1x%2μm").arg(wUm, 0, 'f', 0).arg(hUm, 0, 'f', 0);
+            }
+        } else {
+            // 캘리브레이션 없으면 픽셀 값 표시
+            return QString("%1x%2px").arg(widthPx).arg(heightPx);
+        }
+    };
+    
+    // INS 패턴 중심 (회전 기준점)
+    QPointF insCenterViewport = mapFromScene(inspRectScene.center());
+    
+    // ===== LEFT 박스 그리기 =====
+    if (result.barrelLeftBoxRect.contains(patternId)) {
+        QRectF leftBoxScene = result.barrelLeftBoxRect[patternId];
+        QPointF topLeft = mapFromScene(leftBoxScene.topLeft());
+        QPointF bottomRight = mapFromScene(leftBoxScene.bottomRight());
+        QRectF leftBoxViewport(topLeft, bottomRight);
+        QPointF leftBoxCenter = leftBoxViewport.center();
+        
+        bool leftPass = result.barrelLeftResults.value(patternId, false);
+        QColor boxColor = leftPass ? QColor(0, 255, 255) : QColor(255, 0, 0);  // 시안색 또는 빨간색
+        
+        // 회전 적용하여 박스 그리기
+        painter.save();
+        painter.translate(insCenterViewport);
+        painter.rotate(insAngle);
+        painter.translate(-insCenterViewport);
+        
+        painter.setPen(QPen(boxColor, 2, Qt::DashLine));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(leftBoxViewport);
+        
+        // 라벨 생성 (L: WxH 또는 FAIL)
+        QString leftLabel;
+        if (leftPass) {
+            int w = result.barrelLeftContourWidth.value(patternId, 0);
+            int h = result.barrelLeftContourHeight.value(patternId, 0);
+            leftLabel = QString("L: %1").arg(formatSize(w, h));
+        } else {
+            leftLabel = "L: FAIL";
+        }
+        
+        int textW = fm.horizontalAdvance(leftLabel);
+        int textH = fm.height();
+        
+        QRectF labelRect(leftBoxViewport.center().x() - textW / 2 - 3, 
+                        leftBoxViewport.top() - textH - 4, 
+                        textW + 6, textH);
+        painter.fillRect(labelRect, QBrush(QColor(0, 0, 0, 180)));
+        painter.setPen(boxColor);
+        painter.drawText(labelRect, Qt::AlignCenter, leftLabel);
+        
+        painter.restore();
+    }
+    
+    // ===== RIGHT 박스 그리기 =====
+    if (result.barrelRightBoxRect.contains(patternId)) {
+        QRectF rightBoxScene = result.barrelRightBoxRect[patternId];
+        QPointF topLeft = mapFromScene(rightBoxScene.topLeft());
+        QPointF bottomRight = mapFromScene(rightBoxScene.bottomRight());
+        QRectF rightBoxViewport(topLeft, bottomRight);
+        QPointF rightBoxCenter = rightBoxViewport.center();
+        
+        bool rightPass = result.barrelRightResults.value(patternId, false);
+        QColor boxColor = rightPass ? QColor(255, 165, 0) : QColor(255, 0, 0);  // 오렌지색 또는 빨간색
+        
+        // 회전 적용하여 박스 그리기
+        painter.save();
+        painter.translate(insCenterViewport);
+        painter.rotate(insAngle);
+        painter.translate(-insCenterViewport);
+        
+        painter.setPen(QPen(boxColor, 2, Qt::DashLine));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(rightBoxViewport);
+        
+        // 라벨 생성 (R: WxH 또는 FAIL)
+        QString rightLabel;
+        if (rightPass) {
+            int w = result.barrelRightContourWidth.value(patternId, 0);
+            int h = result.barrelRightContourHeight.value(patternId, 0);
+            rightLabel = QString("R: %1").arg(formatSize(w, h));
+        } else {
+            rightLabel = "R: FAIL";
+        }
+        
+        int textW = fm.horizontalAdvance(rightLabel);
+        int textH = fm.height();
+        
+        QRectF labelRect(rightBoxViewport.center().x() - textW / 2 - 3, 
+                        rightBoxViewport.top() - textH - 4, 
+                        textW + 6, textH);
+        painter.fillRect(labelRect, QBrush(QColor(0, 0, 0, 180)));
+        painter.setPen(boxColor);
+        painter.drawText(labelRect, Qt::AlignCenter, rightLabel);
+        
+        painter.restore();
+    }
+    
+    // ===== LEFT 컨투어 그리기 (시안색) =====
+    if (result.barrelLeftContour.contains(patternId) && result.barrelLeftResults.value(patternId, false)) {
+        const std::vector<cv::Point>& leftContour = result.barrelLeftContour[patternId];
+        if (!leftContour.empty()) {
+            QPolygonF polygon;
+            for (const auto& pt : leftContour) {
+                QPointF viewportPt = mapFromScene(QPointF(pt.x, pt.y));
+                polygon << viewportPt;
+            }
+            
+            // 반투명 채우기
+            QColor fillColor(0, 255, 255, 80);  // 시안색 반투명
+            painter.setBrush(QBrush(fillColor));
+            painter.setPen(QPen(QColor(0, 255, 255), 2));  // 시안색 외곽선
+            painter.drawPolygon(polygon);
+        }
+    }
+    
+    // ===== RIGHT 컨투어 그리기 (오렌지색) =====
+    if (result.barrelRightContour.contains(patternId) && result.barrelRightResults.value(patternId, false)) {
+        const std::vector<cv::Point>& rightContour = result.barrelRightContour[patternId];
+        if (!rightContour.empty()) {
+            QPolygonF polygon;
+            for (const auto& pt : rightContour) {
+                QPointF viewportPt = mapFromScene(QPointF(pt.x, pt.y));
+                polygon << viewportPt;
+            }
+            
+            // 반투명 채우기
+            QColor fillColor(255, 165, 0, 80);  // 오렌지색 반투명
+            painter.setBrush(QBrush(fillColor));
+            painter.setPen(QPen(QColor(255, 165, 0), 2));  // 오렌지색 외곽선
+            painter.drawPolygon(polygon);
+        }
+    }
+}
+
+// ===== SSIM 검사 시각화 (차이 히트맵) =====
+void CameraView::drawINSSSIMVisualization(QPainter &painter, const InspectionResult &result,
+                                          const QUuid &patternId, const PatternInfo *patternInfo,
+                                          const QRectF &inspRectScene, double insAngle)
+{
+    // SSIM 히트맵이 있는지 확인
+    if (!result.ssimHeatmap.contains(patternId)) {
+        return;
+    }
+    
+    const cv::Mat& heatmap = result.ssimHeatmap[patternId];
+    if (heatmap.empty()) {
+        return;
+    }
+    
+    // INS 패턴 중심 (회전 기준점)
+    QPointF insCenterViewport = mapFromScene(inspRectScene.center());
+    
+    // 히트맵을 QImage로 변환
+    cv::Mat heatmapRGB;
+    cv::cvtColor(heatmap, heatmapRGB, cv::COLOR_BGR2RGB);
+    
+    QImage heatmapImage(heatmapRGB.data, heatmapRGB.cols, heatmapRGB.rows,
+                        heatmapRGB.step, QImage::Format_RGB888);
+    QPixmap heatmapPixmap = QPixmap::fromImage(heatmapImage.copy());
+    
+    // 히트맵 위치 계산 (INS 영역에 맞춤)
+    QPointF topLeftViewport = mapFromScene(inspRectScene.topLeft());
+    QPointF bottomRightViewport = mapFromScene(inspRectScene.bottomRight());
+    QRectF targetRect(topLeftViewport, bottomRightViewport);
+    
+    // 회전하여 히트맵 그리기 (반투명)
+    painter.save();
+    painter.translate(insCenterViewport);
+    painter.rotate(insAngle);
+    painter.translate(-insCenterViewport);
+    
+    // 반투명 오버레이 (alpha 블렌딩)
+    painter.setOpacity(0.6);  // 60% 불투명
+    
+    // 히트맵을 INS 영역에 스케일하여 그리기
+    painter.drawPixmap(targetRect.toRect(), heatmapPixmap.scaled(
+        targetRect.width(), targetRect.height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+    
+    painter.setOpacity(1.0);  // 불투명도 복원
+    
+    // 컬러바 범례 그리기 (INS 박스 아래, 회전 적용)
+    QFont font(NAMEPLATE_FONT_FAMILY, 8);
+    painter.setFont(font);
+    QFontMetrics fm(font);
+    
+    int barWidth = static_cast<int>(targetRect.width() * 0.8);
+    int barHeight = 12;
+    int barX = static_cast<int>(targetRect.center().x() - barWidth / 2);
+    int barY = static_cast<int>(targetRect.bottom() + 8);
+    
+    // 가로 그라데이션 컬러바 생성 (파랑→초록→빨강)
+    QLinearGradient gradient(barX, barY, barX + barWidth, barY);
+    gradient.setColorAt(0.0, QColor(0, 0, 255));     // 파랑 (낮은 차이 = Same)
+    gradient.setColorAt(0.5, QColor(0, 255, 0));     // 초록 (중간)
+    gradient.setColorAt(1.0, QColor(255, 0, 0));     // 빨강 (높은 차이 = Diff)
+    
+    painter.fillRect(barX, barY, barWidth, barHeight, gradient);
+    painter.setPen(QPen(Qt::white, 1));
+    painter.drawRect(barX, barY, barWidth, barHeight);
+    
+    // SSIM NG 임계값 마커 그리기 (ssimNgThreshold %)
+    double ngThreshold = patternInfo->ssimNgThreshold;  // 0-100 범위
+    if (ngThreshold > 0 && ngThreshold < 100) {
+        // 임계값 위치 계산 (0%=왼쪽, 100%=오른쪽)
+        int markerX = barX + static_cast<int>(barWidth * ngThreshold / 100.0);
+        
+        // 빨간색 세로 마커 선
+        painter.setPen(QPen(Qt::white, 2));
+        painter.drawLine(markerX, barY - 3, markerX, barY + barHeight + 3);
+        
+        // NG 라벨
+        QString ngLabel = QString("NG>%1%").arg(static_cast<int>(ngThreshold));
+        int labelW = fm.horizontalAdvance(ngLabel);
+        painter.setPen(Qt::white);
+        painter.drawText(markerX - labelW / 2, barY - 5, ngLabel);
+    }
+    
+    // 범례 텍스트 (양쪽 끝)
+    painter.setPen(Qt::white);
+    painter.drawText(barX - fm.horizontalAdvance("Same") - 4, barY + barHeight - 2, "Same");
+    painter.drawText(barX + barWidth + 4, barY + barHeight - 2, "Diff");
+    
+    painter.restore();
 }
 
 void CameraView::paintEvent(QPaintEvent *event)
@@ -5356,16 +5625,6 @@ void CameraView::saveCurrentResultForMode(int mode, const QPixmap &frame)
         lastCrimpFrame = frame;
         lastCrimpPatterns = patterns;
         hasCrimpResult = true;
-
-        // 디버그: 패턴 각도 확인
-        for (const PatternInfo &p : patterns)
-        {
-            if (p.type == PatternType::INS)
-            {
-                qDebug() << "[CameraView] CRIMP 저장 - INS 패턴:" << p.name << "각도:" << p.angle;
-            }
-        }
-        qDebug() << "[CameraView] CRIMP 검사 결과 저장 완료 (패턴 수:" << patterns.size() << ")";
     }
 }
 

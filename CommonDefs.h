@@ -145,8 +145,38 @@ struct InspectionResult {
     QString edgeResult;                            // EDGE 결과 (PASS/NG)
     QString edgeDetail;                            // EDGE 세부 정보
     
+    // CRIMP BARREL 검사 결과 (LEFT/RIGHT)
+    QMap<QUuid, bool> barrelLeftResults;           // BARREL LEFT 검사 통과 여부
+    QMap<QUuid, bool> barrelRightResults;          // BARREL RIGHT 검사 통과 여부
+    QMap<QUuid, double> barrelLeftMeasuredLength;  // BARREL LEFT 측정된 길이 (mm)
+    QMap<QUuid, double> barrelRightMeasuredLength; // BARREL RIGHT 측정된 길이 (mm)
+    QMap<QUuid, QPointF> barrelLeftBoxCenter;      // BARREL LEFT 박스 중심 (절대좌표)
+    QMap<QUuid, QPointF> barrelRightBoxCenter;     // BARREL RIGHT 박스 중심 (절대좌표)
+    QMap<QUuid, QSizeF> barrelLeftBoxSize;         // BARREL LEFT 박스 크기
+    QMap<QUuid, QSizeF> barrelRightBoxSize;        // BARREL RIGHT 박스 크기
+    QMap<QUuid, cv::Mat> barrelLeftMask;           // BARREL LEFT 세그멘테이션 마스크
+    QMap<QUuid, cv::Mat> barrelRightMask;          // BARREL RIGHT 세그멘테이션 마스크
+    QMap<QUuid, std::vector<cv::Point>> barrelLeftContour;   // BARREL LEFT 외곽선
+    QMap<QUuid, std::vector<cv::Point>> barrelRightContour;  // BARREL RIGHT 외곽선
+    QMap<QUuid, int> barrelLeftContourWidth;    // BARREL LEFT 컨투어 너비 (픽셀)
+    QMap<QUuid, int> barrelLeftContourHeight;   // BARREL LEFT 컨투어 높이 (픽셀)
+    QMap<QUuid, int> barrelRightContourWidth;   // BARREL RIGHT 컨투어 너비 (픽셀)
+    QMap<QUuid, int> barrelRightContourHeight;  // BARREL RIGHT 컨투어 높이 (픽셀)
+    QMap<QUuid, QRectF> barrelLeftBoxRect;      // BARREL LEFT 검사 박스 (절대좌표)
+    QMap<QUuid, QRectF> barrelRightBoxRect;     // BARREL RIGHT 검사 박스 (절대좌표)
+    
+    // CRIMP BARREL 세부 결과 로그용
+    QString barrelLeftResult;                      // BARREL LEFT 결과 (PASS/NG)
+    QString barrelLeftDetail;                      // BARREL LEFT 세부 정보
+    QString barrelRightResult;                     // BARREL RIGHT 결과 (PASS/NG)
+    QString barrelRightDetail;                     // BARREL RIGHT 세부 정보
+    
     // DIFF 검사 차이 마스크 (패턴 ID -> 차이 영역)
     QMap<QUuid, cv::Mat> diffMask;
+    
+    // SSIM 검사 히트맵 (패턴 ID -> 차이 히트맵)
+    QMap<QUuid, cv::Mat> ssimHeatmap;              // SSIM 차이 히트맵 (0-255, 차이 클수록 밝음)
+    QMap<QUuid, QRectF> ssimHeatmapRect;           // SSIM 히트맵 위치 (절대좌표)
 };
 
 // 패턴 유형 열거형
@@ -201,10 +231,13 @@ struct PatternInfo {
     bool runInspection = true;  // 추가: 매칭 검사 활성화 여부
     
     // Inspection 속성
-    double passThreshold = 0.9;
+    double passThreshold = 0.95;  // SSIM: NG 픽셀이 5% 이하일 때 합격 (100-95=5)
     bool invertResult = false;
     int insMatchMethod = 0; // 추가: INS 매칭 방법 (0: 템플릿, 1: 특징점, 2: 윤곽선)
     int inspectionMethod = 0;
+    
+    // SSIM 검사 전용 파라미터
+    double ssimNgThreshold = 30.0;  // SSIM 차이 NG 임계값 (%, 이 값 이상 차이나면 해당 영역 NG)
 
     // STRIP 검사 전용 파라미터들
     int stripContourMargin = 10;        // 컨투어 검출 마진 (픽셀)
@@ -357,6 +390,7 @@ namespace InspectionMethod {
     const int DIFF = 0;         // DIFF 검사 (필터 기반 템플릿 비교)
     const int STRIP = 1;        // STRIP 검사 
     const int CRIMP = 2;        // CRIMP 검사
+    const int SSIM = 3;         // SSIM 검사 (구조적 유사도)
     
     // 검사 방법 이름 반환 함수
     inline QString getName(int method) {
@@ -367,13 +401,15 @@ namespace InspectionMethod {
                 return "STRIP";
             case CRIMP:
                 return "CRIMP";
+            case SSIM:
+                return "SSIM";
             default:
                 return "UNKNOWN";
         }
     }
     
     // 검사 방법 개수
-    const int COUNT = 3;
+    const int COUNT = 4;
 }
 
 // Strip/Crimp 모드 정의

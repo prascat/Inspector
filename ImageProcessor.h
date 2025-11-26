@@ -5,7 +5,18 @@
 #include <QString>
 #include <QMap>
 #include <QList>
+#include <memory>
+#include <openvino/openvino.hpp>
 #include "CommonDefs.h"  // 공통 정의 포함
+
+// YOLO11-seg 세그멘테이션 결과 구조체
+struct YoloSegResult {
+    int classId;                    // 클래스 ID
+    float confidence;               // 신뢰도
+    cv::Rect bbox;                  // 바운딩 박스
+    cv::Mat mask;                   // 세그멘테이션 마스크 (원본 이미지 크기)
+    std::vector<cv::Point> contour; // 마스크 외곽선
+};
 
 class ImageProcessor {
 public:
@@ -93,6 +104,56 @@ public:
                                      std::vector<std::pair<cv::Point, cv::Point>>* rearScanLines = nullptr);
     
     // CRIMP 검사 관련 함수는 현재 비활성화됨 (향후 구현 예정)
+    
+    // ===== OpenVINO YOLO11-seg 관련 함수들 =====
+    
+    // 모델 초기화 (한 번만 호출)
+    static bool initYoloSegModel(const QString& modelPath, const QString& device = "CPU");
+    
+    // 모델 해제
+    static void releaseYoloSegModel();
+    
+    // 모델 로드 상태 확인
+    static bool isYoloSegModelLoaded();
+    
+    // YOLO11-seg 추론 수행
+    static std::vector<YoloSegResult> runYoloSegInference(
+        const cv::Mat& image,
+        float confThreshold = 0.5f,
+        float nmsThreshold = 0.45f,
+        float maskThreshold = 0.5f
+    );
+    
+    // BARREL 영역 검사 (LEFT/RIGHT)
+    static bool performBarrelInspection(
+        const cv::Mat& roiImage,
+        const PatternInfo& pattern,
+        bool isLeftBarrel,  // true: LEFT, false: RIGHT
+        std::vector<YoloSegResult>& segResults,
+        double& measuredLength,
+        bool& passed
+    );
+
+private:
+    // OpenVINO 관련 static 멤버
+    static std::shared_ptr<ov::Core> s_ovinoCore;
+    static std::shared_ptr<ov::CompiledModel> s_yoloSegModel;
+    static std::shared_ptr<ov::InferRequest> s_yoloSegInferRequest;
+    static bool s_yoloSegModelLoaded;
+    static int s_yoloInputWidth;
+    static int s_yoloInputHeight;
+    static int s_yoloNumClasses;
+    static int s_yoloMaskSize;
+    
+    // 전처리/후처리 헬퍼 함수
+    static cv::Mat preprocessYoloInput(const cv::Mat& image, int targetWidth, int targetHeight, float& scale, int& padX, int& padY);
+    static std::vector<YoloSegResult> postprocessYoloOutput(
+        const ov::Tensor& outputTensor,
+        const ov::Tensor& maskProtoTensor,
+        int origWidth, int origHeight,
+        float scale, int padX, int padY,
+        float confThreshold, float nmsThreshold, float maskThreshold
+    );
 };
 
 #endif // IMAGEPROCESSOR_H

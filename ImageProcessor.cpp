@@ -2809,6 +2809,414 @@ bool ImageProcessor::performStripInspection(const cv::Mat &roiImage, const cv::M
     }
 }
 
-// CRIMP SHAPE 검사: Shape-based Matching
+// ===== OpenVINO YOLO11-seg 관련 구현 =====
 
-// ===== CRIMP 중앙 배럴 검사 함수는 현재 비활성화됨 (향후 구현 예정) =====
+// Static 멤버 초기화
+std::shared_ptr<ov::Core> ImageProcessor::s_ovinoCore = nullptr;
+std::shared_ptr<ov::CompiledModel> ImageProcessor::s_yoloSegModel = nullptr;
+std::shared_ptr<ov::InferRequest> ImageProcessor::s_yoloSegInferRequest = nullptr;
+bool ImageProcessor::s_yoloSegModelLoaded = false;
+int ImageProcessor::s_yoloInputWidth = 640;
+int ImageProcessor::s_yoloInputHeight = 640;
+int ImageProcessor::s_yoloNumClasses = 80;  // COCO default, 실제 모델에 맞게 조정
+int ImageProcessor::s_yoloMaskSize = 160;   // YOLO11-seg mask prototype size
+
+bool ImageProcessor::initYoloSegModel(const QString& modelPath, const QString& device)
+{
+    try {
+        // 이미 로드되어 있으면 해제 후 재로드
+        if (s_yoloSegModelLoaded) {
+            releaseYoloSegModel();
+        }
+        
+        qDebug() << "[OpenVINO] YOLO11-seg 모델 로딩 시작:" << modelPath;
+        
+        // OpenVINO Core 생성
+        s_ovinoCore = std::make_shared<ov::Core>();
+        
+        // 사용 가능한 디바이스 출력
+        auto devices = s_ovinoCore->get_available_devices();
+        qDebug() << "[OpenVINO] 사용 가능한 디바이스:";
+        for (const auto& dev : devices) {
+            qDebug() << "  -" << QString::fromStdString(dev);
+        }
+        
+        // 모델 읽기
+        std::shared_ptr<ov::Model> model = s_ovinoCore->read_model(modelPath.toStdString());
+        
+        // 입력 shape 확인
+        auto inputs = model->inputs();
+        if (!inputs.empty()) {
+            auto inputShape = inputs[0].get_shape();
+            if (inputShape.size() == 4) {
+                s_yoloInputHeight = static_cast<int>(inputShape[2]);
+                s_yoloInputWidth = static_cast<int>(inputShape[3]);
+                qDebug() << "[OpenVINO] 입력 크기:" << s_yoloInputWidth << "x" << s_yoloInputHeight;
+            }
+        }
+        
+        // 출력 정보 확인
+        auto outputs = model->outputs();
+        qDebug() << "[OpenVINO] 출력 개수:" << outputs.size();
+        for (size_t i = 0; i < outputs.size(); i++) {
+            auto shape = outputs[i].get_shape();
+            QString shapeStr;
+            for (auto dim : shape) {
+                shapeStr += QString::number(dim) + " ";
+            }
+            // 텐서 이름이 있는지 확인 후 출력
+            auto names = outputs[i].get_names();
+            QString nameStr = names.empty() ? QString("output_%1").arg(i) : QString::fromStdString(*names.begin());
+            qDebug() << "  출력" << i << ":" << nameStr << "shape:" << shapeStr;
+        }
+        
+        // 모델 컴파일
+        auto compiled = s_ovinoCore->compile_model(model, device.toStdString());
+        s_yoloSegModel = std::make_shared<ov::CompiledModel>(std::move(compiled));
+        
+        // 추론 요청 생성
+        s_yoloSegInferRequest = std::make_shared<ov::InferRequest>(s_yoloSegModel->create_infer_request());
+        
+        s_yoloSegModelLoaded = true;
+        qDebug() << "[OpenVINO] YOLO11-seg 모델 로딩 완료 - 디바이스:" << device;
+        
+        return true;
+    }
+    catch (const ov::Exception& e) {
+        qDebug() << "[OpenVINO] 모델 로딩 실패 (OpenVINO 예외):" << e.what();
+        s_yoloSegModelLoaded = false;
+        return false;
+    }
+    catch (const std::exception& e) {
+        qDebug() << "[OpenVINO] 모델 로딩 실패:" << e.what();
+        s_yoloSegModelLoaded = false;
+        return false;
+    }
+}
+
+void ImageProcessor::releaseYoloSegModel()
+{
+    s_yoloSegInferRequest.reset();
+    s_yoloSegModel.reset();
+    s_ovinoCore.reset();
+    s_yoloSegModelLoaded = false;
+    qDebug() << "[OpenVINO] YOLO11-seg 모델 해제됨";
+}
+
+bool ImageProcessor::isYoloSegModelLoaded()
+{
+    return s_yoloSegModelLoaded;
+}
+
+cv::Mat ImageProcessor::preprocessYoloInput(const cv::Mat& image, int targetWidth, int targetHeight, 
+                                            float& scale, int& padX, int& padY)
+{
+    // Letterbox resize (종횡비 유지하면서 패딩)
+    int origW = image.cols;
+    int origH = image.rows;
+    
+    scale = std::min(static_cast<float>(targetWidth) / origW, 
+                     static_cast<float>(targetHeight) / origH);
+    
+    int newW = static_cast<int>(origW * scale);
+    int newH = static_cast<int>(origH * scale);
+    
+    padX = (targetWidth - newW) / 2;
+    padY = (targetHeight - newH) / 2;
+    
+    cv::Mat resized;
+    cv::resize(image, resized, cv::Size(newW, newH));
+    
+    // 패딩 추가 (회색 배경)
+    cv::Mat padded(targetHeight, targetWidth, CV_8UC3, cv::Scalar(114, 114, 114));
+    resized.copyTo(padded(cv::Rect(padX, padY, newW, newH)));
+    
+    // BGR -> RGB, HWC -> CHW, normalize to 0-1
+    cv::Mat blob;
+    cv::cvtColor(padded, blob, cv::COLOR_BGR2RGB);
+    blob.convertTo(blob, CV_32F, 1.0 / 255.0);
+    
+    return blob;
+}
+
+std::vector<YoloSegResult> ImageProcessor::postprocessYoloOutput(
+    const ov::Tensor& outputTensor,
+    const ov::Tensor& maskProtoTensor,
+    int origWidth, int origHeight,
+    float scale, int padX, int padY,
+    float confThreshold, float nmsThreshold, float maskThreshold)
+{
+    std::vector<YoloSegResult> results;
+    
+    // YOLO11-seg 출력 형식: [1, 116, 8400] (bbox + class + mask coefficients)
+    // output0: [1, 116, 8400] - 4 bbox + 80 classes + 32 mask coefficients
+    // output1: [1, 32, 160, 160] - mask prototypes
+    
+    auto outputShape = outputTensor.get_shape();
+    const float* outputData = outputTensor.data<float>();
+    
+    // mask prototypes
+    auto maskProtoShape = maskProtoTensor.get_shape();
+    const float* maskProtoData = maskProtoTensor.data<float>();
+    
+    int numDetections = static_cast<int>(outputShape[2]);  // 8400
+    int numFeatures = static_cast<int>(outputShape[1]);    // 116 = 4 + 80 + 32
+    int numClasses = numFeatures - 4 - 32;                  // 80
+    int numMaskCoeffs = 32;
+    
+    int maskH = static_cast<int>(maskProtoShape[2]);  // 160
+    int maskW = static_cast<int>(maskProtoShape[3]);  // 160
+    
+    std::vector<cv::Rect> boxes;
+    std::vector<float> confidences;
+    std::vector<int> classIds;
+    std::vector<std::vector<float>> maskCoeffs;
+    
+    // 각 detection 처리
+    for (int i = 0; i < numDetections; i++) {
+        // 클래스별 confidence 확인
+        float maxConf = 0.0f;
+        int maxClassId = -1;
+        
+        for (int c = 0; c < numClasses; c++) {
+            float conf = outputData[(4 + c) * numDetections + i];
+            if (conf > maxConf) {
+                maxConf = conf;
+                maxClassId = c;
+            }
+        }
+        
+        if (maxConf < confThreshold) continue;
+        
+        // 바운딩 박스 (x_center, y_center, width, height)
+        float cx = outputData[0 * numDetections + i];
+        float cy = outputData[1 * numDetections + i];
+        float w = outputData[2 * numDetections + i];
+        float h = outputData[3 * numDetections + i];
+        
+        // 패딩 및 스케일 역변환
+        float x1 = (cx - w / 2 - padX) / scale;
+        float y1 = (cy - h / 2 - padY) / scale;
+        float x2 = (cx + w / 2 - padX) / scale;
+        float y2 = (cy + h / 2 - padY) / scale;
+        
+        // 클리핑
+        x1 = std::max(0.0f, std::min(x1, static_cast<float>(origWidth - 1)));
+        y1 = std::max(0.0f, std::min(y1, static_cast<float>(origHeight - 1)));
+        x2 = std::max(0.0f, std::min(x2, static_cast<float>(origWidth - 1)));
+        y2 = std::max(0.0f, std::min(y2, static_cast<float>(origHeight - 1)));
+        
+        int bx = static_cast<int>(x1);
+        int by = static_cast<int>(y1);
+        int bw = static_cast<int>(x2 - x1);
+        int bh = static_cast<int>(y2 - y1);
+        
+        if (bw <= 0 || bh <= 0) continue;
+        
+        boxes.push_back(cv::Rect(bx, by, bw, bh));
+        confidences.push_back(maxConf);
+        classIds.push_back(maxClassId);
+        
+        // 마스크 계수 추출
+        std::vector<float> coeffs(numMaskCoeffs);
+        for (int m = 0; m < numMaskCoeffs; m++) {
+            coeffs[m] = outputData[(4 + numClasses + m) * numDetections + i];
+        }
+        maskCoeffs.push_back(coeffs);
+    }
+    
+    // NMS 적용
+    std::vector<int> indices;
+    cv::dnn::NMSBoxes(boxes, confidences, confThreshold, nmsThreshold, indices);
+    
+    // 결과 생성
+    for (int idx : indices) {
+        YoloSegResult result;
+        result.classId = classIds[idx];
+        result.confidence = confidences[idx];
+        result.bbox = boxes[idx];
+        
+        // 마스크 생성: mask = sigmoid(mask_coeffs @ mask_protos)
+        cv::Mat mask = cv::Mat::zeros(maskH, maskW, CV_32F);
+        const auto& coeffs = maskCoeffs[idx];
+        
+        for (int y = 0; y < maskH; y++) {
+            for (int x = 0; x < maskW; x++) {
+                float val = 0.0f;
+                for (int m = 0; m < numMaskCoeffs; m++) {
+                    val += coeffs[m] * maskProtoData[m * maskH * maskW + y * maskW + x];
+                }
+                // sigmoid
+                mask.at<float>(y, x) = 1.0f / (1.0f + std::exp(-val));
+            }
+        }
+        
+        // 마스크를 원본 이미지 크기로 리사이즈
+        cv::Mat maskResized;
+        cv::resize(mask, maskResized, cv::Size(s_yoloInputWidth, s_yoloInputHeight));
+        
+        // 패딩 제거 및 원본 크기로 변환
+        int cropX = padX;
+        int cropY = padY;
+        int cropW = static_cast<int>(origWidth * scale);
+        int cropH = static_cast<int>(origHeight * scale);
+        
+        cv::Mat maskCropped = maskResized(cv::Rect(cropX, cropY, cropW, cropH));
+        cv::resize(maskCropped, result.mask, cv::Size(origWidth, origHeight));
+        
+        // 임계값 적용하여 이진 마스크 생성
+        cv::Mat binaryMask;
+        cv::threshold(result.mask, binaryMask, maskThreshold, 1.0f, cv::THRESH_BINARY);
+        binaryMask.convertTo(binaryMask, CV_8U, 255);
+        
+        // bbox 영역 내부만 마스크 유지
+        cv::Mat finalMask = cv::Mat::zeros(origHeight, origWidth, CV_8U);
+        binaryMask(result.bbox).copyTo(finalMask(result.bbox));
+        result.mask = finalMask.clone();  // CV_8U 타입으로 저장
+        
+        // 외곽선 추출
+        std::vector<std::vector<cv::Point>> contours;
+        cv::findContours(finalMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+        if (!contours.empty()) {
+            // 가장 큰 외곽선 선택
+            result.contour = *std::max_element(contours.begin(), contours.end(),
+                [](const std::vector<cv::Point>& a, const std::vector<cv::Point>& b) {
+                    return cv::contourArea(a) < cv::contourArea(b);
+                });
+        }
+        
+        results.push_back(result);
+    }
+    
+    return results;
+}
+
+std::vector<YoloSegResult> ImageProcessor::runYoloSegInference(
+    const cv::Mat& image,
+    float confThreshold,
+    float nmsThreshold,
+    float maskThreshold)
+{
+    std::vector<YoloSegResult> results;
+    
+    if (!s_yoloSegModelLoaded || !s_yoloSegInferRequest) {
+        qDebug() << "[OpenVINO] 모델이 로드되지 않았습니다";
+        return results;
+    }
+    
+    if (image.empty()) {
+        qDebug() << "[OpenVINO] 입력 이미지가 비어있습니다";
+        return results;
+    }
+    
+    try {
+        int origW = image.cols;
+        int origH = image.rows;
+        
+        // 전처리
+        float scale;
+        int padX, padY;
+        cv::Mat inputBlob = preprocessYoloInput(image, s_yoloInputWidth, s_yoloInputHeight, 
+                                                 scale, padX, padY);
+        
+        // HWC -> CHW 변환
+        std::vector<cv::Mat> channels(3);
+        cv::split(inputBlob, channels);
+        
+        // 입력 텐서 생성
+        ov::Tensor inputTensor = s_yoloSegInferRequest->get_input_tensor();
+        float* inputData = inputTensor.data<float>();
+        
+        int channelSize = s_yoloInputHeight * s_yoloInputWidth;
+        for (int c = 0; c < 3; c++) {
+            std::memcpy(inputData + c * channelSize, channels[c].data, channelSize * sizeof(float));
+        }
+        
+        // 추론 실행
+        s_yoloSegInferRequest->infer();
+        
+        // 출력 텐서 가져오기
+        ov::Tensor outputTensor = s_yoloSegInferRequest->get_output_tensor(0);  // detection output
+        ov::Tensor maskProtoTensor = s_yoloSegInferRequest->get_output_tensor(1);  // mask prototypes
+        
+        // 후처리
+        results = postprocessYoloOutput(outputTensor, maskProtoTensor,
+                                        origW, origH, scale, padX, padY,
+                                        confThreshold, nmsThreshold, maskThreshold);
+        
+        qDebug() << "[OpenVINO] 추론 완료 - 검출 개수:" << results.size();
+    }
+    catch (const ov::Exception& e) {
+        qDebug() << "[OpenVINO] 추론 실패 (OpenVINO 예외):" << e.what();
+    }
+    catch (const std::exception& e) {
+        qDebug() << "[OpenVINO] 추론 실패:" << e.what();
+    }
+    
+    return results;
+}
+
+bool ImageProcessor::performBarrelInspection(
+    const cv::Mat& roiImage,
+    const PatternInfo& pattern,
+    bool isLeftBarrel,
+    std::vector<YoloSegResult>& segResults,
+    double& measuredLength,
+    bool& passed)
+{
+    passed = false;
+    measuredLength = 0.0;
+    segResults.clear();
+    
+    if (!s_yoloSegModelLoaded) {
+        qDebug() << "[BARREL 검사] YOLO 모델이 로드되지 않았습니다";
+        return false;
+    }
+    
+    if (roiImage.empty()) {
+        qDebug() << "[BARREL 검사] ROI 이미지가 비어있습니다";
+        return false;
+    }
+    
+    // YOLO11-seg 추론 수행
+    segResults = runYoloSegInference(roiImage, 0.5f, 0.45f, 0.5f);
+    
+    if (segResults.empty()) {
+        qDebug() << "[BARREL 검사] 객체가 검출되지 않았습니다";
+        return false;
+    }
+    
+    // 검출 결과에서 길이 측정 (세그멘테이션 마스크 기반)
+    // TODO: 실제 측정 로직 구현 - 마스크의 너비/높이 측정 등
+    
+    // 현재는 기본 구현 - 가장 큰 검출 결과 사용
+    const auto& mainResult = *std::max_element(segResults.begin(), segResults.end(),
+        [](const YoloSegResult& a, const YoloSegResult& b) {
+            return cv::contourArea(a.contour) < cv::contourArea(b.contour);
+        });
+    
+    // 마스크에서 길이 측정 (예: 수평 방향 최대 길이)
+    // 실제 구현에서는 패턴 방향에 따른 측정 필요
+    cv::Rect boundRect = mainResult.bbox;
+    measuredLength = std::max(boundRect.width, boundRect.height);  // 픽셀 단위
+    
+    // 통과 여부 판정
+    double minLength, maxLength;
+    if (isLeftBarrel) {
+        minLength = pattern.barrelLeftStripLengthMin;
+        maxLength = pattern.barrelLeftStripLengthMax;
+    } else {
+        minLength = pattern.barrelRightStripLengthMin;
+        maxLength = pattern.barrelRightStripLengthMax;
+    }
+    
+    // TODO: 픽셀 -> mm 변환 (calibration 필요)
+    // 현재는 픽셀 단위로 비교
+    passed = (measuredLength >= minLength && measuredLength <= maxLength);
+    
+    qDebug() << "[BARREL 검사]" << (isLeftBarrel ? "LEFT" : "RIGHT") 
+             << "측정값:" << measuredLength << "범위:" << minLength << "-" << maxLength
+             << "결과:" << (passed ? "PASS" : "FAIL");
+    
+    return true;
+}

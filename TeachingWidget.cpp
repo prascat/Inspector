@@ -857,6 +857,35 @@ void TeachingWidget::initBasicSettings()
                   << QColor("#FFC107") << QColor("#9C27B0") << QColor("#00BCD4")
                   << QColor("#FF9800") << QColor("#607D8B") << QColor("#E91E63");
     setFocusPolicy(Qt::StrongFocus);
+    
+    // YOLO11-seg 모델 로드 (CRIMP BARREL 검사용)
+    initYoloModel();
+}
+
+void TeachingWidget::initYoloModel()
+{
+    // 실행 파일 경로 기준으로 weights 폴더 찾기
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString modelPath = appDir + "/weights/best.xml";
+    
+    // 모델 파일 존재 확인
+    QFileInfo modelFile(modelPath);
+    if (!modelFile.exists()) {
+        qDebug() << "[YOLO] 모델 파일을 찾을 수 없음:" << modelPath;
+        qDebug() << "[YOLO] CRIMP BARREL 검사가 비활성화됩니다.";
+        return;
+    }
+    
+    qDebug() << "[YOLO] 모델 로딩 시작:" << modelPath;
+    
+    // OpenVINO로 모델 로드 (CPU 사용)
+    bool success = ImageProcessor::initYoloSegModel(modelPath, "CPU");
+    
+    if (success) {
+        qDebug() << "[YOLO] 모델 로딩 성공 - CRIMP BARREL 검사 준비 완료";
+    } else {
+        qDebug() << "[YOLO] 모델 로딩 실패 - CRIMP BARREL 검사가 비활성화됩니다.";
+    }
 }
 
 QVBoxLayout *TeachingWidget::createMainLayout()
@@ -3642,6 +3671,7 @@ void TeachingWidget::createPropertyPanels()
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::DIFF));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::STRIP));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::CRIMP));
+    insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::SSIM));
     insMethodCombo->setCurrentIndex(0); // 기본값을 DIFF로 설정
     basicInspectionLayout->addRow(insMethodLabel, insMethodCombo);
 
@@ -3654,6 +3684,66 @@ void TeachingWidget::createPropertyPanels()
     insPassThreshSpin->setValue(90.0);
     insPassThreshSpin->setSuffix("%");
     basicInspectionLayout->addRow(insPassThreshLabel, insPassThreshSpin);
+
+    // ===== SSIM 검사 설정 위젯 =====
+    ssimSettingsWidget = new QWidget(basicInspectionGroup);
+    QVBoxLayout* ssimLayout = new QVBoxLayout(ssimSettingsWidget);
+    ssimLayout->setContentsMargins(0, 5, 0, 5);
+    ssimLayout->setSpacing(5);
+    
+    // SSIM NG 임계값 라벨
+    QHBoxLayout* ssimLabelLayout = new QHBoxLayout();
+    ssimNgThreshLabel = new QLabel("차이 NG 임계값:", ssimSettingsWidget);
+    ssimNgThreshValue = new QLabel("30%", ssimSettingsWidget);
+    ssimNgThreshValue->setFixedWidth(40);
+    ssimNgThreshValue->setAlignment(Qt::AlignRight);
+    ssimLabelLayout->addWidget(ssimNgThreshLabel);
+    ssimLabelLayout->addStretch();
+    ssimLabelLayout->addWidget(ssimNgThreshValue);
+    ssimLayout->addLayout(ssimLabelLayout);
+    
+    // 컬러바 + 슬라이더
+    QWidget* colorBarWidget = new QWidget(ssimSettingsWidget);
+    colorBarWidget->setFixedHeight(30);
+    QHBoxLayout* colorBarLayout = new QHBoxLayout(colorBarWidget);
+    colorBarLayout->setContentsMargins(0, 0, 0, 0);
+    colorBarLayout->setSpacing(5);
+    
+    QLabel* sameLabel = new QLabel("Same", colorBarWidget);
+    sameLabel->setStyleSheet("color: #4444FF; font-size: 10px;");
+    
+    // 컬러바 (그라데이션 배경)
+    ssimColorBar = new QLabel(colorBarWidget);
+    ssimColorBar->setFixedHeight(20);
+    ssimColorBar->setMinimumWidth(150);
+    ssimColorBar->setStyleSheet(
+        "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+        "stop:0 #0000FF, stop:0.5 #00FF00, stop:1 #FF0000);"
+        "border: 1px solid #666666; border-radius: 2px;");
+    
+    QLabel* diffLabel = new QLabel("Diff", colorBarWidget);
+    diffLabel->setStyleSheet("color: #FF4444; font-size: 10px;");
+    
+    colorBarLayout->addWidget(sameLabel);
+    colorBarLayout->addWidget(ssimColorBar, 1);
+    colorBarLayout->addWidget(diffLabel);
+    ssimLayout->addWidget(colorBarWidget);
+    
+    // 슬라이더
+    ssimNgThreshSlider = new QSlider(Qt::Horizontal, ssimSettingsWidget);
+    ssimNgThreshSlider->setRange(5, 95);
+    ssimNgThreshSlider->setValue(30);
+    ssimNgThreshSlider->setTickPosition(QSlider::TicksBelow);
+    ssimNgThreshSlider->setTickInterval(10);
+    ssimLayout->addWidget(ssimNgThreshSlider);
+    
+    // 설명 라벨
+    QLabel* ssimDescLabel = new QLabel("(이 값 이상 차이나는 영역이 있으면 NG)", ssimSettingsWidget);
+    ssimDescLabel->setStyleSheet("color: #888888; font-size: 9px;");
+    ssimLayout->addWidget(ssimDescLabel);
+    
+    basicInspectionLayout->addRow("", ssimSettingsWidget);
+    ssimSettingsWidget->setVisible(false);  // 초기에는 숨김 (SSIM 선택 시만 표시)
 
     // 결과 반전
     insInvertCheck = new QCheckBox("결과 반전 (예: 결함 검출)", basicInspectionGroup);
@@ -4286,6 +4376,8 @@ void TeachingWidget::createPropertyPanels()
             {
                 insStripPanel->setVisible(index == InspectionMethod::STRIP); // STRIP
                 insCrimpPanel->setVisible(index == InspectionMethod::CRIMP); // CRIMP
+                if (ssimSettingsWidget)
+                    ssimSettingsWidget->setVisible(index == InspectionMethod::SSIM); // SSIM
                 // 결과 반전 옵션은 BINARY, STRIP, CRIMP에서만 표시 (안함)
                 if (insInvertCheck)
                 {
@@ -4297,6 +4389,26 @@ void TeachingWidget::createPropertyPanels()
                     insPassThreshSpin->setVisible(false);
                 }
             });
+    
+    // SSIM NG 임계값 슬라이더 연결
+    connect(ssimNgThreshSlider, &QSlider::valueChanged, [this](int value) {
+        ssimNgThreshValue->setText(QString("%1%").arg(value));
+        
+        // 선택된 패턴 찾기 (cameraView에서 현재 선택된 패턴 ID 가져오기)
+        if (cameraView) {
+            QUuid currentSelectedId = cameraView->getSelectedPatternId();
+            if (!currentSelectedId.isNull()) {
+                QList<PatternInfo>& allPatterns = cameraView->getPatterns();
+                for (PatternInfo& pattern : allPatterns) {
+                    if (pattern.id == currentSelectedId && pattern.type == PatternType::INS) {
+                        pattern.ssimNgThreshold = static_cast<double>(value);
+                        cameraView->viewport()->update();
+                        break;
+                    }
+                }
+            }
+        }
+    });
 
     // 특수 속성 스택에 INS 패널 추가
     specialPropStack->addWidget(insPropWidget);
@@ -6894,6 +7006,24 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                     insMethodCombo->setCurrentIndex(pattern->inspectionMethod);
                     insMethodCombo->blockSignals(false);
                 }
+                
+                // SSIM 설정 위젯 표시/숨김 및 값 설정
+                if (ssimSettingsWidget)
+                {
+                    bool isSSIM = (pattern->inspectionMethod == InspectionMethod::SSIM);
+                    ssimSettingsWidget->setVisible(isSSIM);
+                    
+                    if (isSSIM && ssimNgThreshSlider)
+                    {
+                        ssimNgThreshSlider->blockSignals(true);
+                        ssimNgThreshSlider->setValue(static_cast<int>(pattern->ssimNgThreshold));
+                        ssimNgThreshSlider->blockSignals(false);
+                        
+                        if (ssimNgThreshValue)
+                            ssimNgThreshValue->setText(QString("%1%").arg(static_cast<int>(pattern->ssimNgThreshold)));
+                    }
+                }
+                
                 if (insRotationCheck)
                 {
                     insRotationCheck->setChecked(pattern->useRotation);
@@ -11259,8 +11389,23 @@ void TeachingWidget::setStripCrimpMode(int mode)
         cameraView->update();
     }
 
+    // 현재 선택된 패턴 ID 저장
+    QUuid selectedId = cameraView->getSelectedPatternId();
+    
     // 패턴 트리도 업데이트
     updatePatternTree();
+    
+    // 모드 전환 후에도 같은 패턴이 선택되어 있다면 프로퍼티 패널 갱신
+    // (updatePatternTree는 트리를 재구성하지만 이미 선택된 아이템을 다시 선택하면 currentItemChanged가 발생하지 않음)
+    if (!selectedId.isNull())
+    {
+        PatternInfo *pattern = cameraView->getPatternById(selectedId);
+        if (pattern && pattern->stripCrimpMode == currentStripCrimpMode)
+        {
+            // 같은 모드의 패턴이면 프로퍼티 패널 갱신
+            updatePropertyPanel(pattern, nullptr, QUuid(), -1);
+        }
+    }
 }
 
 void TeachingWidget::saveRecipe()
@@ -12128,6 +12273,12 @@ cv::Mat TeachingWidget::grabFrameFromSpinnakerCamera(Spinnaker::CameraPtr &camer
 
 TeachingWidget::~TeachingWidget()
 {
+    // YOLO 모델 해제
+    if (ImageProcessor::isYoloSegModelLoaded()) {
+        ImageProcessor::releaseYoloSegModel();
+        qDebug() << "[YOLO] 모델 해제됨";
+    }
+    
     // 타이머 정리
     if (statusUpdateTimer)
     {

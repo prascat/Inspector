@@ -60,6 +60,16 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Xml Network SerialPort)
 # OpenCV 패키지 찾기
 find_package(OpenCV REQUIRED)
 
+# OpenVINO 패키지 찾기
+set(OpenVINO_DIR "/usr/lib/cmake/openvino2025.3.0")
+find_package(OpenVINO REQUIRED COMPONENTS Runtime)
+if(OpenVINO_FOUND)
+    message(STATUS "Found OpenVINO: ${OpenVINO_VERSION}")
+    message(STATUS "  Include: ${OpenVINO_INCLUDE_DIRS}")
+else()
+    message(WARNING "OpenVINO not found. YOLO segmentation will be disabled.")
+endif()
+
 # 헤더 파일 경로 추가
 include_directories(${OpenCV_INCLUDE_DIRS})
 
@@ -194,7 +204,7 @@ add_executable(MV
     CustomMessageBox.cpp
 )
 
-# Qt6, OpenCV 및 추가 라이브러리 연결
+# Qt6, OpenCV, OpenVINO 및 추가 라이브러리 연결
 target_link_libraries(MV 
     PRIVATE
     Qt6::Widgets 
@@ -203,6 +213,7 @@ target_link_libraries(MV
     Qt6::SerialPort
     ${OpenCV_LIBS}
     ${EXTRA_LIBS}
+    openvino::runtime
 )
 
 # 실행 파일 배포 디렉토리 설정
