@@ -4788,6 +4788,13 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo *pattern, const QRectF &
         return;
     }
 
+    // ★★★ 패턴의 모드와 현재 모드가 일치하는지 확인 ★★★
+    if (pattern->stripCrimpMode != currentStripCrimpMode)
+    {
+        // 패턴의 모드와 현재 모드가 다르면 템플릿 갱신하지 않음
+        return;
+    }
+
     // CAM OFF 시뮬레이션 모드에서는 imageIndex 사용 (STRIP=0, CRIMP=1)
     // CAM ON 일반 모드에서는 cameraIndex 사용
     int frameIndex;
@@ -5062,6 +5069,13 @@ void TeachingWidget::updateFidTemplateImage(PatternInfo *pattern, const QRectF &
     // **검사 모드일 때는 템플릿 이미지 갱신 금지**
     if (cameraView && cameraView->getInspectionMode())
     {
+        return;
+    }
+
+    // ★★★ 패턴의 모드와 현재 모드가 일치하는지 확인 ★★★
+    if (pattern->stripCrimpMode != currentStripCrimpMode)
+    {
+        // 패턴의 모드와 현재 모드가 다르면 템플릿 갱신하지 않음
         return;
     }
 
