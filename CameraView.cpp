@@ -5685,16 +5685,16 @@ void CameraView::updateSSIMHeatmap(const QUuid &patternId, double ssimNgThreshol
         return;
     }
     
-    // 임계값 계산 (ssimNgThreshold는 유사도 임계값, diffMap은 차이값)
-    double ngThreshold = 1.0 - (ssimNgThreshold / 100.0);
+    // 임계값 계산 (ssimNgThreshold는 차이 임계값 %)
+    double ngThreshold = ssimNgThreshold / 100.0;
     
-    // 임계값 이하의 픽셀은 0으로 설정 (히트맵에서 제거)
+    // 임계값 미만의 픽셀은 0으로 설정 (정상 영역 제거, 차이 큰 부분만 남김)
     cv::Mat maskedDiffMap = diffMap.clone();
     for (int y = 0; y < maskedDiffMap.rows; y++) {
         double* row = maskedDiffMap.ptr<double>(y);
         for (int x = 0; x < maskedDiffMap.cols; x++) {
             if (row[x] < ngThreshold) {
-                row[x] = 0.0;
+                row[x] = 0.0;  // 차이가 작은 부분(정상)은 제거
             }
         }
     }

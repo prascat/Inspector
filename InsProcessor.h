@@ -47,7 +47,8 @@ private:
     bool performTemplateMatching(const cv::Mat& image, const cv::Mat& templ, 
                                 cv::Point& matchLoc, double& score, double& angle,
                                 const PatternInfo& pattern,
-                                double minAngle = 0, double maxAngle = 0, double angleStep = 1);
+                                double minAngle = 0, double maxAngle = 0, double angleStep = 1,
+                                const cv::Mat& mask = cv::Mat());
     
     bool performFeatureMatching(const cv::Mat& image, const cv::Mat& templ, 
                                cv::Point& matchLoc, double& score, double& angle);

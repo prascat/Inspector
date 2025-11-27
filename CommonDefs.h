@@ -232,7 +232,9 @@ struct PatternInfo {
     
     // 패턴 매칭 (Fine Alignment) 전용 속성
     QImage matchTemplate;       // 패턴 매칭용 템플릿 (필터 적용 안 된 원본)
+    QImage matchTemplateMask;   // 패턴 매칭용 마스크 (회전된 영역만 255, 나머지 0)
     bool patternMatchEnabled = false;  // 패턴 매칭 활성화 여부
+    int patternMatchMethod = 0;        // 패턴 매칭 방법 (0: Coefficient, 1: Correlation)
     double patternMatchThreshold = 80.0;  // 패턴 매칭 임계값 (0-100%)
     bool patternMatchUseRotation = false;  // 패턴 매칭 회전 사용 여부
     double patternMatchMinAngle = -15.0;   // 패턴 매칭 최소 각도

@@ -866,6 +866,16 @@ void RecipeManager::writePatternRect(QXmlStreamWriter& xml, const PatternInfo& p
     xml.writeAttribute("angle", QString::number(pattern.angle, 'f', 2));
     xml.writeAttribute("stripCrimpMode", QString::number(pattern.stripCrimpMode));
     
+    // FID 패턴 rect 저장 로그
+    if (pattern.type == PatternType::FID) {
+        qDebug() << QString("FID 패턴 '%1' rect 저장: x=%2, y=%3, w=%4, h=%5, angle=%6")
+                    .arg(pattern.name)
+                    .arg(pattern.rect.x(), 0, 'f', 1)
+                    .arg(pattern.rect.y(), 0, 'f', 1)
+                    .arg(pattern.rect.width(), 0, 'f', 1)
+                    .arg(pattern.rect.height(), 0, 'f', 1)
+                    .arg(pattern.angle, 0, 'f', 1);
+    }
     
     xml.writeEndElement();
     
@@ -904,6 +914,37 @@ void RecipeManager::writeFIDDetails(QXmlStreamWriter& xml, const PatternInfo& pa
                     .arg(ba.size());
     } else {
         qDebug() << QString("FID 패턴 '%1' 템플릿 이미지가 null입니다!").arg(pattern.name);
+    }
+    
+    // ★ FID matchTemplate 저장 (RGB32 포맷 - 매칭용)
+    if (!pattern.matchTemplate.isNull())
+    {
+        QByteArray matchBa;
+        QBuffer matchBuffer(&matchBa);
+        matchBuffer.open(QIODevice::WriteOnly);
+        pattern.matchTemplate.save(&matchBuffer, "BMP");
+        xml.writeAttribute("matchTemplate", matchBa.toBase64());
+        qDebug() << QString("FID 패턴 '%1' matchTemplate 저장: 크기=%2x%3, 포맷=%4, base64 길이=%5")
+                    .arg(pattern.name)
+                    .arg(pattern.matchTemplate.width())
+                    .arg(pattern.matchTemplate.height())
+                    .arg(pattern.matchTemplate.format())
+                    .arg(matchBa.size());
+    }
+    
+    // ★ FID matchTemplateMask 저장
+    if (!pattern.matchTemplateMask.isNull())
+    {
+        QByteArray maskBa;
+        QBuffer maskBuffer(&maskBa);
+        maskBuffer.open(QIODevice::WriteOnly);
+        pattern.matchTemplateMask.save(&maskBuffer, "BMP");
+        xml.writeAttribute("matchTemplateMask", maskBa.toBase64());
+        qDebug() << QString("FID 패턴 '%1' matchTemplateMask 저장: 크기=%2x%3, base64 길이=%4")
+                    .arg(pattern.name)
+                    .arg(pattern.matchTemplateMask.width())
+                    .arg(pattern.matchTemplateMask.height())
+                    .arg(maskBa.size());
     }
     
     xml.writeEndElement();
@@ -1018,6 +1059,7 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     
     // 패턴 매칭 설정 저장
     xml.writeAttribute("patternMatchEnabled", pattern.patternMatchEnabled ? "true" : "false");
+    xml.writeAttribute("patternMatchMethod", QString::number(pattern.patternMatchMethod));
     xml.writeAttribute("patternMatchThreshold", QString::number(pattern.patternMatchThreshold, 'f', 1));
     xml.writeAttribute("patternMatchUseRotation", pattern.patternMatchUseRotation ? "true" : "false");
     xml.writeAttribute("patternMatchMinAngle", QString::number(pattern.patternMatchMinAngle, 'f', 1));
@@ -1035,6 +1077,20 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
                     .arg(pattern.name)
                     .arg(pattern.matchTemplate.width())
                     .arg(pattern.matchTemplate.height())
+                    .arg(ba.size());
+    }
+    
+    // matchTemplateMask 저장
+    if (!pattern.matchTemplateMask.isNull()) {
+        QByteArray ba;
+        QBuffer buffer(&ba);
+        buffer.open(QIODevice::WriteOnly);
+        pattern.matchTemplateMask.save(&buffer, "BMP");
+        xml.writeAttribute("matchTemplateMask", ba.toBase64());
+        qDebug() << QString("INS 패턴 '%1' matchTemplateMask 저장: 크기=%2x%3, base64 길이=%4")
+                    .arg(pattern.name)
+                    .arg(pattern.matchTemplateMask.width())
+                    .arg(pattern.matchTemplateMask.height())
                     .arg(ba.size());
     }
     
@@ -1652,6 +1708,32 @@ void RecipeManager::readFIDDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
         qDebug() << QString("FID 패턴 '%1' templateImage 속성이 비어있습니다!").arg(pattern.name);
     }
     
+    // ★ FID matchTemplate 로드 (RGB32 포맷 - 매칭용)
+    QString matchTemplateStr = xml.attributes().value("matchTemplate").toString();
+    if (!matchTemplateStr.isEmpty()) {
+        QByteArray matchData = QByteArray::fromBase64(matchTemplateStr.toLatin1());
+        bool matchLoadSuccess = pattern.matchTemplate.loadFromData(matchData);
+        qDebug() << QString("FID 패턴 '%1' matchTemplate 로드: 크기=%2x%3, 포맷=%4, 로드성공=%5")
+                    .arg(pattern.name)
+                    .arg(pattern.matchTemplate.width())
+                    .arg(pattern.matchTemplate.height())
+                    .arg(pattern.matchTemplate.format())
+                    .arg(matchLoadSuccess);
+    }
+    
+    // ★ FID matchTemplateMask 로드
+    QString maskStr = xml.attributes().value("matchTemplateMask").toString();
+    if (!maskStr.isEmpty()) {
+        QByteArray maskData = QByteArray::fromBase64(maskStr.toLatin1());
+        bool maskLoadSuccess = pattern.matchTemplateMask.loadFromData(maskData);
+        qDebug() << QString("FID 패턴 '%1' matchTemplateMask 로드: 크기=%2x%3, 포맷=%4, 로드성공=%5")
+                    .arg(pattern.name)
+                    .arg(pattern.matchTemplateMask.width())
+                    .arg(pattern.matchTemplateMask.height())
+                    .arg(pattern.matchTemplateMask.format())
+                    .arg(maskLoadSuccess);
+    }
+    
     xml.skipCurrentElement();
 }
 
@@ -1920,6 +2002,11 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
         pattern.patternMatchEnabled = (patternMatchEnabledStr == "true");
     }
     
+    QString patternMatchMethodStr = xml.attributes().value("patternMatchMethod").toString();
+    if (!patternMatchMethodStr.isEmpty()) {
+        pattern.patternMatchMethod = patternMatchMethodStr.toInt();
+    }
+    
     QString patternMatchThresholdStr = xml.attributes().value("patternMatchThreshold").toString();
     if (!patternMatchThresholdStr.isEmpty()) {
         pattern.patternMatchThreshold = patternMatchThresholdStr.toDouble();
@@ -1952,13 +2039,30 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
         QImage tempImage;
         bool loadSuccess = tempImage.loadFromData(imageData);
         if (loadSuccess) {
-            // RGB888 포맷으로 명시적 변환
-            pattern.matchTemplate = tempImage.convertToFormat(QImage::Format_RGB888);
+            // 기존 templateImage와 동일한 방식으로 저장
+            pattern.matchTemplate = tempImage;
             qDebug() << QString("INS 패턴 '%1' matchTemplate 로드: 크기=%2x%3, 포맷=%4, 로드성공=%5")
                         .arg(pattern.name)
                         .arg(pattern.matchTemplate.width())
                         .arg(pattern.matchTemplate.height())
                         .arg(pattern.matchTemplate.format())
+                        .arg(loadSuccess);
+        }
+    }
+    
+    // 패턴 매칭용 마스크 이미지 로드
+    QString matchTemplateMaskStr = xml.attributes().value("matchTemplateMask").toString();
+    if (!matchTemplateMaskStr.isEmpty()) {
+        QByteArray imageData = QByteArray::fromBase64(matchTemplateMaskStr.toLatin1());
+        QImage tempImage;
+        bool loadSuccess = tempImage.loadFromData(imageData);
+        if (loadSuccess) {
+            pattern.matchTemplateMask = tempImage;
+            qDebug() << QString("INS 패턴 '%1' matchTemplateMask 로드: 크기=%2x%3, 포맷=%4, 로드성공=%5")
+                        .arg(pattern.name)
+                        .arg(pattern.matchTemplateMask.width())
+                        .arg(pattern.matchTemplateMask.height())
+                        .arg(pattern.matchTemplateMask.format())
                         .arg(loadSuccess);
         }
     }

@@ -2234,6 +2234,10 @@ void TeachingWidget::connectEvents()
         if (pattern->type == PatternType::INS) {
             updateInsTemplateImage(pattern, pattern->rect);
         }
+        // ★ FID 패턴의 경우 회전 시 템플릿 이미지 재생성 (마스크 포함)
+        else if (pattern->type == PatternType::FID) {
+            updateFidTemplateImage(pattern, pattern->rect);
+        }
         
         // FID 패턴인 경우, 그룹화된 INS 패턴들도 함께 회전
         if (pattern->type == PatternType::FID && std::abs(angleDelta) > 0.01) {
@@ -3526,8 +3530,38 @@ void TeachingWidget::createPropertyPanels()
     fidLayout->setContentsMargins(0, 0, 0, 0);
     fidLayout->setSpacing(8);
 
-    // FID 매칭 설정 그룹
-    QGroupBox *fidMatchGroup = new QGroupBox("FID 매칭 검사 활성화", fidPropWidget);
+    // === 템플릿 이미지 그룹 ===
+    QGroupBox *fidTemplateGroup = new QGroupBox("템플릿 이미지", fidPropWidget);
+    fidTemplateGroup->setStyleSheet(
+        "QGroupBox { font-weight: bold; color: white; background-color: rgb(45, 45, 45); border: 1px solid rgb(80, 80, 80); border-radius: 4px; padding-top: 15px; }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px 0 5px; }");
+    QVBoxLayout *fidTemplateLayout = new QVBoxLayout(fidTemplateGroup);
+    fidTemplateLayout->setContentsMargins(10, 15, 10, 10);
+
+    // 템플릿 이미지 (매칭용만)
+    QVBoxLayout *fidMatchTemplateLayout = new QVBoxLayout();
+    QLabel *fidMatchTemplateLabel = new QLabel("패턴 매칭용", fidTemplateGroup);
+    fidMatchTemplateLabel->setStyleSheet("color: #888888; font-size: 9px;");
+    fidMatchTemplateLabel->setAlignment(Qt::AlignCenter);
+    
+    fidTemplateImg = new QLabel(fidTemplateGroup);
+    fidTemplateImg->setFixedSize(120, 90);
+    fidTemplateImg->setAlignment(Qt::AlignCenter);
+    fidTemplateImg->setStyleSheet(
+        "background-color: rgb(60, 60, 60); "
+        "border: 1px solid rgb(100, 100, 100); "
+        "color: white;");
+    fidTemplateImg->setText(TR("NO_IMAGE"));
+    fidTemplateImg->setCursor(Qt::PointingHandCursor);
+    fidTemplateImg->installEventFilter(this);
+    
+    fidMatchTemplateLayout->addWidget(fidMatchTemplateLabel);
+    fidMatchTemplateLayout->addWidget(fidTemplateImg, 0, Qt::AlignCenter);
+    fidTemplateLayout->addLayout(fidMatchTemplateLayout);
+    fidLayout->addWidget(fidTemplateGroup);
+
+    // === 패턴 매칭 설정 그룹 ===
+    QGroupBox *fidMatchGroup = new QGroupBox("패턴 매칭 활성화", fidPropWidget);
     fidMatchGroup->setCheckable(true);
     fidMatchGroup->setChecked(true);
     fidMatchGroup->setStyleSheet(
@@ -3536,78 +3570,63 @@ void TeachingWidget::createPropertyPanels()
         "QGroupBox::indicator { width: 13px; height: 13px; }"
         "QGroupBox::indicator:unchecked { background-color: rgb(60, 60, 60); border: 1px solid rgb(100, 100, 100); }"
         "QGroupBox::indicator:checked { background-color: #4CAF50; border: 1px solid #45a049; }");
-    fidMatchCheckBox = fidMatchGroup; // GroupBox 자체를 체크박스로 사용
-    QVBoxLayout *fidMatchLayout = new QVBoxLayout(fidMatchGroup);
+    fidMatchCheckBox = fidMatchGroup;
+    QFormLayout *fidMatchLayout = new QFormLayout(fidMatchGroup);
     fidMatchLayout->setContentsMargins(10, 15, 10, 10);
-    fidMatchLayout->setSpacing(5);
-    fidMatchLayout->setAlignment(Qt::AlignCenter);
+    fidMatchLayout->setVerticalSpacing(5);
+    fidMatchLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    fidMatchLayout->setFormAlignment(Qt::AlignCenter);
 
-    // FID 패턴에서 매칭 방법 및 매칭 검사 옵션 추가
+    // 매칭 방법
     fidMatchMethodLabel = new QLabel("매칭 방법:", fidMatchGroup);
-    fidMatchMethodLabel->setStyleSheet("color: white;");
     fidMatchMethodCombo = new QComboBox(fidMatchGroup);
     fidMatchMethodCombo->addItem("Coefficient", 0);
     fidMatchMethodCombo->addItem("Correlation", 1);
+    fidMatchLayout->addRow(fidMatchMethodLabel, fidMatchMethodCombo);
 
-    QHBoxLayout *fidMatchMethodLayout = new QHBoxLayout();
-    fidMatchMethodLayout->addStretch();
-    fidMatchMethodLayout->addWidget(fidMatchMethodLabel);
-    fidMatchMethodLayout->addWidget(fidMatchMethodCombo);
-    fidMatchMethodLayout->addStretch();
-    fidMatchLayout->addLayout(fidMatchMethodLayout);
-
-    // 매칭 임계값 (불량 판정 기준)
-    QHBoxLayout *fidMatchThreshLayout = new QHBoxLayout();
+    // 매칭 임계값
     fidMatchThreshLabel = new QLabel("매칭 임계값:", fidMatchGroup);
     fidMatchThreshSpin = new QDoubleSpinBox(fidMatchGroup);
+    fidMatchThreshSpin->setFixedHeight(22);
     fidMatchThreshSpin->setRange(10.0, 100.0);
     fidMatchThreshSpin->setSingleStep(5.0);
     fidMatchThreshSpin->setValue(75.0);
     fidMatchThreshSpin->setSuffix("%");
-    fidMatchThreshLayout->addStretch();
-    fidMatchThreshLayout->addWidget(fidMatchThreshLabel);
-    fidMatchThreshLayout->addWidget(fidMatchThreshSpin);
-    fidMatchThreshLayout->addStretch();
-    fidMatchLayout->addLayout(fidMatchThreshLayout);
+    fidMatchLayout->addRow(fidMatchThreshLabel, fidMatchThreshSpin);
 
-    // 회전 허용 - 체크박스 중앙 정렬
+    // 회전 허용
+    QHBoxLayout *fidRotationLayout = new QHBoxLayout();
     fidRotationCheck = new QCheckBox("회전 허용", fidMatchGroup);
-    QHBoxLayout *fidRotationCheckLayout = new QHBoxLayout();
-    fidRotationCheckLayout->addStretch();
-    fidRotationCheckLayout->addWidget(fidRotationCheck);
-    fidRotationCheckLayout->addStretch();
-    fidMatchLayout->addLayout(fidRotationCheckLayout);
+    fidRotationLayout->addWidget(fidRotationCheck);
+    fidRotationLayout->addStretch();
+    fidMatchLayout->addRow("", fidRotationLayout);
 
     // 회전 각도 범위
-    QHBoxLayout *fidAngleLayout = new QHBoxLayout();
+    fidAngleLabel = new QLabel("회전 각도 범위:", fidMatchGroup);
+    QWidget *fidAngleWidget = new QWidget(fidMatchGroup);
+    QHBoxLayout *fidAngleLayout = new QHBoxLayout(fidAngleWidget);
     fidAngleLayout->setContentsMargins(0, 0, 0, 0);
     fidAngleLayout->setSpacing(5);
-    fidAngleLabel = new QLabel("회전 각도 범위:", fidMatchGroup);
-    fidMinAngleSpin = new QDoubleSpinBox(fidMatchGroup);
+    fidMinAngleSpin = new QDoubleSpinBox(fidAngleWidget);
     fidMinAngleSpin->setFixedHeight(22);
     fidMinAngleSpin->setRange(-15, 0);
     fidMinAngleSpin->setSingleStep(1);
     fidMinAngleSpin->setValue(-5);
     fidMinAngleSpin->setSuffix("°");
-    fidToLabel = new QLabel("~", fidMatchGroup);
-    fidMaxAngleSpin = new QDoubleSpinBox(fidMatchGroup);
+    fidToLabel = new QLabel("~", fidAngleWidget);
+    fidMaxAngleSpin = new QDoubleSpinBox(fidAngleWidget);
     fidMaxAngleSpin->setFixedHeight(22);
     fidMaxAngleSpin->setRange(0, 15);
     fidMaxAngleSpin->setSingleStep(1);
     fidMaxAngleSpin->setValue(5);
     fidMaxAngleSpin->setSuffix("°");
-    fidAngleLayout->addStretch();
-    fidAngleLayout->addWidget(fidAngleLabel);
     fidAngleLayout->addWidget(fidMinAngleSpin);
     fidAngleLayout->addWidget(fidToLabel);
     fidAngleLayout->addWidget(fidMaxAngleSpin);
     fidAngleLayout->addStretch();
-    fidMatchLayout->addLayout(fidAngleLayout);
+    fidMatchLayout->addRow(fidAngleLabel, fidAngleWidget);
 
     // 각도 스텝
-    QHBoxLayout *fidStepLayout = new QHBoxLayout();
-    fidStepLayout->setContentsMargins(0, 0, 0, 0);
-    fidStepLayout->setSpacing(5);
     fidStepLabel = new QLabel("각도 스텝:", fidMatchGroup);
     fidStepSpin = new QDoubleSpinBox(fidMatchGroup);
     fidStepSpin->setFixedHeight(22);
@@ -3615,29 +3634,7 @@ void TeachingWidget::createPropertyPanels()
     fidStepSpin->setSingleStep(0.5);
     fidStepSpin->setValue(1.0);
     fidStepSpin->setSuffix("°");
-    fidStepLayout->addStretch();
-    fidStepLayout->addWidget(fidStepLabel);
-    fidStepLayout->addWidget(fidStepSpin);
-    fidStepLayout->addStretch();
-    fidMatchLayout->addLayout(fidStepLayout);
-
-    // 템플릿 이미지 미리보기
-    QHBoxLayout *fidImageLayout = new QHBoxLayout();
-    fidImageLayout->setContentsMargins(0, 0, 0, 0);
-    fidImageLayout->setSpacing(5);
-    fidTemplateImgLabel = new QLabel("템플릿 이미지:", fidMatchGroup);
-    fidTemplateImg = new QLabel(fidMatchGroup);
-    fidTemplateImg->setFixedSize(120, 90);
-    fidTemplateImg->setAlignment(Qt::AlignCenter);
-    fidTemplateImg->setStyleSheet("background-color: rgba(50, 50, 50, 180); border: 1px solid rgba(100, 100, 100, 150);");
-    fidTemplateImg->setText(TR("NO_IMAGE"));
-    fidTemplateImg->setCursor(Qt::PointingHandCursor);
-    fidTemplateImg->installEventFilter(this);
-    fidImageLayout->addStretch();
-    fidImageLayout->addWidget(fidTemplateImgLabel);
-    fidImageLayout->addWidget(fidTemplateImg);
-    fidImageLayout->addStretch();
-    fidMatchLayout->addLayout(fidImageLayout);
+    fidMatchLayout->addRow(fidStepLabel, fidStepSpin);
 
     // 그룹을 메인 레이아웃에 추가
     fidLayout->addWidget(fidMatchGroup);
@@ -3838,6 +3835,13 @@ void TeachingWidget::createPropertyPanels()
     patternMatchLayout->setContentsMargins(10, 15, 10, 10);
     patternMatchLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
     patternMatchLayout->setFormAlignment(Qt::AlignCenter);
+
+    // 매칭 방법
+    insPatternMatchMethodLabel = new QLabel("매칭 방법:", insPatternMatchGroup);
+    insPatternMatchMethodCombo = new QComboBox(insPatternMatchGroup);
+    insPatternMatchMethodCombo->addItem("Coefficient", 0);
+    insPatternMatchMethodCombo->addItem("Correlation", 1);
+    patternMatchLayout->addRow(insPatternMatchMethodLabel, insPatternMatchMethodCombo);
 
     // 패턴 매칭 임계값
     insPatternMatchThreshLabel = new QLabel("매칭 임계값:", insPatternMatchGroup);
@@ -4578,6 +4582,24 @@ void TeachingWidget::createPropertyPanels()
         });
     }
 
+    // 패턴 매칭 방법 연결
+    if (insPatternMatchMethodCombo) {
+        connect(insPatternMatchMethodCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                [this](int index) {
+            QTreeWidgetItem* selectedItem = patternTree->currentItem();
+            if (selectedItem) {
+                QUuid patternId = getPatternIdFromItem(selectedItem);
+                if (!patternId.isNull()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern && pattern->type == PatternType::INS) {
+                        pattern->patternMatchMethod = index;
+                        cameraView->updatePatternById(patternId, *pattern);
+                    }
+                }
+            }
+        });
+    }
+
     // 패턴 매칭 임계값 연결
     if (insPatternMatchThreshSpin) {
         connect(insPatternMatchThreshSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
@@ -5311,22 +5333,92 @@ void TeachingWidget::updateFidTemplateImage(PatternInfo *pattern, const QRectF &
     }
 
     cv::Mat roiMat;
+    cv::Mat maskMat;  // 마스크 생성용
 
-    // FID 템플릿 이미지: 각도 무시하고 원본 사각형만 저장 (검사 시 회전 매칭 사용)
-    cv::Rect roi(
-        static_cast<int>(newRect.x()),
-        static_cast<int>(newRect.y()),
-        static_cast<int>(newRect.width()),
-        static_cast<int>(newRect.height()));
-
-    // 이미지 경계 확인
-    cv::Rect imageBounds(0, 0, sourceFrame.cols, sourceFrame.rows);
-    cv::Rect validRoi = roi & imageBounds;
-
-    if (validRoi.width > 0 && validRoi.height > 0)
+    // 패턴이 회전되어 있는지 확인
+    if (std::abs(pattern->angle) > 0.1)
     {
-        // 원본 사각형 영역만 추출 (회전 적용 안 함)
-        roiMat = sourceFrame(validRoi).clone();
+        // ★ 회전된 경우: 마스킹된 이미지 생성 (INS와 동일)
+        cv::Point2f center(newRect.x() + newRect.width() / 2.0f,
+                          newRect.y() + newRect.height() / 2.0f);
+
+        double width = newRect.width();
+        double height = newRect.height();
+
+        // 회전된 사각형의 bounding box 크기 계산
+        int bboxWidth, bboxHeight;
+        calculateRotatedBoundingBox(width, height, pattern->angle, bboxWidth, bboxHeight);
+
+        // ROI 영역 계산 (중심점 기준)
+        cv::Rect bboxRoi(
+            static_cast<int>(center.x - bboxWidth / 2.0),
+            static_cast<int>(center.y - bboxHeight / 2.0),
+            bboxWidth,
+            bboxHeight);
+
+        // 이미지 경계와 교집합 구하기
+        cv::Rect imageBounds(0, 0, sourceFrame.cols, sourceFrame.rows);
+        cv::Rect validRoi = bboxRoi & imageBounds;
+
+        if (validRoi.width > 0 && validRoi.height > 0)
+        {
+            // bounding box 크기의 결과 이미지 생성 (검은색 배경)
+            cv::Mat templateRegion = cv::Mat::zeros(bboxHeight, bboxWidth, sourceFrame.type());
+            cv::Mat maskRegion = cv::Mat::zeros(bboxHeight, bboxWidth, CV_8UC1);
+
+            // 유효한 영역만 복사
+            int offsetX = validRoi.x - bboxRoi.x;
+            int offsetY = validRoi.y - bboxRoi.y;
+
+            cv::Mat validImage = sourceFrame(validRoi);
+            cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
+            validImage.copyTo(templateRegion(resultRect));
+
+            // ★ 회전된 사각형 영역을 마스크로 생성
+            cv::Point2f rectCenter(bboxWidth / 2.0f, bboxHeight / 2.0f);
+            cv::RotatedRect rotatedRect(rectCenter, cv::Size2f(width, height), pattern->angle);
+            
+            cv::Point2f vertices[4];
+            rotatedRect.points(vertices);
+            std::vector<cv::Point> contour;
+            for (int i = 0; i < 4; i++) {
+                contour.push_back(cv::Point(static_cast<int>(vertices[i].x), static_cast<int>(vertices[i].y)));
+            }
+            cv::fillConvexPoly(maskRegion, contour, cv::Scalar(255));
+
+            // ★ 마스크를 이미지에 적용 (배경을 검은색으로)
+            cv::Mat maskedImage;
+            templateRegion.copyTo(maskedImage, maskRegion);
+
+            roiMat = maskedImage.clone();
+            maskMat = maskRegion.clone();
+        }
+        else
+        {
+            return;
+        }
+    }
+    else
+    {
+        // 회전 없는 경우: 원본 사각형 영역만 추출
+        cv::Rect roi(
+            static_cast<int>(newRect.x()),
+            static_cast<int>(newRect.y()),
+            static_cast<int>(newRect.width()),
+            static_cast<int>(newRect.height()));
+
+        cv::Rect imageBounds(0, 0, sourceFrame.cols, sourceFrame.rows);
+        cv::Rect validRoi = roi & imageBounds;
+
+        if (validRoi.width > 0 && validRoi.height > 0)
+        {
+            roiMat = sourceFrame(validRoi).clone();
+            maskMat = cv::Mat(validRoi.height, validRoi.width, CV_8UC1, cv::Scalar(255));
+        }
+        else
+        {
+            return;
+        }
     }
 
     if (roiMat.empty())
@@ -5339,11 +5431,43 @@ void TeachingWidget::updateFidTemplateImage(PatternInfo *pattern, const QRectF &
     // BGR -> RGB 변환
     cv::cvtColor(roiMat, roiMat, cv::COLOR_BGR2RGB);
 
-    // QImage로 변환
+    // QImage로 변환 (RGB888)
     QImage qimg(roiMat.data, roiMat.cols, roiMat.rows, roiMat.step, QImage::Format_RGB888);
 
     // 패턴의 템플릿 이미지 업데이트
     pattern->templateImage = qimg.copy();
+    
+    // ★ matchTemplate 저장 (RGB32 포맷으로 변환 - OpenCV 매칭용)
+    pattern->matchTemplate = qimg.convertToFormat(QImage::Format_RGB32);
+    
+    // ★ 마스크 이미지도 저장 (matchTemplateMask 사용)
+    if (!maskMat.empty())
+    {
+        QImage maskImg(maskMat.data, maskMat.cols, maskMat.rows, maskMat.step, QImage::Format_Grayscale8);
+        pattern->matchTemplateMask = maskImg.copy();
+        
+        if (pattern->matchTemplateMask.isNull()) {
+            qDebug() << QString("FID 패턴 '%1' 템플릿 업데이트: %2x%3, matchTemplate=%4, 마스크=NULL, 각도=%5°")
+                            .arg(pattern->name)
+                            .arg(pattern->templateImage.width())
+                            .arg(pattern->templateImage.height())
+                            .arg(pattern->matchTemplate.isNull() ? "NULL" : QString("%1x%2").arg(pattern->matchTemplate.width()).arg(pattern->matchTemplate.height()))
+                            .arg(pattern->angle, 0, 'f', 2);
+        } else {
+            qDebug() << QString("FID 패턴 '%1' 템플릿 업데이트: %2x%3, matchTemplate=%4, 마스크=%5x%6, 각도=%7°")
+                            .arg(pattern->name)
+                            .arg(pattern->templateImage.width())
+                            .arg(pattern->templateImage.height())
+                            .arg(pattern->matchTemplate.isNull() ? "NULL" : QString("%1x%2").arg(pattern->matchTemplate.width()).arg(pattern->matchTemplate.height()))
+                            .arg(pattern->matchTemplateMask.width())
+                            .arg(pattern->matchTemplateMask.height())
+                            .arg(pattern->angle, 0, 'f', 2);
+        }
+    }
+    else
+    {
+        pattern->matchTemplateMask = QImage();
+    }
 
     // UI 업데이트
     if (fidTemplateImg)
@@ -5398,12 +5522,13 @@ void TeachingWidget::updateInsMatchTemplate(PatternInfo *pattern)
     }
 
     cv::Mat roiMat;
+    cv::Mat maskMat;  // 마스크 생성용
 
     // 패턴이 회전되어 있는지 확인
     if (std::abs(pattern->angle) > 0.1)
     {
-        // 회전된 경우: bounding box 크기 계산
-        cv::Point2f center(pattern->rect.x() + pattern->rect.width() / 2.0f, 
+        // ★ 회전된 경우: 마스킹된 이미지 생성
+        cv::Point2f center(pattern->rect.x() + pattern->rect.width() / 2.0f,
                           pattern->rect.y() + pattern->rect.height() / 2.0f);
 
         double width = pattern->rect.width();
@@ -5428,6 +5553,7 @@ void TeachingWidget::updateInsMatchTemplate(PatternInfo *pattern)
         {
             // bounding box 크기의 결과 이미지 생성 (검은색 배경)
             cv::Mat templateRegion = cv::Mat::zeros(bboxHeight, bboxWidth, sourceFrame.type());
+            cv::Mat maskRegion = cv::Mat::zeros(bboxHeight, bboxWidth, CV_8UC1);
 
             // 유효한 영역만 복사
             int offsetX = validRoi.x - bboxRoi.x;
@@ -5437,7 +5563,24 @@ void TeachingWidget::updateInsMatchTemplate(PatternInfo *pattern)
             cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
             validImage.copyTo(templateRegion(resultRect));
 
-            roiMat = templateRegion.clone();
+            // ★ 회전된 사각형 영역을 마스크로 생성
+            cv::Point2f rectCenter(bboxWidth / 2.0f, bboxHeight / 2.0f);
+            cv::RotatedRect rotatedRect(rectCenter, cv::Size2f(width, height), pattern->angle);
+            
+            cv::Point2f vertices[4];
+            rotatedRect.points(vertices);
+            std::vector<cv::Point> contour;
+            for (int i = 0; i < 4; i++) {
+                contour.push_back(cv::Point(static_cast<int>(vertices[i].x), static_cast<int>(vertices[i].y)));
+            }
+            cv::fillConvexPoly(maskRegion, contour, cv::Scalar(255));
+
+            // ★ 마스크를 이미지에 적용 (배경을 검은색으로)
+            cv::Mat maskedImage;
+            templateRegion.copyTo(maskedImage, maskRegion);
+
+            roiMat = maskedImage.clone();
+            maskMat = maskRegion.clone();
         }
         else
         {
@@ -5459,6 +5602,7 @@ void TeachingWidget::updateInsMatchTemplate(PatternInfo *pattern)
         if (validRoi.width > 0 && validRoi.height > 0)
         {
             roiMat = sourceFrame(validRoi).clone();
+            maskMat = cv::Mat(validRoi.height, validRoi.width, CV_8UC1, cv::Scalar(255));
         }
         else
         {
@@ -5476,15 +5620,29 @@ void TeachingWidget::updateInsMatchTemplate(PatternInfo *pattern)
 
     // QImage로 변환
     QImage qimg(roiMat.data, roiMat.cols, roiMat.rows, roiMat.step, QImage::Format_RGB888);
+    QImage maskImg(maskMat.data, maskMat.cols, maskMat.rows, maskMat.step, QImage::Format_Grayscale8);
 
-    // 패턴의 matchTemplate 이미지 업데이트 (RGB888 포맷으로 명시적 변환)
-    pattern->matchTemplate = qimg.copy().convertToFormat(QImage::Format_RGB888);
+    // 패턴의 matchTemplate 이미지 + 마스크 업데이트
+    pattern->matchTemplate = qimg.copy();
+    pattern->matchTemplateMask = maskImg.copy();
 
-    qDebug() << QString("INS 패턴 '%1' matchTemplate 업데이트: %2x%3, 포맷=%4")
-                    .arg(pattern->name)
-                    .arg(pattern->matchTemplate.width())
-                    .arg(pattern->matchTemplate.height())
-                    .arg(pattern->matchTemplate.format());
+    if (pattern->matchTemplateMask.isNull()) {
+        qDebug() << QString("INS 패턴 '%1' matchTemplate 업데이트: %2x%3, 포맷=%4, 마스크=NULL, 각도=%5°")
+                        .arg(pattern->name)
+                        .arg(pattern->matchTemplate.width())
+                        .arg(pattern->matchTemplate.height())
+                        .arg(pattern->matchTemplate.format())
+                        .arg(pattern->angle, 0, 'f', 2);
+    } else {
+        qDebug() << QString("INS 패턴 '%1' matchTemplate 업데이트: %2x%3, 포맷=%4, 마스크=%5x%6, 각도=%7°")
+                        .arg(pattern->name)
+                        .arg(pattern->matchTemplate.width())
+                        .arg(pattern->matchTemplate.height())
+                        .arg(pattern->matchTemplate.format())
+                        .arg(pattern->matchTemplateMask.width())
+                        .arg(pattern->matchTemplateMask.height())
+                        .arg(pattern->angle, 0, 'f', 2);
+    }
 
     // UI 업데이트 (현재 선택된 패턴인 경우에만)
     if (insMatchTemplateImg)
@@ -7467,6 +7625,13 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                         insPatternMatchGroup->blockSignals(true);
                         insPatternMatchGroup->setChecked(pattern->patternMatchEnabled);
                         insPatternMatchGroup->blockSignals(false);
+                        
+                        if (insPatternMatchMethodCombo)
+                        {
+                            insPatternMatchMethodCombo->blockSignals(true);
+                            insPatternMatchMethodCombo->setCurrentIndex(pattern->patternMatchMethod);
+                            insPatternMatchMethodCombo->blockSignals(false);
+                        }
                         
                         if (insPatternMatchThreshSpin)
                         {
@@ -11978,8 +12143,8 @@ void TeachingWidget::saveRecipe()
             cameraInfos.append(realCamera);
             qDebug() << "[saveRecipe] ✓ cameraInfos를 실제 카메라 1개로 교체:" << realCamera.name << "UUID:" << realCamera.uniqueId;
 
-            // cameraView의 모든 패턴을 현재 실제 카메라 UUID에 할당
-            QList<PatternInfo> allPatterns = cameraView->getPatterns();
+            // cameraView의 모든 패턴을 현재 실제 카메라 UUID에 할당 (참조로 직접 수정)
+            QList<PatternInfo> &allPatterns = cameraView->getPatterns();
             int updatedCount = 0;
             for (PatternInfo &pattern : allPatterns)
             {
@@ -11987,12 +12152,11 @@ void TeachingWidget::saveRecipe()
                 if (pattern.cameraUuid != currentCameraUuid)
                 {
                     pattern.cameraUuid = currentCameraUuid;
-                    cameraView->updatePatternById(pattern.id, pattern);
                     updatedCount++;
                 }
             }
 
-            qDebug() << "[saveRecipe] ✓ 패턴" << allPatterns.size() << "개를 카메라" << realCamera.uniqueId << "로 업데이트";
+            qDebug() << "[saveRecipe] ✓ 패턴" << allPatterns.size() << "개를 카메라" << realCamera.uniqueId << "로 업데이트 (cameraUuid 변경:" << updatedCount << "개)";
         }
     }
 
@@ -14944,6 +15108,17 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         // 프리뷰 화면들도 업데이트
         updatePreviewFrames();
     };
+
+    // ★ CAM ON 상태에서는 레시피 로드 전에 기존 패턴 제거 (중복 방지)
+    if (!camOff && cameraView)
+    {
+        qDebug() << "[onRecipeSelected] CAM ON - 기존 패턴 제거 (중복 방지)";
+        cameraView->clearPatterns();
+        if (patternTree)
+        {
+            patternTree->clear();
+        }
+    }
 
     if (manager.loadRecipe(recipeFileName, cameraInfos, calibrationMap, cameraView, patternTree, teachingImageCallback, this))
     {

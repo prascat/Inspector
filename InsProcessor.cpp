@@ -291,19 +291,10 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 static_cast<int>(pattern.rect.height()));
             QRect adjustedRect = originalRect;
 
-            // ===== INS 패턴 매칭 디버그 =====
-            logDebug(QString("INS 패턴 '%1': patternMatchEnabled=%2, matchTemplate.isNull()=%3")
-                         .arg(pattern.name)
-                         .arg(pattern.patternMatchEnabled)
-                         .arg(pattern.matchTemplate.isNull()));
-
             // ===== INS 패턴 매칭 (Fine Alignment) =====
             // 부모 FID와 무관하게 독립적으로 동작
             if (pattern.patternMatchEnabled && !pattern.matchTemplate.isNull())
             {
-                logDebug(QString("INS 패턴 '%1': 패턴 매칭 시작 (독립 모드)")
-                             .arg(pattern.name));
-
                 // 검색 범위: 부모 ROI 전체 영역 (현재 STRIP/CRIMP 모드에 맞는 ROI)
                 cv::Rect searchROI;
                 
@@ -318,10 +309,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                             static_cast<int>(p.rect.width()),
                             static_cast<int>(p.rect.height())
                         );
-                        logDebug(QString("INS 패턴 '%1': ROI 검색 영역=%2,%3,%4x%5")
-                                     .arg(pattern.name)
-                                     .arg(searchROI.x).arg(searchROI.y)
-                                     .arg(searchROI.width).arg(searchROI.height));
                         break;
                     }
                 }
@@ -329,18 +316,12 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 // ROI를 못 찾으면 전체 이미지 사용
                 if (searchROI.area() == 0) {
                     searchROI = cv::Rect(0, 0, image.cols, image.rows);
-                    logDebug(QString("INS 패턴 '%1': ROI 없음, 전체 이미지 사용")
-                                 .arg(pattern.name));
                 }
 
                 // matchTemplate을 cv::Mat으로 변환
-                logDebug(QString("INS 패턴 '%1': matchTemplate 포맷=%2, 크기=%3x%4")
-                             .arg(pattern.name)
-                             .arg(pattern.matchTemplate.format())
-                             .arg(pattern.matchTemplate.width())
-                             .arg(pattern.matchTemplate.height()));
-                
                 cv::Mat templateMat;
+                cv::Mat maskMat;  // 마스크 추가
+                
                 if (pattern.matchTemplate.format() == QImage::Format_RGB888)
                 {
                     templateMat = cv::Mat(
@@ -351,10 +332,18 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                         pattern.matchTemplate.bytesPerLine()
                     ).clone();
                     cv::cvtColor(templateMat, templateMat, cv::COLOR_RGB2BGR);
-                    logDebug(QString("INS 패턴 '%1': matchTemplate RGB888 변환 성공 -> %2x%3")
-                                 .arg(pattern.name)
-                                 .arg(templateMat.cols)
-                                 .arg(templateMat.rows));
+                }
+                else if (pattern.matchTemplate.format() == QImage::Format_RGB32 ||
+                         pattern.matchTemplate.format() == QImage::Format_ARGB32)
+                {
+                    templateMat = cv::Mat(
+                        pattern.matchTemplate.height(),
+                        pattern.matchTemplate.width(),
+                        CV_8UC4,
+                        const_cast<uchar*>(pattern.matchTemplate.bits()),
+                        pattern.matchTemplate.bytesPerLine()
+                    ).clone();
+                    cv::cvtColor(templateMat, templateMat, cv::COLOR_RGBA2BGR);
                 }
                 else if (pattern.matchTemplate.format() == QImage::Format_Grayscale8)
                 {
@@ -365,23 +354,25 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                         const_cast<uchar*>(pattern.matchTemplate.bits()),
                         pattern.matchTemplate.bytesPerLine()
                     ).clone();
-                    logDebug(QString("INS 패턴 '%1': matchTemplate Grayscale8 변환 성공 -> %2x%3")
-                                 .arg(pattern.name)
-                                 .arg(templateMat.cols)
-                                 .arg(templateMat.rows));
                 }
-                else
+                
+                // 마스크 변환 (있는 경우)
+                if (!pattern.matchTemplateMask.isNull())
                 {
-                    logDebug(QString("INS 패턴 '%1': matchTemplate 지원하지 않는 포맷=%2")
-                                 .arg(pattern.name)
-                                 .arg(pattern.matchTemplate.format()));
+                    maskMat = cv::Mat(
+                        pattern.matchTemplateMask.height(),
+                        pattern.matchTemplateMask.width(),
+                        CV_8UC1,
+                        const_cast<uchar*>(pattern.matchTemplateMask.bits()),
+                        pattern.matchTemplateMask.bytesPerLine()
+                    ).clone();
+                    
+                    logDebug(QString("INS 패턴 '%1': 마스크 로드됨 - 크기=%2x%3, 채널=%4")
+                                .arg(pattern.name)
+                                .arg(maskMat.cols)
+                                .arg(maskMat.rows)
+                                .arg(maskMat.channels()));
                 }
-
-                logDebug(QString("INS 패턴 '%1': templateMat.empty()=%2, searchROI=%3,%4,%5x%6")
-                             .arg(pattern.name)
-                             .arg(templateMat.empty())
-                             .arg(searchROI.x).arg(searchROI.y)
-                             .arg(searchROI.width).arg(searchROI.height));
 
                 if (!templateMat.empty() && searchROI.width > 0 && searchROI.height > 0)
                 {
@@ -402,7 +393,8 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                         pattern,
                         pattern.patternMatchUseRotation ? pattern.patternMatchMinAngle : 0.0,
                         pattern.patternMatchUseRotation ? pattern.patternMatchMaxAngle : 0.0,
-                        pattern.patternMatchUseRotation ? pattern.patternMatchAngleStep : 1.0
+                        pattern.patternMatchUseRotation ? pattern.patternMatchAngleStep : 1.0,
+                        maskMat  // 마스크 전달
                     );
 
                     logDebug(QString("INS 패턴 '%1': performTemplateMatching 결과 - matched=%2, score=%3%, angle=%4°")
@@ -462,18 +454,9 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             // 부모 FID가 있는지 확인
             if (!pattern.parentId.isNull())
             {
-                logDebug(QString("INS 패턴 '%1': 부모 FID 확인 - result.fidResults.contains=%2")
-                             .arg(pattern.name)
-                             .arg(result.fidResults.contains(pattern.parentId)));
-
                 // 부모 FID의 매칭 결과가 있는지 확인
                 if (result.fidResults.contains(pattern.parentId))
                 {
-                    logDebug(QString("INS 패턴 '%1': 부모 FID 매칭 결과=%2, result.locations.contains=%3")
-                                 .arg(pattern.name)
-                                 .arg(result.fidResults[pattern.parentId])
-                                 .arg(result.locations.contains(pattern.parentId)));
-
                     // 부모 FID가 매칭에 실패했을 경우 이 INS 패턴은 FAIL (검사 불가)
                     if (!result.fidResults[pattern.parentId])
                     {
@@ -551,17 +534,9 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                             hasParentInfo = true;
 
                             // ===== 패턴 매칭 (Fine Alignment) 디버그 =====
-                            logDebug(QString("INS 패턴 '%1': patternMatchEnabled=%2, matchTemplate.isNull()=%3")
-                                         .arg(pattern.name)
-                                         .arg(pattern.patternMatchEnabled)
-                                         .arg(pattern.matchTemplate.isNull()));
-
                             // ===== 패턴 매칭 (Fine Alignment) 수행 =====
                             if (pattern.patternMatchEnabled && !pattern.matchTemplate.isNull())
                             {
-                                logDebug(QString("INS 패턴 '%1': 패턴 매칭 시작 (Coarse: FID 기반, Fine: 템플릿 매칭)")
-                                             .arg(pattern.name));
-
                                 // 1. Coarse Alignment: FID 기반 대략 위치
                                 cv::Point coarseCenter(fidLoc.x, fidLoc.y);
                                 double coarseAngle = fidAngle;
@@ -592,12 +567,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                                 }
 
                                 // matchTemplate을 cv::Mat으로 변환
-                                logDebug(QString("INS 패턴 '%1': [FID기반] matchTemplate 포맷=%2, 크기=%3x%4")
-                                             .arg(pattern.name)
-                                             .arg(pattern.matchTemplate.format())
-                                             .arg(pattern.matchTemplate.width())
-                                             .arg(pattern.matchTemplate.height()));
-                                
                                 cv::Mat templateMat;
                                 if (pattern.matchTemplate.format() == QImage::Format_RGB888)
                                 {
@@ -609,10 +578,18 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                                         pattern.matchTemplate.bytesPerLine()
                                     ).clone();
                                     cv::cvtColor(templateMat, templateMat, cv::COLOR_RGB2BGR);
-                                    logDebug(QString("INS 패턴 '%1': [FID기반] RGB888 변환 성공 -> %2x%3")
-                                                 .arg(pattern.name)
-                                                 .arg(templateMat.cols)
-                                                 .arg(templateMat.rows));
+                                }
+                                else if (pattern.matchTemplate.format() == QImage::Format_RGB32 ||
+                                         pattern.matchTemplate.format() == QImage::Format_ARGB32)
+                                {
+                                    templateMat = cv::Mat(
+                                        pattern.matchTemplate.height(),
+                                        pattern.matchTemplate.width(),
+                                        CV_8UC4,
+                                        const_cast<uchar*>(pattern.matchTemplate.bits()),
+                                        pattern.matchTemplate.bytesPerLine()
+                                    ).clone();
+                                    cv::cvtColor(templateMat, templateMat, cv::COLOR_RGBA2BGR);
                                 }
                                 else if (pattern.matchTemplate.format() == QImage::Format_Grayscale8)
                                 {
@@ -623,16 +600,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                                         const_cast<uchar*>(pattern.matchTemplate.bits()),
                                         pattern.matchTemplate.bytesPerLine()
                                     ).clone();
-                                    logDebug(QString("INS 패턴 '%1': [FID기반] Grayscale8 변환 성공 -> %2x%3")
-                                                 .arg(pattern.name)
-                                                 .arg(templateMat.cols)
-                                                 .arg(templateMat.rows));
-                                }
-                                else
-                                {
-                                    logDebug(QString("INS 패턴 '%1': [FID기반] 지원하지 않는 포맷=%2")
-                                                 .arg(pattern.name)
-                                                 .arg(pattern.matchTemplate.format()));
                                 }
 
                                 if (templateMat.empty())
@@ -643,6 +610,24 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                                 }
                                 else
                                 {
+                                    // ★ 마스크 변환 (FID 기반도 마스크 지원)
+                                    cv::Mat maskMat;
+                                    if (!pattern.matchTemplateMask.isNull())
+                                    {
+                                        maskMat = cv::Mat(
+                                            pattern.matchTemplateMask.height(),
+                                            pattern.matchTemplateMask.width(),
+                                            CV_8UC1,
+                                            const_cast<uchar*>(pattern.matchTemplateMask.bits()),
+                                            pattern.matchTemplateMask.bytesPerLine()
+                                        ).clone();
+                                        
+                                        logDebug(QString("INS 패턴 '%1': [FID기반] 마스크 로드됨 - 크기=%2x%3")
+                                                    .arg(pattern.name)
+                                                    .arg(maskMat.cols)
+                                                    .arg(maskMat.rows));
+                                    }
+                                    
                                     // 검색 영역 추출
                                     cv::Mat searchRegion = image(searchROI).clone();
 
@@ -660,7 +645,8 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                                         pattern,
                                         pattern.patternMatchUseRotation ? pattern.patternMatchMinAngle : 0.0,
                                         pattern.patternMatchUseRotation ? pattern.patternMatchMaxAngle : 0.0,
-                                        pattern.patternMatchUseRotation ? pattern.patternMatchAngleStep : 1.0
+                                        pattern.patternMatchUseRotation ? pattern.patternMatchAngleStep : 1.0,
+                                        maskMat  // ★ 마스크 전달
                                     );
 
                                     if (matched && (matchScore * 100.0) >= pattern.patternMatchThreshold)
@@ -942,12 +928,19 @@ bool InsProcessor::matchFiducial(const cv::Mat &image, const PatternInfo &patter
 
     try
     {
-        // **수정**: 저장된 템플릿 이미지를 그대로 사용 (0도 상태의 사각형 이미지)
-        QImage qimg = pattern.templateImage;
+        // ★ matchTemplate 사용 (RGB32 포맷 - INS와 동일)
+        QImage qimg = pattern.matchTemplate.isNull() ? pattern.templateImage : pattern.matchTemplate;
         cv::Mat templateMat;
 
-        // QImage를 cv::Mat로 정확하게 변환 (데이터 손실 최소화)
-        if (qimg.format() == QImage::Format_RGB888)
+        // QImage를 cv::Mat로 정확하게 변환 (RGB32 포맷 처리)
+        if (qimg.format() == QImage::Format_RGB32)
+        {
+            // RGB32 포맷인 경우 직접 변환 (4채널 -> 3채널)
+            cv::Mat temp(qimg.height(), qimg.width(), CV_8UC4,
+                        (void *)qimg.constBits(), qimg.bytesPerLine());
+            cv::cvtColor(temp, templateMat, cv::COLOR_RGBA2BGR);
+        }
+        else if (qimg.format() == QImage::Format_RGB888)
         {
             // RGB888 포맷인 경우 직접 변환
             templateMat = cv::Mat(qimg.height(), qimg.width(), CV_8UC3,
@@ -1073,6 +1066,22 @@ bool InsProcessor::matchFiducial(const cv::Mat &image, const PatternInfo &patter
         // **수정**: 템플릿은 티칭할 때 저장된 원본 그대로 사용 (검사 시 갱신하지 않음)
         cv::Mat processedTemplate = templateMat.clone();
 
+        // ★ 마스크 준비 (matchTemplateMask 사용 - INS와 동일)
+        cv::Mat maskMat;
+        if (!pattern.matchTemplateMask.isNull())
+        {
+            QImage maskImg = pattern.matchTemplateMask;
+            if (maskImg.format() == QImage::Format_Grayscale8)
+            {
+                maskMat = cv::Mat(maskImg.height(), maskImg.width(), CV_8UC1,
+                                 (void *)maskImg.constBits(), maskImg.bytesPerLine()).clone();
+                logDebug(QString("FID 패턴 '%1': 마스크 로드됨 - 크기=%2x%3")
+                            .arg(pattern.name)
+                            .arg(maskMat.cols)
+                            .arg(maskMat.rows));
+            }
+        }
+
         // FID는 필터를 사용하지 않음 (원본 이미지로만 매칭)
 
         // 매칭 수행
@@ -1090,8 +1099,9 @@ bool InsProcessor::matchFiducial(const cv::Mat &image, const PatternInfo &patter
         }
 
         // fidMatchMethod: 0=Coefficient (TM_CCOEFF_NORMED), 1=Correlation (TM_CCORR_NORMED)
+        // ★ 마스크 전달
         matched = performTemplateMatching(roi, processedTemplate, localMatchLoc, score, tempAngle,
-                                          pattern, tmplMinA, tmplMaxA, tmplStep);
+                                          pattern, tmplMinA, tmplMaxA, tmplStep, maskMat);
 
         // 회전 매칭이 적용된 경우 탐지된 각도 사용
         if (pattern.useRotation && matched)
@@ -1148,7 +1158,8 @@ bool InsProcessor::matchFiducial(const cv::Mat &image, const PatternInfo &patter
 bool InsProcessor::performTemplateMatching(const cv::Mat &image, const cv::Mat &templ,
                                            cv::Point &matchLoc, double &score, double &angle,
                                            const PatternInfo &pattern,
-                                           double minAngle, double maxAngle, double angleStep)
+                                           double minAngle, double maxAngle, double angleStep,
+                                           const cv::Mat &mask)
 {
 
     if (image.empty() || templ.empty())
@@ -1172,24 +1183,32 @@ bool InsProcessor::performTemplateMatching(const cv::Mat &image, const cv::Mat &
 
     if (!pattern.useRotation)
     {
-        // 회전 허용 안함: 원본 템플릿 그대로 매칭 (패턴 각도는 이미 티칭 시 반영됨)
+        // 회전 허용 안함: 원본 템플릿 그대로 매칭
 
-        // 원본 템플릿 그대로 사용
         cv::Mat templateForMatching = templGray.clone();
-        cv::Mat templateMask;
 
         // 매칭 메트릭 선택: 0=Coefficient, 1=Correlation
-        int matchMethod = (pattern.fidMatchMethod == 0) ? cv::TM_CCOEFF_NORMED : cv::TM_CCORR_NORMED;
+        // FID: fidMatchMethod, INS: patternMatchMethod 사용 (통합)
+        int methodValue = (pattern.type == PatternType::FID) ? pattern.fidMatchMethod : pattern.patternMatchMethod;
+        int matchMethod = (methodValue == 0) ? cv::TM_CCOEFF_NORMED : cv::TM_CCORR_NORMED;
 
         cv::Mat result;
-        cv::matchTemplate(imageGray, templateForMatching, result, matchMethod);
+        
+        // ★ 마스크가 있으면 마스크를 사용한 매칭
+        if (!mask.empty() && mask.size() == templGray.size())
+        {
+            cv::matchTemplate(imageGray, templateForMatching, result, matchMethod, mask);
+        }
+        else
+        {
+            cv::matchTemplate(imageGray, templateForMatching, result, matchMethod);
+        }
 
         double minVal, maxVal;
         cv::Point minLoc, maxLoc;
         cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
 
         // 템플릿 매칭은 왼쪽 상단 좌표를 반환하므로, 중심점을 계산
-        // ★★★ 중요: matchLoc은 roi(검색 이미지) 내에서의 상대 좌표여야 함 ★★★
         matchLoc.x = static_cast<int>(maxLoc.x + templateForMatching.cols / 2.0 + 0.5);
         matchLoc.y = static_cast<int>(maxLoc.y + templateForMatching.rows / 2.0 + 0.5);
         score = maxVal;
@@ -1217,6 +1236,14 @@ bool InsProcessor::performTemplateMatching(const cv::Mat &image, const cv::Mat &
     cv::Mat paddedTempl = cv::Mat::zeros(diagonal, diagonal, templGray.type());
     cv::Rect roi(offsetX, offsetY, originalWidth, originalHeight);
     templGray.copyTo(paddedTempl(roi));
+    
+    // ★ 마스크도 동일하게 패딩 처리
+    cv::Mat paddedMask;
+    if (!mask.empty() && mask.size() == templGray.size())
+    {
+        paddedMask = cv::Mat::zeros(diagonal, diagonal, CV_8UC1);
+        mask.copyTo(paddedMask(roi));
+    }
 
     // 최적 매칭을 위한 변수들
     double bestScore = -1.0;
@@ -1265,11 +1292,16 @@ bool InsProcessor::performTemplateMatching(const cv::Mat &image, const cv::Mat &
 
         // 템플릿 회전
         cv::Mat templateForMatching;
+        cv::Mat maskForMatching;  // 회전된 마스크
 
         if (isTeachingAngle)
         {
             // 티칭 각도인 경우: 원본 템플릿 그대로 사용
             templateForMatching = templGray.clone();
+            if (!mask.empty() && mask.size() == templGray.size())
+            {
+                maskForMatching = mask.clone();
+            }
         }
         else
         {
@@ -1291,6 +1323,16 @@ bool InsProcessor::performTemplateMatching(const cv::Mat &image, const cv::Mat &
             else
             {
                 templateForMatching = rotatedTempl.clone();
+            }
+            
+            // ★ 마스크도 동일하게 회전
+            if (!paddedMask.empty())
+            {
+                cv::warpAffine(paddedMask, maskForMatching, rotMatrix, paddedMask.size(),
+                              cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0));
+                
+                // ★ 마스크를 이진화 (보간으로 생긴 중간값 제거)
+                cv::threshold(maskForMatching, maskForMatching, 127, 255, cv::THRESH_BINARY);
             }
         }
 
@@ -1316,13 +1358,41 @@ bool InsProcessor::performTemplateMatching(const cv::Mat &image, const cv::Mat &
         }
 
         // 매칭 메트릭 선택: 0=Coefficient, 1=Correlation
-        int matchMethod = (pattern.fidMatchMethod == 0) ? cv::TM_CCOEFF_NORMED : cv::TM_CCORR_NORMED;
+        int methodValue = (pattern.type == PatternType::FID) ? pattern.fidMatchMethod : pattern.patternMatchMethod;
+        int matchMethod = (methodValue == 0) ? cv::TM_CCOEFF_NORMED : cv::TM_CCORR_NORMED;
 
         cv::Mat result;
         try
         {
-            // FID 패턴 매칭은 마스크 없이 수행
-            cv::matchTemplate(imageGray, templateForMatching, result, matchMethod);
+            // ★ 마스크가 있으면 마스크 사용
+            if (!maskForMatching.empty() && maskForMatching.size() == templateForMatching.size())
+            {
+                // 마스크 통계 확인
+                int nonZeroPixels = cv::countNonZero(maskForMatching);
+                int totalPixels = maskForMatching.rows * maskForMatching.cols;
+                double maskRatio = (double)nonZeroPixels / totalPixels * 100.0;
+                
+                logDebug(QString("각도 %1°: 마스크 사용 - 크기=%2x%3, 유효픽셀=%4/%5 (%6%)")
+                            .arg(currentAngle, 0, 'f', 1)
+                            .arg(maskForMatching.cols)
+                            .arg(maskForMatching.rows)
+                            .arg(nonZeroPixels)
+                            .arg(totalPixels)
+                            .arg(maskRatio, 0, 'f', 1));
+                
+                cv::matchTemplate(imageGray, templateForMatching, result, matchMethod, maskForMatching);
+            }
+            else
+            {
+                if (std::abs(currentAngle - pattern.angle) < 0.1)
+                {
+                    logDebug(QString("각도 %1°: 마스크 없음 - 템플릿 크기=%2x%3")
+                                .arg(currentAngle, 0, 'f', 1)
+                                .arg(templateForMatching.cols)
+                                .arg(templateForMatching.rows));
+                }
+                cv::matchTemplate(imageGray, templateForMatching, result, matchMethod);
+            }
         }
         catch (const cv::Exception &e)
         {
@@ -1449,7 +1519,8 @@ bool InsProcessor::performTemplateMatching(const cv::Mat &image, const cv::Mat &
         }
 
         // 매칭 메트릭 선택: 0=Coefficient, 1=Correlation
-        int matchMethod = (pattern.fidMatchMethod == 0) ? cv::TM_CCOEFF_NORMED : cv::TM_CCORR_NORMED;
+        int methodValue = (pattern.type == PatternType::FID) ? pattern.fidMatchMethod : pattern.patternMatchMethod;
+        int matchMethod = (methodValue == 0) ? cv::TM_CCOEFF_NORMED : cv::TM_CCORR_NORMED;
 
         cv::Mat result;
         try
@@ -1847,11 +1918,11 @@ bool InsProcessor::checkSSIM(const cv::Mat &image, const PatternInfo &pattern, d
         currentROI = processedROI;
     }
 
-    // 템플릿 이미지 가져오기
+    // 템플릿 이미지 가져오기 (검사용 templateImage 사용)
     QImage templateQImage = pattern.templateImage;
     if (templateQImage.isNull())
     {
-        logDebug(QString("SSIM 검사 실패: 템플릿 이미지 없음 - 패턴 '%1'").arg(pattern.name));
+        logDebug(QString("SSIM 검사 실패: 검사용 템플릿 이미지 없음 - 패턴 '%1'").arg(pattern.name));
         score = 0.0;
         return false;
     }
@@ -1864,19 +1935,34 @@ bool InsProcessor::checkSSIM(const cv::Mat &image, const PatternInfo &pattern, d
                     static_cast<size_t>(convertedTemplate.bytesPerLine()));
     cv::cvtColor(tempMat.clone(), templateMat, cv::COLOR_RGB2BGR);
 
-    logDebug(QString("SSIM: 템플릿 크기=%1x%2, 현재ROI 크기=%3x%4")
-                 .arg(templateMat.cols).arg(templateMat.rows)
-                 .arg(currentROI.cols).arg(currentROI.rows));
+    // 매칭에서 찾은 각도로 템플릿 회전 (새 이미지는 그대로 두고 템플릿을 회전)
+    cv::Mat rotatedTemplate = templateMat;
+    if (std::abs(pattern.angle) > 0.1)
+    {
+        cv::Point2f templateCenter(templateMat.cols / 2.0f, templateMat.rows / 2.0f);
+        cv::Mat rotMat = cv::getRotationMatrix2D(templateCenter, pattern.angle, 1.0);
+        cv::warpAffine(templateMat, rotatedTemplate, rotMat, templateMat.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+        
+        logDebug(QString("SSIM: 템플릿을 %1° 회전 - 패턴 '%2'")
+                     .arg(pattern.angle, 0, 'f', 2)
+                     .arg(pattern.name));
+    }
+
+    logDebug(QString("SSIM: 템플릿 크기=%1x%2, 현재ROI 크기=%3x%4, 각도=%5°")
+                 .arg(rotatedTemplate.cols).arg(rotatedTemplate.rows)
+                 .arg(currentROI.cols).arg(currentROI.rows)
+                 .arg(pattern.angle, 0, 'f', 2));
 
     // 크기가 다르면 템플릿을 현재 ROI 크기에 맞춤
     cv::Mat finalTemplate;
-    if (templateMat.size() != currentROI.size())
+    if (rotatedTemplate.size() != currentROI.size())
     {
-        cv::resize(templateMat, finalTemplate, currentROI.size(), 0, 0, cv::INTER_LINEAR);
+        logDebug(QString("SSIM: 크기 조정 필요 - resize 적용 (보간 오차 발생 가능)"));
+        cv::resize(rotatedTemplate, finalTemplate, currentROI.size(), 0, 0, cv::INTER_LINEAR);
     }
     else
     {
-        finalTemplate = templateMat;
+        finalTemplate = rotatedTemplate;
     }
 
     // 그레이스케일 변환
@@ -1890,6 +1976,11 @@ bool InsProcessor::checkSSIM(const cv::Mat &image, const PatternInfo &pattern, d
         cv::cvtColor(finalTemplate, gray2, cv::COLOR_BGR2GRAY);
     else
         gray2 = finalTemplate;
+
+    logDebug(QString("SSIM: Gray1 크기=%1x%2, Gray2 크기=%3x%4, 채널=%5/%6")
+                 .arg(gray1.cols).arg(gray1.rows)
+                 .arg(gray2.cols).arg(gray2.rows)
+                 .arg(gray1.channels()).arg(gray2.channels()));
 
     // SSIM 계산
     const double C1 = 6.5025;   // (0.01 * 255)^2
@@ -1938,21 +2029,28 @@ bool InsProcessor::checkSSIM(const cv::Mat &image, const PatternInfo &pattern, d
     // SSIM 값은 0-1 범위, score도 0-1로 저장 (출력 시 100 곱함)
     score = ssimValue;
 
+    logDebug(QString("SSIM: 계산 완료 - 패턴='%1', SSIM=%2%, 각도=%3°, resize=%4, 회전=%5")
+                 .arg(pattern.name)
+                 .arg(ssimValue * 100.0, 0, 'f', 2)
+                 .arg(pattern.angle, 0, 'f', 2)
+                 .arg(rotatedTemplate.size() != currentROI.size() ? "O" : "X")
+                 .arg(std::abs(pattern.angle) > 0.1 ? "O" : "X"));
+
     // 차이 히트맵 생성 (1 - SSIM으로 차이가 클수록 밝게)
     cv::Mat diffMap;
     cv::subtract(cv::Scalar(1.0), ssim_map, diffMap);
     
-    // ssimNgThreshold는 "유사도 임계값" (예: 95% → 유사도 95% 이하는 NG)
-    // diffMap = (1 - SSIM)이므로, 차이 임계값 = (1 - ssimNgThreshold/100)
-    double ngThreshold = 1.0 - (pattern.ssimNgThreshold / 100.0);
+    // ssimNgThreshold는 "차이 임계값" (예: 5% → 차이 5% 이상은 NG)
+    // diffMap = (1 - SSIM)이므로, 차이 임계값 = ssimNgThreshold/100
+    double ngThreshold = pattern.ssimNgThreshold / 100.0;
     
-    // 임계값 이하의 픽셀은 0으로 설정 (히트맵에서 제거)
+    // 임계값 미만의 픽셀은 0으로 설정 (정상 영역 제거, 차이 큰 부분만 남김)
     cv::Mat maskedDiffMap = diffMap.clone();
     for (int y = 0; y < maskedDiffMap.rows; y++) {
         double* row = maskedDiffMap.ptr<double>(y);
         for (int x = 0; x < maskedDiffMap.cols; x++) {
             if (row[x] < ngThreshold) {
-                row[x] = 0.0;
+                row[x] = 0.0;  // 차이가 작은 부분(정상)은 제거
             }
         }
     }

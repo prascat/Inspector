@@ -402,6 +402,8 @@ private:
 
     // 패턴 매칭 (Fine Alignment) 관련 위젯
     QGroupBox* insPatternMatchGroup = nullptr;
+    QLabel* insPatternMatchMethodLabel = nullptr;
+    QComboBox* insPatternMatchMethodCombo = nullptr;
     QLabel* insPatternMatchThreshLabel = nullptr;
     QDoubleSpinBox* insPatternMatchThreshSpin = nullptr;
     QCheckBox* insPatternMatchRotationCheck = nullptr;

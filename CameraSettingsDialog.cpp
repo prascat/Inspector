@@ -115,6 +115,50 @@ CameraSettingsDialog::CameraSettingsDialog(QWidget* parent)
 }
 
 CameraSettingsDialog::~CameraSettingsDialog() {
+    qDebug() << "[CameraSettingsDialog] Destructor - Cleaning up resources";
+    
+    // 스레드 정지
+    liveImageThreadRunning = false;
+    triggerTestThreadRunning = false;
+    isTriggerTesting = false;
+    
+    // 스레드 종료 대기
+    if (liveImageThread) {
+        if (liveImageThread->joinable()) {
+            liveImageThread->join();
+        }
+        delete liveImageThread;
+        liveImageThread = nullptr;
+    }
+    
+    if (triggerTestThread) {
+        if (triggerTestThread->joinable()) {
+            triggerTestThread->join();
+        }
+        delete triggerTestThread;
+        triggerTestThread = nullptr;
+    }
+    
+#ifdef USE_SPINNAKER
+    // 카메라 리소스 안전하게 해제
+    for (auto& camera : m_spinCameras) {
+        if (camera && camera->IsValid()) {
+            try {
+                if (camera->IsStreaming()) {
+                    camera->EndAcquisition();
+                }
+                if (camera->IsInitialized()) {
+                    camera->DeInit();
+                }
+            } catch (...) {
+                // 소멸자에서는 예외 무시
+            }
+        }
+    }
+    m_spinCameras.clear();
+#endif
+    
+    qDebug() << "[CameraSettingsDialog] Destructor completed";
 }
 
 int CameraSettingsDialog::exec() {
@@ -368,9 +412,12 @@ void CameraSettingsDialog::closeEvent(QCloseEvent* event) {
     }
     
 #ifdef USE_SPINNAKER
-    // 5. 카메라 리소스 정리 - 각 카메라의 acquisition 중지
+    // 5. 카메라 리소스 정리 - 역순으로 안전하게 해제
     try {
-        for (size_t i = 0; i < m_spinCameras.size(); ++i) {
+        qDebug() << "[CameraSettingsDialog] Cleaning up" << m_spinCameras.size() << "cameras";
+        
+        // 역순으로 카메라 정리 (마지막 카메라부터)
+        for (int i = static_cast<int>(m_spinCameras.size()) - 1; i >= 0; --i) {
             auto& camera = m_spinCameras[i];
             if (camera && camera->IsValid()) {
                 try {
@@ -378,12 +425,14 @@ void CameraSettingsDialog::closeEvent(QCloseEvent* event) {
                     if (camera->IsStreaming()) {
                         qDebug() << "[CameraSettingsDialog] Stopping camera" << i << "acquisition";
                         camera->EndAcquisition();
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
                     }
                     
                     // DeInit - 카메라 리소스 해제
                     if (camera->IsInitialized()) {
                         qDebug() << "[CameraSettingsDialog] DeInitializing camera" << i;
                         camera->DeInit();
+                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
                     }
                     
                     qDebug() << "[CameraSettingsDialog] Camera" << i << "cleaned up successfully";
@@ -393,14 +442,17 @@ void CameraSettingsDialog::closeEvent(QCloseEvent* event) {
                     qWarning() << "[CameraSettingsDialog] Exception for camera" << i << ":" << e.what();
                 }
             }
+            
+            // 개별 카메라 참조 해제
+            camera = nullptr;
         }
         
         // 6. 모든 카메라 참조 해제
         qDebug() << "[CameraSettingsDialog] Clearing all camera references";
         m_spinCameras.clear();
         
-        // 7. 잠시 대기 (참조 완전히 해제되도록)
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        // 7. 참조 완전히 해제되도록 대기
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
         
         qDebug() << "[CameraSettingsDialog] Camera cleanup completed";
     } catch (const std::exception& e) {
@@ -1350,10 +1402,6 @@ void CameraSettingsDialog::onLoadUserSet0() {
         int loopCount = 0;
         while (liveImageThreadRunning) {
             loopCount++;
-            
-            if (loopCount % 100 == 0) {  // 100번마다 로그
-                qDebug() << "[LiveThread] Loop 진행중... count:" << loopCount;
-            }
             
             if (isTriggerTesting) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
