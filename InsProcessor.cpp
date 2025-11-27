@@ -1982,6 +1982,33 @@ bool InsProcessor::checkSSIM(const cv::Mat &image, const PatternInfo &pattern, d
                  .arg(gray2.cols).arg(gray2.rows)
                  .arg(gray1.channels()).arg(gray2.channels()));
 
+    // 동일한 이미지인지 먼저 체크 (픽셀 단위 비교)
+    cv::Mat diff;
+    cv::absdiff(gray1, gray2, diff);
+    double maxDiff = 0;
+    cv::minMaxLoc(diff, nullptr, &maxDiff);
+    
+    // 픽셀값 차이가 전혀 없으면 100% 처리
+    if (maxDiff == 0) {
+        score = 1.0;
+        logDebug(QString("SSIM: 동일한 이미지 감지 - 100% 처리 (패턴='%1')").arg(pattern.name));
+        
+        // 차이 맵도 완전히 0으로 설정
+        cv::Mat diffMap = cv::Mat::zeros(gray1.size(), CV_64F);
+        cv::Mat colorHeatmap = cv::Mat::zeros(gray1.size(), CV_8UC3);
+        
+        QRectF rectF(pattern.rect.x(), pattern.rect.y(), 
+                     pattern.rect.width(), pattern.rect.height());
+        
+        result.ssimDiffMap[pattern.id] = diffMap.clone();
+        result.ssimHeatmap[pattern.id] = colorHeatmap.clone();
+        result.ssimHeatmapRect[pattern.id] = rectF;
+        result.insScores[pattern.id] = 1.0;
+        result.insMethodTypes[pattern.id] = InspectionMethod::SSIM;
+        
+        return true;  // 100% 합격
+    }
+
     // SSIM 계산
     const double C1 = 6.5025;   // (0.01 * 255)^2
     const double C2 = 58.5225;  // (0.03 * 255)^2

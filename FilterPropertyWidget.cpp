@@ -75,6 +75,8 @@ void FilterPropertyWidget::setupUI() {
         case FILTER_CONTRAST: setupContrastUI(); break;
         case FILTER_CONTOUR: setupContourUI(); break;
         case FILTER_MASK: setupMaskUI(); break;
+        case FILTER_REFLECTION_CHROMATICITY: setupReflectionChromaticityUI(); break;
+        case FILTER_REFLECTION_INPAINTING: setupReflectionInpaintingUI(); break;
         default: break;
     }
 }
@@ -373,4 +375,25 @@ void FilterPropertyWidget::setEnabled(bool enabled) {
     
     // 활성화 상태 변경 신호 발생
     emit enableStateChanged(enabled);
+}
+
+// 반사 제거 필터 (Chromaticity) UI 설정
+void FilterPropertyWidget::setupReflectionChromaticityUI()
+{
+    addSlider("reflectionThreshold", "반사 임계값", 100, 255, 200, 5);
+    addSlider("inpaintRadius", "보정 반경", 1, 10, 3, 1);
+}
+
+// 반사 제거 필터 (Inpainting) UI 설정
+void FilterPropertyWidget::setupReflectionInpaintingUI()
+{
+    addSlider("reflectionThreshold", "반사 임계값", 100, 255, 200, 5);
+    addSlider("inpaintRadius", "보정 반경", 1, 15, 5, 1);
+    
+    QComboBox *methodCombo = addComboBox("inpaintMethod", "보정 방법");
+    methodCombo->blockSignals(true);
+    methodCombo->addItem("TELEA", 0);
+    methodCombo->addItem("NS", 1);
+    methodCombo->setCurrentIndex(0);
+    methodCombo->blockSignals(false);
 }

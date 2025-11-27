@@ -256,6 +256,21 @@ void ImageProcessor::applyFilter(cv::Mat &src, cv::Mat &dst, const FilterInfo &f
         applyContourFilter(src, dst, threshold, minArea, thickness, contourMode, contourApprox);
         break;
     }
+    case FILTER_REFLECTION_CHROMATICITY:
+    {
+        double threshold = filter.params.value("reflectionThreshold", 200.0);
+        int inpaintRadius = filter.params.value("inpaintRadius", 3);
+        applyReflectionRemovalChromaticity(src, dst, threshold, inpaintRadius);
+        break;
+    }
+    case FILTER_REFLECTION_INPAINTING:
+    {
+        double threshold = filter.params.value("reflectionThreshold", 200.0);
+        int inpaintRadius = filter.params.value("inpaintRadius", 5);
+        int inpaintMethod = filter.params.value("inpaintMethod", cv::INPAINT_TELEA);
+        applyReflectionRemovalInpainting(src, dst, threshold, inpaintRadius, inpaintMethod);
+        break;
+    }
     default:
         src.copyTo(dst); // 알 수 없는 필터 유형은 원본 그대로 리턴
         break;
@@ -539,6 +554,15 @@ QMap<QString, int> ImageProcessor::getDefaultParams(int filterType)
         params["thickness"] = 2;
         params["contourMode"] = cv::RETR_EXTERNAL;
         params["contourApprox"] = cv::CHAIN_APPROX_SIMPLE;
+        break;
+    case FILTER_REFLECTION_CHROMATICITY:
+        params["reflectionThreshold"] = 200;
+        params["inpaintRadius"] = 3;
+        break;
+    case FILTER_REFLECTION_INPAINTING:
+        params["reflectionThreshold"] = 200;
+        params["inpaintRadius"] = 5;
+        params["inpaintMethod"] = 0; // TELEA
         break;
     }
 
@@ -3219,4 +3243,116 @@ bool ImageProcessor::performBarrelInspection(
              << "결과:" << (passed ? "PASS" : "FAIL");
     
     return true;
+}
+
+// 반사 제거 - Chromaticity 기반
+void ImageProcessor::applyReflectionRemovalChromaticity(const cv::Mat &src, cv::Mat &dst, double threshold, int inpaintRadius)
+{
+    if (src.empty()) {
+        dst = src.clone();
+        return;
+    }
+
+    // 3채널 이미지로 변환 (필요시)
+    cv::Mat srcColor;
+    if (src.channels() == 1) {
+        cv::cvtColor(src, srcColor, cv::COLOR_GRAY2BGR);
+    } else {
+        srcColor = src.clone();
+    }
+
+    // LAB 색공간으로 변환
+    cv::Mat lab;
+    cv::cvtColor(srcColor, lab, cv::COLOR_BGR2Lab);
+    
+    std::vector<cv::Mat> labChannels;
+    cv::split(lab, labChannels);
+    
+    // L 채널(밝기)에서 반사 영역 검출
+    cv::Mat reflectionMask;
+    cv::threshold(labChannels[0], reflectionMask, threshold, 255, cv::THRESH_BINARY);
+    
+    // 모폴로지 연산으로 노이즈 제거
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));
+    cv::morphologyEx(reflectionMask, reflectionMask, cv::MORPH_CLOSE, kernel);
+    cv::morphologyEx(reflectionMask, reflectionMask, cv::MORPH_OPEN, kernel);
+    
+    // Chromaticity 기반 복원: a, b 채널 정보를 사용해 반사 영역 보정
+    cv::Mat result = srcColor.clone();
+    
+    // 반사 영역의 주변 색상 정보로 보정
+    for (int y = 0; y < reflectionMask.rows; y++) {
+        for (int x = 0; x < reflectionMask.cols; x++) {
+            if (reflectionMask.at<uchar>(y, x) > 0) {
+                // 주변 픽셀의 평균 색상 계산 (비반사 영역만)
+                int count = 0;
+                cv::Vec3b avgColor(0, 0, 0);
+                
+                for (int dy = -inpaintRadius; dy <= inpaintRadius; dy++) {
+                    for (int dx = -inpaintRadius; dx <= inpaintRadius; dx++) {
+                        int ny = y + dy;
+                        int nx = x + dx;
+                        if (ny >= 0 && ny < reflectionMask.rows && 
+                            nx >= 0 && nx < reflectionMask.cols &&
+                            reflectionMask.at<uchar>(ny, nx) == 0) {
+                            avgColor += srcColor.at<cv::Vec3b>(ny, nx);
+                            count++;
+                        }
+                    }
+                }
+                
+                if (count > 0) {
+                    result.at<cv::Vec3b>(y, x) = avgColor / count;
+                }
+            }
+        }
+    }
+    
+    // 원본이 그레이스케일이면 다시 변환
+    if (src.channels() == 1) {
+        cv::cvtColor(result, dst, cv::COLOR_BGR2GRAY);
+    } else {
+        dst = result;
+    }
+}
+
+// 반사 제거 - Inpainting 기반
+void ImageProcessor::applyReflectionRemovalInpainting(const cv::Mat &src, cv::Mat &dst, double threshold, int inpaintRadius, int method)
+{
+    if (src.empty()) {
+        dst = src.clone();
+        return;
+    }
+
+    // 3채널 이미지로 변환 (필요시)
+    cv::Mat srcColor;
+    if (src.channels() == 1) {
+        cv::cvtColor(src, srcColor, cv::COLOR_GRAY2BGR);
+    } else {
+        srcColor = src.clone();
+    }
+
+    // 그레이스케일로 변환하여 밝기 기반 마스크 생성
+    cv::Mat gray;
+    cv::cvtColor(srcColor, gray, cv::COLOR_BGR2GRAY);
+    
+    // 반사 영역 검출 (밝은 영역)
+    cv::Mat reflectionMask;
+    cv::threshold(gray, reflectionMask, threshold, 255, cv::THRESH_BINARY);
+    
+    // 모폴로지 연산으로 마스크 정제
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
+    cv::morphologyEx(reflectionMask, reflectionMask, cv::MORPH_CLOSE, kernel);
+    cv::morphologyEx(reflectionMask, reflectionMask, cv::MORPH_OPEN, kernel);
+    
+    // OpenCV inpaint 사용 (주변 픽셀 정보로 복원)
+    cv::Mat result;
+    cv::inpaint(srcColor, reflectionMask, result, inpaintRadius, method);
+    
+    // 원본이 그레이스케일이면 다시 변환
+    if (src.channels() == 1) {
+        cv::cvtColor(result, dst, cv::COLOR_BGR2GRAY);
+    } else {
+        dst = result;
+    }
 }

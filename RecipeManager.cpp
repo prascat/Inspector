@@ -953,6 +953,9 @@ void RecipeManager::writeFIDDetails(QXmlStreamWriter& xml, const PatternInfo& pa
 void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pattern) {
     xml.writeStartElement("INSDetails");
     xml.writeAttribute("inspectionMethod", QString::number(pattern.inspectionMethod));
+    
+    qDebug() << QString("INS 패턴 '%1' 저장: inspectionMethod=%2").arg(pattern.name).arg(pattern.inspectionMethod);
+    
     xml.writeAttribute("passThreshold", QString::number(pattern.passThreshold));
     xml.writeAttribute("ssimNgThreshold", QString::number(pattern.ssimNgThreshold));
     xml.writeAttribute("allowedNgRatio", QString::number(pattern.allowedNgRatio));
@@ -1739,6 +1742,9 @@ void RecipeManager::readFIDDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
 
 void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) {
     pattern.inspectionMethod = xml.attributes().value("inspectionMethod").toInt();
+    
+    qDebug() << QString("INS 패턴 '%1' 로드: inspectionMethod=%2").arg(pattern.name).arg(pattern.inspectionMethod);
+    
     pattern.passThreshold = xml.attributes().value("passThreshold").toDouble();
     // invertResult 제거됨
     pattern.useRotation = (xml.attributes().value("useRotation").toString() == "true");

@@ -46,6 +46,8 @@ public:
         int threshold = 128, int minArea = 100, int thickness = 2,
         int contourMode = cv::RETR_EXTERNAL, 
         int contourApprox = cv::CHAIN_APPROX_SIMPLE);
+    static void applyReflectionRemovalChromaticity(const cv::Mat& src, cv::Mat& dst, double threshold = 200.0, int inpaintRadius = 3);
+    static void applyReflectionRemovalInpainting(const cv::Mat& src, cv::Mat& dst, double threshold = 200.0, int inpaintRadius = 5, int method = cv::INPAINT_TELEA);
     
 
     // ImageProcessor.h 수정

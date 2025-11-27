@@ -237,8 +237,8 @@ struct PatternInfo {
     int patternMatchMethod = 0;        // 패턴 매칭 방법 (0: Coefficient, 1: Correlation)
     double patternMatchThreshold = 80.0;  // 패턴 매칭 임계값 (0-100%)
     bool patternMatchUseRotation = false;  // 패턴 매칭 회전 사용 여부
-    double patternMatchMinAngle = -15.0;   // 패턴 매칭 최소 각도
-    double patternMatchMaxAngle = 15.0;    // 패턴 매칭 최대 각도
+    double patternMatchMinAngle = -5.0;   // 패턴 매칭 최소 각도
+    double patternMatchMaxAngle = 5.0;    // 패턴 매칭 최대 각도
     double patternMatchAngleStep = 1.0;    // 패턴 매칭 각도 스텝
     
     // Inspection 속성
@@ -348,13 +348,16 @@ const int FILTER_SHARPEN = 5;
 const int FILTER_BRIGHTNESS = 6;
 const int FILTER_CONTRAST = 7;
 const int FILTER_CONTOUR = 8;
-const int FILTER_MASK = 10;  
+const int FILTER_MASK = 10;
+const int FILTER_REFLECTION_CHROMATICITY = 11;  // 반사 제거 (Chromaticity 기반)
+const int FILTER_REFLECTION_INPAINTING = 12;    // 반사 제거 (Inpainting 기반)
 
 // 필터 타입 목록 (순서 중요)
 const QVector<int> FILTER_TYPE_LIST = {
     FILTER_THRESHOLD, FILTER_BLUR, FILTER_CANNY, FILTER_SOBEL,
     FILTER_LAPLACIAN, FILTER_SHARPEN, FILTER_BRIGHTNESS,
-    FILTER_CONTRAST, FILTER_CONTOUR, FILTER_MASK
+    FILTER_CONTRAST, FILTER_CONTOUR, FILTER_MASK,
+    FILTER_REFLECTION_CHROMATICITY, FILTER_REFLECTION_INPAINTING
 };
 
 inline QString getFilterTypeName(int filterType) {
@@ -369,6 +372,8 @@ inline QString getFilterTypeName(int filterType) {
         case FILTER_CONTRAST: return "대비 (Contrast)";
         case FILTER_CONTOUR: return "컨투어 (Contour)";
         case FILTER_MASK: return "마스크 (Mask)";
+        case FILTER_REFLECTION_CHROMATICITY: return "반사 제거 (Chromaticity)";
+        case FILTER_REFLECTION_INPAINTING: return "반사 제거 (Inpainting)";
         default: return QString("필터 %1").arg(filterType);
     }
 }

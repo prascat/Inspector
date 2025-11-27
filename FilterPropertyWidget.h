@@ -49,6 +49,8 @@ private:
     void setupContrastUI();
     void setupContourUI();
     void setupMaskUI();
+    void setupReflectionChromaticityUI();
+    void setupReflectionInpaintingUI();
     
     QSlider* addSlider(const QString& name, const QString& labelText, int min, int max, int value, int step = 1);
     QComboBox* addComboBox(const QString& name, const QString& labelText);

@@ -3000,6 +3000,22 @@ QString TeachingWidget::getFilterParamSummary(const FilterInfo &filter)
         summary = QString("임계값:%1, 최소면적:%2").arg(threshold).arg(minArea);
         break;
     }
+    case FILTER_REFLECTION_CHROMATICITY:
+    {
+        int threshold = filter.params.value("reflectionThreshold", 200);
+        int radius = filter.params.value("inpaintRadius", 3);
+        summary = QString("임계값:%1, 반경:%2").arg(threshold).arg(radius);
+        break;
+    }
+    case FILTER_REFLECTION_INPAINTING:
+    {
+        int threshold = filter.params.value("reflectionThreshold", 200);
+        int radius = filter.params.value("inpaintRadius", 5);
+        int method = filter.params.value("inpaintMethod", 0);
+        QString methodName = (method == 0) ? "TELEA" : "NS";
+        summary = QString("임계값:%1, 반경:%2, 방법:%3").arg(threshold).arg(radius).arg(methodName);
+        break;
+    }
     default:
         summary = "기본 설정";
         break;
@@ -3124,6 +3140,10 @@ QString TeachingWidget::getFilterTypeName(int filterType)
         return TR("CONTRAST_FILTER");
     case FILTER_CONTOUR:
         return TR("CONTOUR_FILTER");
+    case FILTER_REFLECTION_CHROMATICITY:
+        return "반사 제거 (Chromaticity)";
+    case FILTER_REFLECTION_INPAINTING:
+        return "반사 제거 (Inpainting)";
     default:
         return TR("UNKNOWN_FILTER");
     }
@@ -3864,7 +3884,7 @@ void TeachingWidget::createPropertyPanels()
     insPatternMatchMinAngleSpin->setFixedHeight(22);
     insPatternMatchMinAngleSpin->setRange(-180.0, 180.0);
     insPatternMatchMinAngleSpin->setSingleStep(1.0);
-    insPatternMatchMinAngleSpin->setValue(-15.0);
+    insPatternMatchMinAngleSpin->setValue(-5.0);
     insPatternMatchMinAngleSpin->setSuffix("°");
     insPatternMatchMinAngleSpin->setEnabled(false);
     patternMatchLayout->addRow(insPatternMatchMinAngleLabel, insPatternMatchMinAngleSpin);
@@ -3875,7 +3895,7 @@ void TeachingWidget::createPropertyPanels()
     insPatternMatchMaxAngleSpin->setFixedHeight(22);
     insPatternMatchMaxAngleSpin->setRange(-180.0, 180.0);
     insPatternMatchMaxAngleSpin->setSingleStep(1.0);
-    insPatternMatchMaxAngleSpin->setValue(15.0);
+    insPatternMatchMaxAngleSpin->setValue(5.0);
     insPatternMatchMaxAngleSpin->setSuffix("°");
     insPatternMatchMaxAngleSpin->setEnabled(false);
     patternMatchLayout->addRow(insPatternMatchMaxAngleLabel, insPatternMatchMaxAngleSpin);
