@@ -203,8 +203,6 @@ QRect CameraView::originalRectToDisplay(const QRect &origRect) const
 
 void CameraView::mousePressEvent(QMouseEvent *event)
 {
-    qDebug() << "[mousePressEvent] 클릭 발생 - 버튼:" << event->button() << "모드:" << static_cast<int>(m_editMode) << "검사모드:" << isInspectionMode;
-
     // Shift+클릭: 패닝 모드 (모든 모드에서 가능)
     if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ShiftModifier))
     {
@@ -230,8 +228,6 @@ void CameraView::mousePressEvent(QMouseEvent *event)
     {
         QPoint pos = event->pos();
         QPoint originalPos = displayToOriginal(pos);
-
-        qDebug() << "[mousePressEvent] 왼쪽 버튼 클릭 - pos:" << pos << "originalPos:" << originalPos;
 
         // 검사 결과 모드: 패턴 클릭 처리 - 이 모드에서는 이것만 처리하고 끝! (View 모드 상관없이)
         if (isInspectionMode)
@@ -4526,12 +4522,10 @@ void CameraView::setSelectedPatternId(const QUuid &id)
         // 빈 ID일 때는 선택 해제 시그널 emit
         if (id.isNull())
         {
-            qDebug() << "[setSelectedPatternId] 패턴 선택 해제 - selectedInspectionPatternCleared 시그널 emit";
             emit selectedInspectionPatternCleared();
         }
         else
         {
-            qDebug() << "[setSelectedPatternId] 패턴 선택:" << id;
             emit patternSelected(id);
         }
 

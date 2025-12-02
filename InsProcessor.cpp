@@ -399,12 +399,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                         const_cast<uchar*>(pattern.matchTemplateMask.bits()),
                         pattern.matchTemplateMask.bytesPerLine()
                     ).clone();
-                    
-                    logDebug(QString("INS 패턴 '%1': 마스크 로드됨 - 크기=%2x%3, 채널=%4")
-                                .arg(pattern.name)
-                                .arg(maskMat.cols)
-                                .arg(maskMat.rows)
-                                .arg(maskMat.channels()));
                 }
 
                 if (!templateMat.empty() && searchROI.width > 0 && searchROI.height > 0)
@@ -786,14 +780,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             // 검사 방법에 따른 분기 - 패턴 복제하여 조정된 영역으로 설정
             PatternInfo adjustedPattern = pattern;
             adjustedPattern.rect = adjustedRect;
-            
-            // 디버그: 원본 vs 조정된 좌표 비교
-            logDebug(QString("패턴 '%1' 좌표 - 원본=(%2,%3,%4,%5), 조정=(%6,%7,%8,%9)")
-                         .arg(pattern.name)
-                         .arg(pattern.rect.x()).arg(pattern.rect.y())
-                         .arg(pattern.rect.width()).arg(pattern.rect.height())
-                         .arg(adjustedRect.x()).arg(adjustedRect.y())
-                         .arg(adjustedRect.width()).arg(adjustedRect.height()));
 
             // 최종 계산된 각도 설정 (INS 원본 각도 + FID 회전 차이)
 
@@ -894,18 +880,22 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 // ANOMALY: 불량 개수 표시
                 int defectCount = result.anomalyDefectContours.value(pattern.id).size();
                 if (defectCount > 0) {
-                    resultDetail = QString("  %1: %2 ANOMALY[%3/%4] defects:%5")
+                    // 최대 컨투어 크기 찾기
+                    int maxContourSize = 0;
+                    for (const auto& contour : result.anomalyDefectContours.value(pattern.id)) {
+                        int size = static_cast<int>(cv::contourArea(contour));
+                        if (size > maxContourSize) maxContourSize = size;
+                    }
+                    resultDetail = QString("  %1: %2 ANOMALY[%3>%4] defects:%5")
                                        .arg(pattern.name)
                                        .arg(insResultText)
-                                       .arg(QString::number(inspScore * 100.0, 'f', 1))
-                                       .arg(QString::number(pattern.passThreshold, 'f', 1))
+                                       .arg(maxContourSize)
+                                       .arg(pattern.anomalyMinBlobSize)
                                        .arg(defectCount);
                 } else {
-                    resultDetail = QString("  %1: %2 ANOMALY[%3/%4]")
+                    resultDetail = QString("  %1: %2")
                                        .arg(pattern.name)
-                                       .arg(insResultText)
-                                       .arg(QString::number(inspScore * 100.0, 'f', 1))
-                                       .arg(QString::number(pattern.passThreshold, 'f', 1));
+                                       .arg(insResultText);
                 }
             }
             else if (pattern.inspectionMethod == InspectionMethod::STRIP)
@@ -1062,13 +1052,6 @@ bool InsProcessor::matchFiducial(const cv::Mat &image, const PatternInfo &patter
                 {
                     roiDefined = true;
                     roiRect = roi.rect;  // ROI 영역 저장
-                    logDebug(QString("FID 패턴 '%1': ROI '%2' 영역 내부에 있음 (%3,%4,%5,%6)")
-                                 .arg(pattern.name)
-                                 .arg(roi.name)
-                                 .arg(static_cast<int>(roi.rect.x()))
-                                 .arg(static_cast<int>(roi.rect.y()))
-                                 .arg(static_cast<int>(roi.rect.width()))
-                                 .arg(static_cast<int>(roi.rect.height())));
                     break; // 첫 번째로 찾은 포함하는 ROI 사용
                 }
             }
@@ -3934,9 +3917,6 @@ bool InsProcessor::checkCrimp(const cv::Mat &image, const PatternInfo &pattern, 
     int roiW = static_cast<int>(roiPattern.rect.width());
     int roiH = static_cast<int>(roiPattern.rect.height());
     
-    qDebug() << "[CRIMP]" << pattern.name << "ROI 패턴:" << roiPattern.name 
-             << "영역:" << roiX << roiY << roiW << roiH;
-    
     // 이미지 범위 확인 및 클리핑
     roiX = std::max(0, roiX);
     roiY = std::max(0, roiY);
@@ -3953,8 +3933,6 @@ bool InsProcessor::checkCrimp(const cv::Mat &image, const PatternInfo &pattern, 
     
     // YOLO11-seg 추론 수행 (ROI 패턴 영역으로)
     std::vector<YoloSegResult> segResults = ImageProcessor::runYoloSegInference(roiImage, 0.25f, 0.45f, 0.5f);
-    
-    qDebug() << "[CRIMP]" << pattern.name << "검출 개수:" << segResults.size();
     
     // LEFT/RIGHT 박스 영역 계산 (INS 패턴 기준으로 계산)
     // INS 패턴의 barrelLeftStripBox, barrelRightStripBox 사용
@@ -3979,9 +3957,6 @@ bool InsProcessor::checkCrimp(const cv::Mat &image, const PatternInfo &pattern, 
     // 박스 영역 저장
     result.barrelLeftBoxRect[pattern.id] = leftBoxRect;
     result.barrelRightBoxRect[pattern.id] = rightBoxRect;
-    
-    qDebug() << "[CRIMP] LEFT 박스:" << leftBoxRect.x() << leftBoxRect.y() << leftBoxRect.width() << leftBoxRect.height();
-    qDebug() << "[CRIMP] RIGHT 박스:" << rightBoxRect.x() << rightBoxRect.y() << rightBoxRect.width() << rightBoxRect.height();
     
     if (segResults.empty()) {
         qDebug() << "[CRIMP] 객체가 검출되지 않았습니다";

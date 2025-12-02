@@ -1466,11 +1466,9 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
             if (cameraIdx >= 0) {
                 if (!stripImage.empty() && stripImageMap) {
                     (*stripImageMap)[cameraIdx] = stripImage.clone();
-                    qDebug() << QString("STRIP 이미지를 맵에 저장 [카메라 %1]").arg(cameraIdx);
                 }
                 if (!crimpImage.empty() && crimpImageMap) {
                     (*crimpImageMap)[cameraIdx] = crimpImage.clone();
-                    qDebug() << QString("CRIMP 이미지를 맵에 저장 [카메라 %1]").arg(cameraIdx);
                 }
             }
         }
@@ -1696,46 +1694,24 @@ void RecipeManager::readFIDDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     }
     
     QString imageStr = xml.attributes().value("templateImage").toString();
-    qDebug() << QString("FID 패턴 '%1' templateImage 속성 길이: %2").arg(pattern.name).arg(imageStr.length());
     
     if (!imageStr.isEmpty()) {
         QByteArray imageData = QByteArray::fromBase64(imageStr.toLatin1());
-        bool loadSuccess = pattern.templateImage.loadFromData(imageData);  // 포맷 자동 감지
-        qDebug() << QString("FID 패턴 '%1' 템플릿 이미지 로드: base64 길이=%2, 이미지 크기=%3x%4, null=%5, 로드성공=%6")
-                    .arg(pattern.name)
-                    .arg(imageData.size())
-                    .arg(pattern.templateImage.width())
-                    .arg(pattern.templateImage.height())
-                    .arg(pattern.templateImage.isNull())
-                    .arg(loadSuccess);
-    } else {
-        qDebug() << QString("FID 패턴 '%1' templateImage 속성이 비어있습니다!").arg(pattern.name);
+        pattern.templateImage.loadFromData(imageData);  // 포맷 자동 감지
     }
     
     // ★ FID matchTemplate 로드 (RGB32 포맷 - 매칭용)
     QString matchTemplateStr = xml.attributes().value("matchTemplate").toString();
     if (!matchTemplateStr.isEmpty()) {
         QByteArray matchData = QByteArray::fromBase64(matchTemplateStr.toLatin1());
-        bool matchLoadSuccess = pattern.matchTemplate.loadFromData(matchData);
-        qDebug() << QString("FID 패턴 '%1' matchTemplate 로드: 크기=%2x%3, 포맷=%4, 로드성공=%5")
-                    .arg(pattern.name)
-                    .arg(pattern.matchTemplate.width())
-                    .arg(pattern.matchTemplate.height())
-                    .arg(pattern.matchTemplate.format())
-                    .arg(matchLoadSuccess);
+        pattern.matchTemplate.loadFromData(matchData);
     }
     
     // ★ FID matchTemplateMask 로드
     QString maskStr = xml.attributes().value("matchTemplateMask").toString();
     if (!maskStr.isEmpty()) {
         QByteArray maskData = QByteArray::fromBase64(maskStr.toLatin1());
-        bool maskLoadSuccess = pattern.matchTemplateMask.loadFromData(maskData);
-        qDebug() << QString("FID 패턴 '%1' matchTemplateMask 로드: 크기=%2x%3, 포맷=%4, 로드성공=%5")
-                    .arg(pattern.name)
-                    .arg(pattern.matchTemplateMask.width())
-                    .arg(pattern.matchTemplateMask.height())
-                    .arg(pattern.matchTemplateMask.format())
-                    .arg(maskLoadSuccess);
+        pattern.matchTemplateMask.loadFromData(maskData);
     }
     
     xml.skipCurrentElement();
@@ -1743,8 +1719,6 @@ void RecipeManager::readFIDDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
 
 void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) {
     pattern.inspectionMethod = xml.attributes().value("inspectionMethod").toInt();
-    
-    qDebug() << QString("INS 패턴 '%1' 로드: inspectionMethod=%2").arg(pattern.name).arg(pattern.inspectionMethod);
     
     pattern.passThreshold = xml.attributes().value("passThreshold").toDouble();
     // invertResult 제거됨
@@ -1975,44 +1949,24 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     
     // 기본 템플릿 이미지 로드 (DIFF용 또는 레거시)
     QString imageStr = xml.attributes().value("templateImage").toString();
-    qDebug() << QString("INS 패턴 '%1' templateImage 속성 길이: %2").arg(pattern.name).arg(imageStr.length());
     
     if (!imageStr.isEmpty()) {
         QByteArray imageData = QByteArray::fromBase64(imageStr.toLatin1());
-        bool loadSuccess = pattern.templateImage.loadFromData(imageData);
-        qDebug() << QString("INS 패턴 '%1' 기본 템플릿 이미지 로드: base64 길이=%2, 이미지 크기=%3x%4, null=%5, 로드성공=%6")
-                    .arg(pattern.name)
-                    .arg(imageData.size())
-                    .arg(pattern.templateImage.width())
-                    .arg(pattern.templateImage.height())
-                    .arg(pattern.templateImage.isNull())
-                    .arg(loadSuccess);
-    } else {
-        qDebug() << QString("INS 패턴 '%1' templateImage 속성이 비어있습니다!").arg(pattern.name);
+        pattern.templateImage.loadFromData(imageData);
     }
     
     // STRIP 전용 템플릿 이미지 로드
     QString stripImageStr = xml.attributes().value("stripTemplateImage").toString();
     if (!stripImageStr.isEmpty()) {
         QByteArray imageData = QByteArray::fromBase64(stripImageStr.toLatin1());
-        bool loadSuccess = pattern.stripTemplateImage.loadFromData(imageData);
-        qDebug() << QString("INS 패턴 '%1' STRIP 템플릿 이미지 로드: 크기=%2x%3, 로드성공=%4")
-                    .arg(pattern.name)
-                    .arg(pattern.stripTemplateImage.width())
-                    .arg(pattern.stripTemplateImage.height())
-                    .arg(loadSuccess);
+        pattern.stripTemplateImage.loadFromData(imageData);
     }
     
     // CRIMP 전용 템플릿 이미지 로드
     QString crimpImageStr = xml.attributes().value("crimpTemplateImage").toString();
     if (!crimpImageStr.isEmpty()) {
         QByteArray imageData = QByteArray::fromBase64(crimpImageStr.toLatin1());
-        bool loadSuccess = pattern.crimpTemplateImage.loadFromData(imageData);
-        qDebug() << QString("INS 패턴 '%1' CRIMP 템플릿 이미지 로드: 크기=%2x%3, 로드성공=%4")
-                    .arg(pattern.name)
-                    .arg(pattern.crimpTemplateImage.width())
-                    .arg(pattern.crimpTemplateImage.height())
-                    .arg(loadSuccess);
+        pattern.crimpTemplateImage.loadFromData(imageData);
     }
     
     // 패턴 매칭 설정 로드
@@ -2060,12 +2014,6 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
         if (loadSuccess) {
             // 기존 templateImage와 동일한 방식으로 저장
             pattern.matchTemplate = tempImage;
-            qDebug() << QString("INS 패턴 '%1' matchTemplate 로드: 크기=%2x%3, 포맷=%4, 로드성공=%5")
-                        .arg(pattern.name)
-                        .arg(pattern.matchTemplate.width())
-                        .arg(pattern.matchTemplate.height())
-                        .arg(pattern.matchTemplate.format())
-                        .arg(loadSuccess);
         }
     }
     
@@ -2077,12 +2025,6 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
         bool loadSuccess = tempImage.loadFromData(imageData);
         if (loadSuccess) {
             pattern.matchTemplateMask = tempImage;
-            qDebug() << QString("INS 패턴 '%1' matchTemplateMask 로드: 크기=%2x%3, 포맷=%4, 로드성공=%5")
-                        .arg(pattern.name)
-                        .arg(pattern.matchTemplateMask.width())
-                        .arg(pattern.matchTemplateMask.height())
-                        .arg(pattern.matchTemplateMask.format())
-                        .arg(loadSuccess);
         }
     }
     

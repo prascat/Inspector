@@ -310,7 +310,6 @@ void CameraGrabberThread::run()
                                                     // **트리거 신호 수신 - 검사 자동 시작**
                                                     if (!frame.empty())
                                                     {
-                                                        qDebug() << "[CAM ON] → triggerSignalReceived 신호 발생 (검사 시작)";
                                                         emit triggerSignalReceived(frame, m_cameraIndex);
                                                     }
                                                 }
@@ -1737,6 +1736,33 @@ void TeachingWidget::setupLogOverlay()
         "}");
     logTextEdit->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     logTextEdit->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    
+    // 로그창 우클릭 메뉴 (Copy, Select All, Clear)
+    logTextEdit->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(logTextEdit, &QTextEdit::customContextMenuRequested, this, [this](const QPoint &pos) {
+        QMenu contextMenu(this);
+        
+        QAction *copyAction = contextMenu.addAction("Copy");
+        connect(copyAction, &QAction::triggered, this, [this]() {
+            logTextEdit->copy();
+        });
+        
+        QAction *selectAllAction = contextMenu.addAction("Select All");
+        connect(selectAllAction, &QAction::triggered, this, [this]() {
+            logTextEdit->selectAll();
+        });
+        
+        contextMenu.addSeparator();
+        
+        QAction *clearAction = contextMenu.addAction("Clear");
+        connect(clearAction, &QAction::triggered, this, [this]() {
+            logMessages.clear();
+            logTextEdit->clear();
+        });
+        
+        contextMenu.exec(logTextEdit->mapToGlobal(pos));
+    });
+    
     logLayout->addWidget(logTextEdit);
 
     // 오버레이 표시
@@ -8012,12 +8038,6 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                     // 패턴의 실제 너비 계산
                     float patternWidth = abs(pattern->rect.width());
 
-                    qDebug() << QString("[STRIP UI] pattern->rect 크기: %1 x %2, stripThicknessBoxWidth: %3, stripThicknessBoxHeight: %4")
-                                    .arg(pattern->rect.width())
-                                    .arg(pattern->rect.height())
-                                    .arg(pattern->stripThicknessBoxWidth)
-                                    .arg(pattern->stripThicknessBoxHeight);
-
                     insStripThicknessWidthSlider->blockSignals(true);
                     // 너비 슬라이더 최대값을 패턴 너비의 절반으로 설정
                     insStripThicknessWidthSlider->setMaximum(patternWidth / 2);
@@ -9132,7 +9152,7 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
     }
 
     // **트리거 처리 시작**
-    qDebug() << "[onTriggerSignalReceived] ✓ 트리거 프레임 수신! 크기:" << frame.cols << "x" << frame.rows;
+    qDebug() << "[트리거] 검사 시작";
     triggerProcessing = true;
 
     // **비동기 이미지 저장 (트리거 처리와 독립적으로 실행)**
@@ -15631,7 +15651,7 @@ void TeachingWidget::saveImageAsync(const cv::Mat &frame, int stripCrimpMode)
 
     // QRunnable 람다로 비동기 작업 생성
     QThreadPool::globalInstance()->start([frameCopy, stripCrimpMode]()
-                                         {
+    {
         // 현재 시간으로 파일명 생성 (yyyyMMdd_HHmmss_zzz)
         QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss_zzz");
         
@@ -15653,11 +15673,6 @@ void TeachingWidget::saveImageAsync(const cv::Mat &frame, int stripCrimpMode)
         compression_params.push_back(cv::IMWRITE_PNG_COMPRESSION);
         compression_params.push_back(3); // 압축 레벨 (0-9, 3은 중간)
         
-        bool success = cv::imwrite(filePath.toStdString(), frameCopy, compression_params);
-        
-        if (success) {
-            qDebug() << "[비동기 저장 성공]" << filePath;
-        } else {
-            qDebug() << "[비동기 저장 실패]" << filePath;
-        } });
+        cv::imwrite(filePath.toStdString(), frameCopy, compression_params);
+    });
 }

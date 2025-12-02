@@ -3176,8 +3176,6 @@ std::vector<YoloSegResult> ImageProcessor::runYoloSegInference(
         results = postprocessYoloOutput(outputTensor, maskProtoTensor,
                                         origW, origH, scale, padX, padY,
                                         confThreshold, nmsThreshold, maskThreshold);
-        
-        qDebug() << "[OpenVINO] 추론 완료 - 검출 개수:" << results.size();
     }
     catch (const ov::Exception& e) {
         qDebug() << "[OpenVINO] 추론 실패 (OpenVINO 예외):" << e.what();
@@ -3553,11 +3551,6 @@ bool ImageProcessor::runPatchCoreInference(
         
         // 10. 판정
         bool hasAnomaly = (anomalyScore > threshold);
-        
-        qDebug() << QString("[PatchCore] Score=%1, Threshold=%2, Result=%3")
-                        .arg(anomalyScore, 0, 'f', 4)
-                        .arg(threshold, 0, 'f', 4)
-                        .arg(hasAnomaly ? "Defect" : "Normal");
         
         return hasAnomaly;
         
