@@ -183,6 +183,7 @@ struct InspectionResult {
     cv::Mat globalAnomalyMap;                      // 전체 영상 anomaly map (0-100 범위, float)
     QMap<QUuid, cv::Mat> anomalyHeatmap;           // ANOMALY 히트맵 (패턴별, 임계값 적용)
     QMap<QUuid, QRectF> anomalyHeatmapRect;        // ANOMALY 히트맵 위치 (절대좌표)
+    QMap<QUuid, std::vector<std::vector<cv::Point>>> anomalyDefectContours;  // ANOMALY 불량 contour (ROI 상대좌표)
 };
 
 // 패턴 유형 열거형

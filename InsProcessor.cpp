@@ -2286,14 +2286,16 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     
     int numBlobs = static_cast<int>(contours.size());
     
-    // anomalyMinBlobSize 이상의 덩어리가 있는지 확인
+    // anomalyMinBlobSize 이상의 덩어리가 있는지 확인 및 불량 contour 저장
     bool hasDefect = false;
     int maxDefectBlobSize = 0;
+    std::vector<std::vector<cv::Point>> defectContours;
     
     for (const auto& contour : contours) {
         int blobSize = static_cast<int>(cv::contourArea(contour));
         if (blobSize >= pattern.anomalyMinBlobSize) {
             hasDefect = true;
+            defectContours.push_back(contour);  // 불량 contour 저장 (ROI 상대좌표)
             if (blobSize > maxDefectBlobSize) {
                 maxDefectBlobSize = blobSize;
             }
@@ -2303,14 +2305,18 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     // Score 저장 (0~100 범위)
     score = static_cast<double>(roiAnomalyScore);
     
-    logDebug(QString("ANOMALY 검사: 패턴 '%1', ROI Score=%2%, Threshold=%3%, 전체 덩어리=%4, 최소 크기=%5px, 최대 불량=%6px, 결과=%7")
+    logDebug(QString("ANOMALY 검사: 패턴 '%1', ROI Score=%2%, Threshold=%3%, 전체 덩어리=%4, 불량 개수=%5, 최소 크기=%6px, 최대 불량=%7px, 결과=%8")
                  .arg(pattern.name)
                  .arg(roiAnomalyScore, 0, 'f', 2)
                  .arg(pattern.passThreshold, 0, 'f', 1)
                  .arg(numBlobs)
+                 .arg(defectContours.size())
                  .arg(pattern.anomalyMinBlobSize)
                  .arg(maxDefectBlobSize)
                  .arg(hasDefect ? "불량" : "양품"));
+    
+    // 불량 contour 저장 (ROI 상대좌표)
+    result.anomalyDefectContours[pattern.id] = defectContours;
     
     // ROI 영역의 Anomaly Map을 히트맵으로 저장
     // 주의: normalize하지 않음! 전체 맵의 0~100 범위 그대로 유지
