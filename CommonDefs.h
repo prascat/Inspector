@@ -178,6 +178,11 @@ struct InspectionResult {
     QMap<QUuid, cv::Mat> ssimHeatmap;              // SSIM 차이 히트맵 (0-255, 차이 클수록 밝음)
     QMap<QUuid, QRectF> ssimHeatmapRect;           // SSIM 히트맵 위치 (절대좌표)
     QMap<QUuid, cv::Mat> ssimDiffMap;              // SSIM 원본 차이맵 (0-1 범위, double)
+    
+    // ANOMALY 검사 전역 데이터
+    cv::Mat globalAnomalyMap;                      // 전체 영상 anomaly map (0-100 범위, float)
+    QMap<QUuid, cv::Mat> anomalyHeatmap;           // ANOMALY 히트맵 (패턴별, 임계값 적용)
+    QMap<QUuid, QRectF> anomalyHeatmapRect;        // ANOMALY 히트맵 위치 (절대좌표)
 };
 
 // 패턴 유형 열거형
@@ -249,6 +254,9 @@ struct PatternInfo {
     // SSIM 검사 전용 파라미터
     double ssimNgThreshold = 30.0;  // SSIM 차이 NG 임계값 (%, 이 값 이상 차이나면 해당 영역 NG)
     double allowedNgRatio = 20.0;   // SSIM 허용 NG 비율 (%, NG 픽셀이 이 값 이하면 합격)
+
+    // ANOMALY 검사 전용 파라미터
+    int anomalyMinBlobSize = 10;    // 최소 불량 크기 (픽셀, 이 값 이상이면 불량)
 
     // STRIP 검사 전용 파라미터들
     int stripContourMargin = 10;        // 컨투어 검출 마진 (픽셀)
@@ -407,6 +415,7 @@ namespace InspectionMethod {
     const int STRIP = 1;        // STRIP 검사 
     const int CRIMP = 2;        // CRIMP 검사
     const int SSIM = 3;         // SSIM 검사 (구조적 유사도)
+    const int ANOMALY = 4;      // ANOMALY 검사 (PatchCore 이상 탐지)
     
     // 검사 방법 이름 반환 함수
     inline QString getName(int method) {
@@ -419,13 +428,15 @@ namespace InspectionMethod {
                 return "CRIMP";
             case SSIM:
                 return "SSIM";
+            case ANOMALY:
+                return "ANOMALY";
             default:
                 return "UNKNOWN";
         }
     }
     
     // 검사 방법 개수
-    const int COUNT = 4;
+    const int COUNT = 5;
 }
 
 // Strip/Crimp 모드 정의

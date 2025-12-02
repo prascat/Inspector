@@ -859,6 +859,9 @@ void TeachingWidget::initBasicSettings()
     
     // YOLO11-seg 모델 로드 (CRIMP BARREL 검사용)
     initYoloModel();
+    
+    // PatchCore 모델 로드 (ANOMALY 검사용)
+    initPatchCoreModel();
 }
 
 void TeachingWidget::initYoloModel()
@@ -884,6 +887,32 @@ void TeachingWidget::initYoloModel()
         qDebug() << "[YOLO] 모델 로딩 성공 - CRIMP BARREL 검사 준비 완료";
     } else {
         qDebug() << "[YOLO] 모델 로딩 실패 - CRIMP BARREL 검사가 비활성화됩니다.";
+    }
+}
+
+void TeachingWidget::initPatchCoreModel()
+{
+    // 실행 파일 경로 기준으로 weights 폴더 찾기
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString modelPath = appDir + "/weights/model_raw.xml";
+    
+    // 모델 파일 존재 확인
+    QFileInfo modelFile(modelPath);
+    if (!modelFile.exists()) {
+        qDebug() << "[PatchCore] 모델 파일을 찾을 수 없음:" << modelPath;
+        qDebug() << "[PatchCore] ANOMALY 검사가 비활성화됩니다.";
+        return;
+    }
+    
+    qDebug() << "[PatchCore] 모델 로딩 시작:" << modelPath;
+    
+    // OpenVINO로 모델 로드 (CPU 사용)
+    bool success = ImageProcessor::initPatchCoreModel(modelPath, "CPU");
+    
+    if (success) {
+        qDebug() << "[PatchCore] 모델 로딩 성공 - ANOMALY 검사 준비 완료";
+    } else {
+        qDebug() << "[PatchCore] 모델 로딩 실패 - ANOMALY 검사가 비활성화됩니다.";
     }
 }
 
@@ -3686,6 +3715,7 @@ void TeachingWidget::createPropertyPanels()
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::STRIP));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::CRIMP));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::SSIM));
+    insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::ANOMALY));
     insMethodCombo->setCurrentIndex(0); // 기본값을 DIFF로 설정
     basicInspectionLayout->addRow(insMethodLabel, insMethodCombo);
 
@@ -3698,6 +3728,29 @@ void TeachingWidget::createPropertyPanels()
     insPassThreshSpin->setValue(90.0);
     insPassThreshSpin->setSuffix("%");
     basicInspectionLayout->addRow(insPassThreshLabel, insPassThreshSpin);
+
+    // ANOMALY 히트맵 임계값 슬라이더
+    QWidget* sliderContainer = new QWidget(basicInspectionGroup);
+    QHBoxLayout* sliderLayout = new QHBoxLayout(sliderContainer);
+    sliderLayout->setContentsMargins(0, 0, 0, 0);
+    sliderLayout->setSpacing(10);
+    
+    insPassThreshSlider = new QSlider(Qt::Horizontal, sliderContainer);
+    insPassThreshSlider->setRange(0, 100);
+    insPassThreshSlider->setValue(90);
+    insPassThreshSlider->setFixedHeight(22);
+    
+    insPassThreshValue = new QLabel("90%", sliderContainer);
+    insPassThreshValue->setFixedWidth(40);
+    insPassThreshValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    
+    sliderLayout->addWidget(insPassThreshSlider);
+    sliderLayout->addWidget(insPassThreshValue);
+    
+    basicInspectionLayout->addRow((QLabel*)nullptr, sliderContainer);
+    
+    // 초기 표시 상태 (ANOMALY가 아니면 슬라이더 숨김)
+    sliderContainer->setVisible(false);
 
     // ===== SSIM 검사 설정 위젯 =====
     ssimSettingsWidget = new QWidget(basicInspectionGroup);
@@ -3782,6 +3835,20 @@ void TeachingWidget::createPropertyPanels()
     
     basicInspectionLayout->addRow("", ssimSettingsWidget);
     ssimSettingsWidget->setVisible(false);  // 초기에는 숨김 (SSIM 선택 시만 표시)
+
+    // ===== ANOMALY 검사 설정 위젯 =====
+    anomalySettingsWidget = new QWidget(basicInspectionGroup);
+    QFormLayout* anomalyLayout = new QFormLayout(anomalySettingsWidget);
+    anomalyLayout->setContentsMargins(0, 5, 0, 5);
+    anomalyLayout->setSpacing(5);
+    
+    anomalyMinBlobSizeSpin = new QSpinBox(anomalySettingsWidget);
+    anomalyMinBlobSizeSpin->setRange(1, 10000);
+    anomalyMinBlobSizeSpin->setValue(10);
+    anomalyLayout->addRow("최소 불량 크기 (px):", anomalyMinBlobSizeSpin);
+    
+    basicInspectionLayout->addRow("", anomalySettingsWidget);
+    anomalySettingsWidget->setVisible(false);  // 초기에는 숨김 (ANOMALY 선택 시만 표시)
 
     insMainLayout->addWidget(basicInspectionGroup);
 
@@ -4517,15 +4584,36 @@ void TeachingWidget::createPropertyPanels()
                 insCrimpPanel->setVisible(index == InspectionMethod::CRIMP); // CRIMP
                 if (ssimSettingsWidget)
                     ssimSettingsWidget->setVisible(index == InspectionMethod::SSIM); // SSIM
-                // 합격 임계값은 STRIP, SSIM, CRIMP에서 숨김
+                if (anomalySettingsWidget)
+                    anomalySettingsWidget->setVisible(index == InspectionMethod::ANOMALY); // ANOMALY
+                
+                // 합격 임계값: ANOMALY일 때는 슬라이더, 다른 방법(DIFF)일 때는 SpinBox
+                bool isAnomaly = (index == InspectionMethod::ANOMALY);
+                bool isDiff = (index == InspectionMethod::DIFF);
+                
+                // SpinBox는 DIFF에서만 표시
                 if (insPassThreshSpin && insPassThreshLabel)
                 {
-                    bool passThreshVisible = (index != InspectionMethod::STRIP && 
-                                            index != InspectionMethod::SSIM && 
-                                            index != InspectionMethod::CRIMP);
-                    insPassThreshSpin->setVisible(passThreshVisible);
-                    insPassThreshLabel->setVisible(passThreshVisible);
+                    insPassThreshSpin->setVisible(isDiff);
+                    insPassThreshLabel->setVisible(isDiff || isAnomaly);
+                    
+                    // 라벨 텍스트 변경
+                    if (isAnomaly)
+                    {
+                        insPassThreshLabel->setText("임계값(%):");
+                    }
+                    else
+                    {
+                        insPassThreshLabel->setText("합격 임계값(%):");
+                    }
                 }
+                
+                // 슬라이더는 ANOMALY에서만 표시
+                if (insPassThreshSlider)
+                {
+                    insPassThreshSlider->parentWidget()->setVisible(isAnomaly);
+                }
+                
                 // SSIM 선택 시 필터 실시간 업데이트
                 if (index == InspectionMethod::SSIM)
                 {
@@ -4571,6 +4659,23 @@ void TeachingWidget::createPropertyPanels()
                 for (PatternInfo& pattern : allPatterns) {
                     if (pattern.id == currentSelectedId && pattern.type == PatternType::INS) {
                         pattern.allowedNgRatio = static_cast<double>(value);
+                        cameraView->viewport()->update();
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    // ANOMALY 파라미터 연결
+    connect(anomalyMinBlobSizeSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int value) {
+        if (cameraView) {
+            QUuid currentSelectedId = cameraView->getSelectedPatternId();
+            if (!currentSelectedId.isNull()) {
+                QList<PatternInfo>& allPatterns = cameraView->getPatterns();
+                for (PatternInfo& pattern : allPatterns) {
+                    if (pattern.id == currentSelectedId && pattern.type == PatternType::INS) {
+                        pattern.anomalyMinBlobSize = value;
                         cameraView->viewport()->update();
                         break;
                     }
@@ -6012,6 +6117,40 @@ void TeachingWidget::connectPropertyPanelEvents()
                 });
     }
 
+    // ANOMALY 히트맵 임계값 슬라이더
+    if (insPassThreshSlider)
+    {
+        connect(insPassThreshSlider, &QSlider::valueChanged,
+                [this](int value)
+                {
+                    if (insPassThreshValue)
+                    {
+                        insPassThreshValue->setText(QString("%1%").arg(value));
+                    }
+                    
+                    QTreeWidgetItem *selectedItem = patternTree->currentItem();
+                    if (selectedItem)
+                    {
+                        QUuid patternId = getPatternIdFromItem(selectedItem);
+                        if (!patternId.isNull())
+                        {
+                            PatternInfo *pattern = cameraView->getPatternById(patternId);
+                            if (pattern && pattern->type == PatternType::INS)
+                            {
+                                pattern->passThreshold = static_cast<double>(value);
+                                cameraView->updatePatternById(patternId, *pattern);
+                                
+                                // 검사 결과가 있으면 히트맵 실시간 갱신
+                                if (cameraView->hasLastInspectionResult())
+                                {
+                                    cameraView->updateAnomalyHeatmap(patternId, static_cast<double>(value));
+                                }
+                            }
+                        }
+                    }
+                });
+    }
+
     // INS 검사 방법 콤보박스
     if (insMethodCombo)
     {
@@ -6044,18 +6183,43 @@ void TeachingWidget::connectPropertyPanelEvents()
                                 if (insEdgeGroup)
                                     insEdgeGroup->setVisible(isStripMethod);
 
-                                // STRIP과 SSIM 검사에서는 검사 임계값과 결과 반전 옵션 필요 없음
+                                // STRIP과 SSIM 검사에서는 검사 임계값과 결과 반전 옵션 필요 없음 (ANOMALY는 표시)
                                 if (insPassThreshSpin && insPassThreshLabel)
                                 {
-                                    bool threshVisible = (index != InspectionMethod::STRIP && index != InspectionMethod::SSIM);
-                                    insPassThreshSpin->setVisible(threshVisible);
-                                    insPassThreshLabel->setVisible(threshVisible);
+                                    bool isAnomaly = (index == InspectionMethod::ANOMALY);
+                                    bool isDiff = (index == InspectionMethod::DIFF);
+                                    
+                                    // SpinBox는 DIFF에서만 표시
+                                    insPassThreshSpin->setVisible(isDiff);
+                                    insPassThreshLabel->setVisible(isDiff || isAnomaly);
+                                    
+                                    // 라벨 텍스트 변경
+                                    if (isAnomaly)
+                                    {
+                                        insPassThreshLabel->setText("임계값(%):");
+                                    }
+                                    else
+                                    {
+                                        insPassThreshLabel->setText("합격 임계값(%):");
+                                    }
+                                }
+                                
+                                // 슬라이더는 ANOMALY에서만 표시
+                                if (insPassThreshSlider)
+                                {
+                                    insPassThreshSlider->parentWidget()->setVisible(index == InspectionMethod::ANOMALY);
                                 }
 
                                 // SSIM 설정 위젯 표시/숨김
                                 if (ssimSettingsWidget)
                                 {
                                     ssimSettingsWidget->setVisible(index == InspectionMethod::SSIM);
+                                }
+
+                                // ANOMALY 설정 위젯 표시/숨김
+                                if (anomalySettingsWidget)
+                                {
+                                    anomalySettingsWidget->setVisible(index == InspectionMethod::ANOMALY);
                                 }
 
                                 // 패턴 매칭 패널 표시 설정
@@ -7624,6 +7788,23 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                     }
                 }
 
+                // ANOMALY 설정 위젯 표시/숨김 및 값 설정
+                if (anomalySettingsWidget)
+                {
+                    bool isANOMALY = (pattern->inspectionMethod == InspectionMethod::ANOMALY);
+                    anomalySettingsWidget->setVisible(isANOMALY);
+                    
+                    if (isANOMALY)
+                    {
+                        if (anomalyMinBlobSizeSpin)
+                        {
+                            anomalyMinBlobSizeSpin->blockSignals(true);
+                            anomalyMinBlobSizeSpin->setValue(pattern->anomalyMinBlobSize);
+                            anomalyMinBlobSizeSpin->blockSignals(false);
+                        }
+                    }
+                }
+
                 // 패턴 매칭 그룹 표시/숨김 및 값 설정
                 if (insPatternMatchGroup)
                 {
@@ -7715,14 +7896,42 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
 
                 if (insPassThreshSpin)
                 {
-                    // STRIP과 SSIM 검사에서는 합격 임계값 숨김
-                    bool passThreshVisible = (pattern->inspectionMethod != InspectionMethod::STRIP 
-                                           && pattern->inspectionMethod != InspectionMethod::SSIM);
-                    insPassThreshLabel->setVisible(passThreshVisible);
-                    insPassThreshSpin->setVisible(passThreshVisible);
-                    if (passThreshVisible)
+                    bool isAnomaly = (pattern->inspectionMethod == InspectionMethod::ANOMALY);
+                    bool isDiff = (pattern->inspectionMethod == InspectionMethod::DIFF);
+                    
+                    // SpinBox는 DIFF에서만 표시
+                    insPassThreshSpin->setVisible(isDiff);
+                    insPassThreshLabel->setVisible(isDiff || isAnomaly);
+                    
+                    // 라벨 텍스트 변경
+                    if (isAnomaly)
+                    {
+                        insPassThreshLabel->setText("임계값(%):");
+                    }
+                    else
+                    {
+                        insPassThreshLabel->setText("합격 임계값(%):");
+                    }
+                    
+                    if (isDiff)
                     {
                         insPassThreshSpin->setValue(pattern->passThreshold);
+                    }
+                }
+                
+                // 슬라이더 값 설정 (ANOMALY)
+                if (insPassThreshSlider)
+                {
+                    bool isAnomaly = (pattern->inspectionMethod == InspectionMethod::ANOMALY);
+                    insPassThreshSlider->parentWidget()->setVisible(isAnomaly);
+                    
+                    if (isAnomaly)
+                    {
+                        insPassThreshSlider->setValue(static_cast<int>(pattern->passThreshold));
+                        if (insPassThreshValue)
+                        {
+                            insPassThreshValue->setText(QString("%1%").arg(static_cast<int>(pattern->passThreshold)));
+                        }
                     }
                 }
 

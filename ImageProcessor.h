@@ -136,9 +136,30 @@ public:
         bool& passed
     );
 
+    // ===== OpenVINO PatchCore 관련 함수들 =====
+    
+    // PatchCore 모델 초기화
+    static bool initPatchCoreModel(const QString& modelPath, const QString& device = "CPU");
+    
+    // PatchCore 모델 해제
+    static void releasePatchCoreModel();
+    
+    // PatchCore 모델 로드 상태 확인
+    static bool isPatchCoreModelLoaded();
+    
+    // PatchCore 추론 수행
+    static bool runPatchCoreInference(
+        const cv::Mat& image,
+        float& anomalyScore,
+        cv::Mat& anomalyMap,
+        float threshold = 0.5f
+    );
+
 private:
     // OpenVINO 관련 static 멤버
     static std::shared_ptr<ov::Core> s_ovinoCore;
+    
+    // YOLO11-seg 모델
     static std::shared_ptr<ov::CompiledModel> s_yoloSegModel;
     static std::shared_ptr<ov::InferRequest> s_yoloSegInferRequest;
     static bool s_yoloSegModelLoaded;
@@ -146,6 +167,13 @@ private:
     static int s_yoloInputHeight;
     static int s_yoloNumClasses;
     static int s_yoloMaskSize;
+    
+    // PatchCore 모델
+    static std::shared_ptr<ov::CompiledModel> s_patchCoreModel;
+    static std::shared_ptr<ov::InferRequest> s_patchCoreInferRequest;
+    static bool s_patchCoreModelLoaded;
+    static int s_patchCoreInputWidth;
+    static int s_patchCoreInputHeight;
     
     // 전처리/후처리 헬퍼 함수
     static cv::Mat preprocessYoloInput(const cv::Mat& image, int targetWidth, int targetHeight, float& scale, int& padX, int& padY);

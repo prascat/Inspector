@@ -538,6 +538,8 @@ private:
 
     // INS 속성 위젯들
     QDoubleSpinBox* insPassThreshSpin = nullptr;
+    QSlider* insPassThreshSlider = nullptr;  // ANOMALY용 슬라이더
+    QLabel* insPassThreshValue = nullptr;    // ANOMALY용 값 표시
     QComboBox* insMethodCombo = nullptr; 
     QWidget* insPatternMatchPanel = nullptr;
     QCheckBox* insRotationCheck = nullptr;
@@ -553,6 +555,10 @@ private:
     QSlider* allowedNgRatioSlider = nullptr;
     QLabel* allowedNgRatioValue = nullptr;
     QLabel* ssimColorBar = nullptr;
+
+    // ANOMALY 검사 전용 위젯들
+    QWidget* anomalySettingsWidget = nullptr;
+    QSpinBox* anomalyMinBlobSizeSpin = nullptr;
 
     // 패턴 기본 정보 관련 위젯들
     QLabel* patternIdValue = nullptr;      
@@ -589,6 +595,7 @@ private:
     // ===== 초기화 및 설정 함수 =====
     void initBasicSettings();
     void initYoloModel();  // YOLO11-seg 모델 초기화
+    void initPatchCoreModel();  // PatchCore 모델 초기화
     void setupPatternTree();
     void setupPatternTypeButtons(QVBoxLayout *cameraLayout);
     void setupPreviewOverlay();

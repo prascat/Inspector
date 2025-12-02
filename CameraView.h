@@ -195,6 +195,9 @@ public:
     
     // SSIM 히트맵 실시간 갱신
     void updateSSIMHeatmap(const QUuid &patternId, double ssimNgThreshold);
+    
+    // ANOMALY 히트맵 실시간 갱신
+    void updateAnomalyHeatmap(const QUuid &patternId, double passThreshold);
 
     // STRIP/CRIMP 모드별 검사 결과 접근자
     void saveInspectionResultForMode(int mode, const InspectionResult &result, const QPixmap &frame);
@@ -423,6 +426,9 @@ private:
     void drawINSSSIMVisualization(QPainter &painter, const InspectionResult &result,
                                   const QUuid &patternId, const PatternInfo *patternInfo,
                                   const QRectF &inspRectScene, double insAngle);
+    void drawINSAnomalyVisualization(QPainter &painter, const InspectionResult &result,
+                                     const QUuid &patternId, const PatternInfo *patternInfo,
+                                     const QRectF &inspRectScene, double insAngle);
 
     // STRIP 세부 시각화 함수들
     void drawStripRearBox(QPainter &painter, const InspectionResult &result,

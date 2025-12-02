@@ -2120,15 +2120,21 @@ void CameraView::drawINSPatterns(QPainter &painter, const InspectionResult &resu
             painter.restore();
 
             // INS 라벨 (패턴이름: 검사방법)
-            // CRIMP는 점수 표시 안함, DIFF/STRIP은 점수 표시
+            // CRIMP는 점수 표시 안함, DIFF/STRIP/ANOMALY는 점수 표시
             QString methodName = InspectionMethod::getName(patternInfo->inspectionMethod);
             QString label;
             if (patternInfo->inspectionMethod == InspectionMethod::CRIMP)
             {
                 label = QString("%1: %2").arg(patternInfo->name).arg(methodName);
             }
+            else if (patternInfo->inspectionMethod == InspectionMethod::ANOMALY)
+            {
+                // ANOMALY는 score 표시 안함 (덩어리 개수/크기로 판정)
+                label = QString("%1: %2").arg(patternInfo->name).arg(methodName);
+            }
             else
             {
+                // DIFF, STRIP, SSIM 등은 0~1 범위를 백분율로 변환
                 label = QString("%1: %2(%3%)").arg(patternInfo->name).arg(methodName).arg(score * 100.0, 0, 'f', 1);
             }
             QFont font(NAMEPLATE_FONT_FAMILY, NAMEPLATE_FONT_SIZE, NAMEPLATE_FONT_WEIGHT);
@@ -2177,6 +2183,9 @@ void CameraView::drawINSPatterns(QPainter &painter, const InspectionResult &resu
             break;
         case InspectionMethod::SSIM:
             drawINSSSIMVisualization(painter, result, patternId, patternInfo, inspRectScene, insAngle);
+            break;
+        case InspectionMethod::ANOMALY:
+            drawINSAnomalyVisualization(painter, result, patternId, patternInfo, inspRectScene, insAngle);
             break;
         }
     }
@@ -3644,6 +3653,97 @@ void CameraView::drawINSSSIMVisualization(QPainter &painter, const InspectionRes
     painter.setPen(Qt::white);
     painter.drawText(barX - fm.horizontalAdvance("Same") - 4, barY + barHeight - 2, "Same");
     painter.drawText(barX + barWidth + 4, barY + barHeight - 2, "Diff");
+    
+    painter.restore();
+}
+
+// ===== ANOMALY 검사 시각화 =====
+void CameraView::drawINSAnomalyVisualization(QPainter &painter, const InspectionResult &result,
+                                             const QUuid &patternId, const PatternInfo *patternInfo,
+                                             const QRectF &inspRectScene, double insAngle)
+{
+    // ANOMALY 히트맵이 있는지 확인 (anomalyHeatmap 사용)
+    if (!result.anomalyHeatmap.contains(patternId)) {
+        return;
+    }
+    
+    const cv::Mat& heatmap = result.anomalyHeatmap[patternId];
+    if (heatmap.empty()) {
+        return;
+    }
+    
+    // INS 패턴 중심 (회전 기준점)
+    QPointF insCenterViewport = mapFromScene(inspRectScene.center());
+    
+    // 히트맵을 QImage로 변환
+    cv::Mat heatmapRGB;
+    cv::cvtColor(heatmap, heatmapRGB, cv::COLOR_BGR2RGB);
+    
+    QImage heatmapImage(heatmapRGB.data, heatmapRGB.cols, heatmapRGB.rows,
+                        heatmapRGB.step, QImage::Format_RGB888);
+    QPixmap heatmapPixmap = QPixmap::fromImage(heatmapImage.copy());
+    
+    // 히트맵 위치 계산 (INS 영역에 맞춤)
+    QPointF topLeftViewport = mapFromScene(inspRectScene.topLeft());
+    QPointF bottomRightViewport = mapFromScene(inspRectScene.bottomRight());
+    QRectF targetRect(topLeftViewport, bottomRightViewport);
+    
+    // 회전하여 히트맵 그리기 (반투명)
+    painter.save();
+    painter.translate(insCenterViewport);
+    painter.rotate(insAngle);
+    painter.translate(-insCenterViewport);
+    
+    // 반투명 오버레이 (alpha 블렌딩)
+    painter.setOpacity(0.6);  // 60% 불투명
+    
+    // 히트맵을 INS 영역에 스케일하여 그리기
+    painter.drawPixmap(targetRect.toRect(), heatmapPixmap.scaled(
+        targetRect.width(), targetRect.height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+    
+    painter.setOpacity(1.0);  // 불투명도 복원
+    
+    // 컬러바 범례 그리기 (INS 박스 아래, 회전 적용)
+    QFont font(NAMEPLATE_FONT_FAMILY, 8);
+    painter.setFont(font);
+    QFontMetrics fm(font);
+    
+    int barWidth = static_cast<int>(targetRect.width() * 0.8);
+    int barHeight = 12;
+    int barX = static_cast<int>(targetRect.center().x() - barWidth / 2);
+    int barY = static_cast<int>(targetRect.bottom() + 8);
+    
+    // 가로 그라데이션 컬러바 생성 (파랑→초록→빨강)
+    QLinearGradient gradient(barX, barY, barX + barWidth, barY);
+    gradient.setColorAt(0.0, QColor(0, 0, 255));     // 파랑 (낮은 이상도 = Normal)
+    gradient.setColorAt(0.5, QColor(0, 255, 0));     // 초록 (중간)
+    gradient.setColorAt(1.0, QColor(255, 0, 0));     // 빨강 (높은 이상도 = Defect)
+    
+    painter.fillRect(barX, barY, barWidth, barHeight, gradient);
+    painter.setPen(QPen(Qt::white, 1));
+    painter.drawRect(barX, barY, barWidth, barHeight);
+    
+    // 임계값 마커 그리기
+    double threshold = patternInfo->passThreshold;  // 0-100 범위
+    if (threshold > 0 && threshold < 100) {
+        // 임계값 위치 계산 (0%=왼쪽, 100%=오른쪽)
+        int markerX = barX + static_cast<int>(barWidth * threshold / 100.0);
+        
+        // 빨간색 세로 마커 선
+        painter.setPen(QPen(Qt::white, 2));
+        painter.drawLine(markerX, barY - 3, markerX, barY + barHeight + 3);
+        
+        // NG 라벨
+        QString ngLabel = QString("NG>%1%").arg(static_cast<int>(threshold));
+        int labelW = fm.horizontalAdvance(ngLabel);
+        painter.setPen(Qt::white);
+        painter.drawText(markerX - labelW / 2, barY - 5, ngLabel);
+    }
+    
+    // 범례 텍스트 (양쪽 끝)
+    painter.setPen(Qt::white);
+    painter.drawText(barX - fm.horizontalAdvance("Normal") - 4, barY + barHeight - 2, "Normal");
+    painter.drawText(barX + barWidth + 4, barY + barHeight - 2, "Defect");
     
     painter.restore();
 }
@@ -5709,6 +5809,67 @@ void CameraView::updateSSIMHeatmap(const QUuid &patternId, double ssimNgThreshol
     
     // 히트맵 갱신
     lastInspectionResult.ssimHeatmap[patternId] = colorHeatmap.clone();
+    
+    // 화면 갱신
+    viewport()->update();
+}
+
+void CameraView::updateAnomalyHeatmap(const QUuid &patternId, double passThreshold)
+{
+    if (!hasInspectionResult) {
+        return;
+    }
+    
+    // globalAnomalyMap 확인
+    if (lastInspectionResult.globalAnomalyMap.empty()) {
+        return;
+    }
+    
+    // 패턴 정보 가져오기
+    PatternInfo* pattern = getPatternById(patternId);
+    if (!pattern || pattern->type != PatternType::INS) {
+        return;
+    }
+    
+    // ROI 영역 추출
+    QRectF rectF = pattern->rect;
+    cv::Rect roiRect(static_cast<int>(rectF.x()), 
+                     static_cast<int>(rectF.y()), 
+                     static_cast<int>(rectF.width()), 
+                     static_cast<int>(rectF.height()));
+    
+    // 범위 체크
+    if (roiRect.x < 0 || roiRect.y < 0 ||
+        roiRect.x + roiRect.width > lastInspectionResult.globalAnomalyMap.cols ||
+        roiRect.y + roiRect.height > lastInspectionResult.globalAnomalyMap.rows ||
+        roiRect.width <= 0 || roiRect.height <= 0) {
+        return;
+    }
+    
+    // ROI 영역의 anomaly map 추출
+    cv::Mat roiAnomalyMap = lastInspectionResult.globalAnomalyMap(roiRect).clone();
+    
+    // 임계값 미만 픽셀 제거 (60% 이하는 원본 그대로 = 0으로 설정)
+    cv::Mat maskedAnomalyMap = roiAnomalyMap.clone();
+    for (int y = 0; y < maskedAnomalyMap.rows; y++) {
+        float* row = maskedAnomalyMap.ptr<float>(y);
+        for (int x = 0; x < maskedAnomalyMap.cols; x++) {
+            if (row[x] <= passThreshold) {
+                row[x] = 0.0f;  // 임계값 이하는 제거 (파란색 없앰)
+            }
+        }
+    }
+    
+    // 0~100 -> 0~255 변환
+    cv::Mat normalized;
+    maskedAnomalyMap.convertTo(normalized, CV_8U, 255.0 / 100.0);
+    
+    // 컬러 히트맵 생성
+    cv::Mat colorHeatmap;
+    cv::applyColorMap(normalized, colorHeatmap, cv::COLORMAP_JET);
+    
+    // 히트맵 갱신
+    lastInspectionResult.anomalyHeatmap[patternId] = colorHeatmap.clone();
     
     // 화면 갱신
     viewport()->update();

@@ -2837,6 +2837,8 @@ bool ImageProcessor::performStripInspection(const cv::Mat &roiImage, const cv::M
 
 // Static 멤버 초기화
 std::shared_ptr<ov::Core> ImageProcessor::s_ovinoCore = nullptr;
+
+// YOLO11-seg
 std::shared_ptr<ov::CompiledModel> ImageProcessor::s_yoloSegModel = nullptr;
 std::shared_ptr<ov::InferRequest> ImageProcessor::s_yoloSegInferRequest = nullptr;
 bool ImageProcessor::s_yoloSegModelLoaded = false;
@@ -2844,6 +2846,13 @@ int ImageProcessor::s_yoloInputWidth = 640;
 int ImageProcessor::s_yoloInputHeight = 640;
 int ImageProcessor::s_yoloNumClasses = 80;  // COCO default, 실제 모델에 맞게 조정
 int ImageProcessor::s_yoloMaskSize = 160;   // YOLO11-seg mask prototype size
+
+// PatchCore
+std::shared_ptr<ov::CompiledModel> ImageProcessor::s_patchCoreModel = nullptr;
+std::shared_ptr<ov::InferRequest> ImageProcessor::s_patchCoreInferRequest = nullptr;
+bool ImageProcessor::s_patchCoreModelLoaded = false;
+int ImageProcessor::s_patchCoreInputWidth = 224;
+int ImageProcessor::s_patchCoreInputHeight = 224;
 
 bool ImageProcessor::initYoloSegModel(const QString& modelPath, const QString& device)
 {
@@ -3354,5 +3363,208 @@ void ImageProcessor::applyReflectionRemovalInpainting(const cv::Mat &src, cv::Ma
         cv::cvtColor(result, dst, cv::COLOR_BGR2GRAY);
     } else {
         dst = result;
+    }
+}
+
+// ===== OpenVINO PatchCore 관련 구현 =====
+
+bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString& device)
+{
+    try {
+        if (s_patchCoreModelLoaded) {
+            releasePatchCoreModel();
+        }
+        
+        qDebug() << "[OpenVINO] PatchCore 모델 로딩 시작:" << modelPath;
+        
+        // OpenVINO Core 생성 (YOLO와 공유)
+        if (!s_ovinoCore) {
+            s_ovinoCore = std::make_shared<ov::Core>();
+        }
+        
+        // 모델 읽기
+        std::shared_ptr<ov::Model> model = s_ovinoCore->read_model(modelPath.toStdString());
+        
+        // 동적 shape를 고정 shape로 변환 (PatchCore는 기본적으로 224x224)
+        s_patchCoreInputHeight = 224;
+        s_patchCoreInputWidth = 224;
+        
+        // 입력 이름 가져오기
+        auto inputs = model->inputs();
+        if (!inputs.empty()) {
+            std::string input_name = inputs[0].get_any_name();
+            
+            std::map<std::string, ov::PartialShape> new_shapes;
+            new_shapes[input_name] = ov::PartialShape({1, 3, static_cast<long>(s_patchCoreInputHeight), static_cast<long>(s_patchCoreInputWidth)});
+            model->reshape(new_shapes);
+            
+            qDebug() << "[OpenVINO] PatchCore 입력 크기:" << s_patchCoreInputWidth << "x" << s_patchCoreInputHeight;
+        }
+        
+        // 모델 컴파일
+        auto compiled = s_ovinoCore->compile_model(model, device.toStdString());
+        s_patchCoreModel = std::make_shared<ov::CompiledModel>(std::move(compiled));
+        
+        // 추론 요청 생성
+        s_patchCoreInferRequest = std::make_shared<ov::InferRequest>(
+            s_patchCoreModel->create_infer_request()
+        );
+        
+        s_patchCoreModelLoaded = true;
+        qDebug() << "[OpenVINO] PatchCore 모델 로딩 성공 - 디바이스:" << device;
+        return true;
+        
+    } catch (const std::exception& e) {
+        qCritical() << "[OpenVINO] PatchCore 모델 로딩 실패:" << e.what();
+        releasePatchCoreModel();
+        return false;
+    }
+}
+
+void ImageProcessor::releasePatchCoreModel()
+{
+    s_patchCoreInferRequest.reset();
+    s_patchCoreModel.reset();
+    s_patchCoreModelLoaded = false;
+    qDebug() << "[OpenVINO] PatchCore 모델 해제 완료";
+}
+
+bool ImageProcessor::isPatchCoreModelLoaded()
+{
+    return s_patchCoreModelLoaded;
+}
+
+bool ImageProcessor::runPatchCoreInference(
+    const cv::Mat& image,
+    float& anomalyScore,
+    cv::Mat& anomalyMap,
+    float threshold)
+{
+    if (!s_patchCoreModelLoaded || !s_patchCoreInferRequest) {
+        qWarning() << "[PatchCore] 모델이 로드되지 않음";
+        return false;
+    }
+    
+    try {
+        // 1. 전처리: 224x224 리사이즈
+        cv::Mat resized;
+        cv::resize(image, resized, cv::Size(s_patchCoreInputWidth, s_patchCoreInputHeight));
+        
+        // 2. BGR -> RGB 변환
+        cv::Mat rgb;
+        if (resized.channels() == 1) {
+            cv::cvtColor(resized, rgb, cv::COLOR_GRAY2RGB);
+        } else if (resized.channels() == 3) {
+            cv::cvtColor(resized, rgb, cv::COLOR_BGR2RGB);
+        } else {
+            rgb = resized.clone();
+        }
+        
+        // 3. 정규화 (ImageNet mean/std)
+        cv::Mat normalized;
+        rgb.convertTo(normalized, CV_32F, 1.0 / 255.0);
+        
+        const float mean[3] = {0.485f, 0.456f, 0.406f};
+        const float std[3] = {0.229f, 0.224f, 0.225f};
+        
+        std::vector<cv::Mat> channels(3);
+        cv::split(normalized, channels);
+        for (int i = 0; i < 3; i++) {
+            channels[i] = (channels[i] - mean[i]) / std[i];
+        }
+        cv::merge(channels, normalized);
+        
+        // 4. HWC -> CHW 변환
+        std::vector<cv::Mat> channelsChw;
+        cv::split(normalized, channelsChw);
+        
+        // 5. 입력 텐서 생성 (1, 3, H, W)
+        auto inputTensor = s_patchCoreInferRequest->get_input_tensor();
+        float* inputData = inputTensor.data<float>();
+        
+        int channelSize = s_patchCoreInputHeight * s_patchCoreInputWidth;
+        for (int c = 0; c < 3; c++) {
+            std::memcpy(inputData + c * channelSize,
+                       channelsChw[c].ptr<float>(),
+                       channelSize * sizeof(float));
+        }
+        
+        // 6. 추론 실행
+        s_patchCoreInferRequest->infer();
+        
+        // 7. 결과 파싱
+        // 출력: anomaly_map (1,1,H,W), pred_score (1,)
+        auto outputs = s_patchCoreInferRequest->get_compiled_model().outputs();
+        
+        ov::Tensor anomalyMapTensor;
+        ov::Tensor predScoreTensor;
+        
+        // 출력 텐서 찾기 (이름으로)
+        for (const auto& output : outputs) {
+            std::string name = output.get_any_name();
+            if (name.find("anomaly_map") != std::string::npos) {
+                anomalyMapTensor = s_patchCoreInferRequest->get_tensor(output);
+            } else if (name.find("pred_score") != std::string::npos) {
+                predScoreTensor = s_patchCoreInferRequest->get_tensor(output);
+            }
+        }
+        
+        // pred_score가 없으면 첫 번째 출력 사용
+        if (!predScoreTensor) {
+            predScoreTensor = s_patchCoreInferRequest->get_output_tensor(0);
+        }
+        if (!anomalyMapTensor && outputs.size() > 1) {
+            anomalyMapTensor = s_patchCoreInferRequest->get_output_tensor(1);
+        }
+        
+        // 8. Anomaly Score 추출
+        if (predScoreTensor) {
+            const float* scoreData = predScoreTensor.data<float>();
+            anomalyScore = scoreData[0];
+        } else {
+            anomalyScore = 0.0f;
+        }
+        
+        // 9. Anomaly Map 추출 및 정규화 (0~100 범위)
+        if (anomalyMapTensor) {
+            auto shape = anomalyMapTensor.get_shape();
+            int mapH = static_cast<int>(shape[2]);
+            int mapW = static_cast<int>(shape[3]);
+            
+            const float* mapData = anomalyMapTensor.data<float>();
+            cv::Mat mapFloat(mapH, mapW, CV_32F, const_cast<float*>(mapData));
+            
+            // 원본 이미지 크기로 리사이즈
+            cv::Mat resizedMap;
+            cv::resize(mapFloat, resizedMap, image.size());
+            
+            // 0~100 범위로 정규화
+            double minVal, maxVal;
+            cv::minMaxLoc(resizedMap, &minVal, &maxVal);
+            
+            if (maxVal > minVal) {
+                anomalyMap = (resizedMap - minVal) / (maxVal - minVal) * 100.0;
+            } else {
+                anomalyMap = cv::Mat::zeros(image.size(), CV_32F);
+            }
+        } else {
+            anomalyMap = cv::Mat::zeros(image.size(), CV_32F);
+        }
+        
+        // 10. 판정
+        bool hasAnomaly = (anomalyScore > threshold);
+        
+        qDebug() << QString("[PatchCore] Score=%1, Threshold=%2, Result=%3")
+                        .arg(anomalyScore, 0, 'f', 4)
+                        .arg(threshold, 0, 'f', 4)
+                        .arg(hasAnomaly ? "Defect" : "Normal");
+        
+        return hasAnomaly;
+        
+    } catch (const std::exception& e) {
+        qCritical() << "[PatchCore] 추론 실패:" << e.what();
+        anomalyScore = 0.0f;
+        anomalyMap = cv::Mat::zeros(image.size(), CV_32F);
+        return false;
     }
 }
