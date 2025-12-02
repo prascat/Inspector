@@ -959,6 +959,7 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("passThreshold", QString::number(pattern.passThreshold));
     xml.writeAttribute("ssimNgThreshold", QString::number(pattern.ssimNgThreshold));
     xml.writeAttribute("allowedNgRatio", QString::number(pattern.allowedNgRatio));
+    xml.writeAttribute("anomalyMinBlobSize", QString::number(pattern.anomalyMinBlobSize));
     // invertResult 제거됨
     if (pattern.useRotation) xml.writeAttribute("useRotation", "true");
     xml.writeAttribute("minAngle", QString::number(pattern.minAngle));
@@ -1756,6 +1757,18 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     QString ssimNgStr = xml.attributes().value("ssimNgThreshold").toString();
     if (!ssimNgStr.isEmpty()) {
         pattern.ssimNgThreshold = ssimNgStr.toDouble();
+    }
+    
+    // allowedNgRatio 읽기
+    QString allowedNgRatioStr = xml.attributes().value("allowedNgRatio").toString();
+    if (!allowedNgRatioStr.isEmpty()) {
+        pattern.allowedNgRatio = allowedNgRatioStr.toDouble();
+    }
+    
+    // ANOMALY 최소 불량 크기 읽기
+    QString anomalyMinBlobSizeStr = xml.attributes().value("anomalyMinBlobSize").toString();
+    if (!anomalyMinBlobSizeStr.isEmpty()) {
+        pattern.anomalyMinBlobSize = anomalyMinBlobSizeStr.toInt();
     }
     
     // SSIM 허용 NG 비율 읽기

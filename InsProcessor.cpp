@@ -35,17 +35,16 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
 
     // 검사 시작 로그 (모드 정보 포함)
     QString modeName = (stripCrimpMode == 0) ? "STRIP" : "CRIMP";
-    logDebug(QString("검사 시작 - %1").arg(modeName));
     
-    // 디버그: 활성화된 INS 패턴 목록
+    // 활성화된 INS 패턴 개수 카운트
     int insCount = 0;
     for (const PatternInfo &p : patterns) {
         if (p.type == PatternType::INS && p.enabled && p.stripCrimpMode == stripCrimpMode) {
-            logDebug(QString("  INS 패턴: '%1', method=%2").arg(p.name).arg(p.inspectionMethod));
             insCount++;
         }
     }
-    logDebug(QString("  총 %1개 INS 패턴 활성화됨").arg(insCount));
+    
+    logDebug(QString("검사 시작 - %1 (%2개 패턴)").arg(modeName).arg(insCount));
 
     result.isPassed = true;
     
@@ -431,11 +430,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                         maskMat  // 마스크 전달
                     );
 
-                    logDebug(QString("INS 패턴 '%1': performTemplateMatching 결과 - matched=%2, score=%3%, angle=%4°")
-                                 .arg(pattern.name)
-                                 .arg(matched)
-                                 .arg(matchScore * 100.0, 0, 'f', 1)
-                                 .arg(matchAngle, 0, 'f', 1));
+                    // 패턴 매칭 완료
 
                     if (matched && (matchScore * 100.0) >= pattern.patternMatchThreshold)
                     {
@@ -443,13 +438,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                         int matchedCenterX = searchROI.x + matchLoc.x;
                         int matchedCenterY = searchROI.y + matchLoc.y;
 
-                        logDebug(QString("INS 패턴 '%1': 패턴 매칭 성공 - 원본(%2,%3,%4°) → 매칭(%5,%6,%7°), Score=%8%")
-                                     .arg(pattern.name)
-                                     .arg(static_cast<int>(pattern.rect.center().x()))
-                                     .arg(static_cast<int>(pattern.rect.center().y()))
-                                     .arg(pattern.angle, 0, 'f', 1)
-                                     .arg(matchedCenterX).arg(matchedCenterY).arg(matchAngle, 0, 'f', 1)
-                                     .arg(matchScore * 100.0, 0, 'f', 1));
+                        // 패턴 매칭 성공
 
                         // 검사 영역을 매칭된 위치로 업데이트
                         adjustedRect = QRect(
@@ -587,10 +576,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                                             static_cast<int>(p.rect.width()),
                                             static_cast<int>(p.rect.height())
                                         );
-                                        logDebug(QString("INS 패턴 '%1': [FID기반] ROI 검색 영역=%2,%3,%4x%5")
-                                                     .arg(pattern.name)
-                                                     .arg(searchROI.x).arg(searchROI.y)
-                                                     .arg(searchROI.width).arg(searchROI.height));
                                         break;
                                     }
                                 }
@@ -638,9 +623,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
 
                                 if (templateMat.empty())
                                 {
-                                    logDebug(QString("INS 패턴 '%1': [FID기반] matchTemplate 변환 실패 - empty()=%2")
-                                                 .arg(pattern.name)
-                                                 .arg(templateMat.empty()));
+                                    // 변환 실패
                                 }
                                 else
                                 {
@@ -655,11 +638,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                                             const_cast<uchar*>(pattern.matchTemplateMask.bits()),
                                             pattern.matchTemplateMask.bytesPerLine()
                                         ).clone();
-                                        
-                                        logDebug(QString("INS 패턴 '%1': [FID기반] 마스크 로드됨 - 크기=%2x%3")
-                                                    .arg(pattern.name)
-                                                    .arg(maskMat.cols)
-                                                    .arg(maskMat.rows));
                                     }
                                     
                                     // 검색 영역 추출
@@ -688,14 +666,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                                         // 패턴 매칭 성공 - Fine 위치/각도로 업데이트
                                         int fineX = searchROI.x + matchLoc.x;
                                         int fineY = searchROI.y + matchLoc.y;
-
-                                        logDebug(QString("INS 패턴 '%1': 패턴 매칭 성공 - Coarse(%2,%3,%4°) → Fine(%5,%6,%7°), Score=%8%")
-                                                     .arg(pattern.name)
-                                                     .arg(coarseCenter.x).arg(coarseCenter.y).arg(coarseAngle, 0, 'f', 1)
-                                                     .arg(fineX).arg(fineY).arg(matchAngle, 0, 'f', 1)
-                                                     .arg(matchScore * 100.0, 0, 'f', 1));
-
-                                        // Fine 위치로 fidLoc 업데이트
+                                        
                                         fidLoc.x = fineX;
                                         fidLoc.y = fineY;
                                         parentAngle = matchAngle;
@@ -708,10 +679,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                                     }
                                     else
                                     {
-                                        logDebug(QString("INS 패턴 '%1': 패턴 매칭 실패 (Score=%2% < Threshold=%3%), Coarse 위치 사용")
-                                                     .arg(pattern.name)
-                                                     .arg(matchScore * 100.0, 0, 'f', 1)
-                                                     .arg(pattern.patternMatchThreshold, 0, 'f', 1));
+                                        // 매칭 실패 - Coarse 위치 사용
                                     }
                                 }
                             }
@@ -873,7 +841,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             case InspectionMethod::ANOMALY:
             {
                 inspPassed = checkAnomaly(image, adjustedPattern, inspScore, result);
-                logDebug(QString("ANOMALY 검사 수행: %1 (method=%2)").arg(pattern.name).arg(pattern.inspectionMethod));
+                // ANOMALY 검사 수행
                 break;
             }
 
@@ -919,20 +887,74 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 insResultText = "NG";
             }
 
-            logDebug(QString("%1: %2 [%3/%4]")
-                         .arg(pattern.name)
-                         .arg(insResultText)
-                         .arg(QString::number(inspScore * 100.0, 'f', 1))
-                         .arg(QString::number(pattern.passThreshold, 'f', 1)));
-
-            // STRIP 검사인 경우 세부 결과 출력
-            if (pattern.inspectionMethod == InspectionMethod::STRIP && !result.stripPatternName.isEmpty())
+            // 검사 방법별 결과 포맷팅
+            QString resultDetail;
+            if (pattern.inspectionMethod == InspectionMethod::ANOMALY)
             {
-                logDebug(QString("%1 STRIP LENGTH: %2 %3").arg(result.stripPatternName).arg(result.stripLengthResult).arg(result.stripLengthDetail));
-                logDebug(QString("%1 FRONT: %2 %3").arg(result.stripPatternName).arg(result.frontResult).arg(result.frontDetail));
-                logDebug(QString("%1 REAR: %2 %3").arg(result.stripPatternName).arg(result.rearResult).arg(result.rearDetail));
-                logDebug(QString("%1 EDGE: %2 %3").arg(result.stripPatternName).arg(result.edgeResult).arg(result.edgeDetail));
+                // ANOMALY: 불량 개수 표시
+                int defectCount = result.anomalyDefectContours.value(pattern.id).size();
+                if (defectCount > 0) {
+                    resultDetail = QString("  %1: %2 ANOMALY[%3/%4] defects:%5")
+                                       .arg(pattern.name)
+                                       .arg(insResultText)
+                                       .arg(QString::number(inspScore * 100.0, 'f', 1))
+                                       .arg(QString::number(pattern.passThreshold, 'f', 1))
+                                       .arg(defectCount);
+                } else {
+                    resultDetail = QString("  %1: %2 ANOMALY[%3/%4]")
+                                       .arg(pattern.name)
+                                       .arg(insResultText)
+                                       .arg(QString::number(inspScore * 100.0, 'f', 1))
+                                       .arg(QString::number(pattern.passThreshold, 'f', 1));
+                }
             }
+            else if (pattern.inspectionMethod == InspectionMethod::STRIP)
+            {
+                // STRIP: 세부 결과 한 줄로
+                QStringList stripDetails;
+                if (result.frontResult != "PASS") stripDetails << QString("FRONT:%1").arg(result.frontDetail);
+                if (result.rearResult != "PASS") stripDetails << QString("REAR:%1").arg(result.rearDetail);
+                if (result.edgeResult != "PASS") stripDetails << QString("EDGE:%1").arg(result.edgeDetail);
+                
+                if (stripDetails.isEmpty()) {
+                    resultDetail = QString("  %1: %2 STRIP[%3/%4]")
+                                       .arg(pattern.name)
+                                       .arg(insResultText)
+                                       .arg(QString::number(inspScore * 100.0, 'f', 1))
+                                       .arg(QString::number(pattern.passThreshold, 'f', 1));
+                } else {
+                    resultDetail = QString("  %1: %2 STRIP[%3/%4] %5")
+                                       .arg(pattern.name)
+                                       .arg(insResultText)
+                                       .arg(QString::number(inspScore * 100.0, 'f', 1))
+                                       .arg(QString::number(pattern.passThreshold, 'f', 1))
+                                       .arg(stripDetails.join(" "));
+                }
+            }
+            else if (pattern.inspectionMethod == InspectionMethod::CRIMP)
+            {
+                // CRIMP: YOLO 검출 정보
+                bool crimpLeft = result.barrelLeftResults.value(pattern.id, false);
+                bool crimpRight = result.barrelRightResults.value(pattern.id, false);
+                resultDetail = QString("  %1: %2 CRIMP[%3/%4] L:%5 R:%6")
+                                   .arg(pattern.name)
+                                   .arg(insResultText)
+                                   .arg(QString::number(inspScore * 100.0, 'f', 1))
+                                   .arg(QString::number(pattern.passThreshold, 'f', 1))
+                                   .arg(crimpLeft ? "PASS" : "FAIL")
+                                   .arg(crimpRight ? "PASS" : "FAIL");
+            }
+            else
+            {
+                // 기본 형식 (SSIM 등)
+                resultDetail = QString("  %1: %2 [%3/%4]")
+                                   .arg(pattern.name)
+                                   .arg(insResultText)
+                                   .arg(QString::number(inspScore * 100.0, 'f', 1))
+                                   .arg(QString::number(pattern.passThreshold, 'f', 1));
+            }
+            
+            logDebug(resultDetail);
 
             // 전체 결과 갱신
             result.isPassed = result.isPassed && inspPassed;
@@ -943,11 +965,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     // 전체 검사 결과 로그
     QString resultText = result.isPassed ? "PASS" : "NG";
 
-    // qDebug() << "[검사 최종] result.isPassed =" << result.isPassed << "→" << resultText;
-
-    logDebug(QString("전체 검사 결과: %1").arg(resultText));
-
-    logDebug(QString("검사 종료 - %1").arg(modeName));
+    logDebug(QString("검사 종료 - %1: %2").arg(modeName).arg(resultText));
 
     return result;
 }
@@ -1419,25 +1437,12 @@ bool InsProcessor::performTemplateMatching(const cv::Mat &image, const cv::Mat &
                 int totalPixels = maskForMatching.rows * maskForMatching.cols;
                 double maskRatio = (double)nonZeroPixels / totalPixels * 100.0;
                 
-                logDebug(QString("각도 %1°: 마스크 사용 - 크기=%2x%3, 유효픽셀=%4/%5 (%6%)")
-                            .arg(currentAngle, 0, 'f', 1)
-                            .arg(maskForMatching.cols)
-                            .arg(maskForMatching.rows)
-                            .arg(nonZeroPixels)
-                            .arg(totalPixels)
-                            .arg(maskRatio, 0, 'f', 1));
-                
+                // 마스크 사용 템플릿 매칭
                 cv::matchTemplate(imageGray, templateForMatching, result, matchMethod, maskForMatching);
             }
             else
             {
-                if (std::abs(currentAngle - pattern.angle) < 0.1)
-                {
-                    logDebug(QString("각도 %1°: 마스크 없음 - 템플릿 크기=%2x%3")
-                                .arg(currentAngle, 0, 'f', 1)
-                                .arg(templateForMatching.cols)
-                                .arg(templateForMatching.rows));
-                }
+                // 마스크 없이 템플릿 매칭
                 cv::matchTemplate(imageGray, templateForMatching, result, matchMethod);
             }
         }
@@ -2242,12 +2247,6 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
                      static_cast<int>(rectF.width()), 
                      static_cast<int>(rectF.height()));
     
-    logDebug(QString("ANOMALY ROI: 패턴='%1', 전체 이미지=%2x%3, 변환된 좌표=(%4,%5,%6,%7)")
-                 .arg(pattern.name)
-                 .arg(image.cols).arg(image.rows)
-                 .arg(roiRect.x).arg(roiRect.y)
-                 .arg(roiRect.width).arg(roiRect.height));
-    
     // 범위 체크
     if (roiRect.x < 0 || roiRect.y < 0 ||
         roiRect.x + roiRect.width > result.globalAnomalyMap.cols ||
@@ -2263,10 +2262,6 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     
     // ROI 영역의 anomaly map만 추출
     cv::Mat roiAnomalyMap = result.globalAnomalyMap(roiRect).clone();
-    
-    logDebug(QString("ANOMALY ROI 추출: globalAnomalyMap 크기=%1x%2, ROI 히트맵 크기=%3x%4")
-                 .arg(result.globalAnomalyMap.cols).arg(result.globalAnomalyMap.rows)
-                 .arg(roiAnomalyMap.cols).arg(roiAnomalyMap.rows));
     
     // ROI 영역의 평균 anomaly score 계산 (0~100 범위)
     cv::Scalar meanVal = cv::mean(roiAnomalyMap);
@@ -2304,16 +2299,6 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     
     // Score 저장 (0~100 범위)
     score = static_cast<double>(roiAnomalyScore);
-    
-    logDebug(QString("ANOMALY 검사: 패턴 '%1', ROI Score=%2%, Threshold=%3%, 전체 덩어리=%4, 불량 개수=%5, 최소 크기=%6px, 최대 불량=%7px, 결과=%8")
-                 .arg(pattern.name)
-                 .arg(roiAnomalyScore, 0, 'f', 2)
-                 .arg(pattern.passThreshold, 0, 'f', 1)
-                 .arg(numBlobs)
-                 .arg(defectContours.size())
-                 .arg(pattern.anomalyMinBlobSize)
-                 .arg(maxDefectBlobSize)
-                 .arg(hasDefect ? "불량" : "양품"));
     
     // 불량 contour 저장 (ROI 상대좌표)
     result.anomalyDefectContours[pattern.id] = defectContours;
