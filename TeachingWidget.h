@@ -559,6 +559,8 @@ private:
     // ANOMALY 검사 전용 위젯들
     QWidget* anomalySettingsWidget = nullptr;
     QSpinBox* anomalyMinBlobSizeSpin = nullptr;
+    QSpinBox* anomalyMinDefectWidthSpin = nullptr;
+    QSpinBox* anomalyMinDefectHeightSpin = nullptr;
     QPushButton* anomalyTrainButton = nullptr;  // ANOMALY 학습 버튼
 
     // 패턴 기본 정보 관련 위젯들

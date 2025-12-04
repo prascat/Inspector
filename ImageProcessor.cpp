@@ -2851,14 +2851,7 @@ int ImageProcessor::s_yoloNumClasses = 80;  // COCO default, 실제 모델에 �
 int ImageProcessor::s_yoloMaskSize = 160;   // YOLO11-seg mask prototype size
 
 // PatchCore
-std::shared_ptr<ov::CompiledModel> ImageProcessor::s_patchCoreModel = nullptr;
-std::shared_ptr<ov::InferRequest> ImageProcessor::s_patchCoreInferRequest = nullptr;
-bool ImageProcessor::s_patchCoreModelLoaded = false;
-QString ImageProcessor::s_patchCoreCurrentModelPath = "";
-int ImageProcessor::s_patchCoreInputWidth = 224;
-int ImageProcessor::s_patchCoreInputHeight = 224;
-float ImageProcessor::s_patchCoreNormMin = 17.0f;
-float ImageProcessor::s_patchCoreNormMax = 50.0f;
+QMap<QString, ImageProcessor::PatchCoreModelInfo> ImageProcessor::s_patchCoreModels;
 
 bool ImageProcessor::initYoloSegModel(const QString& modelPath, const QString& device)
 {
@@ -3361,12 +3354,8 @@ bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString&
 {
     try {
         // 같은 모델이 이미 로드되어 있으면 스킵
-        if (s_patchCoreModelLoaded && s_patchCoreCurrentModelPath == modelPath) {
+        if (s_patchCoreModels.contains(modelPath)) {
             return true;  // 이미 로드됨
-        }
-        
-        if (s_patchCoreModelLoaded) {
-            releasePatchCoreModel();
         }
         
         // norm_stats.txt 읽기 (모델과 같은 폴더에 위치)
@@ -3374,9 +3363,7 @@ bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString&
         QString normStatsPath = modelFileInfo.absolutePath() + "/norm_stats.txt";
         QFile normStatsFile(normStatsPath);
         
-        // 기본값 설정
-        s_patchCoreNormMin = 17.0f;
-        s_patchCoreNormMax = 50.0f;
+        PatchCoreModelInfo modelInfo;
         
         if (normStatsFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
             QTextStream in(&normStatsFile);
@@ -3395,10 +3382,9 @@ bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString&
             
             // 정규화 범위 계산: mean - 여유 ~ max + 여유
             if (meanPixel > 0 && maxPixel > 0) {
-                s_patchCoreNormMin = meanPixel - 10.0f;  // 양품 평균보다 여유 있게
-                s_patchCoreNormMax = maxPixel + 20.0f;   // 불량 감지를 위해 여유 있게
+                modelInfo.normMin = meanPixel - 10.0f;  // 양품 평균보다 여유 있게
+                modelInfo.normMax = maxPixel + 20.0f;   // 불량 감지를 위해 여유 있게
             }
-        } else {
         }
         
         // OpenVINO Core 생성 (YOLO와 공유)
@@ -3409,69 +3395,70 @@ bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString&
         // 모델 읽기
         std::shared_ptr<ov::Model> model = s_ovinoCore->read_model(modelPath.toStdString());
         
-        // 동적 shape를 고정 shape로 변환 (PatchCore는 기본적으로 224x224)
-        s_patchCoreInputHeight = 224;
-        s_patchCoreInputWidth = 224;
-        
         // 입력 이름 가져오기
         auto inputs = model->inputs();
         if (!inputs.empty()) {
             std::string input_name = inputs[0].get_any_name();
             
             std::map<std::string, ov::PartialShape> new_shapes;
-            new_shapes[input_name] = ov::PartialShape({1, 3, static_cast<long>(s_patchCoreInputHeight), static_cast<long>(s_patchCoreInputWidth)});
+            new_shapes[input_name] = ov::PartialShape({1, 3, static_cast<long>(modelInfo.inputHeight), static_cast<long>(modelInfo.inputWidth)});
             model->reshape(new_shapes);
         }
         
         // 모델 컴파일
         auto compiled = s_ovinoCore->compile_model(model, device.toStdString());
-        s_patchCoreModel = std::make_shared<ov::CompiledModel>(std::move(compiled));
+        modelInfo.model = std::make_shared<ov::CompiledModel>(std::move(compiled));
         
         // 추론 요청 생성
-        s_patchCoreInferRequest = std::make_shared<ov::InferRequest>(
-            s_patchCoreModel->create_infer_request()
+        modelInfo.inferRequest = std::make_shared<ov::InferRequest>(
+            modelInfo.model->create_infer_request()
         );
         
-        s_patchCoreModelLoaded = true;
-        s_patchCoreCurrentModelPath = modelPath;  // 현재 로드된 모델 경로 저장
+        // Map에 저장
+        s_patchCoreModels[modelPath] = modelInfo;
+        
         return true;
         
     } catch (const std::exception& e) {
         qCritical() << "[ANOMALY] 모델 로딩 실패:" << e.what();
-        releasePatchCoreModel();
+        s_patchCoreModels.remove(modelPath);
         return false;
     }
 }
 
 void ImageProcessor::releasePatchCoreModel()
 {
-    s_patchCoreInferRequest.reset();
-    s_patchCoreModel.reset();
-    s_patchCoreModelLoaded = false;
-    s_patchCoreCurrentModelPath = "";
-    qDebug() << "[ANOMALY] 이상탐지 모델 해제됨";
+    s_patchCoreModels.clear();
+    qDebug() << "[ANOMALY] 모든 이상탐지 모델 해제됨";
 }
 
 bool ImageProcessor::isPatchCoreModelLoaded()
 {
-    return s_patchCoreModelLoaded;
+    return !s_patchCoreModels.isEmpty();
 }
 
 bool ImageProcessor::runPatchCoreInference(
+    const QString& modelPath,
     const cv::Mat& image,
     float& anomalyScore,
     cv::Mat& anomalyMap,
     float threshold)
 {
-    if (!s_patchCoreModelLoaded || !s_patchCoreInferRequest) {
-        qWarning() << "[ANOMALY] 모델이 로드되지 않음";
+    if (!s_patchCoreModels.contains(modelPath)) {
+        qWarning() << "[ANOMALY] 모델이 로드되지 않음:" << modelPath;
+        return false;
+    }
+    
+    const PatchCoreModelInfo& modelInfo = s_patchCoreModels[modelPath];
+    if (!modelInfo.inferRequest) {
+        qWarning() << "[ANOMALY] InferRequest가 유효하지 않음";
         return false;
     }
     
     try {
         // 1. 전처리: 224x224 리사이즈
         cv::Mat resized;
-        cv::resize(image, resized, cv::Size(s_patchCoreInputWidth, s_patchCoreInputHeight));
+        cv::resize(image, resized, cv::Size(modelInfo.inputWidth, modelInfo.inputHeight));
         
         // 2. BGR -> RGB 변환
         cv::Mat rgb;
@@ -3502,10 +3489,10 @@ bool ImageProcessor::runPatchCoreInference(
         cv::split(normalized, channelsChw);
         
         // 5. 입력 텐서 생성 (1, 3, H, W)
-        auto inputTensor = s_patchCoreInferRequest->get_input_tensor();
+        auto inputTensor = modelInfo.inferRequest->get_input_tensor();
         float* inputData = inputTensor.data<float>();
         
-        int channelSize = s_patchCoreInputHeight * s_patchCoreInputWidth;
+        int channelSize = modelInfo.inputHeight * modelInfo.inputWidth;
         for (int c = 0; c < 3; c++) {
             std::memcpy(inputData + c * channelSize,
                        channelsChw[c].ptr<float>(),
@@ -3513,11 +3500,10 @@ bool ImageProcessor::runPatchCoreInference(
         }
         
         // 6. 추론 실행
-        s_patchCoreInferRequest->infer();
+        modelInfo.inferRequest->infer();
         
         // 7. 결과 파싱
-        // 출력: anomaly_map (1,1,H,W), pred_score (1,) - 인덱스로 접근
-        auto outputs = s_patchCoreInferRequest->get_compiled_model().outputs();
+        auto outputs = modelInfo.inferRequest->get_compiled_model().outputs();
         
         ov::Tensor anomalyMapTensor;
         ov::Tensor predScoreTensor;
@@ -3525,8 +3511,8 @@ bool ImageProcessor::runPatchCoreInference(
         // 출력 텐서를 인덱스로 직접 가져오기 (이름 없는 경우 대비)
         if (outputs.size() >= 2) {
             // 첫 번째: anomaly_map (4차원), 두 번째: pred_score (1차원)
-            auto tensor0 = s_patchCoreInferRequest->get_output_tensor(0);
-            auto tensor1 = s_patchCoreInferRequest->get_output_tensor(1);
+            auto tensor0 = modelInfo.inferRequest->get_output_tensor(0);
+            auto tensor1 = modelInfo.inferRequest->get_output_tensor(1);
             
             // 차원 수로 구분 (anomaly_map은 4D, pred_score는 1D 또는 2D)
             if (tensor0.get_shape().size() == 4) {
@@ -3538,15 +3524,15 @@ bool ImageProcessor::runPatchCoreInference(
             }
         } else if (outputs.size() == 1) {
             // 단일 출력인 경우 anomaly_map으로 간주
-            anomalyMapTensor = s_patchCoreInferRequest->get_output_tensor(0);
+            anomalyMapTensor = modelInfo.inferRequest->get_output_tensor(0);
         }
         
         // pred_score가 없으면 첫 번째 출력 사용
         if (!predScoreTensor) {
-            predScoreTensor = s_patchCoreInferRequest->get_output_tensor(0);
+            predScoreTensor = modelInfo.inferRequest->get_output_tensor(0);
         }
         if (!anomalyMapTensor && outputs.size() > 1) {
-            anomalyMapTensor = s_patchCoreInferRequest->get_output_tensor(1);
+            anomalyMapTensor = modelInfo.inferRequest->get_output_tensor(1);
         }
         
         // 8. Anomaly Score 추출
@@ -3570,11 +3556,8 @@ bool ImageProcessor::runPatchCoreInference(
             cv::Mat resizedMap;
             cv::resize(mapFloat, resizedMap, image.size());
             
-            // norm_stats.txt에서 로드한 정규화 기준값 사용
-            // s_patchCoreNormMin, s_patchCoreNormMax는 initPatchCoreModel에서 설정됨
-            
             // 0~100 범위로 정규화
-            anomalyMap = (resizedMap - s_patchCoreNormMin) / (s_patchCoreNormMax - s_patchCoreNormMin) * 100.0;
+            anomalyMap = (resizedMap - modelInfo.normMin) / (modelInfo.normMax - modelInfo.normMin) * 100.0;
             
             // 0~100 범위로 클리핑
             cv::threshold(anomalyMap, anomalyMap, 0.0, 0.0, cv::THRESH_TOZERO);  // 음수 제거

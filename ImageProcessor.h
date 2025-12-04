@@ -149,6 +149,7 @@ public:
     
     // PatchCore 추론 수행
     static bool runPatchCoreInference(
+        const QString& modelPath,
         const cv::Mat& image,
         float& anomalyScore,
         cv::Mat& anomalyMap,
@@ -156,6 +157,16 @@ public:
     );
 
 private:
+    // PatchCore 모델 정보 구조체
+    struct PatchCoreModelInfo {
+        std::shared_ptr<ov::CompiledModel> model;
+        std::shared_ptr<ov::InferRequest> inferRequest;
+        int inputWidth = 224;
+        int inputHeight = 224;
+        float normMin = 17.0f;
+        float normMax = 50.0f;
+    };
+    
     // OpenVINO 관련 static 멤버
     static std::shared_ptr<ov::Core> s_ovinoCore;
     
@@ -168,15 +179,8 @@ private:
     static int s_yoloNumClasses;
     static int s_yoloMaskSize;
     
-    // PatchCore 모델
-    static std::shared_ptr<ov::CompiledModel> s_patchCoreModel;
-    static std::shared_ptr<ov::InferRequest> s_patchCoreInferRequest;
-    static bool s_patchCoreModelLoaded;
-    static QString s_patchCoreCurrentModelPath;  // 현재 로드된 모델 경로
-    static int s_patchCoreInputWidth;
-    static int s_patchCoreInputHeight;
-    static float s_patchCoreNormMin;   // 정규화 최소값 (norm_stats.txt에서 로드)
-    static float s_patchCoreNormMax;   // 정규화 최대값 (norm_stats.txt에서 로드)
+    // PatchCore 모델 (패턴별로 여러 모델 지원)
+    static QMap<QString, PatchCoreModelInfo> s_patchCoreModels;  // key: 모델 경로
     
     // 전처리/후처리 헬퍼 함수
     static cv::Mat preprocessYoloInput(const cv::Mat& image, int targetWidth, int targetHeight, float& scale, int& padX, int& padY);

@@ -1682,11 +1682,11 @@ void TeachingWidget::setupLogOverlay()
     // 로그 오버레이 위젯 생성 - cameraView에 붙임
     logOverlayWidget = new QWidget(cameraView);
     
-    // 저장된 크기가 있으면 적용, 없으면 기본값
+    // 저장된 크기가 있으면 적용, 없으면 기본값 (위치는 나중에 설정)
     if (savedGeometry.isValid() && savedGeometry.width() > 0 && savedGeometry.height() > 0) {
-        logOverlayWidget->setFixedSize(savedGeometry.width(), savedGeometry.height());
+        logOverlayWidget->resize(savedGeometry.width(), savedGeometry.height());
     } else {
-        logOverlayWidget->setFixedSize(800, 144);
+        logOverlayWidget->resize(800, 144);
     }
     logOverlayWidget->setStyleSheet(
         "QWidget {"
@@ -1694,6 +1694,10 @@ void TeachingWidget::setupLogOverlay()
         "  border: 2px solid rgba(100, 100, 100, 150);"
         "}");
     logOverlayWidget->installEventFilter(this);
+    
+    // 마우스 추적 활성화 (드래그/리사이즈용)
+    logOverlayWidget->setMouseTracking(true);
+    logOverlayWidget->setAttribute(Qt::WA_Hover, true);
 
     QVBoxLayout *logLayout = new QVBoxLayout(logOverlayWidget);
     logLayout->setContentsMargins(5, 5, 5, 5);
@@ -1749,12 +1753,24 @@ void TeachingWidget::setupLogOverlay()
     
     logLayout->addWidget(logTextEdit);
 
+    // 드래그 및 리사이즈를 위한 변수 초기화
+    logDragging = false;
+    logResizing = false;
+    
     // 오버레이 표시
     logOverlayWidget->show();
     logOverlayWidget->raise();
 
-    // 위치 설정
-    updateLogOverlayPosition();
+    // 초기 위치 설정 (저장된 위치가 있으면 적용, 없으면 기본 위치)
+    // cameraView가 완전히 초기화될 때까지 대기
+    QTimer::singleShot(500, this, [this, savedGeometry]() {
+        if (savedGeometry.isValid() && savedGeometry.width() > 0 && savedGeometry.height() > 0) {
+            // cameraView 기준 상대 좌표로 복원
+            logOverlayWidget->setGeometry(savedGeometry);
+        } else {
+            updateLogOverlayPosition();
+        }
+    });
 }
 
 void TeachingWidget::setupStatusPanel()
@@ -3880,6 +3896,17 @@ void TeachingWidget::createPropertyPanels()
     anomalyMinBlobSizeSpin->setValue(10);
     anomalyLayout->addRow("최소 불량 크기 (px):", anomalyMinBlobSizeSpin);
     
+    // 최소 불량 너비/높이
+    anomalyMinDefectWidthSpin = new QSpinBox(anomalySettingsWidget);
+    anomalyMinDefectWidthSpin->setRange(1, 1000);
+    anomalyMinDefectWidthSpin->setValue(5);
+    anomalyLayout->addRow("최소 불량 W (px):", anomalyMinDefectWidthSpin);
+    
+    anomalyMinDefectHeightSpin = new QSpinBox(anomalySettingsWidget);
+    anomalyMinDefectHeightSpin->setRange(1, 1000);
+    anomalyMinDefectHeightSpin->setValue(5);
+    anomalyLayout->addRow("최소 불량 H (px):", anomalyMinDefectHeightSpin);
+    
     // Train 버튼 추가
     anomalyTrainButton = new QPushButton("Train", anomalySettingsWidget);
     anomalyTrainButton->setStyleSheet(
@@ -4725,6 +4752,38 @@ void TeachingWidget::createPropertyPanels()
         }
     });
     
+    connect(anomalyMinDefectWidthSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int value) {
+        if (cameraView) {
+            QUuid currentSelectedId = cameraView->getSelectedPatternId();
+            if (!currentSelectedId.isNull()) {
+                QList<PatternInfo>& allPatterns = cameraView->getPatterns();
+                for (PatternInfo& pattern : allPatterns) {
+                    if (pattern.id == currentSelectedId && pattern.type == PatternType::INS) {
+                        pattern.anomalyMinDefectWidth = value;
+                        cameraView->viewport()->update();
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    
+    connect(anomalyMinDefectHeightSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int value) {
+        if (cameraView) {
+            QUuid currentSelectedId = cameraView->getSelectedPatternId();
+            if (!currentSelectedId.isNull()) {
+                QList<PatternInfo>& allPatterns = cameraView->getPatterns();
+                for (PatternInfo& pattern : allPatterns) {
+                    if (pattern.id == currentSelectedId && pattern.type == PatternType::INS) {
+                        pattern.anomalyMinDefectHeight = value;
+                        cameraView->viewport()->update();
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    
     // ANOMALY Train 버튼 연결
     connect(anomalyTrainButton, &QPushButton::clicked, [this]() {
         if (!cameraView) return;
@@ -5046,8 +5105,6 @@ void TeachingWidget::createPropertyPanels()
         
         connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
                 [this, process, tempDir, pattern, outputDir, trainProgress](int exitCode, QProcess::ExitStatus exitStatus) {
-            trainProgress->close();
-            trainProgress->deleteLater();
             
             QString output = process->readAllStandardOutput();
             QString error = process->readAllStandardError();
@@ -5096,17 +5153,27 @@ void TeachingWidget::createPropertyPanels()
             // 임시 폴더 삭제
             QDir(tempDir).removeRecursively();
             
-            // 프로세스 정리
+            // 프로그레스 다이얼로그 정리
+            if (trainProgress) {
+                trainProgress->close();
+                trainProgress->deleteLater();
+            }
+            
+            // 프로세스 정리 (모든 시그널 연결 해제 후 삭제)
             if (dockerTrainProcess == process) {
                 dockerTrainProcess = nullptr;
             }
+            process->disconnect();
             process->deleteLater();
         });
         
         // 취소 버튼 연결
         connect(trainProgress, &QProgressDialog::canceled, [process, trainProgress]() {
-            if (process->state() == QProcess::Running) {
+            if (process && process->state() == QProcess::Running) {
+                process->disconnect();
                 process->kill();
+                process->waitForFinished(3000);
+                process->deleteLater();
                 QMessageBox::information(trainProgress, "취소됨", "학습이 취소되었습니다.");
             }
         });
@@ -5115,17 +5182,23 @@ void TeachingWidget::createPropertyPanels()
         trainProgress->show();
         
         if (!process->waitForStarted()) {
-            trainProgress->close();
-            trainProgress->deleteLater();
             QString errorMsg = process->errorString();
-            QMessageBox::critical(this, "오류", QString("Docker 스크립트 실행 실패\n%1").arg(errorMsg));
             qDebug() << "[ANOMALY TRAIN] 실행 실패:" << errorMsg;
+            
+            // 프로그레스 다이얼로그 정리
+            if (trainProgress) {
+                trainProgress->close();
+                trainProgress->deleteLater();
+            }
+            
+            QMessageBox::critical(this, "오류", QString("Docker 스크립트 실행 실패\n%1").arg(errorMsg));
             QDir(tempDir).removeRecursively();
             
             // 프로세스 정리
             if (dockerTrainProcess == process) {
                 dockerTrainProcess = nullptr;
             }
+            process->disconnect();
             process->deleteLater();
         }
     });
@@ -8249,6 +8322,20 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                             anomalyMinBlobSizeSpin->blockSignals(false);
                         }
                         
+                        if (anomalyMinDefectWidthSpin)
+                        {
+                            anomalyMinDefectWidthSpin->blockSignals(true);
+                            anomalyMinDefectWidthSpin->setValue(pattern->anomalyMinDefectWidth);
+                            anomalyMinDefectWidthSpin->blockSignals(false);
+                        }
+                        
+                        if (anomalyMinDefectHeightSpin)
+                        {
+                            anomalyMinDefectHeightSpin->blockSignals(true);
+                            anomalyMinDefectHeightSpin->setValue(pattern->anomalyMinDefectHeight);
+                            anomalyMinDefectHeightSpin->blockSignals(false);
+                        }
+                        
                         // Train 버튼 상태 업데이트 (모델 파일 존재 여부 확인)
                         if (anomalyTrainButton)
                         {
@@ -10784,11 +10871,11 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
-    // **cameraView 리사이즈 이벤트 - 미리보기 오버레이 및 상태 패널 위치 재조정**
+    // **cameraView 리사이즈 이벤트 - 상태 패널 위치 재조정**
     if (watched == cameraView && event->type() == QEvent::Resize)
     {
         updateStatusPanelPosition();
-        updateLogOverlayPosition();
+        // 로그창 위치는 사용자가 지정한 위치 유지 (강제 이동 제거)
         return QWidget::eventFilter(watched, event);
     }
 
@@ -10815,7 +10902,7 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event)
                 QPoint currentPos = logOverlayWidget->pos();
                 int heightDiff = logOverlayWidget->height() - newHeight;
 
-                logOverlayWidget->setFixedHeight(newHeight);
+                logOverlayWidget->resize(logOverlayWidget->width(), newHeight);
                 logOverlayWidget->move(currentPos.x(), currentPos.y() + heightDiff);
                 return true;
             }
@@ -12403,7 +12490,7 @@ void TeachingWidget::switchToTestMode()
         receiveLogMessage("검사 모드로 전환되었습니다.");
         logOverlayWidget->show();
         logOverlayWidget->raise();
-        updateLogOverlayPosition();
+        // 로그창 위치는 사용자가 지정한 위치 유지 (강제 이동 제거)
     }
 
     cameraView->setInspectionMode(true);
@@ -13663,12 +13750,6 @@ TeachingWidget::~TeachingWidget()
 {
     qDebug() << "[~TeachingWidget] 소멸자 시작";
     
-    // 0. 로그창 설정 저장
-    if (logOverlayWidget) {
-        ConfigManager::instance()->setLogPanelGeometry(logOverlayWidget->geometry());
-        ConfigManager::instance()->setLogPanelCollapsed(!logOverlayWidget->isVisible());
-    }
-    
     // 1. 먼저 모든 스레드 중지 (카메라 사용 중지)
     qDebug() << "[~TeachingWidget] 카메라 스레드 중지 시작";
     for (CameraGrabberThread *thread : cameraThreads)
@@ -13708,9 +13789,14 @@ TeachingWidget::~TeachingWidget()
     // 4. Docker 학습 프로세스 종료
     if (dockerTrainProcess && dockerTrainProcess->state() == QProcess::Running) {
         qDebug() << "[~TeachingWidget] Docker 학습 프로세스 종료 중...";
+        dockerTrainProcess->disconnect();  // 모든 시그널 연결 해제
         dockerTrainProcess->kill();
         dockerTrainProcess->waitForFinished(3000);
         qDebug() << "[~TeachingWidget] Docker 학습 프로세스 종료 완료";
+    }
+    if (dockerTrainProcess) {
+        delete dockerTrainProcess;
+        dockerTrainProcess = nullptr;
     }
 
 #ifdef USE_SPINNAKER
@@ -15967,7 +16053,7 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
                         } else {
                             qDebug() << "[ANOMALY] 모델 로딩 실패 - 이상탐지 검사가 비활성화됩니다.";
                         }
-                        break; // 첫 번째 ANOMALY 패턴의 모델만 로드 (같은 모델이면 스킵됨)
+                        // break 제거 - 모든 ANOMALY 패턴의 모델을 로드
                     }
                 }
             }

@@ -393,10 +393,8 @@ QRect ConfigManager::getLogPanelGeometry() const {
 }
 
 void ConfigManager::setLogPanelGeometry(const QRect& geometry) {
-    if (m_logPanelGeometry != geometry) {
-        m_logPanelGeometry = geometry;
-        saveConfig();
-    }
+    m_logPanelGeometry = geometry;
+    saveConfig();  // 항상 저장
 }
 
 bool ConfigManager::getLogPanelCollapsed() const {

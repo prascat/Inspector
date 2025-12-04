@@ -48,7 +48,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     // 검사 시작 시간 측정
     auto startTime = std::chrono::high_resolution_clock::now();
     
-    logDebug(QString("[%1] Trigger ON (%2개 패턴)").arg(modeName).arg(insCount));
+    logDebug(QString("[%1] Trigger ON 검사시작 (%2개 패턴)").arg(modeName).arg(insCount));
 
     result.isPassed = true;
     
@@ -855,20 +855,30 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             QString resultDetail;
             if (pattern.inspectionMethod == InspectionMethod::ANOMALY)
             {
-                // ANOMALY: 불량 개수 표시
+                // ANOMALY: 불량 개수 및 최대 W/H 표시
                 int defectCount = result.anomalyDefectContours.value(pattern.id).size();
                 if (defectCount > 0) {
-                    // 최대 컨투어 크기 찾기
+                    // 최대 컨투어 크기 및 W/H 찾기
                     int maxContourSize = 0;
+                    int maxW = 0, maxH = 0;
                     for (const auto& contour : result.anomalyDefectContours.value(pattern.id)) {
                         int size = static_cast<int>(cv::contourArea(contour));
-                        if (size > maxContourSize) maxContourSize = size;
+                        cv::Rect bbox = cv::boundingRect(contour);
+                        if (size > maxContourSize) {
+                            maxContourSize = size;
+                            maxW = bbox.width;
+                            maxH = bbox.height;
+                        }
                     }
-                    resultDetail = QString("  %1: %2 ANOMALY[%3>%4] defects:%5")
+                    resultDetail = QString("  %1: %2 ANOMALY[%3>%4 W:%5/%6 H:%7/%8] defects:%9")
                                        .arg(pattern.name)
                                        .arg(insResultText)
                                        .arg(maxContourSize)
                                        .arg(pattern.anomalyMinBlobSize)
+                                       .arg(maxW)
+                                       .arg(pattern.anomalyMinDefectWidth)
+                                       .arg(maxH)
+                                       .arg(pattern.anomalyMinDefectHeight)
                                        .arg(defectCount);
                 } else {
                     resultDetail = QString("  %1: %2")
@@ -945,7 +955,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
     
-    logDebug(QString("[%1] %2 (%3ms)").arg(modeName).arg(resultText).arg(duration.count()));
+    logDebug(QString("[%1] %2 검사종료 (%3ms)").arg(modeName).arg(resultText).arg(duration.count()));
 
     return result;
 }
@@ -2250,7 +2260,7 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     cv::Mat anomalyMap;
     float anomalyScore = 0.0f;
     
-    if (!ImageProcessor::runPatchCoreInference(roiImage, anomalyScore, anomalyMap, 0.0f))
+    if (!ImageProcessor::runPatchCoreInference(fullModelPath, roiImage, anomalyScore, anomalyMap, 0.0f))
     {
         logDebug(QString("ANOMALY 검사 실패: PatchCore 추론 실패 - 패턴 '%1'").arg(pattern.name));
         score = 0.0;
@@ -2284,14 +2294,21 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(binaryMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
     
-    // anomalyMinBlobSize 이상의 덩어리가 있는지 확인 및 불량 contour 저장
+    // anomalyMinBlobSize 또는 W/H 기준으로 필터링
     bool hasDefect = false;
     int maxDefectBlobSize = 0;
     std::vector<std::vector<cv::Point>> defectContours;
     
     for (const auto& contour : contours) {
         int blobSize = static_cast<int>(cv::contourArea(contour));
-        if (blobSize >= pattern.anomalyMinBlobSize) {
+        cv::Rect bbox = cv::boundingRect(contour);
+        
+        // 면적 또는 W/H 중 하나라도 기준 이상이면 불량
+        bool sizeCheck = (blobSize >= pattern.anomalyMinBlobSize);
+        bool widthCheck = (bbox.width >= pattern.anomalyMinDefectWidth);
+        bool heightCheck = (bbox.height >= pattern.anomalyMinDefectHeight);
+        
+        if (sizeCheck || (widthCheck && heightCheck)) {
             hasDefect = true;
             
             // ROI 상대좌표를 절대좌표로 변환
@@ -2602,7 +2619,7 @@ bool InsProcessor::checkDiff(const cv::Mat &image, const PatternInfo &pattern, d
 void InsProcessor::logDebug(const QString &message)
 {
     QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
-    QString formattedMessage = QString("\"%1\" - \"%2\"").arg(timestamp).arg(message);
+    QString formattedMessage = QString("%1 - %2").arg(timestamp).arg(message);
     emit logMessage(formattedMessage);
 }
 
@@ -3053,8 +3070,9 @@ bool InsProcessor::checkStrip(const cv::Mat &image, const PatternInfo &pattern, 
         }
         else
         {
-            qDebug() << "경고: gradientPoints 개수 부족 (" << gradientPoints.size() << "/4)";
-            return true; // 검출 실패시 early return
+            logDebug("경고: gradientPoints 개수 부족 (" + QString::number(gradientPoints.size()) + "/4)");
+            score = 0.0;
+            return false; // FAIL 처리
         }
 
         // InspectionResult에 저장

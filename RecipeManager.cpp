@@ -862,6 +862,8 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
     xml.writeAttribute("ssimNgThreshold", QString::number(pattern.ssimNgThreshold));
     xml.writeAttribute("allowedNgRatio", QString::number(pattern.allowedNgRatio));
     xml.writeAttribute("anomalyMinBlobSize", QString::number(pattern.anomalyMinBlobSize));
+    xml.writeAttribute("anomalyMinDefectWidth", QString::number(pattern.anomalyMinDefectWidth));
+    xml.writeAttribute("anomalyMinDefectHeight", QString::number(pattern.anomalyMinDefectHeight));
     // invertResult 제거됨
     if (pattern.useRotation) xml.writeAttribute("useRotation", "true");
     xml.writeAttribute("minAngle", QString::number(pattern.minAngle));
@@ -1616,6 +1618,14 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     QString anomalyMinBlobSizeStr = xml.attributes().value("anomalyMinBlobSize").toString();
     if (!anomalyMinBlobSizeStr.isEmpty()) {
         pattern.anomalyMinBlobSize = anomalyMinBlobSizeStr.toInt();
+    }
+    QString anomalyMinDefectWidthStr = xml.attributes().value("anomalyMinDefectWidth").toString();
+    if (!anomalyMinDefectWidthStr.isEmpty()) {
+        pattern.anomalyMinDefectWidth = anomalyMinDefectWidthStr.toInt();
+    }
+    QString anomalyMinDefectHeightStr = xml.attributes().value("anomalyMinDefectHeight").toString();
+    if (!anomalyMinDefectHeightStr.isEmpty()) {
+        pattern.anomalyMinDefectHeight = anomalyMinDefectHeightStr.toInt();
     }
     
     // SSIM 허용 NG 비율 읽기

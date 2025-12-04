@@ -259,6 +259,8 @@ struct PatternInfo {
 
     // ANOMALY 검사 전용 파라미터
     int anomalyMinBlobSize = 10;    // 최소 불량 크기 (픽셀, 이 값 이상이면 불량)
+    int anomalyMinDefectWidth = 5;   // 최소 불량 너비 (px)
+    int anomalyMinDefectHeight = 5;  // 최소 불량 높이 (px)
 
     // STRIP 검사 전용 파라미터들
     int stripContourMargin = 10;        // 컨투어 검출 마진 (픽셀)
