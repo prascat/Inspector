@@ -5698,7 +5698,6 @@ void CameraView::saveInspectionResultForMode(int mode, const InspectionResult &r
         lastStripFrame = frame;
         lastStripPatterns = patterns; // 현재 패턴 상태 저장
         hasStripResult = true;
-        qDebug() << "[CameraView] STRIP 검사 결과 저장 완료 (패턴 수:" << patterns.size() << ")";
     }
     else
     { // CRIMP
@@ -5706,7 +5705,6 @@ void CameraView::saveInspectionResultForMode(int mode, const InspectionResult &r
         lastCrimpFrame = frame;
         lastCrimpPatterns = patterns; // 현재 패턴 상태 저장
         hasCrimpResult = true;
-        qDebug() << "[CameraView] CRIMP 검사 결과 저장 완료 (패턴 수:" << patterns.size() << ")";
     }
 }
 
@@ -5719,16 +5717,6 @@ void CameraView::saveCurrentResultForMode(int mode, const QPixmap &frame)
         lastStripFrame = frame;
         lastStripPatterns = patterns; // 현재 패턴 상태 저장 (각도 업데이트된 상태)
         hasStripResult = true;
-
-        // 디버그: 패턴 각도 확인
-        for (const PatternInfo &p : patterns)
-        {
-            if (p.type == PatternType::INS)
-            {
-                qDebug() << "[CameraView] STRIP 저장 - INS 패턴:" << p.name << "각도:" << p.angle;
-            }
-        }
-        qDebug() << "[CameraView] STRIP 검사 결과 저장 완료 (패턴 수:" << patterns.size() << ")";
     }
     else
     { // CRIMP
@@ -5751,14 +5739,12 @@ bool CameraView::switchToModeResult(int mode)
         targetResult = &lastStripResult;
         targetFrame = &lastStripFrame;
         targetPatterns = &lastStripPatterns;
-        qDebug() << "[CameraView] STRIP 검사 결과로 전환 (패턴 수:" << lastStripPatterns.size() << ")";
     }
     else if (mode == 1 && hasCrimpResult)
     { // CRIMP
         targetResult = &lastCrimpResult;
         targetFrame = &lastCrimpFrame;
         targetPatterns = &lastCrimpPatterns;
-        qDebug() << "[CameraView] CRIMP 검사 결과로 전환 (패턴 수:" << lastCrimpPatterns.size() << ")";
     }
     else
     {

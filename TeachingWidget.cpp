@@ -293,7 +293,6 @@ void CameraGrabberThread::run()
                                         if (spinImage && !spinImage->IsIncomplete())
                                         {
                                             // ✓ 새로운 트리거 신호로 프레임 획득
-                                            qDebug() << "[CAM ON] ✓ TRIGGER 신호 수신! 이미지 크기:" << spinImage->GetWidth() << "x" << spinImage->GetHeight();
                                             try
                                             {
                                                 Spinnaker::ImageProcessor processor;
@@ -857,11 +856,8 @@ void TeachingWidget::initBasicSettings()
                   << QColor("#FF9800") << QColor("#607D8B") << QColor("#E91E63");
     setFocusPolicy(Qt::StrongFocus);
     
-    // YOLO11-seg 모델 로드 (CRIMP BARREL 검사용)
+    // SEG 모델 로드 (CRIMP BARREL 검사용)
     initYoloModel();
-    
-    // PatchCore 모델 로드 (ANOMALY 검사용)
-    initPatchCoreModel();
 }
 
 void TeachingWidget::initYoloModel()
@@ -873,46 +869,20 @@ void TeachingWidget::initYoloModel()
     // 모델 파일 존재 확인
     QFileInfo modelFile(modelPath);
     if (!modelFile.exists()) {
-        qDebug() << "[YOLO] 모델 파일을 찾을 수 없음:" << modelPath;
-        qDebug() << "[YOLO] CRIMP BARREL 검사가 비활성화됩니다.";
+        qDebug() << "[SEG] 모델 파일을 찾을 수 없음:" << modelPath;
+        qDebug() << "[SEG] CRIMP BARREL 검사가 비활성화됩니다.";
         return;
     }
     
-    qDebug() << "[YOLO] 모델 로딩 시작:" << modelPath;
+    qDebug() << "[SEG] 모델 로딩 시작:" << modelPath;
     
     // OpenVINO로 모델 로드 (CPU 사용)
     bool success = ImageProcessor::initYoloSegModel(modelPath, "CPU");
     
     if (success) {
-        qDebug() << "[YOLO] 모델 로딩 성공 - CRIMP BARREL 검사 준비 완료";
+        qDebug() << "[SEG] 모델 로딩 성공 - CRIMP BARREL 검사 준비 완료";
     } else {
-        qDebug() << "[YOLO] 모델 로딩 실패 - CRIMP BARREL 검사가 비활성화됩니다.";
-    }
-}
-
-void TeachingWidget::initPatchCoreModel()
-{
-    // 실행 파일 경로 기준으로 weights 폴더 찾기
-    QString appDir = QCoreApplication::applicationDirPath();
-    QString modelPath = appDir + "/weights/model_raw.xml";
-    
-    // 모델 파일 존재 확인
-    QFileInfo modelFile(modelPath);
-    if (!modelFile.exists()) {
-        qDebug() << "[PatchCore] 모델 파일을 찾을 수 없음:" << modelPath;
-        qDebug() << "[PatchCore] ANOMALY 검사가 비활성화됩니다.";
-        return;
-    }
-    
-    qDebug() << "[PatchCore] 모델 로딩 시작:" << modelPath;
-    
-    // OpenVINO로 모델 로드 (CPU 사용)
-    bool success = ImageProcessor::initPatchCoreModel(modelPath, "CPU");
-    
-    if (success) {
-        qDebug() << "[PatchCore] 모델 로딩 성공 - ANOMALY 검사 준비 완료";
-    } else {
-        qDebug() << "[PatchCore] 모델 로딩 실패 - ANOMALY 검사가 비활성화됩니다.";
+        qDebug() << "[SEG] 모델 로딩 실패 - CRIMP BARREL 검사가 비활성화됩니다.";
     }
 }
 
@@ -967,6 +937,9 @@ QVBoxLayout *TeachingWidget::createMainLayout()
 
     serverSettingsAction = settingsMenu->addAction(TR("SERVER_SETTINGS"));
     serverSettingsAction->setEnabled(true);
+
+    serialSettingsAction = settingsMenu->addAction(TR("SERIAL_SETTINGS"));
+    serialSettingsAction->setEnabled(true);
 
     languageSettingsAction = settingsMenu->addAction(TR("LANGUAGE_SETTINGS"));
     languageSettingsAction->setEnabled(true);
@@ -1702,9 +1675,19 @@ void TeachingWidget::setupLogOverlay()
     if (!cameraView)
         return;
 
+    // ConfigManager에서 설정 로드
+    QRect savedGeometry = ConfigManager::instance()->getLogPanelGeometry();
+    bool savedCollapsed = ConfigManager::instance()->getLogPanelCollapsed();
+
     // 로그 오버레이 위젯 생성 - cameraView에 붙임
     logOverlayWidget = new QWidget(cameraView);
-    logOverlayWidget->setFixedSize(800, 144); // 120 * 1.2 = 144
+    
+    // 저장된 크기가 있으면 적용, 없으면 기본값
+    if (savedGeometry.isValid() && savedGeometry.width() > 0 && savedGeometry.height() > 0) {
+        logOverlayWidget->setFixedSize(savedGeometry.width(), savedGeometry.height());
+    } else {
+        logOverlayWidget->setFixedSize(800, 144);
+    }
     logOverlayWidget->setStyleSheet(
         "QWidget {"
         "  background-color: rgba(0, 0, 0, 180);"
@@ -1867,6 +1850,11 @@ void TeachingWidget::setupPreviewOverlay()
 
 void TeachingWidget::setupRightPanelOverlay()
 {
+    // ConfigManager에서 설정 로드
+    QRect savedGeometry = ConfigManager::instance()->getPropertyPanelGeometry();
+    bool savedCollapsed = ConfigManager::instance()->getPropertyPanelCollapsed();
+    int savedExpandedHeight = ConfigManager::instance()->getPropertyPanelExpandedHeight();
+    
     // 오른쪽 패널 오버레이 위젯 생성
     rightPanelOverlay = new QWidget(this);
 
@@ -2016,11 +2004,30 @@ void TeachingWidget::setupRightPanelOverlay()
             rightPanelOverlay->setMinimumHeight(200);
             rightPanelOverlay->setMaximumHeight(QWIDGETSIZE_MAX);
             rightPanelOverlay->resize(rightPanelOverlay->width(), rightPanelExpandedHeight);
-        } });
+        }
+        
+        // ConfigManager에 접힘 상태 저장
+        ConfigManager::instance()->setPropertyPanelCollapsed(rightPanelCollapsed);
+        ConfigManager::instance()->setPropertyPanelExpandedHeight(rightPanelExpandedHeight);
+    });
 
-    // 초기 크기 설정 (너비 400px로 증가)
+    // 초기 크기 설정 - 저장된 설정이 있으면 적용
     rightPanelOverlay->setMinimumWidth(250);
-    rightPanelOverlay->resize(400, 600);
+    if (savedGeometry.isValid() && savedGeometry.width() > 0) {
+        rightPanelOverlay->resize(savedGeometry.width(), savedExpandedHeight > 0 ? savedExpandedHeight : 600);
+        rightPanelExpandedHeight = savedExpandedHeight > 0 ? savedExpandedHeight : 600;
+    } else {
+        rightPanelOverlay->resize(400, 600);
+        rightPanelExpandedHeight = 600;
+    }
+    
+    // 저장된 접힘 상태 적용
+    rightPanelCollapsed = savedCollapsed;
+    rightPanelContent->setVisible(!rightPanelCollapsed);
+    rightPanelCollapseButton->setText(rightPanelCollapsed ? "▲" : "▼");
+    if (rightPanelCollapsed) {
+        rightPanelOverlay->setFixedHeight(40);
+    }
 
     rightPanelOverlay->raise();
     rightPanelOverlay->show();
@@ -2031,7 +2038,6 @@ void TeachingWidget::setupRightPanelOverlay()
     rightPanelDragging = false;
     rightPanelResizing = false;
     rightPanelResizeEdge = ResizeEdge::None;
-    rightPanelCollapsed = false;
 
     // 마우스 추적 활성화 (리사이즈 커서 변경용)
     rightPanelOverlay->setMouseTracking(true);
@@ -4776,7 +4782,30 @@ void TeachingWidget::createPropertyPanels()
         }
         
         // 폴더 선택 다이얼로그
-        QString folderPath = QFileDialog::getExistingDirectory(this, "양품 이미지 폴더 선택", "", QFileDialog::ShowDirsOnly);
+        QFileDialog dialog(this, "양품 이미지 폴더 선택", "");
+        dialog.setFileMode(QFileDialog::Directory);
+        dialog.setOption(QFileDialog::ShowDirsOnly, true);
+        dialog.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+        dialog.setStyleSheet(
+            "QFileDialog { background-color: #1e1e1e; color: #ffffff; }"
+            "QWidget { background-color: #1e1e1e; color: #ffffff; }"
+            "QPushButton { background-color: #2d2d2d; color: #ffffff; border: 1px solid #3d3d3d; padding: 5px; }"
+            "QPushButton:hover { background-color: #3d3d3d; }"
+            "QTreeView { background-color: #252525; color: #ffffff; border: 1px solid #3d3d3d; }"
+            "QTreeView::item:selected { background-color: #0d47a1; }"
+            "QLineEdit { background-color: #252525; color: #ffffff; border: 1px solid #3d3d3d; padding: 3px; }"
+            "QComboBox { background-color: #252525; color: #ffffff; border: 1px solid #3d3d3d; padding: 3px; }"
+            "QLabel { color: #ffffff; }"
+        );
+        
+        QString folderPath;
+        if (dialog.exec() == QDialog::Accepted) {
+            QStringList selected = dialog.selectedFiles();
+            if (!selected.isEmpty()) {
+                folderPath = selected.first();
+            }
+        }
+        
         if (folderPath.isEmpty()) return;
         
         // 이미지 파일 목록 가져오기
@@ -4807,6 +4836,16 @@ void TeachingWidget::createPropertyPanels()
         // 진행 다이얼로그
         QProgressDialog progress("Extracting ROI...", "Cancel", 0, imageFiles.size(), this);
         progress.setWindowModality(Qt::WindowModal);
+        progress.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+        progress.setStyleSheet(
+            "QProgressDialog { background-color: #1e1e1e; color: #ffffff; }"
+            "QWidget { background-color: #1e1e1e; color: #ffffff; }"
+            "QPushButton { background-color: #2d2d2d; color: #ffffff; border: 1px solid #3d3d3d; padding: 5px; min-width: 80px; }"
+            "QPushButton:hover { background-color: #3d3d3d; }"
+            "QProgressBar { border: 1px solid #3d3d3d; background-color: #252525; color: #ffffff; text-align: center; }"
+            "QProgressBar::chunk { background-color: #0d47a1; }"
+            "QLabel { color: #ffffff; }"
+        );
         
         int croppedCount = 0;
         int fidMatchFailCount = 0;
@@ -4912,6 +4951,16 @@ void TeachingWidget::createPropertyPanels()
         // 학습 진행 다이얼로그
         QProgressDialog *trainProgress = new QProgressDialog("Training model...", "Cancel", 0, 0, this);
         trainProgress->setWindowModality(Qt::WindowModal);
+        trainProgress->setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+        trainProgress->setStyleSheet(
+            "QProgressDialog { background-color: #1e1e1e; color: #ffffff; }"
+            "QWidget { background-color: #1e1e1e; color: #ffffff; }"
+            "QPushButton { background-color: #2d2d2d; color: #ffffff; border: 1px solid #3d3d3d; padding: 5px; min-width: 80px; }"
+            "QPushButton:hover { background-color: #3d3d3d; }"
+            "QProgressBar { border: 1px solid #3d3d3d; background-color: #252525; color: #ffffff; text-align: center; }"
+            "QProgressBar::chunk { background-color: #0d47a1; }"
+            "QLabel { color: #ffffff; }"
+        );
         trainProgress->setMinimumDuration(0);
         trainProgress->setValue(0);
         trainProgress->setAutoClose(false);
@@ -9364,8 +9413,27 @@ void TeachingWidget::receiveLogMessage(const QString &message)
     // 텍스트 색상 결정
     QTextCharFormat format;
 
+    // [STRIP] 또는 [CRIMP] 검사 결과 로그 - PASS/NG 색상
+    if (message.contains("[STRIP]") || message.contains("[CRIMP]"))
+    {
+        if (message.contains("PASS"))
+        {
+            format.setForeground(QColor("#4CAF50")); // 초록색
+            format.setFontWeight(QFont::Bold);
+        }
+        else if (message.contains("NG") || message.contains("FAIL"))
+        {
+            format.setForeground(QColor("#F44336")); // 빨간색
+            format.setFontWeight(QFont::Bold);
+        }
+        else
+        {
+            format.setForeground(QColor("#2196F3")); // 파란색 (Trigger ON 등)
+            format.setFontWeight(QFont::Bold);
+        }
+    }
     // "검사 시작", "검사 종료"
-    if (message.contains("검사 시작") || message.contains("검사 종료"))
+    else if (message.contains("검사 시작") || message.contains("검사 종료"))
     {
         format.setForeground(QColor("#2196F3")); // 파란색
         format.setFontWeight(QFont::Bold);
@@ -9549,7 +9617,6 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
     }
 
     // **트리거 처리 시작**
-    qDebug() << "[트리거] 검사 시작";
     triggerProcessing = true;
 
     // **비동기 이미지 저장 (트리거 처리와 독립적으로 실행)**
@@ -9631,7 +9698,6 @@ void TeachingWidget::startCamera()
     {
         patternTree->clear();
     }
-    qDebug() << "[startCamera] 모든 레시피 데이터 초기화 완료";
 
     // 1-6. 프로퍼티 패널 초기화
     if (propertyStackWidget)
@@ -9749,13 +9815,7 @@ void TeachingWidget::startCamera()
         QString lastRecipePath = ConfigManager::instance()->getLastRecipePath();
         if (!lastRecipePath.isEmpty())
         {
-            qDebug() << "[startCamera] 최근 레시피 자동 로드:" << lastRecipePath;
-            // onRecipeSelected를 직접 호출하여 레시피 로드
             onRecipeSelected(lastRecipePath);
-        }
-        else
-        {
-            qDebug() << "[startCamera] 로드할 최근 레시피 없음";
         }
     }
 
@@ -10616,6 +10676,15 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event)
         {
             if (mouseEvent->button() == Qt::LeftButton)
             {
+                // 드래그/리사이즈가 끝났으면 ConfigManager에 저장
+                if (rightPanelDragging || rightPanelResizing) {
+                    QRect geometry = rightPanelOverlay->geometry();
+                    ConfigManager::instance()->setPropertyPanelGeometry(geometry);
+                    if (!rightPanelCollapsed) {
+                        ConfigManager::instance()->setPropertyPanelExpandedHeight(rightPanelOverlay->height());
+                    }
+                }
+                
                 rightPanelDragging = false;
                 rightPanelResizing = false;
 
@@ -10806,6 +10875,12 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event)
         {
             if (mouseEvent->button() == Qt::LeftButton)
             {
+                // 드래그/리사이즈가 끝났으면 ConfigManager에 저장
+                if (logDragging || logResizing) {
+                    QRect geometry = logOverlayWidget->geometry();
+                    ConfigManager::instance()->setLogPanelGeometry(geometry);
+                }
+                
                 logDragging = false;
                 logResizing = false;
 
@@ -13588,6 +13663,12 @@ TeachingWidget::~TeachingWidget()
 {
     qDebug() << "[~TeachingWidget] 소멸자 시작";
     
+    // 0. 로그창 설정 저장
+    if (logOverlayWidget) {
+        ConfigManager::instance()->setLogPanelGeometry(logOverlayWidget->geometry());
+        ConfigManager::instance()->setLogPanelCollapsed(!logOverlayWidget->isVisible());
+    }
+    
     // 1. 먼저 모든 스레드 중지 (카메라 사용 중지)
     qDebug() << "[~TeachingWidget] 카메라 스레드 중지 시작";
     for (CameraGrabberThread *thread : cameraThreads)
@@ -13639,10 +13720,9 @@ TeachingWidget::~TeachingWidget()
     qDebug() << "[~TeachingWidget] Spinnaker SDK 해제 완료";
 #endif
 
-    // 6. YOLO 모델 해제
+    // 6. SEG 모델 해제
     if (ImageProcessor::isYoloSegModelLoaded()) {
         ImageProcessor::releaseYoloSegModel();
-        qDebug() << "[YOLO] 모델 해제됨";
     }
     
     // 7. 타이머 정리
@@ -15623,7 +15703,6 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
     bool wasThreadsPaused = false;
     if (!camOff)
     {
-        qDebug() << "[onRecipeSelected] CAM ON - 스레드 일시정지";
         if (uiUpdateThread)
         {
             uiUpdateThread->setPaused(true);
@@ -15666,14 +15745,7 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         // ★ CAM ON 상태에서는 티칭 이미지 로드 건너뜀 (패턴만 로드)
         if (!camOff)
         {
-            qDebug() << "[loadRecipe] CAM ON 상태 - 티칭 이미지 콜백 건너뜀 (패턴만 로드)";
             return;
-        }
-
-        qDebug() << "[loadRecipe] 티칭 이미지 콜백 - 총 이미지 개수:" << imagePaths.size();
-        for (int i = 0; i < imagePaths.size(); i++)
-        {
-            qDebug() << "[loadRecipe] imagePaths[" << i << "]:" << imagePaths[i];
         }
 
         // **카메라 ON/OFF 모두 티칭 이미지를 cameraFrames에 로드**
@@ -15693,12 +15765,10 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
                     if (imageIndex == 0)
                     {
                         stripModeImage = cameraFrames[imageIndex].clone();
-                        qDebug() << "[loadRecipe] STRIP 이미지 업데이트 (base64, imageIndex=0)";
                     }
                     else if (imageIndex == 1)
                     {
                         crimpModeImage = cameraFrames[imageIndex].clone();
-                        qDebug() << "[loadRecipe] CRIMP 이미지 업데이트 (base64, imageIndex=1)";
                     }
                 }
                 else
@@ -15718,7 +15788,6 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
                     if (imageIndex >= static_cast<int>(cameraFrames.size()))
                     {
                         cameraFrames.resize(imageIndex + 1);
-                        qDebug() << "[loadRecipe] cameraFrames 크기 확장:" << (imageIndex + 1);
                     }
                     cameraFrames[imageIndex] = teachingImage.clone();
 
@@ -15726,22 +15795,12 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
                     if (imageIndex == 0)
                     {
                         stripModeImage = teachingImage.clone();
-                        qDebug() << "[loadRecipe] STRIP 이미지 로드 완료 (imageIndex=0)";
                     }
                     else if (imageIndex == 1)
                     {
                         crimpModeImage = teachingImage.clone();
-                        qDebug() << "[loadRecipe] CRIMP 이미지 로드 완료 (imageIndex=1)";
                     }
                 }
-                else
-                {
-                    qDebug() << "[loadRecipe] 이미지 로드 실패:" << imagePath;
-                }
-            }
-            else
-            {
-                qDebug() << "[loadRecipe] 파일 존재하지 않음:" << imagePath;
             }
             imageIndex++; // 실패해도 인덱스는 증가
         }
@@ -15755,17 +15814,12 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         // **카메라 ON 상태에서는 updateCameraFrame() 호출 금지 - 패턴만 로드**
         if (!camOff)
         {
-            qDebug() << "카메라 ON 상태: 티칭이미지 표시 금지 (패턴만 로드됨)";
+            // 카메라 ON 상태 - 패턴만 로드됨
         }
         else if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) &&
                  !cameraFrames[cameraIndex].empty())
         {
-            qDebug() << "카메라 OFF 상태: 티칭이미지 표시";
             updateCameraFrame();
-        }
-        else
-        {
-            qDebug() << "카메라 OFF 상태: 표시할 이미지 없음";
         }
 
         // 프리뷰 화면들도 업데이트
@@ -15775,7 +15829,6 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
     // ★ CAM ON 상태에서는 레시피 로드 전에 기존 패턴 제거 (중복 방지)
     if (!camOff && cameraView)
     {
-        qDebug() << "[onRecipeSelected] CAM ON - 기존 패턴 제거 (중복 방지)";
         cameraView->clearPatterns();
         if (patternTree)
         {
@@ -15787,20 +15840,6 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
     {
         currentRecipeName = recipeName;
         hasUnsavedChanges = false;
-
-        // 레시피 로드 후 INS 패턴의 STRIP 박스 크기 로그 출력
-        QList<PatternInfo> &allPatterns = cameraView->getPatterns();
-        for (int i = 0; i < allPatterns.size(); i++)
-        {
-            PatternInfo &pattern = allPatterns[i];
-            if (pattern.type == PatternType::INS && pattern.inspectionMethod == InspectionMethod::STRIP)
-            {
-                qDebug() << "[레시피 로드] 박스 크기:" << pattern.name
-                         << "angle=" << pattern.angle
-                         << "FRONT=" << pattern.stripThicknessBoxWidth << "x" << pattern.stripThicknessBoxHeight
-                         << "REAR=" << pattern.stripRearThicknessBoxWidth << "x" << pattern.stripRearThicknessBoxHeight;
-            }
-        }
 
         // 윈도우 타이틀 업데이트
         setWindowTitle(QString("KM Inspector - %1").arg(recipeName));
@@ -15922,20 +15961,13 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
                     
                     if (QFile::exists(fullModelPath))
                     {
-                        qDebug() << "[onRecipeSelected] ANOMALY 패턴 발견 - PatchCore 모델 미리 로딩:" << pattern.name;
-                        if (ImageProcessor::initPatchCoreModel(fullModelPath, "CPU"))
-                        {
-                            qDebug() << "[onRecipeSelected] ✓ PatchCore 모델 로딩 성공:" << fullModelPath;
-                        }
-                        else
-                        {
-                            qDebug() << "[onRecipeSelected] ✗ PatchCore 모델 로딩 실패:" << fullModelPath;
+                        qDebug() << "[ANOMALY] 모델 로딩 시작:" << fullModelPath;
+                        if (ImageProcessor::initPatchCoreModel(fullModelPath, "CPU")) {
+                            qDebug() << "[ANOMALY] 모델 로딩 성공 - 이상탐지 검사 준비 완료 (패턴:" << pattern.name << ")";
+                        } else {
+                            qDebug() << "[ANOMALY] 모델 로딩 실패 - 이상탐지 검사가 비활성화됩니다.";
                         }
                         break; // 첫 번째 ANOMALY 패턴의 모델만 로드 (같은 모델이면 스킵됨)
-                    }
-                    else
-                    {
-                        qDebug() << "[onRecipeSelected] ANOMALY 패턴 발견 - 모델 파일 없음:" << fullModelPath;
                     }
                 }
             }
@@ -15944,24 +15976,17 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         // ★ CAM ON 상태였으면 스레드 재개
         if (wasThreadsPaused)
         {
-            qDebug() << "[onRecipeSelected] ✓ 레시피 로드 완료 - 스레드 재개 (wasThreadsPaused=" << wasThreadsPaused << ", cameraThreads.size()=" << cameraThreads.size() << ")";
             for (CameraGrabberThread *thread : cameraThreads)
             {
                 if (thread)
                 {
                     thread->setPaused(false);
-                    qDebug() << "[onRecipeSelected] ✓ CameraGrabberThread 재개";
                 }
             }
             if (uiUpdateThread)
             {
                 uiUpdateThread->setPaused(false);
-                qDebug() << "[onRecipeSelected] ✓ UIUpdateThread 재개";
             }
-        }
-        else
-        {
-            qDebug() << "[onRecipeSelected] 스레드 재개 건너뜀 (wasThreadsPaused=" << wasThreadsPaused << ", camOff=" << camOff << ")";
         }
     }
     else
@@ -15981,19 +16006,16 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         // ★ 레시피 로드 실패해도 스레드 재개
         if (wasThreadsPaused)
         {
-            qDebug() << "[onRecipeSelected] ✓ 레시피 로드 실패 - 스레드 재개";
             for (CameraGrabberThread *thread : cameraThreads)
             {
                 if (thread)
                 {
                     thread->setPaused(false);
-                    qDebug() << "[onRecipeSelected] ✓ CameraGrabberThread 재개 (실패 케이스)";
                 }
             }
             if (uiUpdateThread)
             {
                 uiUpdateThread->setPaused(false);
-                qDebug() << "[onRecipeSelected] ✓ UIUpdateThread 재개 (실패 케이스)";
             }
         }
     }

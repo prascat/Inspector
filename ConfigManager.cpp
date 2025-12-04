@@ -28,6 +28,15 @@ ConfigManager::ConfigManager(QObject* parent) : QObject(parent) {
     m_autoConnect = false;  // 기본 자동 연결 비활성화
     m_reconnectInterval = 10;  // 기본 재연결 간격 10초
     m_cameraAutoConnect = false;  // 기본 카메라 자동 연결 비활성화
+    
+    // 프로퍼티 패널 기본값
+    m_propertyPanelGeometry = QRect(0, 0, 400, 600);
+    m_propertyPanelCollapsed = false;
+    m_propertyPanelExpandedHeight = 600;
+    
+    // 로그창 기본값
+    m_logPanelGeometry = QRect(0, 0, 800, 144);
+    m_logPanelCollapsed = false;
 }
 
 ConfigManager::~ConfigManager() {
@@ -101,7 +110,28 @@ bool ConfigManager::loadConfig() {
             } else if (xml.name() == QLatin1String("CameraAutoConnect")) {
                 QString value = xml.readElementText();
                 m_cameraAutoConnect = (value.toLower() == "true");
-                qDebug() << "[ConfigManager] 카메라 자동 연결 설정 로드됨:" << m_cameraAutoConnect;
+            } else if (xml.name() == QLatin1String("PropertyPanel")) {
+                // 프로퍼티 패널 설정
+                QXmlStreamAttributes attrs = xml.attributes();
+                int x = attrs.value("x").toInt();
+                int y = attrs.value("y").toInt();
+                int w = attrs.value("width").toInt();
+                int h = attrs.value("height").toInt();
+                m_propertyPanelGeometry = QRect(x, y, w, h);
+                m_propertyPanelCollapsed = (attrs.value("collapsed").toString() == "true");
+                m_propertyPanelExpandedHeight = attrs.value("expandedHeight").toInt();
+                if (m_propertyPanelExpandedHeight < 200) m_propertyPanelExpandedHeight = 600;
+                xml.skipCurrentElement();
+            } else if (xml.name() == QLatin1String("LogPanel")) {
+                // 로그창 설정
+                QXmlStreamAttributes attrs = xml.attributes();
+                int x = attrs.value("x").toInt();
+                int y = attrs.value("y").toInt();
+                int w = attrs.value("width").toInt();
+                int h = attrs.value("height").toInt();
+                m_logPanelGeometry = QRect(x, y, w, h);
+                m_logPanelCollapsed = (attrs.value("collapsed").toString() == "true");
+                xml.skipCurrentElement();
             } else {
                 xml.skipCurrentElement();
             }
@@ -170,12 +200,29 @@ bool ConfigManager::saveConfig() {
     // 카메라 자동 연결 설정 저장
     xml.writeTextElement("CameraAutoConnect", m_cameraAutoConnect ? "true" : "false");
     
+    // 프로퍼티 패널 설정 저장
+    xml.writeStartElement("PropertyPanel");
+    xml.writeAttribute("x", QString::number(m_propertyPanelGeometry.x()));
+    xml.writeAttribute("y", QString::number(m_propertyPanelGeometry.y()));
+    xml.writeAttribute("width", QString::number(m_propertyPanelGeometry.width()));
+    xml.writeAttribute("height", QString::number(m_propertyPanelGeometry.height()));
+    xml.writeAttribute("collapsed", m_propertyPanelCollapsed ? "true" : "false");
+    xml.writeAttribute("expandedHeight", QString::number(m_propertyPanelExpandedHeight));
+    xml.writeEndElement();
+    
+    // 로그창 설정 저장
+    xml.writeStartElement("LogPanel");
+    xml.writeAttribute("x", QString::number(m_logPanelGeometry.x()));
+    xml.writeAttribute("y", QString::number(m_logPanelGeometry.y()));
+    xml.writeAttribute("width", QString::number(m_logPanelGeometry.width()));
+    xml.writeAttribute("height", QString::number(m_logPanelGeometry.height()));
+    xml.writeAttribute("collapsed", m_logPanelCollapsed ? "true" : "false");
+    xml.writeEndElement();
+    
     xml.writeEndElement(); // Config
     xml.writeEndDocument();
     
     file.close();
-    
-    qDebug() << "[ConfigManager] 설정 파일 저장 완료:" << configPath;
     return true;
 }
 
@@ -303,5 +350,62 @@ void ConfigManager::setCameraAutoConnect(bool enable) {
         saveConfig(); // 즉시 저장
         emit configChanged();
         qDebug() << "[ConfigManager] 카메라 자동 연결 설정 변경됨:" << enable;
+    }
+}
+
+// 프로퍼티 패널 설정
+QRect ConfigManager::getPropertyPanelGeometry() const {
+    return m_propertyPanelGeometry;
+}
+
+void ConfigManager::setPropertyPanelGeometry(const QRect& geometry) {
+    if (m_propertyPanelGeometry != geometry) {
+        m_propertyPanelGeometry = geometry;
+        saveConfig();
+    }
+}
+
+bool ConfigManager::getPropertyPanelCollapsed() const {
+    return m_propertyPanelCollapsed;
+}
+
+void ConfigManager::setPropertyPanelCollapsed(bool collapsed) {
+    if (m_propertyPanelCollapsed != collapsed) {
+        m_propertyPanelCollapsed = collapsed;
+        saveConfig();
+    }
+}
+
+int ConfigManager::getPropertyPanelExpandedHeight() const {
+    return m_propertyPanelExpandedHeight;
+}
+
+void ConfigManager::setPropertyPanelExpandedHeight(int height) {
+    if (m_propertyPanelExpandedHeight != height) {
+        m_propertyPanelExpandedHeight = height;
+        saveConfig();
+    }
+}
+
+// 로그창 설정
+QRect ConfigManager::getLogPanelGeometry() const {
+    return m_logPanelGeometry;
+}
+
+void ConfigManager::setLogPanelGeometry(const QRect& geometry) {
+    if (m_logPanelGeometry != geometry) {
+        m_logPanelGeometry = geometry;
+        saveConfig();
+    }
+}
+
+bool ConfigManager::getLogPanelCollapsed() const {
+    return m_logPanelCollapsed;
+}
+
+void ConfigManager::setLogPanelCollapsed(bool collapsed) {
+    if (m_logPanelCollapsed != collapsed) {
+        m_logPanelCollapsed = collapsed;
+        saveConfig();
     }
 }

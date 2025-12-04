@@ -48,7 +48,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     // 검사 시작 시간 측정
     auto startTime = std::chrono::high_resolution_clock::now();
     
-    logDebug(QString("검사 시작 - %1 (%2개 패턴)").arg(modeName).arg(insCount));
+    logDebug(QString("[%1] Trigger ON (%2개 패턴)").arg(modeName).arg(insCount));
 
     result.isPassed = true;
     
@@ -793,14 +793,12 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             case InspectionMethod::CRIMP:
             {
                 inspPassed = checkCrimp(image, adjustedPattern, inspScore, result, patterns);
-                logDebug(QString("CRIMP 검사 수행: %1 (method=%2)").arg(pattern.name).arg(pattern.inspectionMethod));
                 break;
             }
 
             case InspectionMethod::SSIM:
             {
                 inspPassed = checkSSIM(image, adjustedPattern, inspScore, result);
-                logDebug(QString("SSIM 검사 수행: %1 (method=%2)").arg(pattern.name).arg(pattern.inspectionMethod));
                 break;
             }
 
@@ -906,13 +904,21 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 // CRIMP: YOLO 검출 정보
                 bool crimpLeft = result.barrelLeftResults.value(pattern.id, false);
                 bool crimpRight = result.barrelRightResults.value(pattern.id, false);
-                resultDetail = QString("  %1: %2 CRIMP[%3/%4] L:%5 R:%6")
+                int leftW = result.barrelLeftContourWidth.value(pattern.id, 0);
+                int leftH = result.barrelLeftContourHeight.value(pattern.id, 0);
+                int rightW = result.barrelRightContourWidth.value(pattern.id, 0);
+                int rightH = result.barrelRightContourHeight.value(pattern.id, 0);
+                resultDetail = QString("  %1: %2 CRIMP[%3/%4] L:%5(W:%6 H:%7) R:%8(W:%9 H:%10)")
                                    .arg(pattern.name)
                                    .arg(insResultText)
                                    .arg(QString::number(inspScore * 100.0, 'f', 1))
                                    .arg(QString::number(pattern.passThreshold, 'f', 1))
                                    .arg(crimpLeft ? "PASS" : "FAIL")
-                                   .arg(crimpRight ? "PASS" : "FAIL");
+                                   .arg(leftW)
+                                   .arg(leftH)
+                                   .arg(crimpRight ? "PASS" : "FAIL")
+                                   .arg(rightW)
+                                   .arg(rightH);
             }
             else
             {
@@ -939,7 +945,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
     
-    logDebug(QString("검사 종료 - %1: %2 (소요시간: %3ms)").arg(modeName).arg(resultText).arg(duration.count()));
+    logDebug(QString("[%1] %2 (%3ms)").arg(modeName).arg(resultText).arg(duration.count()));
 
     return result;
 }
@@ -4067,12 +4073,6 @@ bool InsProcessor::checkCrimp(const cv::Mat &image, const PatternInfo &pattern, 
         double bboxCenterX = roiX + seg.bbox.x + seg.bbox.width / 2.0;
         double bboxCenterY = roiY + seg.bbox.y + seg.bbox.height / 2.0;
         
-        qDebug() << "[CRIMP] 검출" << i << ": class=" << seg.classId 
-                 << "conf=" << seg.confidence
-                 << "bbox=" << seg.bbox.x + roiX << seg.bbox.y + roiY << seg.bbox.width << seg.bbox.height
-                 << "contour=" << contourWidth << "x" << contourHeight
-                 << "center=" << bboxCenterX << bboxCenterY;
-        
         // 컨투어 중심이 어느 박스에 속하는지 확인
         bool isInLeftBox = leftBoxRect.contains(QPointF(bboxCenterX, bboxCenterY));
         bool isInRightBox = rightBoxRect.contains(QPointF(bboxCenterX, bboxCenterY));
@@ -4083,16 +4083,12 @@ bool InsProcessor::checkCrimp(const cv::Mat &image, const PatternInfo &pattern, 
             result.barrelLeftContourWidth[pattern.id] = contourWidth;
             result.barrelLeftContourHeight[pattern.id] = contourHeight;
             result.barrelLeftResults[pattern.id] = true;
-            qDebug() << "[CRIMP] LEFT 박스 내부 검출 - PASS (" << contourWidth << "x" << contourHeight << ")";
         } else if (isInRightBox && !result.barrelRightResults[pattern.id]) {
             // RIGHT 박스 내부에 있는 첫 번째 검출
             result.barrelRightContour[pattern.id] = absoluteContour;
             result.barrelRightContourWidth[pattern.id] = contourWidth;
             result.barrelRightContourHeight[pattern.id] = contourHeight;
             result.barrelRightResults[pattern.id] = true;
-            qDebug() << "[CRIMP] RIGHT 박스 내부 검출 - PASS (" << contourWidth << "x" << contourHeight << ")";
-        } else {
-            qDebug() << "[CRIMP] 검출" << i << "은 LEFT/RIGHT 박스 외부 (무시)";
         }
     }
     
@@ -4101,8 +4097,8 @@ bool InsProcessor::checkCrimp(const cv::Mat &image, const PatternInfo &pattern, 
     bool rightPass = result.barrelRightResults.value(pattern.id, false);
     bool overallPass = leftPass && rightPass;
     
-    qDebug() << "[CRIMP] 최종 결과 - LEFT:" << (leftPass ? "PASS" : "FAIL") 
-             << "RIGHT:" << (rightPass ? "PASS" : "FAIL")
+    qDebug() << "[CRIMP] L:" << (leftPass ? "PASS" : "FAIL") 
+             << "R:" << (rightPass ? "PASS" : "FAIL")
              << "전체:" << (overallPass ? "PASS" : "FAIL");
     
     score = overallPass ? 1.0 : 0.0;  // 0-1 범위

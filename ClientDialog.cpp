@@ -188,10 +188,6 @@ void ClientDialog::loadSettings()
     portEdit->setText(QString::number(serverPort));
     reconnectIntervalEdit->setText(QString::number(reconnectInterval));
     autoConnectCheckBox->setChecked(autoConnect);
-    
-    QString autoConnectStatus = autoConnect ? "활성화" : "비활성화";
-    qDebug() << QString("서버 설정 로드됨 - IP: %1 Port: %2 재연결 간격: %3 초 자동연결: %4")
-                .arg(serverIp).arg(serverPort).arg(reconnectInterval).arg(autoConnectStatus);
 }
 
 void ClientDialog::saveSettings()
@@ -297,7 +293,6 @@ void ClientDialog::onSocketConnected()
     
     // 연결 성공 시 재연결 스레드 중지
     if (reconnectThread && reconnectThread->isRunning()) {
-        qDebug() << "[재연결] 연결 성공 - 재연결 스레드 중지";
         stopReconnectThread();
     }
     
@@ -308,8 +303,6 @@ void ClientDialog::onSocketConnected()
     connectionStatusLabel->setStyleSheet("QLabel { padding: 10px; background-color: #d4edda; border-radius: 5px; color: #155724; }");
     testButton->setEnabled(true);
     testButton->setText("연결 해제");
-    
-    qDebug() << "[TCP 서버] 서버에 성공적으로 연결되었습니다.";
 }
 
 void ClientDialog::onSocketDisconnected()
@@ -323,7 +316,6 @@ void ClientDialog::onSocketDisconnected()
     
     // 자동 연결이 활성화된 경우만 재연결 스레드 시작
     if (autoConnect) {
-        qDebug() << "[재연결] 연결 해제됨 - 재연결 스레드 시작";
         startReconnectThread();
     }
 }
@@ -338,8 +330,6 @@ void ClientDialog::onSocketError(QAbstractSocket::SocketError error)
     connectionStatusLabel->setStyleSheet("QLabel { padding: 10px; background-color: #f8d7da; border-radius: 5px; color: #721c24; }");
     testButton->setEnabled(true);
     testButton->setText("연결 테스트");
-    
-    qDebug() << QString("[TCP 서버] 서버 연결에 실패했습니다: %1").arg(errorMsg);
 }
 
 void ClientDialog::onDataReceived()
@@ -348,14 +338,10 @@ void ClientDialog::onDataReceived()
     QString message = QString::fromUtf8(data).trimmed();
     
     if (!message.isEmpty()) {
-        qDebug() << QString("[TCP 서버] 수신: %1").arg(message);
-        
         // STRIP/CRIMP 모드 전환 처리
         if (message.toUpper() == "STRIP") {
-            qDebug() << "[TCP 서버] STRIP 모드로 전환";
             emit stripCrimpModeChanged(0);
         } else if (message.toUpper() == "CRIMP") {
-            qDebug() << "[TCP 서버] CRIMP 모드로 전환";
             emit stripCrimpModeChanged(1);
         }
     }
@@ -431,10 +417,7 @@ void ClientDialog::initialize()
     
     // 자동 연결이 활성화된 경우 재연결 스레드 시작
     if (autoConnect) {
-        qDebug() << "[서버 초기화] 자동연결 활성화 - 재연결 스레드 시작";
         startReconnectThread();
-    } else {
-        qDebug() << "[서버 초기화] 자동연결 비활성화 - 서버 연결 시도 안함";
     }
 }
 
@@ -442,17 +425,14 @@ void ClientDialog::startReconnectThread()
 {
     // 기존 스레드가 실행 중이면 먼저 종료
     if (reconnectThread && reconnectThread->isRunning()) {
-        qDebug() << "[재연결 스레드] 기존 스레드 종료 중...";
         stopReconnectThread();
     }
     
     shouldReconnect = true;
     
     reconnectThread = QThread::create([this]() {
-        qDebug() << "[재연결 스레드] 루프 시작";
         while (shouldReconnect) {
             if (testSocket->state() != QAbstractSocket::ConnectedState) {
-                qDebug() << "[재연결] 서버 연결 시도 중..." << serverIp << ":" << serverPort;
                 QMetaObject::invokeMethod(this, "tryReconnect", Qt::QueuedConnection);
             }
             
@@ -461,30 +441,24 @@ void ClientDialog::startReconnectThread()
                 QThread::sleep(1);
             }
         }
-        qDebug() << "[재연결 스레드] 루프 종료";
     });
     
     reconnectThread->start();
-    qDebug() << "[재연결 스레드] 시작됨 - 간격:" << reconnectInterval << "초";
 }
 
 void ClientDialog::stopReconnectThread()
 {
-    qDebug() << "[재연결 스레드] 종료 요청";
     shouldReconnect = false;
     
     if (reconnectThread) {
         if (reconnectThread->isRunning()) {
-            qDebug() << "[재연결 스레드] 종료 대기 중...";
             if (!reconnectThread->wait(5000)) {
-                qDebug() << "[재연결 스레드] 강제 종료";
                 reconnectThread->terminate();
                 reconnectThread->wait();
             }
         }
         delete reconnectThread;
         reconnectThread = nullptr;
-        qDebug() << "[재연결 스레드] 종료 완료";
     }
 }
 
@@ -499,6 +473,5 @@ void ClientDialog::tryReconnect()
         testSocket->abort();
     }
     
-    qDebug() << "[재연결] 연결 시도:" << serverIp << ":" << serverPort;
     testSocket->connectToHost(serverIp, serverPort);
 }

@@ -3,17 +3,23 @@
 #include <QDebug>
 #include <QFile>
 #include <QDateTime>
+#include <QVector>
 #include "TeachingWidget.h"
 
 // 전역 메시지 핸들러 (qDebug를 오버레이 로그로 리다이렉트)
 TeachingWidget* g_teachingWidget = nullptr;
+QVector<QString> g_pendingLogMessages;  // 초기 로그 버퍼
 
 void customMessageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg) {
+    // 타임스탬프 추가
+    QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
+    QString formattedMessage = QString("%1 - %2").arg(timestamp).arg(msg);
+    
     if (g_teachingWidget) {
-        // 타임스탬프 추가
-        QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
-        QString formattedMessage = QString("%1 - %2").arg(timestamp).arg(msg);
         g_teachingWidget->receiveLogMessage(formattedMessage);
+    } else {
+        // 위젯 생성 전이면 버퍼에 저장
+        g_pendingLogMessages.append(formattedMessage);
     }
     
     // 콘솔 출력도 유지 (디버깅용)
@@ -34,6 +40,16 @@ void customMessageHandler(QtMsgType type, const QMessageLogContext &context, con
         case QtInfoMsg:
             fprintf(stderr, "Info: %s\n", localMsg.constData());
             break;
+    }
+}
+
+// 버퍼에 저장된 초기 로그를 위젯에 전달
+void flushPendingLogs() {
+    if (g_teachingWidget) {
+        for (const QString& msg : g_pendingLogMessages) {
+            g_teachingWidget->receiveLogMessage(msg);
+        }
+        g_pendingLogMessages.clear();
     }
 }
 
@@ -77,12 +93,15 @@ int main(int argc, char *argv[]) {
         "QToolTip { background-color: rgb(70, 70, 70); color: white; border: 1px solid rgb(100, 100, 100); } "
     );
     
+    // 커스텀 메시지 핸들러 먼저 설치 (초기 로그도 캡처하기 위해)
+    qInstallMessageHandler(customMessageHandler);
+    
     // 티칭 위젯 생성
     TeachingWidget widget(0, "카메라 1");
     g_teachingWidget = &widget;
     
-    // 커스텀 메시지 핸들러 설치
-    qInstallMessageHandler(customMessageHandler);
+    // 버퍼에 저장된 초기 로그를 위젯에 전달
+    flushPendingLogs();
     
     // 윈도우 타이틀 설정
     widget.setWindowTitle("KM Inspector");

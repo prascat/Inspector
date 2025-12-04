@@ -2868,17 +2868,18 @@ bool ImageProcessor::initYoloSegModel(const QString& modelPath, const QString& d
             releaseYoloSegModel();
         }
         
-        qDebug() << "[OpenVINO] YOLO11-seg 모델 로딩 시작:" << modelPath;
+        qDebug() << "[OpenVINO] SEG 모델 로딩 시작:" << modelPath;
         
         // OpenVINO Core 생성
         s_ovinoCore = std::make_shared<ov::Core>();
         
         // 사용 가능한 디바이스 출력
         auto devices = s_ovinoCore->get_available_devices();
-        qDebug() << "[OpenVINO] 사용 가능한 디바이스:";
+        QStringList deviceList;
         for (const auto& dev : devices) {
-            qDebug() << "  -" << QString::fromStdString(dev);
+            deviceList << QString::fromStdString(dev);
         }
+        qDebug() << "[OpenVINO] 사용 가능한 디바이스:" << deviceList.join(", ");
         
         // 모델 읽기
         std::shared_ptr<ov::Model> model = s_ovinoCore->read_model(modelPath.toStdString());
@@ -2890,23 +2891,7 @@ bool ImageProcessor::initYoloSegModel(const QString& modelPath, const QString& d
             if (inputShape.size() == 4) {
                 s_yoloInputHeight = static_cast<int>(inputShape[2]);
                 s_yoloInputWidth = static_cast<int>(inputShape[3]);
-                qDebug() << "[OpenVINO] 입력 크기:" << s_yoloInputWidth << "x" << s_yoloInputHeight;
             }
-        }
-        
-        // 출력 정보 확인
-        auto outputs = model->outputs();
-        qDebug() << "[OpenVINO] 출력 개수:" << outputs.size();
-        for (size_t i = 0; i < outputs.size(); i++) {
-            auto shape = outputs[i].get_shape();
-            QString shapeStr;
-            for (auto dim : shape) {
-                shapeStr += QString::number(dim) + " ";
-            }
-            // 텐서 이름이 있는지 확인 후 출력
-            auto names = outputs[i].get_names();
-            QString nameStr = names.empty() ? QString("output_%1").arg(i) : QString::fromStdString(*names.begin());
-            qDebug() << "  출력" << i << ":" << nameStr << "shape:" << shapeStr;
         }
         
         // 모델 컴파일
@@ -2917,7 +2902,7 @@ bool ImageProcessor::initYoloSegModel(const QString& modelPath, const QString& d
         s_yoloSegInferRequest = std::make_shared<ov::InferRequest>(s_yoloSegModel->create_infer_request());
         
         s_yoloSegModelLoaded = true;
-        qDebug() << "[OpenVINO] YOLO11-seg 모델 로딩 완료 - 디바이스:" << device;
+        qDebug() << "[SEG] 모델 로딩 완료";
         
         return true;
     }
@@ -2939,7 +2924,7 @@ void ImageProcessor::releaseYoloSegModel()
     s_yoloSegModel.reset();
     s_ovinoCore.reset();
     s_yoloSegModelLoaded = false;
-    qDebug() << "[OpenVINO] YOLO11-seg 모델 해제됨";
+    qDebug() << "[SEG] 모델 해제됨";
 }
 
 bool ImageProcessor::isYoloSegModelLoaded()
@@ -3384,8 +3369,6 @@ bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString&
             releasePatchCoreModel();
         }
         
-        qDebug() << "[OpenVINO] PatchCore 모델 로딩 시작:" << modelPath;
-        
         // norm_stats.txt 읽기 (모델과 같은 폴더에 위치)
         QFileInfo modelFileInfo(modelPath);
         QString normStatsPath = modelFileInfo.absolutePath() + "/norm_stats.txt";
@@ -3414,10 +3397,8 @@ bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString&
             if (meanPixel > 0 && maxPixel > 0) {
                 s_patchCoreNormMin = meanPixel - 10.0f;  // 양품 평균보다 여유 있게
                 s_patchCoreNormMax = maxPixel + 20.0f;   // 불량 감지를 위해 여유 있게
-                qDebug() << "[PatchCore] norm_stats.txt 로드됨 - min:" << s_patchCoreNormMin << "max:" << s_patchCoreNormMax;
             }
         } else {
-            qDebug() << "[PatchCore] norm_stats.txt 없음, 기본값 사용 - min:" << s_patchCoreNormMin << "max:" << s_patchCoreNormMax;
         }
         
         // OpenVINO Core 생성 (YOLO와 공유)
@@ -3440,8 +3421,6 @@ bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString&
             std::map<std::string, ov::PartialShape> new_shapes;
             new_shapes[input_name] = ov::PartialShape({1, 3, static_cast<long>(s_patchCoreInputHeight), static_cast<long>(s_patchCoreInputWidth)});
             model->reshape(new_shapes);
-            
-            qDebug() << "[OpenVINO] PatchCore 입력 크기:" << s_patchCoreInputWidth << "x" << s_patchCoreInputHeight;
         }
         
         // 모델 컴파일
@@ -3455,11 +3434,10 @@ bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString&
         
         s_patchCoreModelLoaded = true;
         s_patchCoreCurrentModelPath = modelPath;  // 현재 로드된 모델 경로 저장
-        qDebug() << "[OpenVINO] PatchCore 모델 로딩 성공 - 디바이스:" << device;
         return true;
         
     } catch (const std::exception& e) {
-        qCritical() << "[OpenVINO] PatchCore 모델 로딩 실패:" << e.what();
+        qCritical() << "[ANOMALY] 모델 로딩 실패:" << e.what();
         releasePatchCoreModel();
         return false;
     }
@@ -3471,7 +3449,7 @@ void ImageProcessor::releasePatchCoreModel()
     s_patchCoreModel.reset();
     s_patchCoreModelLoaded = false;
     s_patchCoreCurrentModelPath = "";
-    qDebug() << "[OpenVINO] PatchCore 모델 해제 완료";
+    qDebug() << "[ANOMALY] 이상탐지 모델 해제됨";
 }
 
 bool ImageProcessor::isPatchCoreModelLoaded()
@@ -3486,7 +3464,7 @@ bool ImageProcessor::runPatchCoreInference(
     float threshold)
 {
     if (!s_patchCoreModelLoaded || !s_patchCoreInferRequest) {
-        qWarning() << "[PatchCore] 모델이 로드되지 않음";
+        qWarning() << "[ANOMALY] 모델이 로드되지 않음";
         return false;
     }
     
@@ -3540,8 +3518,6 @@ bool ImageProcessor::runPatchCoreInference(
         // 7. 결과 파싱
         // 출력: anomaly_map (1,1,H,W), pred_score (1,) - 인덱스로 접근
         auto outputs = s_patchCoreInferRequest->get_compiled_model().outputs();
-        
-        qDebug() << "[PatchCore] 출력 개수:" << outputs.size();
         
         ov::Tensor anomalyMapTensor;
         ov::Tensor predScoreTensor;
@@ -3613,7 +3589,7 @@ bool ImageProcessor::runPatchCoreInference(
         return hasAnomaly;
         
     } catch (const std::exception& e) {
-        qCritical() << "[PatchCore] 추론 실패:" << e.what();
+        qCritical() << "[ANOMALY] 추론 실패:" << e.what();
         anomalyScore = 0.0f;
         anomalyMap = cv::Mat::zeros(image.size(), CV_32F);
         return false;

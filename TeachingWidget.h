@@ -595,8 +595,7 @@ private:
 
     // ===== 초기화 및 설정 함수 =====
     void initBasicSettings();
-    void initYoloModel();  // YOLO11-seg 모델 초기화
-    void initPatchCoreModel();  // PatchCore 모델 초기화
+    void initYoloModel();  // SEG 모델 초기화
     void setupPatternTree();
     void setupPatternTypeButtons(QVBoxLayout *cameraLayout);
     void setupPreviewOverlay();

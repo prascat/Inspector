@@ -233,25 +233,6 @@ bool RecipeManager::saveRecipe(const QString& fileName,
     xml.writeAttribute("version", "1.0");
     xml.writeAttribute("createdTime", QDateTime::currentDateTime().toString(Qt::ISODate));
     
-    // 프로퍼티 오버레이 위치와 크기 저장
-    if (teachingWidget && teachingWidget->rightPanelOverlay) {
-        QRect geo = teachingWidget->rightPanelOverlay->geometry();
-        xml.writeAttribute("propertyX", QString::number(geo.x()));
-        xml.writeAttribute("propertyY", QString::number(geo.y()));
-        xml.writeAttribute("propertyWidth", QString::number(geo.width()));
-        xml.writeAttribute("propertyHeight", QString::number(geo.height()));
-        
-        // 접기 상태와 펼쳐진 높이도 저장
-        bool collapsed = teachingWidget->rightPanelCollapsed;
-        int expandedHeight = teachingWidget->rightPanelExpandedHeight;
-        xml.writeAttribute("propertyCollapsed", collapsed ? "true" : "false");
-        xml.writeAttribute("propertyExpandedHeight", QString::number(expandedHeight));
-        
-        qDebug() << QString("프로퍼티 오버레이 저장: x=%1, y=%2, w=%3, h=%4, collapsed=%5, expandedH=%6")
-                    .arg(geo.x()).arg(geo.y()).arg(geo.width()).arg(geo.height())
-                    .arg(collapsed).arg(expandedHeight);
-    }
-    
     // 카메라들 컨테이너
     xml.writeStartElement("Cameras");
     
@@ -511,45 +492,6 @@ bool RecipeManager::loadRecipe(const QString& fileName,
             throw QString(QString("유효하지 않은 레시피 파일 형식입니다. 루트 요소: %1").arg(xml.name().toString()));
         }
         
-        // 프로퍼티 오버레이 위치와 크기 읽기
-        if (teachingWidget && teachingWidget->rightPanelOverlay) {
-            QXmlStreamAttributes attrs = xml.attributes();
-            if (attrs.hasAttribute("propertyX") && attrs.hasAttribute("propertyY") &&
-                attrs.hasAttribute("propertyWidth") && attrs.hasAttribute("propertyHeight")) {
-                int x = attrs.value("propertyX").toInt();
-                int y = attrs.value("propertyY").toInt();
-                int width = attrs.value("propertyWidth").toInt();
-                int height = attrs.value("propertyHeight").toInt();
-                
-                // 접기 상태 읽기
-                bool collapsed = (attrs.value("propertyCollapsed").toString() == "true");
-                int expandedHeight = attrs.hasAttribute("propertyExpandedHeight") ? 
-                                    attrs.value("propertyExpandedHeight").toInt() : height;
-                
-                teachingWidget->rightPanelCollapsed = collapsed;
-                teachingWidget->rightPanelExpandedHeight = expandedHeight;
-                
-                // 접힌 상태면 헤더만 표시
-                if (collapsed) {
-                    teachingWidget->rightPanelOverlay->setGeometry(x, y, width, 40);
-                    if (teachingWidget->rightPanelContent) {
-                        teachingWidget->rightPanelContent->setVisible(false);
-                    }
-                    if (teachingWidget->rightPanelCollapseButton) {
-                        teachingWidget->rightPanelCollapseButton->setText("▲");
-                    }
-                } else {
-                    teachingWidget->rightPanelOverlay->setGeometry(x, y, width, height);
-                    if (teachingWidget->rightPanelContent) {
-                        teachingWidget->rightPanelContent->setVisible(true);
-                    }
-                    if (teachingWidget->rightPanelCollapseButton) {
-                        teachingWidget->rightPanelCollapseButton->setText("▼");
-                    }
-                }
-            }
-        }
-        
         // 시뮬레이션 모드일 때 기존 카메라 정보 초기화
         bool isSimulationMode = false;
         for (const auto& cameraInfo : cameraInfos) {
@@ -617,15 +559,9 @@ bool RecipeManager::loadRecipe(const QString& fileName,
         cv::Mat stripModeImg = teachingWidget->getStripModeImage();
         cv::Mat crimpModeImg = teachingWidget->getCrimpModeImage();
         
-        qDebug() << QString("=== 레시피 로드 (CAM OFF) ===");
-        qDebug() << QString("STRIP 이미지 존재: %1, CRIMP 이미지 존재: %2")
-                    .arg(!stripModeImg.empty() ? "예" : "아니오")
-                    .arg(!crimpModeImg.empty() ? "예" : "아니오");
-        
         // ★ cameraFrames를 크기 2로 초기화 (STRIP=0, CRIMP=1)
         if (teachingWidget->cameraFrames.size() < 2) {
             teachingWidget->cameraFrames.resize(2);
-            qDebug() << "cameraFrames를 크기 2로 초기화 (STRIP=0, CRIMP=1)";
         }
         
         // ★ STRIP/CRIMP 이미지를 각각의 인덱스에 저장
@@ -635,23 +571,20 @@ bool RecipeManager::loadRecipe(const QString& fileName,
             teachingWidget->cameraFrames[0] = stripModeImg.clone();
             teachingWidget->setStripModeImage(stripModeImg);
             imagePaths.append("base64_image_0");
-            qDebug() << "STRIP 이미지를 cameraFrames[0]에 설정";
         }
         
         if (!crimpModeImg.empty()) {
             teachingWidget->cameraFrames[1] = crimpModeImg.clone();
             teachingWidget->setCrimpModeImage(crimpModeImg);
             imagePaths.append("base64_image_1");
-            qDebug() << "CRIMP 이미지를 cameraFrames[1]에 설정";
         }
         
         // 이미지 로드 후 trainingImageCallback 호출
         if (!imagePaths.isEmpty() && trainingImageCallback) {
-            qDebug() << "STRIP/CRIMP 이미지 설정 완료 - trainingImageCallback 호출 (이미지 개수:" << imagePaths.size() << ")";
             trainingImageCallback(imagePaths);
         }
     } else if (teachingWidget && !teachingWidget->camOff) {
-        qDebug() << "[RecipeManager] CAM ON 상태 - cameraFrames/stripModeImage/crimpModeImage 건너뜀 (패턴만 로드)";
+        // CAM ON 상태 - cameraFrames 설정 건너뜀
     }
     
     // base64 티칭 이미지가 로드된 경우 trainingImageCallback 호출
@@ -866,17 +799,6 @@ void RecipeManager::writePatternRect(QXmlStreamWriter& xml, const PatternInfo& p
     xml.writeAttribute("angle", QString::number(pattern.angle, 'f', 2));
     xml.writeAttribute("stripCrimpMode", QString::number(pattern.stripCrimpMode));
     
-    // FID 패턴 rect 저장 로그
-    if (pattern.type == PatternType::FID) {
-        qDebug() << QString("FID 패턴 '%1' rect 저장: x=%2, y=%3, w=%4, h=%5, angle=%6")
-                    .arg(pattern.name)
-                    .arg(pattern.rect.x(), 0, 'f', 1)
-                    .arg(pattern.rect.y(), 0, 'f', 1)
-                    .arg(pattern.rect.width(), 0, 'f', 1)
-                    .arg(pattern.rect.height(), 0, 'f', 1)
-                    .arg(pattern.angle, 0, 'f', 1);
-    }
-    
     xml.writeEndElement();
     
 }
@@ -907,13 +829,6 @@ void RecipeManager::writeFIDDetails(QXmlStreamWriter& xml, const PatternInfo& pa
         // BMP 포맷 사용 (손실 없음, PNG보다 빠름)
         pattern.templateImage.save(&buffer, "BMP");
         xml.writeAttribute("templateImage", ba.toBase64());
-        qDebug() << QString("FID 패턴 '%1' 템플릿 이미지 저장: 크기=%2x%3, base64 길이=%4")
-                    .arg(pattern.name)
-                    .arg(pattern.templateImage.width())
-                    .arg(pattern.templateImage.height())
-                    .arg(ba.size());
-    } else {
-        qDebug() << QString("FID 패턴 '%1' 템플릿 이미지가 null입니다!").arg(pattern.name);
     }
     
     // ★ FID matchTemplate 저장 (RGB32 포맷 - 매칭용)
@@ -924,12 +839,6 @@ void RecipeManager::writeFIDDetails(QXmlStreamWriter& xml, const PatternInfo& pa
         matchBuffer.open(QIODevice::WriteOnly);
         pattern.matchTemplate.save(&matchBuffer, "BMP");
         xml.writeAttribute("matchTemplate", matchBa.toBase64());
-        qDebug() << QString("FID 패턴 '%1' matchTemplate 저장: 크기=%2x%3, 포맷=%4, base64 길이=%5")
-                    .arg(pattern.name)
-                    .arg(pattern.matchTemplate.width())
-                    .arg(pattern.matchTemplate.height())
-                    .arg(pattern.matchTemplate.format())
-                    .arg(matchBa.size());
     }
     
     // ★ FID matchTemplateMask 저장
@@ -940,11 +849,6 @@ void RecipeManager::writeFIDDetails(QXmlStreamWriter& xml, const PatternInfo& pa
         maskBuffer.open(QIODevice::WriteOnly);
         pattern.matchTemplateMask.save(&maskBuffer, "BMP");
         xml.writeAttribute("matchTemplateMask", maskBa.toBase64());
-        qDebug() << QString("FID 패턴 '%1' matchTemplateMask 저장: 크기=%2x%3, base64 길이=%4")
-                    .arg(pattern.name)
-                    .arg(pattern.matchTemplateMask.width())
-                    .arg(pattern.matchTemplateMask.height())
-                    .arg(maskBa.size());
     }
     
     xml.writeEndElement();
@@ -953,8 +857,6 @@ void RecipeManager::writeFIDDetails(QXmlStreamWriter& xml, const PatternInfo& pa
 void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pattern) {
     xml.writeStartElement("INSDetails");
     xml.writeAttribute("inspectionMethod", QString::number(pattern.inspectionMethod));
-    
-    qDebug() << QString("INS 패턴 '%1' 저장: inspectionMethod=%2").arg(pattern.name).arg(pattern.inspectionMethod);
     
     xml.writeAttribute("passThreshold", QString::number(pattern.passThreshold));
     xml.writeAttribute("ssimNgThreshold", QString::number(pattern.ssimNgThreshold));
@@ -1028,11 +930,6 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
         buffer.open(QIODevice::WriteOnly);
         pattern.templateImage.save(&buffer, "BMP");
         xml.writeAttribute("templateImage", ba.toBase64());
-        qDebug() << QString("INS 패턴 '%1' DIFF 템플릿 이미지 저장: 크기=%2x%3, base64 길이=%4")
-                    .arg(pattern.name)
-                    .arg(pattern.templateImage.width())
-                    .arg(pattern.templateImage.height())
-                    .arg(ba.size());
     }
     
     // STRIP 전용 템플릿 이미지 저장
@@ -1042,10 +939,6 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
         buffer.open(QIODevice::WriteOnly);
         pattern.stripTemplateImage.save(&buffer, "BMP");
         xml.writeAttribute("stripTemplateImage", ba.toBase64());
-        qDebug() << QString("INS 패턴 '%1' STRIP 템플릿 이미지 저장: 크기=%2x%3")
-                    .arg(pattern.name)
-                    .arg(pattern.stripTemplateImage.width())
-                    .arg(pattern.stripTemplateImage.height());
     }
     
     // CRIMP 전용 템플릿 이미지 저장
@@ -1055,10 +948,6 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
         buffer.open(QIODevice::WriteOnly);
         pattern.crimpTemplateImage.save(&buffer, "BMP");
         xml.writeAttribute("crimpTemplateImage", ba.toBase64());
-        qDebug() << QString("INS 패턴 '%1' CRIMP 템플릿 이미지 저장: 크기=%2x%3")
-                    .arg(pattern.name)
-                    .arg(pattern.crimpTemplateImage.width())
-                    .arg(pattern.crimpTemplateImage.height());
     }
     
     // 패턴 매칭 설정 저장
@@ -1077,11 +966,6 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
         buffer.open(QIODevice::WriteOnly);
         pattern.matchTemplate.save(&buffer, "BMP");
         xml.writeAttribute("matchTemplate", ba.toBase64());
-        qDebug() << QString("INS 패턴 '%1' matchTemplate 저장: 크기=%2x%3, base64 길이=%4")
-                    .arg(pattern.name)
-                    .arg(pattern.matchTemplate.width())
-                    .arg(pattern.matchTemplate.height())
-                    .arg(ba.size());
     }
     
     // matchTemplateMask 저장
@@ -1091,11 +975,6 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
         buffer.open(QIODevice::WriteOnly);
         pattern.matchTemplateMask.save(&buffer, "BMP");
         xml.writeAttribute("matchTemplateMask", ba.toBase64());
-        qDebug() << QString("INS 패턴 '%1' matchTemplateMask 저장: 크기=%2x%3, base64 길이=%4")
-                    .arg(pattern.name)
-                    .arg(pattern.matchTemplateMask.width())
-                    .arg(pattern.matchTemplateMask.height())
-                    .arg(ba.size());
     }
     
     xml.writeEndElement();
@@ -1194,7 +1073,6 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
     if (teachingWidget && !teachingWidget->camOff) {
         stripImageMap = nullptr;
         crimpImageMap = nullptr;
-        qDebug() << "[readCameraSection] CAM ON 상태 - STRIP/CRIMP 이미지 로드 건너뜀";
     }
     
     // 해당 카메라가 로드하려는 카메라 목록에 있는지 확인하고 CameraInfo 찾기
@@ -1238,9 +1116,6 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
         
         cameraInfos.append(newCameraInfo);
         currentCameraInfo = &cameraInfos.last();
-        
-        qDebug() << QString("레시피에서 카메라 정보 추가: UUID='%1', 이름='%2'")
-                    .arg(cameraUuid).arg(cameraName);
     }
     
     int cameraPatternCount = 0;
@@ -1330,14 +1205,12 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                             stripImage = teachingImage.clone();
                             stripWidth = width;
                             stripHeight = height;
-                            qDebug() << QString("STRIP 이미지 로드: %1x%2").arg(width).arg(height);
                         } else if (imageIndex == 1) {
                             // CRIMP 이미지
                             teachingWidget->setCrimpModeImage(teachingImage);
                             crimpImage = teachingImage.clone();
                             crimpWidth = width;
                             crimpHeight = height;
-                            qDebug() << QString("CRIMP 이미지 로드: %1x%2").arg(width).arg(height);
                         }
                     }
                 }

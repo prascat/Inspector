@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QString>
 #include <QVariant>
+#include <QRect>
 
 class ConfigManager : public QObject
 {
@@ -51,6 +52,23 @@ public:
     bool getCameraAutoConnect() const;
     void setCameraAutoConnect(bool enable);
     
+    // 프로퍼티 패널 설정
+    QRect getPropertyPanelGeometry() const;
+    void setPropertyPanelGeometry(const QRect& geometry);
+    
+    bool getPropertyPanelCollapsed() const;
+    void setPropertyPanelCollapsed(bool collapsed);
+    
+    int getPropertyPanelExpandedHeight() const;
+    void setPropertyPanelExpandedHeight(int height);
+    
+    // 로그창 설정
+    QRect getLogPanelGeometry() const;
+    void setLogPanelGeometry(const QRect& geometry);
+    
+    bool getLogPanelCollapsed() const;
+    void setLogPanelCollapsed(bool collapsed);
+    
 signals:
     void configChanged();
     void languageChanged(const QString& newLanguage);
@@ -72,6 +90,15 @@ private:
     bool m_autoConnect;
     int m_reconnectInterval;
     bool m_cameraAutoConnect;
+    
+    // 프로퍼티 패널 설정
+    QRect m_propertyPanelGeometry;
+    bool m_propertyPanelCollapsed;
+    int m_propertyPanelExpandedHeight;
+    
+    // 로그창 설정
+    QRect m_logPanelGeometry;
+    bool m_logPanelCollapsed;
     
     // 설정 파일 경로
     QString getConfigFilePath() const;
