@@ -10,6 +10,7 @@
 #include <QPen>
 #include <QFontMetrics>
 #include <numeric>
+#include <chrono>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 
@@ -44,35 +45,14 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
         }
     }
     
+    // 검사 시작 시간 측정
+    auto startTime = std::chrono::high_resolution_clock::now();
+    
     logDebug(QString("검사 시작 - %1 (%2개 패턴)").arg(modeName).arg(insCount));
 
     result.isPassed = true;
     
-    // PatchCore 전체 영상 추론 (ANOMALY 패턴이 있을 경우 한 번만 실행)
-    bool hasAnomalyPattern = false;
-    for (const PatternInfo &pattern : patterns)
-    {
-        if (pattern.enabled && 
-            pattern.stripCrimpMode == stripCrimpMode &&
-            pattern.type == PatternType::INS &&
-            pattern.inspectionMethod == InspectionMethod::ANOMALY)
-        {
-            hasAnomalyPattern = true;
-            break;
-        }
-    }
-    
-    cv::Mat globalAnomalyMap;
-    if (hasAnomalyPattern && ImageProcessor::isPatchCoreModelLoaded())
-    {
-        float globalAnomalyScore = 0.0f;
-        ImageProcessor::runPatchCoreInference(image, globalAnomalyScore, globalAnomalyMap, 0.0f);
-        
-        // result에 저장 (검사 함수에서 사용)
-        result.globalAnomalyMap = globalAnomalyMap.clone();
-    }
-
-    // qDebug() << "[검사 초기] result.isPassed =" << result.isPassed;
+    // PatchCore는 각 ANOMALY 패턴별로 개별 추론 (전체 영상 추론 제거)
 
     // 1. 활성화된 패턴들을 유형별로 분류
     QList<PatternInfo> roiPatterns, fidPatterns, insPatterns;
@@ -954,8 +934,12 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
 
     // 전체 검사 결과 로그
     QString resultText = result.isPassed ? "PASS" : "NG";
-
-    logDebug(QString("검사 종료 - %1: %2").arg(modeName).arg(resultText));
+    
+    // 검사 종료 시간 측정 및 소요 시간 계산
+    auto endTime = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+    
+    logDebug(QString("검사 종료 - %1: %2 (소요시간: %3ms)").arg(modeName).arg(resultText).arg(duration.count()));
 
     return result;
 }
@@ -2212,18 +2196,28 @@ bool InsProcessor::checkSSIM(const cv::Mat &image, const PatternInfo &pattern, d
 // ANOMALY (PatchCore) 검사
 bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern, double &score, InspectionResult &result)
 {
-    // 전역 anomaly map 사용 (performInspection에서 이미 추론됨)
-    if (result.globalAnomalyMap.empty())
-    {
-        logDebug(QString("ANOMALY 검사 실패: 전역 anomaly map이 비어있음 - 패턴 '%1'").arg(pattern.name));
+    // 패턴별 PatchCore 모델 로드
+    QString fullModelPath = QCoreApplication::applicationDirPath() + QString("/weights/%1/%1.xml").arg(pattern.name);
+    
+    QFileInfo modelFile(fullModelPath);
+    if (!modelFile.exists()) {
+        logDebug(QString("ANOMALY 검사 실패: 모델 파일 없음 - 패턴 '%1', 경로: %2").arg(pattern.name).arg(fullModelPath));
         score = 0.0;
         result.insScores[pattern.id] = score;
         result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
         return false;
     }
     
-    // pattern은 adjustedPattern이므로 pattern.rect는 이미 원본 영상 좌표로 변환되어 있음
-    // pattern.rect는 QRectF 타입
+    // 모델 로드 (이미 로드된 경우 내부에서 자동 스킵)
+    if (!ImageProcessor::initPatchCoreModel(fullModelPath)) {
+        logDebug(QString("ANOMALY 검사 실패: 모델 로드 실패 - 패턴 '%1'").arg(pattern.name));
+        score = 0.0;
+        result.insScores[pattern.id] = score;
+        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+        return false;
+    }
+    
+    // pattern.rect는 adjustedPattern이므로 이미 원본 영상 좌표
     QRectF rectF = pattern.rect;
     cv::Rect roiRect(static_cast<int>(rectF.x()), 
                      static_cast<int>(rectF.y()), 
@@ -2232,8 +2226,8 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     
     // 범위 체크
     if (roiRect.x < 0 || roiRect.y < 0 ||
-        roiRect.x + roiRect.width > result.globalAnomalyMap.cols ||
-        roiRect.y + roiRect.height > result.globalAnomalyMap.rows ||
+        roiRect.x + roiRect.width > image.cols ||
+        roiRect.y + roiRect.height > image.rows ||
         roiRect.width <= 0 || roiRect.height <= 0)
     {
         logDebug(QString("ANOMALY 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
@@ -2243,11 +2237,33 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
         return false;
     }
     
-    // ROI 영역의 anomaly map만 추출
-    cv::Mat roiAnomalyMap = result.globalAnomalyMap(roiRect).clone();
+    // ROI 영역만 추출
+    cv::Mat roiImage = image(roiRect).clone();
+    
+    // PatchCore 추론 (ROI만 입력)
+    cv::Mat anomalyMap;
+    float anomalyScore = 0.0f;
+    
+    if (!ImageProcessor::runPatchCoreInference(roiImage, anomalyScore, anomalyMap, 0.0f))
+    {
+        logDebug(QString("ANOMALY 검사 실패: PatchCore 추론 실패 - 패턴 '%1'").arg(pattern.name));
+        score = 0.0;
+        result.insScores[pattern.id] = score;
+        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+        return false;
+    }
+    
+    if (anomalyMap.empty())
+    {
+        logDebug(QString("ANOMALY 검사 실패: anomaly map이 비어있음 - 패턴 '%1'").arg(pattern.name));
+        score = 0.0;
+        result.insScores[pattern.id] = score;
+        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+        return false;
+    }
     
     // ROI 영역의 평균 anomaly score 계산 (0~100 범위)
-    cv::Scalar meanVal = cv::mean(roiAnomalyMap);
+    cv::Scalar meanVal = cv::mean(anomalyMap);
     float roiAnomalyScore = static_cast<float>(meanVal[0]);
     
     // Score를 0~100 범위로 클리핑
@@ -2255,14 +2271,12 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     
     // Threshold 이상인 픽셀로 마스크 생성
     cv::Mat binaryMask;
-    cv::threshold(roiAnomalyMap, binaryMask, pattern.passThreshold, 255, cv::THRESH_BINARY);
+    cv::threshold(anomalyMap, binaryMask, pattern.passThreshold, 255, cv::THRESH_BINARY);
     binaryMask.convertTo(binaryMask, CV_8U);
     
     // Contour로 덩어리 검출
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(binaryMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-    
-    int numBlobs = static_cast<int>(contours.size());
     
     // anomalyMinBlobSize 이상의 덩어리가 있는지 확인 및 불량 contour 저장
     bool hasDefect = false;
@@ -2273,7 +2287,14 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
         int blobSize = static_cast<int>(cv::contourArea(contour));
         if (blobSize >= pattern.anomalyMinBlobSize) {
             hasDefect = true;
-            defectContours.push_back(contour);  // 불량 contour 저장 (ROI 상대좌표)
+            
+            // ROI 상대좌표를 절대좌표로 변환
+            std::vector<cv::Point> absoluteContour;
+            for (const auto& pt : contour) {
+                absoluteContour.push_back(cv::Point(pt.x + roiRect.x, pt.y + roiRect.y));
+            }
+            defectContours.push_back(absoluteContour);
+            
             if (blobSize > maxDefectBlobSize) {
                 maxDefectBlobSize = blobSize;
             }
@@ -2283,19 +2304,69 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     // Score 저장 (0~100 범위)
     score = static_cast<double>(roiAnomalyScore);
     
-    // 불량 contour 저장 (ROI 상대좌표)
+    // 불량 contour 저장 (절대좌표)
     result.anomalyDefectContours[pattern.id] = defectContours;
     
+    // 원본 anomaly map 저장 (임계값 조절용)
+    result.anomalyRawMap[pattern.id] = anomalyMap.clone();
+    
     // ROI 영역의 Anomaly Map을 히트맵으로 저장
-    // 주의: normalize하지 않음! 전체 맵의 0~100 범위 그대로 유지
     cv::Mat normalized;
-    roiAnomalyMap.convertTo(normalized, CV_8U, 255.0 / 100.0);  // 0~100 -> 0~255 스케일만 변환
+    anomalyMap.convertTo(normalized, CV_8U, 255.0 / 100.0);  // 0~100 -> 0~255
     
     cv::Mat colorHeatmap;
     cv::applyColorMap(normalized, colorHeatmap, cv::COLORMAP_JET);
     
     result.anomalyHeatmap[pattern.id] = colorHeatmap.clone();
-    result.anomalyHeatmapRect[pattern.id] = pattern.rect;  // QRect 그대로 저장
+    result.anomalyHeatmapRect[pattern.id] = pattern.rect;
+    
+    // 불량일 경우 data/날짜/detect/ 폴더에 원본+검사결과 저장
+    if (hasDefect) {
+        // 날짜 폴더 생성
+        QDateTime now = QDateTime::currentDateTime();
+        QString dateFolder = now.toString("yyyyMMdd");
+        QString timestamp = now.toString("yyyyMMddHHmmss_zzz");
+        QString basePath = "../deploy/data/" + dateFolder + "/detect";
+        
+        QDir dir;
+        if (!dir.exists(basePath)) {
+            dir.mkpath(basePath);
+        }
+        
+        // 원본 ROI 이미지
+        cv::Mat roiOriginal = roiImage.clone();
+        
+        // 검사결과 그린 ROI 이미지 (컨투어 + 히트맵 오버레이)
+        cv::Mat roiWithDetection = roiImage.clone();
+        if (roiWithDetection.channels() == 1) {
+            cv::cvtColor(roiWithDetection, roiWithDetection, cv::COLOR_GRAY2BGR);
+        }
+        
+        // 히트맵 오버레이 (반투명)
+        cv::Mat colorHeatmapResized;
+        cv::resize(colorHeatmap, colorHeatmapResized, roiWithDetection.size());
+        cv::addWeighted(roiWithDetection, 0.6, colorHeatmapResized, 0.4, 0, roiWithDetection);
+        
+        // 불량 컨투어 그리기 (ROI 상대좌표)
+        for (const auto& contour : contours) {
+            int blobSize = static_cast<int>(cv::contourArea(contour));
+            if (blobSize >= pattern.anomalyMinBlobSize) {
+                cv::drawContours(roiWithDetection, std::vector<std::vector<cv::Point>>{contour}, 
+                                 -1, cv::Scalar(0, 0, 255), 2);
+            }
+        }
+        
+        // 원본과 검사결과를 가로로 합치기
+        cv::Mat combined;
+        cv::hconcat(roiOriginal.channels() == 1 ? 
+                    (cv::cvtColor(roiOriginal, roiOriginal, cv::COLOR_GRAY2BGR), roiOriginal) : roiOriginal, 
+                    roiWithDetection, combined);
+        
+        // 파일 저장
+        QString filePath = basePath + "/" + timestamp + "_" + pattern.name + ".png";
+        cv::imwrite(filePath.toStdString(), combined);
+        qDebug() << "[ANOMALY DETECT] 불량 이미지 저장:" << filePath;
+    }
     
     // 결과 저장
     result.insScores[pattern.id] = score;

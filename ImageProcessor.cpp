@@ -1,6 +1,9 @@
 #include "ImageProcessor.h"
 #include <opencv2/imgproc.hpp>
 #include <QDebug>
+#include <QFile>
+#include <QFileInfo>
+#include <QTextStream>
 #include <algorithm>
 #include <iostream>
 #include <ctime>
@@ -2851,8 +2854,11 @@ int ImageProcessor::s_yoloMaskSize = 160;   // YOLO11-seg mask prototype size
 std::shared_ptr<ov::CompiledModel> ImageProcessor::s_patchCoreModel = nullptr;
 std::shared_ptr<ov::InferRequest> ImageProcessor::s_patchCoreInferRequest = nullptr;
 bool ImageProcessor::s_patchCoreModelLoaded = false;
+QString ImageProcessor::s_patchCoreCurrentModelPath = "";
 int ImageProcessor::s_patchCoreInputWidth = 224;
 int ImageProcessor::s_patchCoreInputHeight = 224;
+float ImageProcessor::s_patchCoreNormMin = 17.0f;
+float ImageProcessor::s_patchCoreNormMax = 50.0f;
 
 bool ImageProcessor::initYoloSegModel(const QString& modelPath, const QString& device)
 {
@@ -3369,11 +3375,50 @@ void ImageProcessor::applyReflectionRemovalInpainting(const cv::Mat &src, cv::Ma
 bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString& device)
 {
     try {
+        // 같은 모델이 이미 로드되어 있으면 스킵
+        if (s_patchCoreModelLoaded && s_patchCoreCurrentModelPath == modelPath) {
+            return true;  // 이미 로드됨
+        }
+        
         if (s_patchCoreModelLoaded) {
             releasePatchCoreModel();
         }
         
         qDebug() << "[OpenVINO] PatchCore 모델 로딩 시작:" << modelPath;
+        
+        // norm_stats.txt 읽기 (모델과 같은 폴더에 위치)
+        QFileInfo modelFileInfo(modelPath);
+        QString normStatsPath = modelFileInfo.absolutePath() + "/norm_stats.txt";
+        QFile normStatsFile(normStatsPath);
+        
+        // 기본값 설정
+        s_patchCoreNormMin = 17.0f;
+        s_patchCoreNormMax = 50.0f;
+        
+        if (normStatsFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&normStatsFile);
+            float meanPixel = 0.0f;
+            float maxPixel = 0.0f;
+            
+            while (!in.atEnd()) {
+                QString line = in.readLine().trimmed();
+                if (line.startsWith("mean_pixel=")) {
+                    meanPixel = line.mid(11).toFloat();
+                } else if (line.startsWith("max_pixel=")) {
+                    maxPixel = line.mid(10).toFloat();
+                }
+            }
+            normStatsFile.close();
+            
+            // 정규화 범위 계산: mean - 여유 ~ max + 여유
+            if (meanPixel > 0 && maxPixel > 0) {
+                s_patchCoreNormMin = meanPixel - 10.0f;  // 양품 평균보다 여유 있게
+                s_patchCoreNormMax = maxPixel + 20.0f;   // 불량 감지를 위해 여유 있게
+                qDebug() << "[PatchCore] norm_stats.txt 로드됨 - min:" << s_patchCoreNormMin << "max:" << s_patchCoreNormMax;
+            }
+        } else {
+            qDebug() << "[PatchCore] norm_stats.txt 없음, 기본값 사용 - min:" << s_patchCoreNormMin << "max:" << s_patchCoreNormMax;
+        }
         
         // OpenVINO Core 생성 (YOLO와 공유)
         if (!s_ovinoCore) {
@@ -3409,6 +3454,7 @@ bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString&
         );
         
         s_patchCoreModelLoaded = true;
+        s_patchCoreCurrentModelPath = modelPath;  // 현재 로드된 모델 경로 저장
         qDebug() << "[OpenVINO] PatchCore 모델 로딩 성공 - 디바이스:" << device;
         return true;
         
@@ -3424,6 +3470,7 @@ void ImageProcessor::releasePatchCoreModel()
     s_patchCoreInferRequest.reset();
     s_patchCoreModel.reset();
     s_patchCoreModelLoaded = false;
+    s_patchCoreCurrentModelPath = "";
     qDebug() << "[OpenVINO] PatchCore 모델 해제 완료";
 }
 
@@ -3491,20 +3538,31 @@ bool ImageProcessor::runPatchCoreInference(
         s_patchCoreInferRequest->infer();
         
         // 7. 결과 파싱
-        // 출력: anomaly_map (1,1,H,W), pred_score (1,)
+        // 출력: anomaly_map (1,1,H,W), pred_score (1,) - 인덱스로 접근
         auto outputs = s_patchCoreInferRequest->get_compiled_model().outputs();
+        
+        qDebug() << "[PatchCore] 출력 개수:" << outputs.size();
         
         ov::Tensor anomalyMapTensor;
         ov::Tensor predScoreTensor;
         
-        // 출력 텐서 찾기 (이름으로)
-        for (const auto& output : outputs) {
-            std::string name = output.get_any_name();
-            if (name.find("anomaly_map") != std::string::npos) {
-                anomalyMapTensor = s_patchCoreInferRequest->get_tensor(output);
-            } else if (name.find("pred_score") != std::string::npos) {
-                predScoreTensor = s_patchCoreInferRequest->get_tensor(output);
+        // 출력 텐서를 인덱스로 직접 가져오기 (이름 없는 경우 대비)
+        if (outputs.size() >= 2) {
+            // 첫 번째: anomaly_map (4차원), 두 번째: pred_score (1차원)
+            auto tensor0 = s_patchCoreInferRequest->get_output_tensor(0);
+            auto tensor1 = s_patchCoreInferRequest->get_output_tensor(1);
+            
+            // 차원 수로 구분 (anomaly_map은 4D, pred_score는 1D 또는 2D)
+            if (tensor0.get_shape().size() == 4) {
+                anomalyMapTensor = tensor0;
+                predScoreTensor = tensor1;
+            } else {
+                predScoreTensor = tensor0;
+                anomalyMapTensor = tensor1;
             }
+        } else if (outputs.size() == 1) {
+            // 단일 출력인 경우 anomaly_map으로 간주
+            anomalyMapTensor = s_patchCoreInferRequest->get_output_tensor(0);
         }
         
         // pred_score가 없으면 첫 번째 출력 사용
@@ -3536,15 +3594,15 @@ bool ImageProcessor::runPatchCoreInference(
             cv::Mat resizedMap;
             cv::resize(mapFloat, resizedMap, image.size());
             
-            // 0~100 범위로 정규화
-            double minVal, maxVal;
-            cv::minMaxLoc(resizedMap, &minVal, &maxVal);
+            // norm_stats.txt에서 로드한 정규화 기준값 사용
+            // s_patchCoreNormMin, s_patchCoreNormMax는 initPatchCoreModel에서 설정됨
             
-            if (maxVal > minVal) {
-                anomalyMap = (resizedMap - minVal) / (maxVal - minVal) * 100.0;
-            } else {
-                anomalyMap = cv::Mat::zeros(image.size(), CV_32F);
-            }
+            // 0~100 범위로 정규화
+            anomalyMap = (resizedMap - s_patchCoreNormMin) / (s_patchCoreNormMax - s_patchCoreNormMin) * 100.0;
+            
+            // 0~100 범위로 클리핑
+            cv::threshold(anomalyMap, anomalyMap, 0.0, 0.0, cv::THRESH_TOZERO);  // 음수 제거
+            cv::threshold(anomalyMap, anomalyMap, 100.0, 100.0, cv::THRESH_TRUNC);  // 100 초과 제거
         } else {
             anomalyMap = cv::Mat::zeros(image.size(), CV_32F);
         }

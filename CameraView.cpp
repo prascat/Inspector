@@ -3666,68 +3666,55 @@ void CameraView::drawINSAnomalyVisualization(QPainter &painter, const Inspection
     QPointF bottomRightViewport = mapFromScene(inspRectScene.bottomRight());
     QRectF targetRect(topLeftViewport, bottomRightViewport);
     
-    // 불량 contour가 있는지 확인
-    bool hasDefectContours = result.anomalyDefectContours.contains(patternId) && 
-                             !result.anomalyDefectContours[patternId].empty();
-    
     painter.save();
     painter.translate(insCenterViewport);
     painter.rotate(insAngle);
     painter.translate(-insCenterViewport);
     
+    // 히트맵 오버레이 (항상 표시)
+    if (result.anomalyHeatmap.contains(patternId)) {
+        const cv::Mat& heatmap = result.anomalyHeatmap[patternId];
+        if (!heatmap.empty()) {
+            // 히트맵을 QImage로 변환
+            cv::Mat heatmapRGB;
+            cv::cvtColor(heatmap, heatmapRGB, cv::COLOR_BGR2RGB);
+            
+            QImage heatmapImage(heatmapRGB.data, heatmapRGB.cols, heatmapRGB.rows,
+                                heatmapRGB.step, QImage::Format_RGB888);
+            QPixmap heatmapPixmap = QPixmap::fromImage(heatmapImage.copy());
+            
+            // 반투명 오버레이 (alpha 블렌딩)
+            painter.setOpacity(0.5);  // 50% 불투명
+            
+            // 히트맵을 INS 영역에 스케일하여 그리기
+            painter.drawPixmap(targetRect.toRect(), heatmapPixmap.scaled(
+                targetRect.width(), targetRect.height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+            
+            painter.setOpacity(1.0);  // 불투명도 복원
+        }
+    }
+    
+    // 불량 contour 그리기 (히트맵 위에 추가로 표시)
+    bool hasDefectContours = result.anomalyDefectContours.contains(patternId) && 
+                             !result.anomalyDefectContours[patternId].empty();
+    
     if (hasDefectContours) {
-        // 불량 contour 그리기 (원본 영상 위에 반투명 빨간색으로 채우기)
         const auto& contours = result.anomalyDefectContours[patternId];
         
-        // ROI 상대좌표 → 절대좌표 변환
-        QPointF roiTopLeft = inspRectScene.topLeft();
-        cv::Point2f roiOffset(roiTopLeft.x(), roiTopLeft.y());
-        
-        painter.setPen(Qt::NoPen);  // 외곽선 없음
-        painter.setBrush(QBrush(QColor(255, 0, 0, 102)));  // 빨간색, 40% 불투명 (alpha=102)
+        painter.setPen(QPen(QColor(255, 0, 0), 2));  // 빨간색 외곽선
+        painter.setBrush(Qt::NoBrush);  // 채우기 없음
         
         for (const auto& contour : contours) {
             if (contour.size() < 3) continue;
             
             QPolygonF polygon;
             for (const auto& pt : contour) {
-                // ROI 상대좌표 → Scene 절대좌표
-                QPointF scenePoint(roiOffset.x + pt.x, roiOffset.y + pt.y);
-                // Scene → Viewport
-                QPointF viewportPoint = mapFromScene(scenePoint);
+                // 절대좌표 → Viewport
+                QPointF viewportPoint = mapFromScene(QPointF(pt.x, pt.y));
                 polygon << viewportPoint;
             }
             painter.drawPolygon(polygon);
         }
-    } else {
-        // 양품이거나 contour가 없으면 히트맵 표시
-        if (!result.anomalyHeatmap.contains(patternId)) {
-            painter.restore();
-            return;
-        }
-        
-        const cv::Mat& heatmap = result.anomalyHeatmap[patternId];
-        if (heatmap.empty()) {
-            painter.restore();
-            return;
-        }
-        
-        // 히트맵을 QImage로 변환
-        cv::Mat heatmapRGB;
-        cv::cvtColor(heatmap, heatmapRGB, cv::COLOR_BGR2RGB);
-        
-        QImage heatmapImage(heatmapRGB.data, heatmapRGB.cols, heatmapRGB.rows,
-                            heatmapRGB.step, QImage::Format_RGB888);
-        QPixmap heatmapPixmap = QPixmap::fromImage(heatmapImage.copy());
-        
-        // 반투명 오버레이 (alpha 블렌딩)
-        painter.setOpacity(0.6);  // 60% 불투명
-        
-        // 히트맵을 INS 영역에 스케일하여 그리기
-        painter.drawPixmap(targetRect.toRect(), heatmapPixmap.scaled(
-            targetRect.width(), targetRect.height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
-        
-        painter.setOpacity(1.0);  // 불투명도 복원
     }
     
     // 컬러바 범례 그리기 (INS 박스 아래, 회전 적용)
@@ -5845,8 +5832,13 @@ void CameraView::updateAnomalyHeatmap(const QUuid &patternId, double passThresho
         return;
     }
     
-    // globalAnomalyMap 확인
-    if (lastInspectionResult.globalAnomalyMap.empty()) {
+    // 원본 anomaly map 확인
+    if (!lastInspectionResult.anomalyRawMap.contains(patternId)) {
+        return;
+    }
+    
+    const cv::Mat& anomalyMap = lastInspectionResult.anomalyRawMap[patternId];
+    if (anomalyMap.empty()) {
         return;
     }
     
@@ -5856,49 +5848,31 @@ void CameraView::updateAnomalyHeatmap(const QUuid &patternId, double passThresho
         return;
     }
     
-    // ROI 영역 추출
-    QRectF rectF = pattern->rect;
-    cv::Rect roiRect(static_cast<int>(rectF.x()), 
-                     static_cast<int>(rectF.y()), 
-                     static_cast<int>(rectF.width()), 
-                     static_cast<int>(rectF.height()));
-    
-    // 범위 체크
-    if (roiRect.x < 0 || roiRect.y < 0 ||
-        roiRect.x + roiRect.width > lastInspectionResult.globalAnomalyMap.cols ||
-        roiRect.y + roiRect.height > lastInspectionResult.globalAnomalyMap.rows ||
-        roiRect.width <= 0 || roiRect.height <= 0) {
-        return;
-    }
-    
-    // ROI 영역의 anomaly map 추출
-    cv::Mat roiAnomalyMap = lastInspectionResult.globalAnomalyMap(roiRect).clone();
-    
-    // 임계값 미만 픽셀 제거 (60% 이하는 원본 그대로 = 0으로 설정)
-    cv::Mat maskedAnomalyMap = roiAnomalyMap.clone();
-    for (int y = 0; y < maskedAnomalyMap.rows; y++) {
-        float* row = maskedAnomalyMap.ptr<float>(y);
-        for (int x = 0; x < maskedAnomalyMap.cols; x++) {
-            if (row[x] <= passThreshold) {
-                row[x] = 0.0f;  // 임계값 이하는 제거 (파란색 없앰)
-            }
-        }
-    }
-    
-    // Contour 재계산 (임계값 변경 시 불량 영역도 변경됨)
+    // Threshold 이상인 픽셀로 마스크 생성
     cv::Mat binaryMask;
-    cv::threshold(roiAnomalyMap, binaryMask, passThreshold, 255, cv::THRESH_BINARY);
+    cv::threshold(anomalyMap, binaryMask, passThreshold, 255, cv::THRESH_BINARY);
     binaryMask.convertTo(binaryMask, CV_8U);
     
+    // Contour 재계산
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(binaryMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
     
-    // anomalyMinBlobSize 이상의 불량 contour 재계산
+    // ROI 오프셋 가져오기 (절대좌표 변환용)
+    QRectF rectF = pattern->rect;
+    int roiOffsetX = static_cast<int>(rectF.x());
+    int roiOffsetY = static_cast<int>(rectF.y());
+    
+    // anomalyMinBlobSize 이상의 불량 contour만 저장 (ROI 상대좌표 → 절대좌표)
     std::vector<std::vector<cv::Point>> defectContours;
     for (const auto& contour : contours) {
         int blobSize = static_cast<int>(cv::contourArea(contour));
         if (blobSize >= pattern->anomalyMinBlobSize) {
-            defectContours.push_back(contour);
+            // ROI 상대좌표를 절대좌표로 변환
+            std::vector<cv::Point> absoluteContour;
+            for (const auto& pt : contour) {
+                absoluteContour.push_back(cv::Point(pt.x + roiOffsetX, pt.y + roiOffsetY));
+            }
+            defectContours.push_back(absoluteContour);
         }
     }
     
@@ -5907,7 +5881,7 @@ void CameraView::updateAnomalyHeatmap(const QUuid &patternId, double passThresho
     
     // 0~100 -> 0~255 변환
     cv::Mat normalized;
-    maskedAnomalyMap.convertTo(normalized, CV_8U, 255.0 / 100.0);
+    anomalyMap.convertTo(normalized, CV_8U, 255.0 / 100.0);
     
     // 컬러 히트맵 생성
     cv::Mat colorHeatmap;

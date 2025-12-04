@@ -559,6 +559,7 @@ private:
     // ANOMALY 검사 전용 위젯들
     QWidget* anomalySettingsWidget = nullptr;
     QSpinBox* anomalyMinBlobSizeSpin = nullptr;
+    QPushButton* anomalyTrainButton = nullptr;  // ANOMALY 학습 버튼
 
     // 패턴 기본 정보 관련 위젯들
     QLabel* patternIdValue = nullptr;      
@@ -752,6 +753,9 @@ private:
     
     // 레시피 메뉴
     QMenu* recipeMenu = nullptr;
+    
+    // Docker 학습 프로세스 (종료 시 정리용)
+    QProcess* dockerTrainProcess = nullptr;
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

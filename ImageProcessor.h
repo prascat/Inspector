@@ -172,8 +172,11 @@ private:
     static std::shared_ptr<ov::CompiledModel> s_patchCoreModel;
     static std::shared_ptr<ov::InferRequest> s_patchCoreInferRequest;
     static bool s_patchCoreModelLoaded;
+    static QString s_patchCoreCurrentModelPath;  // 현재 로드된 모델 경로
     static int s_patchCoreInputWidth;
     static int s_patchCoreInputHeight;
+    static float s_patchCoreNormMin;   // 정규화 최소값 (norm_stats.txt에서 로드)
+    static float s_patchCoreNormMax;   // 정규화 최대값 (norm_stats.txt에서 로드)
     
     // 전처리/후처리 헬퍼 함수
     static cv::Mat preprocessYoloInput(const cv::Mat& image, int targetWidth, int targetHeight, float& scale, int& padX, int& padY);
