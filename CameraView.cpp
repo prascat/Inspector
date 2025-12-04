@@ -2141,7 +2141,7 @@ void CameraView::drawINSPatterns(QPainter &painter, const InspectionResult &resu
 
             // PASS/NG 텍스트
             QString passText = passed ? "PASS" : "NG";
-            QColor passColor = passed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+            QColor passColor = passed ? QColor(0, 255, 0) : QColor(255, 165, 0);
             int passTextW = fm.horizontalAdvance(passText);
 
             painter.save();
@@ -2504,7 +2504,7 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
             }
 
             QString rearPassText = rearPassed ? "PASS" : "NG";
-            QColor rearPassColor = rearPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+            QColor rearPassColor = rearPassed ? QColor(0, 255, 0) : QColor(255, 165, 0);
             int passTextW = boxFm.horizontalAdvance(rearPassText);
 
             QRect rearPassRect(-passTextW / 2 - 2, -boxHeight / 2 - rearTextH * 2 - 4, passTextW + 4, rearTextH);
@@ -2747,7 +2747,7 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
             }
 
             QString frontPassText = frontPassed ? "PASS" : "NG";
-            QColor frontPassColor = frontPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+            QColor frontPassColor = frontPassed ? QColor(0, 255, 0) : QColor(255, 165, 0);
             int passTextW = boxFm.horizontalAdvance(frontPassText);
 
             QRect frontPassRect(-passTextW / 2 - 2, -boxHeight / 2 - frontTextH * 2 - 4, passTextW + 4, frontTextH);
@@ -2940,7 +2940,7 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
             painter.drawText(edgeTextRect, Qt::AlignCenter, edgeLabel);
 
             QString edgePassText = edgePassed ? "PASS" : "NG";
-            QColor edgePassColor = edgePassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+            QColor edgePassColor = edgePassed ? QColor(0, 255, 0) : QColor(255, 165, 0);
             int passTextW = boxFm.horizontalAdvance(edgePassText);
 
             QRect edgePassRect(-passTextW / 2 - 2, -edgeBoxHeight / 2 - edgeTextH * 2 - 4, passTextW + 4, edgeTextH);
@@ -3177,7 +3177,7 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
 
                             // PASS/NG 표시 (위쪽)
                             QString lengthPassText = lengthPassed ? "PASS" : "NG";
-                            QColor lengthPassColor = lengthPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+                            QColor lengthPassColor = lengthPassed ? QColor(0, 255, 0) : QColor(255, 165, 0);
                             int passTextW = fm.horizontalAdvance(lengthPassText);
 
                             QRect passRect(-passTextW / 2 - 5,
@@ -3446,7 +3446,7 @@ void CameraView::drawINSCrimpVisualization(QPainter &painter, const InspectionRe
         QPointF leftBoxCenter = leftBoxViewport.center();
         
         bool leftPass = result.barrelLeftResults.value(patternId, false);
-        QColor boxColor = leftPass ? QColor(0, 255, 255) : QColor(255, 0, 0);  // 시안색 또는 빨간색
+        QColor boxColor = leftPass ? QColor(0, 255, 255) : QColor(255, 165, 0);  // 시안색 또는 주황색
         
         // 회전 적용하여 박스 그리기
         painter.save();
@@ -3490,7 +3490,7 @@ void CameraView::drawINSCrimpVisualization(QPainter &painter, const InspectionRe
         QPointF rightBoxCenter = rightBoxViewport.center();
         
         bool rightPass = result.barrelRightResults.value(patternId, false);
-        QColor boxColor = rightPass ? QColor(255, 165, 0) : QColor(255, 0, 0);  // 오렌지색 또는 빨간색
+        QColor boxColor = rightPass ? QColor(255, 200, 0) : QColor(255, 165, 0);  // 밝은 주황 또는 주황색
         
         // 회전 적용하여 박스 그리기
         painter.save();

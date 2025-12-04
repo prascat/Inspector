@@ -48,6 +48,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     // 검사 시작 시간 측정
     auto startTime = std::chrono::high_resolution_clock::now();
     
+    // 검사 시작 로그 (패턴 개수와 관계없이 항상 출력)
     logDebug(QString("[%1] Trigger ON 검사시작 (%2개 패턴)").arg(modeName).arg(insCount));
 
     result.isPassed = true;
@@ -858,27 +859,17 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 // ANOMALY: 불량 개수 및 최대 W/H 표시
                 int defectCount = result.anomalyDefectContours.value(pattern.id).size();
                 if (defectCount > 0) {
-                    // 최대 컨투어 크기 및 W/H 찾기
-                    int maxContourSize = 0;
+                    // 최대 컨투어 W/H 찾기
                     int maxW = 0, maxH = 0;
                     for (const auto& contour : result.anomalyDefectContours.value(pattern.id)) {
-                        int size = static_cast<int>(cv::contourArea(contour));
                         cv::Rect bbox = cv::boundingRect(contour);
-                        if (size > maxContourSize) {
-                            maxContourSize = size;
-                            maxW = bbox.width;
-                            maxH = bbox.height;
-                        }
+                        if (bbox.width > maxW) maxW = bbox.width;
+                        if (bbox.height > maxH) maxH = bbox.height;
                     }
-                    resultDetail = QString("  %1: %2 ANOMALY[%3>%4 W:%5/%6 H:%7/%8] defects:%9")
+                    resultDetail = QString("  %1: W:%2 H:%3 Detects:%4")
                                        .arg(pattern.name)
-                                       .arg(insResultText)
-                                       .arg(maxContourSize)
-                                       .arg(pattern.anomalyMinBlobSize)
                                        .arg(maxW)
-                                       .arg(pattern.anomalyMinDefectWidth)
                                        .arg(maxH)
-                                       .arg(pattern.anomalyMinDefectHeight)
                                        .arg(defectCount);
                 } else {
                     resultDetail = QString("  %1: %2")
@@ -890,23 +881,31 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             {
                 // STRIP: 세부 결과 한 줄로
                 QStringList stripDetails;
-                if (result.frontResult != "PASS") stripDetails << QString("FRONT:%1").arg(result.frontDetail);
-                if (result.rearResult != "PASS") stripDetails << QString("REAR:%1").arg(result.rearDetail);
-                if (result.edgeResult != "PASS") stripDetails << QString("EDGE:%1").arg(result.edgeDetail);
                 
-                if (stripDetails.isEmpty()) {
-                    resultDetail = QString("  %1: %2 STRIP[%3/%4]")
+                // gradient points 부족으로 검사 실패한 경우 (score = 0.0)
+                if (inspScore == 0.0 && !result.stripPointsValid.value(pattern.id, false)) {
+                    resultDetail = QString("  %1: %2 STRIP 검사불가 (gradient points 부족)")
                                        .arg(pattern.name)
-                                       .arg(insResultText)
-                                       .arg(QString::number(inspScore * 100.0, 'f', 1))
-                                       .arg(QString::number(pattern.passThreshold, 'f', 1));
+                                       .arg(insResultText);
                 } else {
-                    resultDetail = QString("  %1: %2 STRIP[%3/%4] %5")
-                                       .arg(pattern.name)
-                                       .arg(insResultText)
-                                       .arg(QString::number(inspScore * 100.0, 'f', 1))
-                                       .arg(QString::number(pattern.passThreshold, 'f', 1))
-                                       .arg(stripDetails.join(" "));
+                    if (result.frontResult != "PASS") stripDetails << QString("FRONT:%1").arg(result.frontDetail);
+                    if (result.rearResult != "PASS") stripDetails << QString("REAR:%1").arg(result.rearDetail);
+                    if (result.edgeResult != "PASS") stripDetails << QString("EDGE:%1").arg(result.edgeDetail);
+                    
+                    if (stripDetails.isEmpty()) {
+                        resultDetail = QString("  %1: %2 STRIP[%3/%4]")
+                                           .arg(pattern.name)
+                                           .arg(insResultText)
+                                           .arg(QString::number(inspScore * 100.0, 'f', 1))
+                                           .arg(QString::number(pattern.passThreshold, 'f', 1));
+                    } else {
+                        resultDetail = QString("  %1: %2 STRIP[%3/%4] %5")
+                                           .arg(pattern.name)
+                                           .arg(insResultText)
+                                           .arg(QString::number(inspScore * 100.0, 'f', 1))
+                                           .arg(QString::number(pattern.passThreshold, 'f', 1))
+                                           .arg(stripDetails.join(" "));
+                    }
                 }
             }
             else if (pattern.inspectionMethod == InspectionMethod::CRIMP)
@@ -949,7 +948,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     }
 
     // 전체 검사 결과 로그
-    QString resultText = result.isPassed ? "PASS" : "NG";
+    QString resultText = result.isPassed ? "PASS" : "FAIL";
     
     // 검사 종료 시간 측정 및 소요 시간 계산
     auto endTime = std::chrono::high_resolution_clock::now();
@@ -3070,7 +3069,7 @@ bool InsProcessor::checkStrip(const cv::Mat &image, const PatternInfo &pattern, 
         }
         else
         {
-            logDebug("경고: gradientPoints 개수 부족 (" + QString::number(gradientPoints.size()) + "/4)");
+            logDebug("STRIP 검사 실패: gradientPoints 개수 부족 (" + QString::number(gradientPoints.size()) + "/4)");
             score = 0.0;
             return false; // FAIL 처리
         }

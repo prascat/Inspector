@@ -10,6 +10,6 @@
     <AutoConnect>true</AutoConnect>
     <ReconnectInterval>3</ReconnectInterval>
     <CameraAutoConnect>true</CameraAutoConnect>
-    <PropertyPanel x="21" y="111" width="278" height="40" collapsed="false" expandedHeight="600"/>
-    <LogPanel x="65" y="575" width="800" height="321" collapsed="true"/>
+    <PropertyPanel x="21" y="111" width="375" height="689" collapsed="false" expandedHeight="689"/>
+    <LogPanel x="299" y="71" width="800" height="321" collapsed="true"/>
 </Config>

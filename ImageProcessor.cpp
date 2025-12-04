@@ -2861,7 +2861,7 @@ bool ImageProcessor::initYoloSegModel(const QString& modelPath, const QString& d
             releaseYoloSegModel();
         }
         
-        qDebug() << "[OpenVINO] SEG 모델 로딩 시작:" << modelPath;
+        qDebug() << "[OpenVINO] SEG 모델 로딩 시작:" << qPrintable(modelPath);
         
         // OpenVINO Core 생성
         s_ovinoCore = std::make_shared<ov::Core>();
@@ -2872,7 +2872,7 @@ bool ImageProcessor::initYoloSegModel(const QString& modelPath, const QString& d
         for (const auto& dev : devices) {
             deviceList << QString::fromStdString(dev);
         }
-        qDebug() << "[OpenVINO] 사용 가능한 디바이스:" << deviceList.join(", ");
+        qDebug() << "[OpenVINO] 사용 가능한 디바이스:" << qPrintable(deviceList.join(", "));
         
         // 모델 읽기
         std::shared_ptr<ov::Model> model = s_ovinoCore->read_model(modelPath.toStdString());

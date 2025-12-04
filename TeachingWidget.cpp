@@ -4892,6 +4892,10 @@ void TeachingWidget::createPropertyPanels()
                  << "이미지 수:" << imageFiles.size()
                  << "FID 매칭:" << (useFidMatching ? "사용" : "미사용");
         
+        // 학습 시작 시간 기록 (ROI 추출부터)
+        QElapsedTimer *trainingTimer = new QElapsedTimer();
+        trainingTimer->start();
+        
         // 진행 다이얼로그
         QProgressDialog progress("Extracting ROI...", "Cancel", 0, imageFiles.size(), this);
         progress.setWindowModality(Qt::WindowModal);
@@ -4910,6 +4914,15 @@ void TeachingWidget::createPropertyPanels()
         int fidMatchFailCount = 0;
         
         for (int i = 0; i < imageFiles.size(); ++i) {
+            // 경과 시간 계산
+            qint64 elapsedMs = trainingTimer->elapsed();
+            int elapsedSec = elapsedMs / 1000;
+            int minutes = elapsedSec / 60;
+            int seconds = elapsedSec % 60;
+            QString timeStr = QString("%1:%2").arg(minutes, 2, 10, QChar('0')).arg(seconds, 2, 10, QChar('0'));
+            
+            progress.setLabelText(QString("Extracting ROI... %1 / %2 [%3]")
+                .arg(i + 1).arg(imageFiles.size()).arg(timeStr));
             progress.setValue(i);
             if (progress.wasCanceled()) break;
             
@@ -5038,9 +5051,16 @@ void TeachingWidget::createPropertyPanels()
         process->setProcessChannelMode(QProcess::MergedChannels);  // stdout + stderr 합침
         
         // 실시간 출력 읽기 및 진행률 표시
-        connect(process, &QProcess::readyReadStandardOutput, [process, trainProgress]() {
+        connect(process, &QProcess::readyReadStandardOutput, [process, trainProgress, trainingTimer]() {
             QString output = process->readAllStandardOutput();
             QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+            
+            // 경과 시간 계산
+            qint64 elapsedMs = trainingTimer->elapsed();
+            int elapsedSec = elapsedMs / 1000;
+            int minutes = elapsedSec / 60;
+            int seconds = elapsedSec % 60;
+            QString timeStr = QString("%1:%2").arg(minutes, 2, 10, QChar('0')).arg(seconds, 2, 10, QChar('0'));
             
             for (const QString& line : lines) {
                 qDebug() << "[ANOMALY TRAIN]" << line;
@@ -5056,8 +5076,8 @@ void TeachingWidget::createPropertyPanels()
                         if (match.hasMatch()) {
                             int current = match.captured(1).toInt();
                             int total = match.captured(2).toInt();
-                            trainProgress->setLabelText(QString("Sampling... %1 / %2 (%3%)")
-                                .arg(current).arg(total).arg(current * 100 / total));
+                            trainProgress->setLabelText(QString("Sampling... %1 / %2 (%3%) [%4]")
+                                .arg(current).arg(total).arg(current * 100 / total).arg(timeStr));
                         }
                     }
                     // "Extracting features:  50%|█████     | 1/2"
@@ -5067,8 +5087,8 @@ void TeachingWidget::createPropertyPanels()
                         if (match.hasMatch()) {
                             int current = match.captured(1).toInt();
                             int total = match.captured(2).toInt();
-                            trainProgress->setLabelText(QString("Extracting... %1 / %2 (%3%)")
-                                .arg(current).arg(total).arg(current * 100 / total));
+                            trainProgress->setLabelText(QString("Extracting... %1 / %2 (%3%) [%4]")
+                                .arg(current).arg(total).arg(current * 100 / total).arg(timeStr));
                         }
                     }
                     continue;
@@ -5081,30 +5101,39 @@ void TeachingWidget::createPropertyPanels()
                     if (match.hasMatch()) {
                         int current = match.captured(1).toInt();
                         int total = match.captured(2).toInt();
-                        trainProgress->setLabelText(QString("Building... %1 / %2 (%3%)")
-                            .arg(current).arg(total).arg(current * 100 / total));
+                        trainProgress->setLabelText(QString("Building... %1 / %2 (%3%) [%4]")
+                            .arg(current).arg(total).arg(current * 100 / total).arg(timeStr));
                     }
                 }
                 else if (line.contains("Converting to OpenVINO", Qt::CaseInsensitive)) {
-                    trainProgress->setLabelText("Converting model...");
+                    trainProgress->setLabelText(QString("Converting model... [%1]").arg(timeStr));
                 }
                 else if (line.contains("Building coreset", Qt::CaseInsensitive)) {
-                    trainProgress->setLabelText("Building started...");
+                    trainProgress->setLabelText(QString("Building started... [%1]").arg(timeStr));
                 }
                 else if (line.contains("Computing normalization", Qt::CaseInsensitive)) {
-                    trainProgress->setLabelText("Computing normalization...");
+                    trainProgress->setLabelText(QString("Computing normalization... [%1]").arg(timeStr));
                 }
                 else if (line.contains("Exporting model", Qt::CaseInsensitive)) {
-                    trainProgress->setLabelText("Exporting model...");
+                    trainProgress->setLabelText(QString("Exporting model... [%1]").arg(timeStr));
                 }
                 else if (line.contains("Starting training", Qt::CaseInsensitive)) {
-                    trainProgress->setLabelText("Training started...");
+                    trainProgress->setLabelText(QString("Training started... [%1]").arg(timeStr));
                 }
             }
         });
         
         connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-                [this, process, tempDir, pattern, outputDir, trainProgress](int exitCode, QProcess::ExitStatus exitStatus) {
+                [this, process, tempDir, pattern, outputDir, trainProgress, trainingTimer](int exitCode, QProcess::ExitStatus exitStatus) {
+            
+            // 총 소요 시간 계산
+            qint64 totalMs = trainingTimer->elapsed();
+            int totalSec = totalMs / 1000;
+            int minutes = totalSec / 60;
+            int seconds = totalSec % 60;
+            QString totalTimeStr = QString("%1분 %2초").arg(minutes).arg(seconds);
+            
+            delete trainingTimer;  // 타이머 메모리 해제
             
             QString output = process->readAllStandardOutput();
             QString error = process->readAllStandardError();
@@ -5116,20 +5145,24 @@ void TeachingWidget::createPropertyPanels()
                 // 학습된 모델을 즉시 메모리에 적재 (norm_stats.txt도 자동 로드됨)
                 QString fullModelPath = QCoreApplication::applicationDirPath() + QString("/weights/%1/%1.xml").arg(pattern.name);
                 
-                qDebug() << "[ANOMALY TRAIN] Training completed - Loading model:" << fullModelPath;
+                qDebug() << "[ANOMALY TRAIN] Training completed in" << totalTimeStr << "- Loading model:" << fullModelPath;
                 
                 if (ImageProcessor::initPatchCoreModel(fullModelPath)) {
                     qDebug() << "[ANOMALY TRAIN] Model loaded successfully!";
-                    QMessageBox::information(this, "Training Complete", 
-                        QString("Model training completed and loaded.\nPattern: %1\nPath: %2")
+                    CustomMessageBox msgBox(this, CustomMessageBox::Information, "Training Complete",
+                        QString("Model training completed and loaded.\nPattern: %1\nPath: %2\nTime: %3")
                             .arg(pattern.name)
-                            .arg(outputDir));
+                            .arg(outputDir)
+                            .arg(totalTimeStr));
+                    msgBox.exec();
                 } else {
                     qWarning() << "[ANOMALY TRAIN] Model load failed";
-                    QMessageBox::warning(this, "Training Complete", 
-                        QString("Training completed but model load failed.\nPattern: %1\nPath: %2\n\nPlease reload the recipe.")
+                    CustomMessageBox msgBox(this, CustomMessageBox::Warning, "Training Complete",
+                        QString("Training completed but model load failed.\nPattern: %1\nPath: %2\nTime: %3\n\nPlease reload the recipe.")
                             .arg(pattern.name)
-                            .arg(outputDir));
+                            .arg(outputDir)
+                            .arg(totalTimeStr));
+                    msgBox.exec();
                 }
                 
                 // Train 버튼을 Trained로 업데이트
@@ -5143,10 +5176,11 @@ void TeachingWidget::createPropertyPanels()
             } else {
                 qDebug() << "[ANOMALY TRAIN] Docker stdout:" << output;
                 qDebug() << "[ANOMALY TRAIN] Docker stderr:" << error;
-                QMessageBox::critical(this, "Training Failed", 
+                CustomMessageBox msgBox(this, CustomMessageBox::Critical, "Training Failed",
                     QString("Docker training failed (exit code: %1)\n\nError:\n%2")
                         .arg(exitCode)
                         .arg(error.isEmpty() ? output : error));
+                msgBox.exec();
                 qDebug() << "[ANOMALY TRAIN] Training failed:" << exitCode;
             }
             
@@ -9016,8 +9050,17 @@ void TeachingWidget::detectCameras()
 {
     // **프로그레스 다이얼로그 생성**
     QProgressDialog *progressDialog = new QProgressDialog("카메라 검색 중...", "취소", 0, 100, this);
-    progressDialog->setWindowTitle("카메라 검색");
     progressDialog->setWindowModality(Qt::WindowModal);
+    progressDialog->setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    progressDialog->setStyleSheet(
+        "QProgressDialog { background-color: #1e1e1e; color: #ffffff; }"
+        "QWidget { background-color: #1e1e1e; color: #ffffff; }"
+        "QPushButton { background-color: #2d2d2d; color: #ffffff; border: 1px solid #3d3d3d; padding: 5px; min-width: 80px; }"
+        "QPushButton:hover { background-color: #3d3d3d; }"
+        "QProgressBar { border: 1px solid #3d3d3d; background-color: #252525; color: #ffffff; text-align: center; }"
+        "QProgressBar::chunk { background-color: #0d47a1; }"
+        "QLabel { color: #ffffff; }"
+    );
     progressDialog->setMinimumDuration(0); // 즉시 표시
     progressDialog->setValue(0);
     progressDialog->show();
@@ -12846,9 +12889,6 @@ void TeachingWidget::setStripCrimpMode(int mode)
         if (cameraView && cameraView->hasModeResult(mode))
         {
             cameraView->switchToModeResult(mode);
-            qDebug() << "[setStripCrimpMode] CAM ON 상태: "
-                     << (mode == StripCrimpMode::STRIP_MODE ? "STRIP" : "CRIMP")
-                     << " 검사 결과로 전환";
         }
     }
 
@@ -16047,9 +16087,9 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
                     
                     if (QFile::exists(fullModelPath))
                     {
-                        qDebug() << "[ANOMALY] 모델 로딩 시작:" << fullModelPath;
+                        qDebug() << "[ANOMALY] 모델 로딩 시작:" << qPrintable(fullModelPath);
                         if (ImageProcessor::initPatchCoreModel(fullModelPath, "CPU")) {
-                            qDebug() << "[ANOMALY] 모델 로딩 성공 - 이상탐지 검사 준비 완료 (패턴:" << pattern.name << ")";
+                            qDebug() << "[ANOMALY] 모델 로딩 성공 - 이상탐지 검사 준비 완료 (패턴:" << qPrintable(pattern.name) << ")";
                         } else {
                             qDebug() << "[ANOMALY] 모델 로딩 실패 - 이상탐지 검사가 비활성화됩니다.";
                         }
