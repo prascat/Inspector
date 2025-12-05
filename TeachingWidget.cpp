@@ -10,6 +10,7 @@
 #include "RecipeManager.h"
 #include "ConfigManager.h"
 #include "CustomMessageBox.h"
+#include "CustomFileDialog.h"
 #include <QTimer>
 #include <QProgressDialog>
 #include <QProcess>
@@ -10144,26 +10145,16 @@ void TeachingWidget::saveCurrentImage()
         return;
     }
 
-    // 저장 경로 선택 다이얼로그
+    // 저장 경로 선택 다이얼로그 (CustomFileDialog 사용)
     QString defaultFileName = QString("image_%1.png")
                                   .arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
 
-    QFileDialog dialog(this, "이미지 저장", defaultFileName,
-                       "PNG 이미지 (*.png);;JPEG 이미지 (*.jpg *.jpeg);;BMP 이미지 (*.bmp);;모든 파일 (*.*)");
-    dialog.setAcceptMode(QFileDialog::AcceptSave);
-    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
-    dialog.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
-    dialog.resize(800, 500);
-
-    QString filePath;
-    if (dialog.exec() == QDialog::Accepted)
-    {
-        QStringList files = dialog.selectedFiles();
-        if (!files.isEmpty())
-        {
-            filePath = files.first();
-        }
-    }
+    QString filePath = CustomFileDialog::getSaveFileName(
+        this,
+        "이미지 저장",
+        defaultFileName,
+        "PNG 이미지 (*.png);;JPEG 이미지 (*.jpg *.jpeg);;BMP 이미지 (*.bmp);;모든 파일 (*.*)"
+    );
 
     if (filePath.isEmpty())
     {
@@ -15403,11 +15394,13 @@ void TeachingWidget::newRecipe()
 
 void TeachingWidget::loadTeachingImage()
 {
-    // 이미지 파일 선택
-    QString imageFile = QFileDialog::getOpenFileName(this,
-                                                     "티칭용 이미지 선택",
-                                                     "",
-                                                     "이미지 파일 (*.jpg *.jpeg *.png *.bmp *.tiff *.tif)");
+    // 이미지 파일 선택 (CustomFileDialog 사용)
+    QString imageFile = CustomFileDialog::getOpenFileName(
+        this,
+        "티칭용 이미지 선택",
+        "",
+        "이미지 파일 (*.jpg *.jpeg *.png *.bmp *.tiff *.tif)"
+    );
 
     if (imageFile.isEmpty())
     {

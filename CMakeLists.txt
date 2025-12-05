@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(MV)  # 프로젝트 이름을 MV로 변경
+project(Inspector)  # 프로젝트 이름
 
 set(CMAKE_CXX_STANDARD 17)  # Qt6는 C++17 필요
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -185,7 +185,7 @@ if(USE_SPINNAKER)
 endif()
 
 # 실행 파일 추가 (일반 실행 파일로 설정)
-add_executable(MV 
+add_executable(Inspector 
     main.cpp 
     TeachingWidget.cpp 
     ImageProcessor.cpp 
@@ -202,10 +202,11 @@ add_executable(MV
     ConfigManager.cpp
     SerialCommunication.cpp
     CustomMessageBox.cpp
+    CustomFileDialog.cpp
 )
 
 # Qt6, OpenCV, OpenVINO 및 추가 라이브러리 연결
-target_link_libraries(MV 
+target_link_libraries(Inspector 
     PRIVATE
     Qt6::Widgets 
     Qt6::Xml
@@ -221,14 +222,14 @@ set(DEPLOY_DIR "${CMAKE_SOURCE_DIR}/deploy")
 
 # 배포용 폴더 생성 및 파일 복사
 add_custom_target(deploy ALL
-    DEPENDS MV
+    DEPENDS Inspector
     COMMENT "Deploying application to ${DEPLOY_DIR}"
 )
 
 # 실행 파일 복사
 add_custom_command(TARGET deploy POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPLOY_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:MV> ${DEPLOY_DIR}/
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:Inspector> ${DEPLOY_DIR}/
     COMMENT "Copying executable to deploy directory"
 )
 
@@ -257,7 +258,7 @@ message(STATUS "Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 # 설치 타겟 설정 (make install 명령으로 실행)
-install(TARGETS MV 
+install(TARGETS Inspector 
     DESTINATION bin
     COMPONENT runtime
 )
