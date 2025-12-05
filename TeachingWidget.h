@@ -48,6 +48,7 @@
 #include <atomic>
 #include <QThreadPool>
 #include <QRunnable>
+#include "TrainDialog.h"
 #include <QDir>
 #include <opencv2/opencv.hpp>
 
@@ -251,6 +252,7 @@ private slots:
     void showCameraSettings();
     void showServerSettings();
     void showSerialSettings();
+    void showModelManagement();
     void openGeneralSettings() {
         QMessageBox::information(this, TR("GENERAL_SETTINGS"), 
             TR("GENERAL_SETTINGS_INFO"));
@@ -297,6 +299,9 @@ private:
                                  QMap<QString, QTreeWidgetItem*>& itemMap, 
                                  int& patternCount);
     void showImageViewerDialog(const QImage& image, const QString& title);
+    
+    // ANOMALY 모델 학습 메서드
+    void trainAnomalyPattern(const QString& patternName);
     
     // 각도 정규화 함수 (-180° ~ +180° 범위로 변환)
     static double normalizeAngle(double angle);
@@ -347,6 +352,7 @@ private:
     QAction* aboutAction = nullptr;
     QAction* serverSettingsAction = nullptr;
     QAction* serialSettingsAction = nullptr;
+    QAction* modelManagementAction = nullptr;
     
     // 버튼 멤버 변수들
     QPushButton* modeToggleButton = nullptr;
@@ -757,6 +763,9 @@ private:
     
     // Docker 학습 프로세스 (종료 시 정리용)
     QProcess* dockerTrainProcess = nullptr;
+    
+    // TrainDialog 인스턴스 (학습 이미지 수집용)
+    TrainDialog* activeTrainDialog = nullptr;
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

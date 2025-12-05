@@ -936,14 +936,17 @@ QVBoxLayout *TeachingWidget::createMainLayout()
     cameraSettingsAction = settingsMenu->addAction(TR("CAMERA_SETTINGS"));
     cameraSettingsAction->setEnabled(true);
 
-    serverSettingsAction = settingsMenu->addAction(TR("SERVER_SETTINGS"));
-    serverSettingsAction->setEnabled(true);
-
     serialSettingsAction = settingsMenu->addAction(TR("SERIAL_SETTINGS"));
     serialSettingsAction->setEnabled(true);
 
+    serverSettingsAction = settingsMenu->addAction(TR("SERVER_SETTINGS"));
+    serverSettingsAction->setEnabled(true);
+
     languageSettingsAction = settingsMenu->addAction(TR("LANGUAGE_SETTINGS"));
     languageSettingsAction->setEnabled(true);
+
+    modelManagementAction = settingsMenu->addAction("모델 관리");
+    modelManagementAction->setEnabled(true);
 
     // 도움말 메뉴
     helpMenu = menuBar->addMenu(TR("HELP_MENU"));
@@ -967,6 +970,7 @@ QVBoxLayout *TeachingWidget::createMainLayout()
     connect(languageSettingsAction, &QAction::triggered, this, &TeachingWidget::openLanguageSettings);
     connect(serialSettingsAction, &QAction::triggered, this, &TeachingWidget::showSerialSettings);
     connect(aboutAction, &QAction::triggered, this, &TeachingWidget::showAboutDialog);
+    connect(modelManagementAction, &QAction::triggered, this, &TeachingWidget::showModelManagement);
 
     // 메뉴바 추가
     layout->setMenuBar(menuBar);
@@ -4789,453 +4793,45 @@ void TeachingWidget::createPropertyPanels()
     connect(anomalyTrainButton, &QPushButton::clicked, [this]() {
         if (!cameraView) return;
         
-        QUuid currentSelectedId = cameraView->getSelectedPatternId();
-        if (currentSelectedId.isNull()) {
-            QMessageBox::warning(this, "경고", "패턴이 선택되지 않았습니다.");
+        // 현재 모드의 모든 ANOMALY 패턴 수집
+        QVector<PatternInfo*> anomalyPatterns;
+        QVector<PatternInfo*> allPatternsVec;
+        const QList<PatternInfo>& allPatterns = cameraView->getPatterns();
+        
+        for (const PatternInfo& pattern : allPatterns) {
+            PatternInfo* patPtr = const_cast<PatternInfo*>(&pattern);
+            allPatternsVec.append(patPtr);  // 모든 패턴 추가 (FID 포함)
+            
+            if (pattern.type == PatternType::INS && 
+                pattern.inspectionMethod == InspectionMethod::ANOMALY &&
+                pattern.stripCrimpMode == currentStripCrimpMode) {
+                anomalyPatterns.append(patPtr);
+            }
+        }
+        
+        if (anomalyPatterns.isEmpty()) {
+            QMessageBox::warning(this, "경고", "현재 모드에 ANOMALY 검사 방법을 사용하는 INS 패턴이 없습니다.");
             return;
         }
         
-        PatternInfo* patternPtr = cameraView->getPatternById(currentSelectedId);
-        if (!patternPtr || patternPtr->type != PatternType::INS || patternPtr->inspectionMethod != InspectionMethod::ANOMALY) {
-            QMessageBox::warning(this, "경고", "ANOMALY 검사 방법이 선택된 INS 패턴만 학습할 수 있습니다.");
-            return;
-        }
+        // TrainDialog 표시
+        TrainDialog* trainDialog = new TrainDialog(this);
+        activeTrainDialog = trainDialog;  // 활성 다이얼로그 저장
+        trainDialog->setAllPatterns(allPatternsVec);  // 모든 패턴 설정 (FID 찾기용)
+        trainDialog->setAnomalyPatterns(anomalyPatterns, currentStripCrimpMode);
         
-        // 패턴 정보 복사 (람다 캡처용)
-        PatternInfo pattern = *patternPtr;
-        
-        // 부모 FID 패턴 정보 가져오기
-        PatternInfo* parentFidPattern = nullptr;
-        if (!pattern.parentId.isNull()) {
-            parentFidPattern = cameraView->getPatternById(pattern.parentId);
-        }
-        
-        // FID 템플릿 및 마스크 복사 (람다 캡처용)
-        cv::Mat fidTemplate, fidMask;
-        double fidTeachingAngle = 0.0;
-        QPointF fidTeachingCenter;
-        QPointF insTeachingCenter = pattern.rect.center();
-        bool useFidMatching = false;
-        
-        if (parentFidPattern && parentFidPattern->type == PatternType::FID && 
-            !parentFidPattern->matchTemplate.isNull()) {
-            // QImage를 cv::Mat으로 변환
-            QImage tempImg = parentFidPattern->matchTemplate.convertToFormat(QImage::Format_RGB888);
-            fidTemplate = cv::Mat(tempImg.height(), tempImg.width(), CV_8UC3,
-                                  const_cast<uchar*>(tempImg.bits()), tempImg.bytesPerLine()).clone();
-            cv::cvtColor(fidTemplate, fidTemplate, cv::COLOR_RGB2BGR);
-            
-            // 마스크가 있으면 변환
-            if (!parentFidPattern->matchTemplateMask.isNull()) {
-                QImage maskImg = parentFidPattern->matchTemplateMask.convertToFormat(QImage::Format_Grayscale8);
-                fidMask = cv::Mat(maskImg.height(), maskImg.width(), CV_8UC1,
-                                  const_cast<uchar*>(maskImg.bits()), maskImg.bytesPerLine()).clone();
-            }
-            
-            fidTeachingAngle = parentFidPattern->angle;
-            fidTeachingCenter = parentFidPattern->rect.center();
-            useFidMatching = true;
-            
-            qDebug() << "[ANOMALY TRAIN] FID 매칭 사용 - 부모 FID:" << parentFidPattern->name;
-        } else {
-            qDebug() << "[ANOMALY TRAIN] FID 매칭 없이 고정 좌표 사용";
-        }
-        
-        // 폴더 선택 다이얼로그
-        QFileDialog dialog(this, "양품 이미지 폴더 선택", "");
-        dialog.setFileMode(QFileDialog::Directory);
-        dialog.setOption(QFileDialog::ShowDirsOnly, true);
-        dialog.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
-        dialog.setStyleSheet(
-            "QFileDialog { background-color: #1e1e1e; color: #ffffff; }"
-            "QWidget { background-color: #1e1e1e; color: #ffffff; }"
-            "QPushButton { background-color: #2d2d2d; color: #ffffff; border: 1px solid #3d3d3d; padding: 5px; }"
-            "QPushButton:hover { background-color: #3d3d3d; }"
-            "QTreeView { background-color: #252525; color: #ffffff; border: 1px solid #3d3d3d; }"
-            "QTreeView::item:selected { background-color: #0d47a1; }"
-            "QLineEdit { background-color: #252525; color: #ffffff; border: 1px solid #3d3d3d; padding: 3px; }"
-            "QComboBox { background-color: #252525; color: #ffffff; border: 1px solid #3d3d3d; padding: 3px; }"
-            "QLabel { color: #ffffff; }"
-        );
-        
-        QString folderPath;
-        if (dialog.exec() == QDialog::Accepted) {
-            QStringList selected = dialog.selectedFiles();
-            if (!selected.isEmpty()) {
-                folderPath = selected.first();
-            }
-        }
-        
-        if (folderPath.isEmpty()) return;
-        
-        // 이미지 파일 목록 가져오기
-        QDir dir(folderPath);
-        QStringList filters;
-        filters << "*.png" << "*.jpg" << "*.jpeg" << "*.bmp";
-        QFileInfoList imageFiles = dir.entryInfoList(filters, QDir::Files);
-        
-        if (imageFiles.isEmpty()) {
-            QMessageBox::warning(this, "경고", "폴더에 이미지 파일이 없습니다.");
-            return;
-        }
-        
-        // 임시 폴더 생성 (ROI 크롭 이미지 저장용)
-        QString tempDir = QDir::temp().filePath(QString("anomaly_train_%1").arg(pattern.id.toString()));
-        QString goodDir = tempDir + "/good";
-        QDir().mkpath(goodDir);
-        
-        // ROI 크기 (고정)
-        int roiW = static_cast<int>(pattern.rect.width());
-        int roiH = static_cast<int>(pattern.rect.height());
-        
-        qDebug() << "[ANOMALY TRAIN] 학습 시작 - 패턴:" << pattern.name 
-                 << "ROI:" << roiW << "x" << roiH 
-                 << "이미지 수:" << imageFiles.size()
-                 << "FID 매칭:" << (useFidMatching ? "사용" : "미사용");
-        
-        // 학습 시작 시간 기록 (ROI 추출부터)
-        QElapsedTimer *trainingTimer = new QElapsedTimer();
-        trainingTimer->start();
-        
-        // 진행 다이얼로그
-        QProgressDialog progress("Extracting ROI...", "Cancel", 0, imageFiles.size(), this);
-        progress.setWindowModality(Qt::WindowModal);
-        progress.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
-        progress.setStyleSheet(
-            "QProgressDialog { background-color: #1e1e1e; color: #ffffff; }"
-            "QWidget { background-color: #1e1e1e; color: #ffffff; }"
-            "QPushButton { background-color: #2d2d2d; color: #ffffff; border: 1px solid #3d3d3d; padding: 5px; min-width: 80px; }"
-            "QPushButton:hover { background-color: #3d3d3d; }"
-            "QProgressBar { border: 1px solid #3d3d3d; background-color: #252525; color: #ffffff; text-align: center; }"
-            "QProgressBar::chunk { background-color: #0d47a1; }"
-            "QLabel { color: #ffffff; }"
-        );
-        
-        int croppedCount = 0;
-        int fidMatchFailCount = 0;
-        
-        for (int i = 0; i < imageFiles.size(); ++i) {
-            // 경과 시간 계산
-            qint64 elapsedMs = trainingTimer->elapsed();
-            int elapsedSec = elapsedMs / 1000;
-            int minutes = elapsedSec / 60;
-            int seconds = elapsedSec % 60;
-            QString timeStr = QString("%1:%2").arg(minutes, 2, 10, QChar('0')).arg(seconds, 2, 10, QChar('0'));
-            
-            progress.setLabelText(QString("Extracting ROI... %1 / %2 [%3]")
-                .arg(i + 1).arg(imageFiles.size()).arg(timeStr));
-            progress.setValue(i);
-            if (progress.wasCanceled()) break;
-            
-            QString imagePath = imageFiles[i].absoluteFilePath();
-            cv::Mat image = cv::imread(imagePath.toStdString());
-            
-            if (image.empty()) {
-                qWarning() << "[ANOMALY TRAIN] 이미지 로드 실패:" << imagePath;
-                continue;
-            }
-            
-            // ROI 좌표 계산 (FID 매칭 적용)
-            int roiX, roiY;
-            
-            if (useFidMatching && !fidTemplate.empty()) {
-                // FID 템플릿 매칭 수행
-                cv::Mat result;
-                int matchMethod = cv::TM_CCOEFF_NORMED;
-                
-                if (!fidMask.empty()) {
-                    cv::matchTemplate(image, fidTemplate, result, matchMethod, fidMask);
-                } else {
-                    cv::matchTemplate(image, fidTemplate, result, matchMethod);
-                }
-                
-                double minVal, maxVal;
-                cv::Point minLoc, maxLoc;
-                cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
-                
-                // 매칭 임계값 확인 (70% 이상)
-                if (maxVal < 0.7) {
-                    fidMatchFailCount++;
-                    qWarning() << "[ANOMALY TRAIN] FID 매칭 실패 (score:" << maxVal << "):" << imagePath;
-                    continue;
-                }
-                
-                // FID 매칭 위치에서 INS ROI 위치 계산
-                // 검출된 FID 중심 = maxLoc + (템플릿 크기 / 2)
-                double fidMatchCenterX = maxLoc.x + fidTemplate.cols / 2.0;
-                double fidMatchCenterY = maxLoc.y + fidTemplate.rows / 2.0;
-                
-                // 티칭 시 FID 중심 -> INS 중심 상대 벡터
-                double relativeX = insTeachingCenter.x() - fidTeachingCenter.x();
-                double relativeY = insTeachingCenter.y() - fidTeachingCenter.y();
-                
-                // 새 INS 중심 = 검출된 FID 중심 + 상대 벡터
-                double newInsCenterX = fidMatchCenterX + relativeX;
-                double newInsCenterY = fidMatchCenterY + relativeY;
-                
-                // ROI 좌표 계산 (중심 기준)
-                roiX = static_cast<int>(newInsCenterX - roiW / 2.0);
-                roiY = static_cast<int>(newInsCenterY - roiH / 2.0);
-            } else {
-                // FID 매칭 없이 고정 좌표 사용
-                roiX = static_cast<int>(pattern.rect.x());
-                roiY = static_cast<int>(pattern.rect.y());
-            }
-            
-            // ROI 범위 체크
-            if (roiX < 0 || roiY < 0 || roiX + roiW > image.cols || roiY + roiH > image.rows) {
-                qWarning() << "[ANOMALY TRAIN] ROI 범위 초과:" << imagePath 
-                           << "ROI:(" << roiX << "," << roiY << "," << roiW << "," << roiH << ")";
-                continue;
-            }
-            
-            // ROI 크롭
-            cv::Rect roiRect(roiX, roiY, roiW, roiH);
-            cv::Mat croppedImage = image(roiRect).clone();
-            
-            // 저장
-            QString outputPath = QString("%1/%2.png").arg(goodDir).arg(i, 4, 10, QChar('0'));
-            cv::imwrite(outputPath.toStdString(), croppedImage);
-            croppedCount++;
-        }
-        
-        progress.setValue(imageFiles.size());
-        
-        if (croppedCount == 0) {
-            QMessageBox::warning(this, "경고", "유효한 이미지가 없습니다.");
-            QDir(tempDir).removeRecursively();
-            return;
-        }
-        
-        qDebug() << "[ANOMALY TRAIN] ROI 크롭 완료:" << croppedCount << "개"
-                 << "(FID 매칭 실패:" << fidMatchFailCount << "개)";
-        
-        // Docker 학습 실행 - 절대 경로로 weights 폴더 지정
-        QString weightsBaseDir = QCoreApplication::applicationDirPath() + "/../deploy/weights";
-        QString outputDir = weightsBaseDir + "/" + pattern.name;
-        QDir().mkpath(outputDir);
-        
-        QString dockerScript = QCoreApplication::applicationDirPath() + "/../docker/docker_run_with_data.sh";
-        QStringList args;
-        args << tempDir << outputDir << pattern.name;
-        
-        qDebug() << "[ANOMALY TRAIN] Docker 학습 시작:" << dockerScript << args;
-        
-        // 학습 진행 다이얼로그
-        QProgressDialog *trainProgress = new QProgressDialog("Training model...", "Cancel", 0, 0, this);
-        trainProgress->setWindowModality(Qt::WindowModal);
-        trainProgress->setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
-        trainProgress->setStyleSheet(
-            "QProgressDialog { background-color: #1e1e1e; color: #ffffff; }"
-            "QWidget { background-color: #1e1e1e; color: #ffffff; }"
-            "QPushButton { background-color: #2d2d2d; color: #ffffff; border: 1px solid #3d3d3d; padding: 5px; min-width: 80px; }"
-            "QPushButton:hover { background-color: #3d3d3d; }"
-            "QProgressBar { border: 1px solid #3d3d3d; background-color: #252525; color: #ffffff; text-align: center; }"
-            "QProgressBar::chunk { background-color: #0d47a1; }"
-            "QLabel { color: #ffffff; }"
-        );
-        trainProgress->setMinimumDuration(0);
-        trainProgress->setValue(0);
-        trainProgress->setAutoClose(false);
-        trainProgress->setAutoReset(false);
-        
-        // 기존 Docker 프로세스가 실행 중이면 종료
-        if (dockerTrainProcess && dockerTrainProcess->state() == QProcess::Running) {
-            dockerTrainProcess->kill();
-            dockerTrainProcess->waitForFinished(3000);
-        }
-        
-        // 새 프로세스 생성
-        dockerTrainProcess = new QProcess(this);
-        QProcess *process = dockerTrainProcess;  // 람다 캡처용 로컬 변수
-        process->setWorkingDirectory(QCoreApplication::applicationDirPath() + "/..");
-        process->setProcessChannelMode(QProcess::MergedChannels);  // stdout + stderr 합침
-        
-        // 실시간 출력 읽기 및 진행률 표시
-        connect(process, &QProcess::readyReadStandardOutput, [process, trainProgress, trainingTimer]() {
-            QString output = process->readAllStandardOutput();
-            QStringList lines = output.split('\n', Qt::SkipEmptyParts);
-            
-            // 경과 시간 계산
-            qint64 elapsedMs = trainingTimer->elapsed();
-            int elapsedSec = elapsedMs / 1000;
-            int minutes = elapsedSec / 60;
-            int seconds = elapsedSec % 60;
-            QString timeStr = QString("%1:%2").arg(minutes, 2, 10, QChar('0')).arg(seconds, 2, 10, QChar('0'));
-            
-            for (const QString& line : lines) {
-                qDebug() << "[ANOMALY TRAIN]" << line;
-                
-                // \r로 시작하는 진행률 표시 (tqdm)
-                if (line.startsWith("\r")) {
-                    QString cleanLine = line.mid(1).trimmed();
-                    
-                    // "Selecting Coreset Indices.:  99%|█████████▉| 5077/5120"
-                    if (cleanLine.contains("Selecting Coreset") || cleanLine.contains("Selecting")) {
-                        QRegularExpression re(R"((\d+)/(\d+))");
-                        QRegularExpressionMatch match = re.match(cleanLine);
-                        if (match.hasMatch()) {
-                            int current = match.captured(1).toInt();
-                            int total = match.captured(2).toInt();
-                            trainProgress->setLabelText(QString("Sampling... %1 / %2 (%3%) [%4]")
-                                .arg(current).arg(total).arg(current * 100 / total).arg(timeStr));
-                        }
-                    }
-                    // "Extracting features:  50%|█████     | 1/2"
-                    else if (cleanLine.contains("Extracting features") || cleanLine.contains("Extracting")) {
-                        QRegularExpression re(R"((\d+)/(\d+))");
-                        QRegularExpressionMatch match = re.match(cleanLine);
-                        if (match.hasMatch()) {
-                            int current = match.captured(1).toInt();
-                            int total = match.captured(2).toInt();
-                            trainProgress->setLabelText(QString("Extracting... %1 / %2 (%3%) [%4]")
-                                .arg(current).arg(total).arg(current * 100 / total).arg(timeStr));
-                        }
-                    }
-                    continue;
-                }
-                
-                // 일반 메시지 파싱
-                if (line.contains("Coreset Indices")) {
-                    QRegularExpression re(R"(Coreset Indices (\d+)/(\d+))");
-                    QRegularExpressionMatch match = re.match(line);
-                    if (match.hasMatch()) {
-                        int current = match.captured(1).toInt();
-                        int total = match.captured(2).toInt();
-                        trainProgress->setLabelText(QString("Building... %1 / %2 (%3%) [%4]")
-                            .arg(current).arg(total).arg(current * 100 / total).arg(timeStr));
-                    }
-                }
-                else if (line.contains("Converting to OpenVINO", Qt::CaseInsensitive)) {
-                    trainProgress->setLabelText(QString("Converting model... [%1]").arg(timeStr));
-                }
-                else if (line.contains("Building coreset", Qt::CaseInsensitive)) {
-                    trainProgress->setLabelText(QString("Building started... [%1]").arg(timeStr));
-                }
-                else if (line.contains("Computing normalization", Qt::CaseInsensitive)) {
-                    trainProgress->setLabelText(QString("Computing normalization... [%1]").arg(timeStr));
-                }
-                else if (line.contains("Exporting model", Qt::CaseInsensitive)) {
-                    trainProgress->setLabelText(QString("Exporting model... [%1]").arg(timeStr));
-                }
-                else if (line.contains("Starting training", Qt::CaseInsensitive)) {
-                    trainProgress->setLabelText(QString("Training started... [%1]").arg(timeStr));
-                }
-            }
+        // Train 요청 시그널 연결
+        connect(trainDialog, &TrainDialog::trainRequested, this, [this](const QString& patternName) {
+            trainAnomalyPattern(patternName);
         });
         
-        connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-                [this, process, tempDir, pattern, outputDir, trainProgress, trainingTimer](int exitCode, QProcess::ExitStatus exitStatus) {
-            
-            // 총 소요 시간 계산
-            qint64 totalMs = trainingTimer->elapsed();
-            int totalSec = totalMs / 1000;
-            int minutes = totalSec / 60;
-            int seconds = totalSec % 60;
-            QString totalTimeStr = QString("%1분 %2초").arg(minutes).arg(seconds);
-            
-            delete trainingTimer;  // 타이머 메모리 해제
-            
-            QString output = process->readAllStandardOutput();
-            QString error = process->readAllStandardError();
-            
-            if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-                // 기존 모델 해제 (새로 학습된 모델 강제 재로드를 위해)
-                ImageProcessor::releasePatchCoreModel();
-                
-                // 학습된 모델을 즉시 메모리에 적재 (norm_stats.txt도 자동 로드됨)
-                QString fullModelPath = QCoreApplication::applicationDirPath() + QString("/weights/%1/%1.xml").arg(pattern.name);
-                
-                qDebug() << "[ANOMALY TRAIN] Training completed in" << totalTimeStr << "- Loading model:" << fullModelPath;
-                
-                if (ImageProcessor::initPatchCoreModel(fullModelPath)) {
-                    qDebug() << "[ANOMALY TRAIN] Model loaded successfully!";
-                    CustomMessageBox msgBox(this, CustomMessageBox::Information, "Training Complete",
-                        QString("Model training completed and loaded.\nPattern: %1\nPath: %2\nTime: %3")
-                            .arg(pattern.name)
-                            .arg(outputDir)
-                            .arg(totalTimeStr));
-                    msgBox.exec();
-                } else {
-                    qWarning() << "[ANOMALY TRAIN] Model load failed";
-                    CustomMessageBox msgBox(this, CustomMessageBox::Warning, "Training Complete",
-                        QString("Training completed but model load failed.\nPattern: %1\nPath: %2\nTime: %3\n\nPlease reload the recipe.")
-                            .arg(pattern.name)
-                            .arg(outputDir)
-                            .arg(totalTimeStr));
-                    msgBox.exec();
-                }
-                
-                // Train 버튼을 Trained로 업데이트
-                if (anomalyTrainButton) {
-                    anomalyTrainButton->setText("Trained");
-                    anomalyTrainButton->setStyleSheet(
-                        "QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 5px; border-radius: 3px; }"
-                        "QPushButton:hover { background-color: #da190b; }"
-                        "QPushButton:pressed { background-color: #c0180a; }");
-                }
-            } else {
-                qDebug() << "[ANOMALY TRAIN] Docker stdout:" << output;
-                qDebug() << "[ANOMALY TRAIN] Docker stderr:" << error;
-                CustomMessageBox msgBox(this, CustomMessageBox::Critical, "Training Failed",
-                    QString("Docker training failed (exit code: %1)\n\nError:\n%2")
-                        .arg(exitCode)
-                        .arg(error.isEmpty() ? output : error));
-                msgBox.exec();
-                qDebug() << "[ANOMALY TRAIN] Training failed:" << exitCode;
-            }
-            
-            // 임시 폴더 삭제
-            QDir(tempDir).removeRecursively();
-            
-            // 프로그레스 다이얼로그 정리
-            if (trainProgress) {
-                trainProgress->close();
-                trainProgress->deleteLater();
-            }
-            
-            // 프로세스 정리 (모든 시그널 연결 해제 후 삭제)
-            if (dockerTrainProcess == process) {
-                dockerTrainProcess = nullptr;
-            }
-            process->disconnect();
-            process->deleteLater();
+        // 다이얼로그 닫힐 때 activeTrainDialog 초기화
+        connect(trainDialog, &QWidget::destroyed, this, [this]() {
+            activeTrainDialog = nullptr;
         });
         
-        // 취소 버튼 연결
-        connect(trainProgress, &QProgressDialog::canceled, [process, trainProgress]() {
-            if (process && process->state() == QProcess::Running) {
-                process->disconnect();
-                process->kill();
-                process->waitForFinished(3000);
-                process->deleteLater();
-                QMessageBox::information(trainProgress, "취소됨", "학습이 취소되었습니다.");
-            }
-        });
-        
-        process->start(dockerScript, args);
-        trainProgress->show();
-        
-        if (!process->waitForStarted()) {
-            QString errorMsg = process->errorString();
-            qDebug() << "[ANOMALY TRAIN] 실행 실패:" << errorMsg;
-            
-            // 프로그레스 다이얼로그 정리
-            if (trainProgress) {
-                trainProgress->close();
-                trainProgress->deleteLater();
-            }
-            
-            QMessageBox::critical(this, "오류", QString("Docker 스크립트 실행 실패\n%1").arg(errorMsg));
-            QDir(tempDir).removeRecursively();
-            
-            // 프로세스 정리
-            if (dockerTrainProcess == process) {
-                dockerTrainProcess = nullptr;
-            }
-            process->disconnect();
-            process->deleteLater();
-        }
+        trainDialog->show();
+        trainDialog->setAttribute(Qt::WA_DeleteOnClose);
     });
 
     // 패턴 매칭 활성화 체크박스 연결
@@ -9745,6 +9341,12 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
 
     // **트리거 처리 시작**
     triggerProcessing = true;
+    
+    // **TrainDialog가 열려있으면 이미지 추가**
+    if (activeTrainDialog && activeTrainDialog->isVisible()) {
+        activeTrainDialog->addCapturedImage(frame, currentStripCrimpMode);
+        qDebug() << "[onTriggerSignalReceived] TrainDialog에 이미지 추가";
+    }
 
     // **비동기 이미지 저장 (트리거 처리와 독립적으로 실행)**
     saveImageAsync(frame, currentStripCrimpMode);
@@ -10439,6 +10041,79 @@ void TeachingWidget::showSerialSettings()
 
     // 다이얼로그 표시
     serialSettingsDialog->exec();
+}
+
+void TeachingWidget::showModelManagement()
+{
+    // 카메라 영상이 없으면 경고
+    if (cameraFrames.empty() || cameraFrames[0].empty()) {
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Warning);
+        msgBox.setTitle("경고");
+        msgBox.setMessage("카메라 영상이 없습니다.\n먼저 카메라를 연결하세요.");
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
+        return;
+    }
+    
+    // 레시피가 로드되지 않았으면 경고
+    if (currentRecipeName.isEmpty()) {
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Warning);
+        msgBox.setTitle("경고");
+        msgBox.setMessage("로드된 레시피가 없습니다.\n먼저 레시피를 로드하세요.");
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
+        return;
+    }
+    
+    // cameraView에서 모든 패턴 가져오기
+    const QList<PatternInfo>& allPatterns = cameraView->getPatterns();
+    
+    // 전체 패턴과 ANOMALY 패턴 분리
+    QVector<PatternInfo*> allPatternsVec;
+    QVector<PatternInfo*> anomalyPatterns;
+    for (int i = 0; i < allPatterns.size(); ++i) {
+        // const_cast 사용하여 포인터로 변환 (TrainDialog에서 읽기만 함)
+        PatternInfo* pattern = const_cast<PatternInfo*>(&allPatterns[i]);
+        allPatternsVec.append(pattern);  // 모든 패턴 추가 (FID 포함)
+        if (pattern && pattern->inspectionMethod == InspectionMethod::ANOMALY) {
+            anomalyPatterns.append(pattern);
+        }
+    }
+    
+    // ANOMALY 패턴이 없으면 경고
+    if (anomalyPatterns.isEmpty()) {
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Information);
+        msgBox.setTitle("알림");
+        msgBox.setMessage("ANOMALY 검사방법 패턴이 없습니다.\n먼저 ANOMALY 패턴을 추가하세요.");
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
+        return;
+    }
+    
+    // TrainDialog가 없으면 생성
+    if (!activeTrainDialog)
+    {
+        activeTrainDialog = new TrainDialog(this);
+        
+        // 학습 요청 시그널 연결 (필요시)
+        connect(activeTrainDialog, &TrainDialog::trainRequested, this, [this](const QString& patternName) {
+            qDebug() << "[TeachingWidget] 학습 요청:" << patternName;
+            // 여기서 실제 학습 로직 호출 가능
+        });
+    }
+    
+    // 현재 모드 전달 (0: STRIP, 1: CRIMP)
+    int currentMode = 0; // 기본값
+    activeTrainDialog->setAllPatterns(allPatternsVec);  // 모든 패턴 설정 (FID 찾기용)
+    activeTrainDialog->setAnomalyPatterns(anomalyPatterns, currentMode);
+    
+    // 다이얼로그 표시
+    activeTrainDialog->show();
+    activeTrainDialog->raise();
+    activeTrainDialog->activateWindow();
 }
 
 void TeachingWidget::openLanguageSettings()
@@ -14239,6 +13914,13 @@ void TeachingWidget::removePattern()
 
             if (reply == QMessageBox::Yes)
             {
+                // ANOMALY 패턴이면 가중치 폴더도 삭제
+                PatternInfo* pattern = cameraView->getPatternById(patternId);
+                if (pattern && pattern->type == PatternType::INS && 
+                    pattern->inspectionMethod == InspectionMethod::ANOMALY) {
+                    AnomalyWeightUtils::removeWeightFolder(pattern->name);
+                }
+                
                 cameraView->removePattern(patternId);
 
                 // 트리 업데이트 - 전체 트리 재구성으로 안전하게 처리
@@ -16261,4 +15943,444 @@ void TeachingWidget::saveImageAsync(const cv::Mat &frame, int stripCrimpMode)
         
         cv::imwrite(filePath.toStdString(), frameCopy, compression_params);
     });
+}
+
+void TeachingWidget::trainAnomalyPattern(const QString& patternName)
+{
+    if (!cameraView) return;
+    
+    // 기존 학습 폴더 삭제
+    AnomalyWeightUtils::removeWeightFolder(patternName);
+    
+    // 패턴 이름으로 패턴 찾기
+    PatternInfo* patternPtr = nullptr;
+    const QList<PatternInfo>& allPatterns = cameraView->getPatterns();
+    
+    for (const PatternInfo& pattern : allPatterns) {
+        if (pattern.type == PatternType::INS && 
+            pattern.inspectionMethod == InspectionMethod::ANOMALY &&
+            pattern.name == patternName) {
+            patternPtr = const_cast<PatternInfo*>(&pattern);
+            break;
+        }
+    }
+    
+    if (!patternPtr) {
+        QMessageBox::warning(this, "경고", QString("패턴을 찾을 수 없습니다: %1").arg(patternName));
+        return;
+    }    
+    // 패턴 정보 복사 (람다 캡처용)
+    PatternInfo pattern = *patternPtr;
+    
+    // 부모 FID 패턴 정보 가져오기
+    PatternInfo* parentFidPattern = nullptr;
+    if (!pattern.parentId.isNull()) {
+        parentFidPattern = cameraView->getPatternById(pattern.parentId);
+    }
+    
+    // FID 템플릿 및 마스크 복사 (람다 캡처용)
+    cv::Mat fidTemplate, fidMask;
+    double fidTeachingAngle = 0.0;
+    QPointF fidTeachingCenter;
+    QPointF insTeachingCenter = pattern.rect.center();
+    bool useFidMatching = false;
+    
+    if (parentFidPattern && parentFidPattern->type == PatternType::FID && 
+        !parentFidPattern->matchTemplate.isNull()) {
+        // QImage를 cv::Mat으로 변환
+        QImage tempImg = parentFidPattern->matchTemplate.convertToFormat(QImage::Format_RGB888);
+        fidTemplate = cv::Mat(tempImg.height(), tempImg.width(), CV_8UC3,
+                              const_cast<uchar*>(tempImg.bits()), tempImg.bytesPerLine()).clone();
+        cv::cvtColor(fidTemplate, fidTemplate, cv::COLOR_RGB2BGR);
+        
+        // 마스크가 있으면 변환
+        if (!parentFidPattern->matchTemplateMask.isNull()) {
+            QImage maskImg = parentFidPattern->matchTemplateMask.convertToFormat(QImage::Format_Grayscale8);
+            fidMask = cv::Mat(maskImg.height(), maskImg.width(), CV_8UC1,
+                              const_cast<uchar*>(maskImg.bits()), maskImg.bytesPerLine()).clone();
+        }
+        
+        fidTeachingAngle = parentFidPattern->angle;
+        fidTeachingCenter = parentFidPattern->rect.center();
+        useFidMatching = true;
+        
+        qDebug() << "[ANOMALY TRAIN] FID 매칭 사용 - 부모 FID:" << parentFidPattern->name;
+    } else {
+        qDebug() << "[ANOMALY TRAIN] FID 매칭 없이 고정 좌표 사용";
+    }
+    
+    // 폴더 선택 다이얼로그
+    QString folderPath = CustomFileDialog::getExistingDirectory(this, "양품 이미지 폴더 선택", "");
+    if (folderPath.isEmpty()) return;
+    
+    // 이미지 파일 목록 가져오기
+    QDir dir(folderPath);
+    QStringList filters;
+    filters << "*.png" << "*.jpg" << "*.jpeg" << "*.bmp";
+    QFileInfoList imageFiles = dir.entryInfoList(filters, QDir::Files);
+    
+    if (imageFiles.isEmpty()) {
+        QMessageBox::warning(this, "경고", "폴더에 이미지 파일이 없습니다.");
+        return;
+    }
+    
+    // 임시 폴더 생성 (ROI 크롭 이미지 저장용)
+    QString tempDir = QDir::temp().filePath(QString("anomaly_train_%1").arg(pattern.id.toString()));
+    QString goodDir = tempDir + "/good";
+    QDir().mkpath(goodDir);
+    
+    // ROI 크기 (고정)
+    int roiW = static_cast<int>(pattern.rect.width());
+    int roiH = static_cast<int>(pattern.rect.height());
+    
+    qDebug() << "[ANOMALY TRAIN] 학습 시작 - 패턴:" << pattern.name 
+             << "ROI:" << roiW << "x" << roiH 
+             << "이미지 수:" << imageFiles.size()
+             << "FID 매칭:" << (useFidMatching ? "사용" : "미사용");
+    
+    // 학습 시작 시간 기록 (ROI 추출부터)
+    QElapsedTimer *trainingTimer = new QElapsedTimer();
+    trainingTimer->start();
+    
+    // 진행 다이얼로그
+    QProgressDialog progress("Extracting ROI...", "Cancel", 0, imageFiles.size(), this);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    progress.setStyleSheet(
+        "QProgressDialog { background-color: #1e1e1e; color: #ffffff; }"
+        "QWidget { background-color: #1e1e1e; color: #ffffff; }"
+        "QPushButton { background-color: #2d2d2d; color: #ffffff; border: 1px solid #3d3d3d; padding: 5px; min-width: 80px; }"
+        "QPushButton:hover { background-color: #3d3d3d; }"
+        "QProgressBar { border: 1px solid #3d3d3d; background-color: #252525; color: #ffffff; text-align: center; }"
+        "QProgressBar::chunk { background-color: #0d47a1; }"
+        "QLabel { color: #ffffff; }"
+    );
+    
+    int croppedCount = 0;
+    int fidMatchFailCount = 0;
+    
+    for (int i = 0; i < imageFiles.size(); ++i) {
+        // 경과 시간 계산
+        qint64 elapsedMs = trainingTimer->elapsed();
+        int elapsedSec = elapsedMs / 1000;
+        int minutes = elapsedSec / 60;
+        int seconds = elapsedSec % 60;
+        QString timeStr = QString("%1:%2").arg(minutes, 2, 10, QChar('0')).arg(seconds, 2, 10, QChar('0'));
+        
+        progress.setLabelText(QString("Extracting ROI... %1 / %2 [%3]")
+            .arg(i + 1).arg(imageFiles.size()).arg(timeStr));
+        progress.setValue(i);
+        if (progress.wasCanceled()) break;
+        
+        QString imagePath = imageFiles[i].absoluteFilePath();
+        cv::Mat image = cv::imread(imagePath.toStdString());
+        
+        if (image.empty()) {
+            qWarning() << "[ANOMALY TRAIN] 이미지 로드 실패:" << imagePath;
+            continue;
+        }
+        
+        // ROI 좌표 계산 (FID 매칭 적용)
+        int roiX, roiY;
+        
+        if (useFidMatching && !fidTemplate.empty()) {
+            // FID 템플릿 매칭 수행
+            cv::Mat result;
+            int matchMethod = cv::TM_CCOEFF_NORMED;
+            
+            if (!fidMask.empty()) {
+                cv::matchTemplate(image, fidTemplate, result, matchMethod, fidMask);
+            } else {
+                cv::matchTemplate(image, fidTemplate, result, matchMethod);
+            }
+            
+            double minVal, maxVal;
+            cv::Point minLoc, maxLoc;
+            cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
+            
+            // 매칭 임계값 확인 (70% 이상)
+            if (maxVal < 0.7) {
+                fidMatchFailCount++;
+                qWarning() << "[ANOMALY TRAIN] FID 매칭 실패 (score:" << maxVal << "):" << imagePath;
+                continue;
+            }
+            
+            // FID 매칭 위치에서 INS ROI 위치 계산
+            // 검출된 FID 중심 = maxLoc + (템플릿 크기 / 2)
+            double fidMatchCenterX = maxLoc.x + fidTemplate.cols / 2.0;
+            double fidMatchCenterY = maxLoc.y + fidTemplate.rows / 2.0;
+            
+            // 티칭 시 FID 중심 -> INS 중심 상대 벡터
+            double relativeX = insTeachingCenter.x() - fidTeachingCenter.x();
+            double relativeY = insTeachingCenter.y() - fidTeachingCenter.y();
+            
+            // 새 INS 중심 = 검출된 FID 중심 + 상대 벡터
+            double newInsCenterX = fidMatchCenterX + relativeX;
+            double newInsCenterY = fidMatchCenterY + relativeY;
+            
+            // ROI 좌표 계산 (중심 기준)
+            roiX = static_cast<int>(newInsCenterX - roiW / 2.0);
+            roiY = static_cast<int>(newInsCenterY - roiH / 2.0);
+        } else {
+            // FID 매칭 없이 고정 좌표 사용
+            roiX = static_cast<int>(pattern.rect.x());
+            roiY = static_cast<int>(pattern.rect.y());
+        }
+        
+        // ROI 범위 체크
+        if (roiX < 0 || roiY < 0 || roiX + roiW > image.cols || roiY + roiH > image.rows) {
+            qWarning() << "[ANOMALY TRAIN] ROI 범위 초과:" << imagePath 
+                       << "ROI:(" << roiX << "," << roiY << "," << roiW << "," << roiH << ")";
+            continue;
+        }
+        
+        // ROI 크롭
+        cv::Rect roiRect(roiX, roiY, roiW, roiH);
+        cv::Mat croppedImage = image(roiRect).clone();
+        
+        // 저장
+        QString outputPath = QString("%1/%2.png").arg(goodDir).arg(i, 4, 10, QChar('0'));
+        cv::imwrite(outputPath.toStdString(), croppedImage);
+        croppedCount++;
+    }
+    
+    progress.setValue(imageFiles.size());
+    
+    if (croppedCount == 0) {
+        QMessageBox::warning(this, "경고", "유효한 이미지가 없습니다.");
+        QDir(tempDir).removeRecursively();
+        delete trainingTimer;
+        return;
+    }
+    
+    qDebug() << "[ANOMALY TRAIN] ROI 크롭 완료:" << croppedCount << "개"
+             << "(FID 매칭 실패:" << fidMatchFailCount << "개)";
+    
+    // Docker 학습 실행 - 절대 경로로 weights 폴더 지정
+    QString weightsBaseDir = QCoreApplication::applicationDirPath() + "/../deploy/weights";
+    QString outputDir = weightsBaseDir + "/" + pattern.name;
+    QDir().mkpath(outputDir);
+    
+    QString dockerScript = QCoreApplication::applicationDirPath() + "/../docker/docker_run_with_data.sh";
+    QStringList args;
+    args << tempDir << outputDir << pattern.name;
+    
+    qDebug() << "[ANOMALY TRAIN] Docker 학습 시작:" << dockerScript << args;
+    
+    // 학습 진행 다이얼로그
+    QProgressDialog *trainProgress = new QProgressDialog("Training model...", "Cancel", 0, 0, this);
+    trainProgress->setWindowModality(Qt::WindowModal);
+    trainProgress->setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    trainProgress->setStyleSheet(
+        "QProgressDialog { background-color: #1e1e1e; color: #ffffff; }"
+        "QWidget { background-color: #1e1e1e; color: #ffffff; }"
+        "QPushButton { background-color: #2d2d2d; color: #ffffff; border: 1px solid #3d3d3d; padding: 5px; min-width: 80px; }"
+        "QPushButton:hover { background-color: #3d3d3d; }"
+        "QProgressBar { border: 1px solid #3d3d3d; background-color: #252525; color: #ffffff; text-align: center; }"
+        "QProgressBar::chunk { background-color: #0d47a1; }"
+        "QLabel { color: #ffffff; }"
+    );
+    trainProgress->setMinimumDuration(0);
+    trainProgress->setValue(0);
+    trainProgress->setAutoClose(false);
+    trainProgress->setAutoReset(false);
+    
+    // 기존 Docker 프로세스가 실행 중이면 종료
+    if (dockerTrainProcess && dockerTrainProcess->state() == QProcess::Running) {
+        dockerTrainProcess->kill();
+        dockerTrainProcess->waitForFinished(3000);
+    }
+    
+    // 새 프로세스 생성
+    dockerTrainProcess = new QProcess(this);
+    QProcess *process = dockerTrainProcess;  // 람다 캡처용 로컬 변수
+    process->setWorkingDirectory(QCoreApplication::applicationDirPath() + "/..");
+    process->setProcessChannelMode(QProcess::MergedChannels);  // stdout + stderr 합침
+    
+    // 실시간 출력 읽기 및 진행률 표시
+    connect(process, &QProcess::readyReadStandardOutput, [process, trainProgress, trainingTimer]() {
+        QString output = process->readAllStandardOutput();
+        QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+        
+        // 경과 시간 계산
+        qint64 elapsedMs = trainingTimer->elapsed();
+        int elapsedSec = elapsedMs / 1000;
+        int minutes = elapsedSec / 60;
+        int seconds = elapsedSec % 60;
+        QString timeStr = QString("%1:%2").arg(minutes, 2, 10, QChar('0')).arg(seconds, 2, 10, QChar('0'));
+        
+        for (const QString& line : lines) {
+            qDebug() << "[ANOMALY TRAIN]" << line;
+            
+            // \r로 시작하는 진행률 표시 (tqdm)
+            if (line.startsWith("\r")) {
+                QString cleanLine = line.mid(1).trimmed();
+                
+                // "Selecting Coreset Indices.:  99%|█████████▉| 5077/5120"
+                if (cleanLine.contains("Selecting Coreset") || cleanLine.contains("Selecting")) {
+                    QRegularExpression re(R"((\d+)/(\d+))");
+                    QRegularExpressionMatch match = re.match(cleanLine);
+                    if (match.hasMatch()) {
+                        int current = match.captured(1).toInt();
+                        int total = match.captured(2).toInt();
+                        trainProgress->setLabelText(QString("Sampling... %1 / %2 (%3%) [%4]")
+                            .arg(current).arg(total).arg(current * 100 / total).arg(timeStr));
+                    }
+                }
+                // "Extracting features:  50%|█████     | 1/2"
+                else if (cleanLine.contains("Extracting features") || cleanLine.contains("Extracting")) {
+                    QRegularExpression re(R"((\d+)/(\d+))");
+                    QRegularExpressionMatch match = re.match(cleanLine);
+                    if (match.hasMatch()) {
+                        int current = match.captured(1).toInt();
+                        int total = match.captured(2).toInt();
+                        trainProgress->setLabelText(QString("Extracting... %1 / %2 (%3%) [%4]")
+                            .arg(current).arg(total).arg(current * 100 / total).arg(timeStr));
+                    }
+                }
+                continue;
+            }
+            
+            // 일반 메시지 파싱
+            if (line.contains("Coreset Indices")) {
+                QRegularExpression re(R"(Coreset Indices (\d+)/(\d+))");
+                QRegularExpressionMatch match = re.match(line);
+                if (match.hasMatch()) {
+                    int current = match.captured(1).toInt();
+                    int total = match.captured(2).toInt();
+                    trainProgress->setLabelText(QString("Building... %1 / %2 (%3%) [%4]")
+                        .arg(current).arg(total).arg(current * 100 / total).arg(timeStr));
+                }
+            }
+            else if (line.contains("Converting to OpenVINO", Qt::CaseInsensitive)) {
+                trainProgress->setLabelText(QString("Converting model... [%1]").arg(timeStr));
+            }
+            else if (line.contains("Building coreset", Qt::CaseInsensitive)) {
+                trainProgress->setLabelText(QString("Building started... [%1]").arg(timeStr));
+            }
+            else if (line.contains("Computing normalization", Qt::CaseInsensitive)) {
+                trainProgress->setLabelText(QString("Computing normalization... [%1]").arg(timeStr));
+            }
+            else if (line.contains("Exporting model", Qt::CaseInsensitive)) {
+                trainProgress->setLabelText(QString("Exporting model... [%1]").arg(timeStr));
+            }
+            else if (line.contains("Starting training", Qt::CaseInsensitive)) {
+                trainProgress->setLabelText(QString("Training started... [%1]").arg(timeStr));
+            }
+        }
+    });
+    
+    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            [this, process, tempDir, pattern, outputDir, trainProgress, trainingTimer](int exitCode, QProcess::ExitStatus exitStatus) {
+        
+        // 총 소요 시간 계산
+        qint64 totalMs = trainingTimer->elapsed();
+        int totalSec = totalMs / 1000;
+        int minutes = totalSec / 60;
+        int seconds = totalSec % 60;
+        QString totalTimeStr = QString("%1분 %2초").arg(minutes).arg(seconds);
+        
+        delete trainingTimer;  // 타이머 메모리 해제
+        
+        QString output = process->readAllStandardOutput();
+        QString error = process->readAllStandardError();
+        
+        if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+            // 기존 모델 해제 (새로 학습된 모델 강제 재로드를 위해)
+            ImageProcessor::releasePatchCoreModel();
+            
+            // 학습된 모델을 즉시 메모리에 적재 (norm_stats.txt도 자동 로드됨)
+            QString fullModelPath = QCoreApplication::applicationDirPath() + QString("/weights/%1/%1.xml").arg(pattern.name);
+            
+            qDebug() << "[ANOMALY TRAIN] Training completed in" << totalTimeStr << "- Loading model:" << fullModelPath;
+            
+            if (ImageProcessor::initPatchCoreModel(fullModelPath)) {
+                qDebug() << "[ANOMALY TRAIN] Model loaded successfully!";
+                CustomMessageBox msgBox(this, CustomMessageBox::Information, "Training Complete",
+                    QString("Model training completed and loaded.\nPattern: %1\nPath: %2\nTime: %3")
+                        .arg(pattern.name)
+                        .arg(outputDir)
+                        .arg(totalTimeStr));
+                msgBox.exec();
+            } else {
+                qWarning() << "[ANOMALY TRAIN] Model load failed";
+                CustomMessageBox msgBox(this, CustomMessageBox::Warning, "Training Complete",
+                    QString("Training completed but model load failed.\nPattern: %1\nPath: %2\nTime: %3\n\nPlease reload the recipe.")
+                        .arg(pattern.name)
+                        .arg(outputDir)
+                        .arg(totalTimeStr));
+                msgBox.exec();
+            }
+            
+            // Train 버튼을 Trained로 업데이트
+            if (anomalyTrainButton) {
+                anomalyTrainButton->setText("Trained");
+                anomalyTrainButton->setStyleSheet(
+                    "QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 5px; border-radius: 3px; }"
+                    "QPushButton:hover { background-color: #da190b; }"
+                    "QPushButton:pressed { background-color: #c0180a; }");
+            }
+        } else {
+            qDebug() << "[ANOMALY TRAIN] Docker stdout:" << output;
+            qDebug() << "[ANOMALY TRAIN] Docker stderr:" << error;
+            CustomMessageBox msgBox(this, CustomMessageBox::Critical, "Training Failed",
+                QString("Docker training failed (exit code: %1)\n\nError:\n%2")
+                    .arg(exitCode)
+                    .arg(error.isEmpty() ? output : error));
+            msgBox.exec();
+            qDebug() << "[ANOMALY TRAIN] Training failed:" << exitCode;
+        }
+        
+        // 임시 폴더 삭제
+        QDir(tempDir).removeRecursively();
+        
+        // 프로그레스 다이얼로그 정리
+        if (trainProgress) {
+            trainProgress->close();
+            trainProgress->deleteLater();
+        }
+        
+        // 프로세스 정리 (모든 시그널 연결 해제 후 삭제)
+        if (dockerTrainProcess == process) {
+            dockerTrainProcess = nullptr;
+        }
+        process->disconnect();
+        process->deleteLater();
+    });
+    
+    // 취소 버튼 연결
+    connect(trainProgress, &QProgressDialog::canceled, [process, trainProgress]() {
+        if (process && process->state() == QProcess::Running) {
+            process->disconnect();
+            process->kill();
+            process->waitForFinished(3000);
+            process->deleteLater();
+            QMessageBox::information(trainProgress, "취소됨", "학습이 취소되었습니다.");
+        }
+    });
+    
+    process->start(dockerScript, args);
+    trainProgress->show();
+    
+    if (!process->waitForStarted()) {
+        QString errorMsg = process->errorString();
+        qDebug() << "[ANOMALY TRAIN] 실행 실패:" << errorMsg;
+        
+        // 프로그레스 다이얼로그 정리
+        if (trainProgress) {
+            trainProgress->close();
+            trainProgress->deleteLater();
+        }
+        
+        QMessageBox::critical(this, "오류", QString("Docker 스크립트 실행 실패\n%1").arg(errorMsg));
+        QDir(tempDir).removeRecursively();
+        
+        // 프로세스 정리
+        if (dockerTrainProcess == process) {
+            dockerTrainProcess = nullptr;
+        }
+        process->disconnect();
+        process->deleteLater();
+        delete trainingTimer;
+    }
 }

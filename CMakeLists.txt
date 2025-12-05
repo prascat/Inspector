@@ -203,6 +203,7 @@ add_executable(Inspector
     SerialCommunication.cpp
     CustomMessageBox.cpp
     CustomFileDialog.cpp
+    TrainDialog.cpp
 )
 
 # Qt6, OpenCV, OpenVINO 및 추가 라이브러리 연결

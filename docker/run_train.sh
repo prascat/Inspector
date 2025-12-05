@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: run_train.sh <data_dir> <output_dir>
+# Usage: run_train.sh <data_dir> <output_dir> [pattern_name]
 # Example: 
-#   run_train.sh /workspace/data /workspace/output
+#   run_train.sh /workspace/data /workspace/output I_abc123
 
 DATA_DIR=${1:-/workspace/data}
 OUTPUT_DIR=${2:-/workspace/output}
+PATTERN_NAME=${3:-model}
 
 echo "🔧 Starting container training run"
 echo "  data: ${DATA_DIR}"
 echo "  output: ${OUTPUT_DIR}"
+echo "  pattern: ${PATTERN_NAME}"
 
 mkdir -p "${OUTPUT_DIR}"
 
@@ -19,7 +21,8 @@ echo ""
 echo "🚀 Training PatchCore (anomalib)"
 python3 /workspace/train_patchcore_anomalib.py \
   --data-dir "${DATA_DIR}" \
-  --output "${OUTPUT_DIR}"
+  --output "${OUTPUT_DIR}" \
+  --pattern-name "${PATTERN_NAME}"
 
 # Summarize outputs
 echo ""

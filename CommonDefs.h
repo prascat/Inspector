@@ -11,6 +11,10 @@
 #include <QPainter>
 #include <QFont>
 #include <QFontMetrics>
+#include <QFile>
+#include <QDir>
+#include <QDebug>
+#include <QCoreApplication>
 #include <opencv2/opencv.hpp>
 #include "LanguageManager.h"
 #include "CustomMessageBox.h"
@@ -804,5 +808,27 @@ struct StripDrawContext {
           inspRectScene(rect), insAngle(angle), currentScale(scale),
           centerViewport(center), cosA(cos), sinA(sin) {}
 };
+
+// ANOMALY 패턴 가중치 관련 유틸리티 함수들
+namespace AnomalyWeightUtils {
+    // 패턴 가중치 파일 존재 여부 확인 (bin, xml 파일 모두 있어야 Trained)
+    inline bool hasTrainedWeight(const QString& patternName) {
+        QString basePath = QCoreApplication::applicationDirPath() + QString("/../deploy/weights/%1/%1").arg(patternName);
+        QString xmlPath = basePath + ".xml";
+        QString binPath = basePath + ".bin";
+        return QFile::exists(xmlPath) && QFile::exists(binPath);
+    }
+    
+    // 패턴 가중치 폴더 삭제
+    inline bool removeWeightFolder(const QString& patternName) {
+        QString weightDir = QCoreApplication::applicationDirPath() + QString("/../deploy/weights/%1").arg(patternName);
+        QDir dir(weightDir);
+        if (dir.exists()) {
+            qDebug() << "[AnomalyWeightUtils] 가중치 폴더 삭제:" << weightDir;
+            return dir.removeRecursively();
+        }
+        return true;
+    }
+}
 
 #endif // COMMONDEFS_H

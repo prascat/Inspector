@@ -37,12 +37,18 @@ echo "  output: ${HOST_OUTPUT_DIR}"
 echo "  image: ${IMAGE}"
 echo "  copy_mode: ${COPY_MODE}"
 
+# 현재 사용자 UID/GID
+HOST_UID=$(id -u)
+HOST_GID=$(id -g)
+
 if [[ "${COPY_MODE}" == "false" ]]; then
   # Mount dataset read-only (recommended) and mount output so artifacts are accessible on host
+  # 학습 후 출력 폴더 권한을 호스트 사용자로 변경
   docker run --rm \
+    --entrypoint /bin/bash \
     -v "${HOST_DATA_DIR}:/workspace/data:ro" \
     -v "${HOST_OUTPUT_DIR}:/workspace/output" \
-    ${IMAGE} --data-dir /workspace/data --output /workspace/output --pattern-name "${PATTERN_NAME}"
+    ${IMAGE} -c "/workspace/run_train.sh /workspace/data /workspace/output ${PATTERN_NAME} && chmod -R 777 /workspace/output"
 else
   # Copy mode: create a temporary container, copy dataset into container FS, then run training inside it
   TMP_NAME="patchcore_tmp_$RANDOM"
@@ -50,7 +56,7 @@ else
   docker create --name ${TMP_NAME} ${IMAGE} /bin/bash -c 'sleep infinity'
   docker cp "${HOST_DATA_DIR}" ${TMP_NAME}:/workspace/data
   docker start ${TMP_NAME}
-  docker exec ${TMP_NAME} /usr/local/bin/run_train.sh /workspace/data /workspace/output
+  docker exec ${TMP_NAME} /workspace/run_train.sh /workspace/data /workspace/output
   docker stop ${TMP_NAME}
   docker rm ${TMP_NAME}
 

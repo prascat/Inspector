@@ -9,8 +9,6 @@ QString CustomFileDialog::getOpenFileName(QWidget *parent,
     dialog.setFileMode(QFileDialog::ExistingFile);
     dialog.setOption(QFileDialog::DontUseNativeDialog, true);
     dialog.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
-    dialog.setAttribute(Qt::WA_TranslucentBackground);
-    dialog.setWindowOpacity(0.95);
     dialog.resize(800, 500);
     applyBlackTheme(dialog);
     
@@ -25,6 +23,34 @@ QString CustomFileDialog::getOpenFileName(QWidget *parent,
     return filePath;
 }
 
+QStringList CustomFileDialog::getOpenFileNames(QWidget *parent,
+                                               const QString &caption,
+                                               const QString &dir,
+                                               const QString &filter)
+{
+    QFileDialog dialog(parent, caption, dir, filter);
+    dialog.setFileMode(QFileDialog::ExistingFiles);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+    dialog.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint | Qt::X11BypassWindowManagerHint);
+    dialog.resize(900, 600);
+    applyBlackTheme(dialog);
+    
+    // 부모 위젯 중앙에 배치
+    if (parent) {
+        QPoint parentTopLeft = parent->mapToGlobal(QPoint(0, 0));
+        int x = parentTopLeft.x() + (parent->width() - dialog.width()) / 2;
+        int y = parentTopLeft.y() + (parent->height() - dialog.height()) / 2;
+        dialog.move(x, y);
+    }
+    
+    QStringList filePaths;
+    if (dialog.exec() == QDialog::Accepted) {
+        filePaths = dialog.selectedFiles();
+    }
+    
+    return filePaths;
+}
+
 QString CustomFileDialog::getSaveFileName(QWidget *parent,
                                          const QString &caption,
                                          const QString &dir,
@@ -34,8 +60,6 @@ QString CustomFileDialog::getSaveFileName(QWidget *parent,
     dialog.setAcceptMode(QFileDialog::AcceptSave);
     dialog.setOption(QFileDialog::DontUseNativeDialog, true);
     dialog.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
-    dialog.setAttribute(Qt::WA_TranslucentBackground);
-    dialog.setWindowOpacity(0.95);
     dialog.resize(800, 500);
     applyBlackTheme(dialog);
     

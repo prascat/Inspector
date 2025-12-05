@@ -11,7 +11,7 @@ CustomMessageBox::CustomMessageBox(QWidget* parent)
     : QDialog(parent), currentIcon(NoIcon), result(QMessageBox::NoButton), hasInputField(false), savedParent(parent) {
     
     // 다이얼로그 속성 설정
-    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint | Qt::X11BypassWindowManagerHint);
     setWindowModality(Qt::WindowModal);
     setAttribute(Qt::WA_DeleteOnClose, false);
     setStyleSheet(
@@ -57,7 +57,7 @@ CustomMessageBox::CustomMessageBox(QWidget* parent, IconType iconType, const QSt
     : QDialog(parent), currentIcon(NoIcon), result(QMessageBox::NoButton), hasInputField(false), savedParent(parent) {
     
     // 다이얼로그 속성 설정
-    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint | Qt::X11BypassWindowManagerHint);
     setWindowModality(Qt::WindowModal);
     setAttribute(Qt::WA_DeleteOnClose, false);
     setStyleSheet(
@@ -243,16 +243,9 @@ int CustomMessageBox::exec() {
     
     // 부모 중심에 배치
     if (savedParent) {
-        QWidget* topWindow = savedParent->window();
-        QRect parentRect = topWindow->frameGeometry();
-        
-        int x = parentRect.x() + (parentRect.width() - width()) / 2;
-        int y = parentRect.y() + (parentRect.height() - height()) / 2;
-        
-        // 타이틀바 높이만큼 위로 보정 (frameGeometry에 타이틀바 포함되어 있으므로)
-        int titleBarHeight = topWindow->frameGeometry().height() - topWindow->geometry().height();
-        y -= titleBarHeight / 2;
-        
+        QPoint parentTopLeft = savedParent->mapToGlobal(QPoint(0, 0));
+        int x = parentTopLeft.x() + (savedParent->width() - width()) / 2;
+        int y = parentTopLeft.y() + (savedParent->height() - height()) / 2;
         move(x, y);
     }
     

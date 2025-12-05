@@ -19,6 +19,12 @@ public:
                                    const QString &dir = QString(),
                                    const QString &filter = QString());
 
+    // 여러 파일 열기 다이얼로그
+    static QStringList getOpenFileNames(QWidget *parent = nullptr,
+                                        const QString &caption = QString(),
+                                        const QString &dir = QString(),
+                                        const QString &filter = QString());
+
     // 파일 저장 다이얼로그
     static QString getSaveFileName(QWidget *parent = nullptr,
                                    const QString &caption = QString(),
