@@ -2887,6 +2887,11 @@ bool ImageProcessor::initYoloSegModel(const QString& modelPath, const QString& d
             }
         }
         
+        // 성능 최적화 설정
+        s_ovinoCore->set_property(device.toStdString(), ov::hint::performance_mode(ov::hint::PerformanceMode::LATENCY));
+        s_ovinoCore->set_property(device.toStdString(), ov::hint::inference_precision(ov::element::f16));
+        s_ovinoCore->set_property(device.toStdString(), ov::streams::num(1));
+        
         // 모델 컴파일
         auto compiled = s_ovinoCore->compile_model(model, device.toStdString());
         s_yoloSegModel = std::make_shared<ov::CompiledModel>(std::move(compiled));
@@ -3404,6 +3409,11 @@ bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString&
             new_shapes[input_name] = ov::PartialShape({1, 3, static_cast<long>(modelInfo.inputHeight), static_cast<long>(modelInfo.inputWidth)});
             model->reshape(new_shapes);
         }
+        
+        // 성능 최적화 설정
+        s_ovinoCore->set_property(device.toStdString(), ov::hint::performance_mode(ov::hint::PerformanceMode::LATENCY));
+        s_ovinoCore->set_property(device.toStdString(), ov::hint::inference_precision(ov::element::f16));
+        s_ovinoCore->set_property(device.toStdString(), ov::streams::num(1));
         
         // 모델 컴파일
         auto compiled = s_ovinoCore->compile_model(model, device.toStdString());

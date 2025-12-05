@@ -9553,7 +9553,7 @@ void TeachingWidget::receiveLogMessage(const QString &message)
         }
         else if (message.contains("NG") || message.contains("FAIL"))
         {
-            format.setForeground(QColor("#F44336")); // 빨간색
+            format.setForeground(QColor(255, 165, 0)); // 주황색
             format.setFontWeight(QFont::Bold);
         }
         else
@@ -9576,40 +9576,36 @@ void TeachingWidget::receiveLogMessage(const QString &message)
             format.setForeground(QColor("#4CAF50")); // 초록색
             format.setFontWeight(QFont::Bold);
         }
-        else if (message.contains("NG"))
+        else if (message.contains("NG") || message.contains("FAIL"))
         {
-            format.setForeground(QColor("#F44336")); // 빨간색
+            format.setForeground(QColor(255, 165, 0)); // 주황색
             format.setFontWeight(QFont::Bold);
         }
     }
-    // INS 패턴 검사 결과 - PASS는 초록, NG는 빨강, FAIL은 진한 빨강
+    // INS 패턴 검사 결과 - PASS는 초록, NG/FAIL은 주황
     else if ((message.contains("EDGE:") || message.contains("FRONT:") || message.contains("REAR:") || message.contains("STRIP LENGTH:")))
     {
         if (message.contains("PASS"))
         {
             format.setForeground(QColor("#4CAF50")); // 초록색
         }
-        else if (message.contains("FAIL"))
+        else if (message.contains("FAIL") || message.contains("NG"))
         {
-            format.setForeground(QColor("#D32F2F")); // FAIL - 진한 빨간색
+            format.setForeground(QColor(255, 165, 0)); // 주황색
             format.setFontWeight(QFont::Bold);
-        }
-        else if (message.contains("NG"))
-        {
-            format.setForeground(QColor("#F44336")); // 빨간색
         }
         else
         {
             format.setForeground(QColor("#8BCB8B")); // INS 색상 (연한 초록색)
         }
     }
-    // FID 패턴 - FID 색상, FAIL은 빨간색
+    // FID 패턴 - FID 색상, FAIL은 주황색
     else if (message.contains(": PASS [") || message.contains(": NG [") || message.contains(": FAIL ["))
     {
         // "F_u4E4Y: PASS [1.00/0.80]" 형식
         if (message.contains(": FAIL ["))
         {
-            format.setForeground(QColor("#F44336")); // FAIL - 빨간색
+            format.setForeground(QColor(255, 165, 0)); // 주황색
             format.setFontWeight(QFont::Bold);
         }
         else

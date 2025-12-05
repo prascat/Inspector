@@ -109,11 +109,11 @@ def export_to_openvino(model, output_dir: Path, image_size: tuple = (224, 224), 
             example_input=dummy_input,
         )
         
-        # Save as IR with pattern name
+        # Save as IR with pattern name (FP16 압축)
         ir_path = output_dir / f"{pattern_name}.xml"
-        ov.save_model(ov_model, str(ir_path), compress_to_fp16=False)
-        print(f"   ✅ OpenVINO IR: {ir_path}")
-        print(f"   ✅ OpenVINO BIN: {output_dir / f'{pattern_name}.bin'}")
+        ov.save_model(ov_model, str(ir_path), compress_to_fp16=True)
+        print(f"   ✅ OpenVINO IR (FP16): {ir_path}")
+        print(f"   ✅ OpenVINO BIN (FP16): {output_dir / f'{pattern_name}.bin'}")
         
         # Test inference
         import numpy as np

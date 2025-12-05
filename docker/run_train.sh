@@ -17,7 +17,7 @@ mkdir -p "${OUTPUT_DIR}"
 # Run training (PatchCore with anomalib) - 입력 이미지 크기 그대로 사용
 echo ""
 echo "🚀 Training PatchCore (anomalib)"
-python3 /workspace/docker/train_patchcore_anomalib.py \
+python3 /workspace/train_patchcore_anomalib.py \
   --data-dir "${DATA_DIR}" \
   --output "${OUTPUT_DIR}"
 

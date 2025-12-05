@@ -41,7 +41,7 @@ RUN pip install --no-cache-dir openvino-dev
 COPY . /workspace
 
 # Default entrypoint uses train_patchcore_anomalib.py directly
-ENTRYPOINT ["python3", "/workspace/docker/train_patchcore_anomalib.py"]
+ENTRYPOINT ["python3", "/workspace/train_patchcore_anomalib.py"]
 
 # helpful labels
 LABEL org.opencontainers.image.description="Train PatchCore (anomalib) and export ONNX/OpenVINO IR for C++ inference"

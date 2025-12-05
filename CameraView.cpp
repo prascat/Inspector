@@ -2125,8 +2125,8 @@ void CameraView::drawINSPatterns(QPainter &painter, const InspectionResult &resu
             }
             else if (patternInfo->inspectionMethod == InspectionMethod::ANOMALY)
             {
-                // ANOMALY는 score 표시 안함 (덩어리 개수/크기로 판정)
-                label = QString("%1: %2").arg(patternInfo->name).arg(methodName);
+                // ANOMALY는 패턴명만 표시
+                label = patternInfo->name;
             }
             else
             {
