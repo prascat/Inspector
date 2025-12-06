@@ -2245,6 +2245,11 @@ bool ImageProcessor::performStripInspection(const cv::Mat &roiImage, const cv::M
         int firstDx_rear = 0;
         int lastDx_rear = actualBoxWidth_rear;
 
+        // 각도를 라디안으로 변환 (REAR용)
+        double rearAngleRad = angle * M_PI / 180.0;
+        double cosAngle_rear = std::cos(rearAngleRad);
+        double sinAngle_rear = std::sin(rearAngleRad);
+
         for (int dx = firstDx_rear; dx < lastDx_rear; dx += 1)
         {
             cv::Point scanTop_rear, scanBottom_rear;
@@ -2268,10 +2273,10 @@ bool ImageProcessor::performStripInspection(const cv::Mat &roiImage, const cv::M
                 int localBottomY = actualBoxHeight_rear / 2 - 1;
 
                 // 회전 변환 적용 (박스 중심 기준)
-                double topXRot = localX * cosAngle - localTopY * sinAngle + boxCenterX_rear;
-                double topYRot = localX * sinAngle + localTopY * cosAngle + boxCenterY_rear;
-                double bottomXRot = localX * cosAngle - localBottomY * sinAngle + boxCenterX_rear;
-                double bottomYRot = localX * sinAngle + localBottomY * cosAngle + boxCenterY_rear;
+                double topXRot = localX * cosAngle_rear - localTopY * sinAngle_rear + boxCenterX_rear;
+                double topYRot = localX * sinAngle_rear + localTopY * cosAngle_rear + boxCenterY_rear;
+                double bottomXRot = localX * cosAngle_rear - localBottomY * sinAngle_rear + boxCenterX_rear;
+                double bottomYRot = localX * sinAngle_rear + localBottomY * cosAngle_rear + boxCenterY_rear;
 
                 scanTop_rear = cv::Point(static_cast<int>(std::round(topXRot)),
                                          static_cast<int>(std::round(topYRot)));

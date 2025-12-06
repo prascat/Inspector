@@ -9466,6 +9466,9 @@ void TeachingWidget::startCamera()
         msgBox.setMessage("연결된 카메라가 없습니다.");
         msgBox.setButtons(QMessageBox::Ok);
         msgBox.exec();
+        
+        // ★ 카메라가 없으면 camOff 상태로 복원
+        camOff = true;
         updateCameraButtonState(false); // 버튼 상태 업데이트
         return;
     }
@@ -15616,7 +15619,29 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         else if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) &&
                  !cameraFrames[cameraIndex].empty())
         {
+            qDebug() << "[onRecipeSelected] camOff 상태에서 updateCameraFrame 호출 - cameraIndex:" << cameraIndex 
+                     << "cameraFrames.size:" << cameraFrames.size();
             updateCameraFrame();
+        }
+        else
+        {
+            // 조건 불충족 시 디버그 출력
+            qDebug() << "[onRecipeSelected] updateCameraFrame 호출 안됨!"
+                     << "cameraIndex:" << cameraIndex
+                     << "cameraFrames.size:" << cameraFrames.size()
+                     << "camOff:" << camOff;
+            if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()))
+            {
+                qDebug() << "  cameraFrames[cameraIndex].empty():" << cameraFrames[cameraIndex].empty();
+            }
+            
+            // ★ 수정: cameraFrames[0]이 비어있지 않으면 updateCameraFrame 호출
+            if (camOff && !cameraFrames.empty() && !cameraFrames[0].empty())
+            {
+                cameraIndex = 0;
+                qDebug() << "[onRecipeSelected] cameraIndex=0으로 설정 후 updateCameraFrame 호출";
+                updateCameraFrame();
+            }
         }
 
         // 프리뷰 화면들도 업데이트
