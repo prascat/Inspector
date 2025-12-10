@@ -6,6 +6,7 @@
 #include <QPushButton>
 #include <QMessageBox>
 #include <QLineEdit>
+#include <QProgressBar>
 
 class CustomMessageBox : public QDialog {
     Q_OBJECT
@@ -34,10 +35,16 @@ public:
     void setInputField(bool enabled, const QString& defaultText = "");
     QString getInputText() const;
     
+    // 로딩 다이얼로그 정적 함수
+    static CustomMessageBox* showLoading(QWidget* parent, const QString& title = "로딩 중...");
+    void updateProgress(int value, const QString& status = "");
+    void finishLoading();
+    
     int exec();
 
 private:
     void setupUI();
+    void setupLoadingUI();
     
     QLabel* iconLabel;
     QLabel* titleLabel;
@@ -47,6 +54,11 @@ private:
     QPushButton* yesButton;
     QPushButton* noButton;
     QPushButton* cancelButton;
+    
+    // 로딩 다이얼로그용
+    QProgressBar* progressBar;
+    QLabel* statusLabel;
+    bool isLoadingDialog;
     
     QString titleText;
     QString messageText;

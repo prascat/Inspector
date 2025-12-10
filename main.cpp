@@ -4,7 +4,9 @@
 #include <QFile>
 #include <QDateTime>
 #include <QVector>
+#include <QScreen>
 #include "TeachingWidget.h"
+#include "CustomMessageBox.h"
 
 // 전역 메시지 핸들러 (qDebug를 오버레이 로그로 리다이렉트)
 TeachingWidget* g_teachingWidget = nullptr;
@@ -96,18 +98,33 @@ int main(int argc, char *argv[]) {
     // 커스텀 메시지 핸들러 먼저 설치 (초기 로그도 캡처하기 위해)
     qInstallMessageHandler(customMessageHandler);
     
+    // 로딩 다이얼로그 표시
+    CustomMessageBox* loadingDialog = CustomMessageBox::showLoading(nullptr, "KM Inspector");
+    
+    // 초기화 단계별 프로그레스 업데이트
+    loadingDialog->updateProgress(20, "설정 로딩 중...");
+    
+    loadingDialog->updateProgress(40, "위젯 생성 중...");
+    
     // 티칭 위젯 생성
     TeachingWidget widget(0, "카메라 1");
     g_teachingWidget = &widget;
     
+    loadingDialog->updateProgress(60, "로그 초기화 중...");
+    
     // 버퍼에 저장된 초기 로그를 위젯에 전달
     flushPendingLogs();
+    
+    loadingDialog->updateProgress(80, "UI 준비 중...");
     
     // 윈도우 타이틀 설정
     widget.setWindowTitle("KM Inspector");
     
     // 프레임리스 윈도우로 설정 (타이틀바 제거)
     widget.setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
+    
+    // 로딩 완료
+    loadingDialog->finishLoading();
     
     // 최대화 모드로 시작
     widget.showMaximized();

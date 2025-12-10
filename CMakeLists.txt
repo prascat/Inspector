@@ -198,6 +198,7 @@ add_executable(Inspector
     LanguageSettingsDialog.cpp
     SerialSettingsDialog.cpp
     ClientDialog.cpp
+    TestDialog.cpp
     RecipeManager.cpp
     ConfigManager.cpp
     SerialCommunication.cpp

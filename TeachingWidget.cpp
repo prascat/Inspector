@@ -11,6 +11,7 @@
 #include "ConfigManager.h"
 #include "CustomMessageBox.h"
 #include "CustomFileDialog.h"
+#include "TestDialog.h"
 #include <QTimer>
 #include <QProgressDialog>
 #include <QProcess>
@@ -650,33 +651,15 @@ void TeachingWidget::showCameraSettings()
         return;
     }
 
-    // 카메라 정보 업데이트
+    // 카메라 정보 업데이트 (카메라가 없어도 실행)
     detectCameras();
 
-    // 카메라가 없으면 경고
-    if (cameraInfos.isEmpty())
-    {
-        CustomMessageBox msgBoxWarn(this);
-        msgBoxWarn.setIcon(CustomMessageBox::Warning);
-        msgBoxWarn.setTitle("카메라 설정");
-        msgBoxWarn.setMessage("연결된 카메라가 없습니다.");
-        msgBoxWarn.setButtons(QMessageBox::Ok);
-        msgBoxWarn.exec();
-        return;
-    }
-
-    // **현재 카메라 인덱스 유효성 검사 및 수정**
-    if (cameraIndex < 0 || cameraIndex >= cameraInfos.size())
-    {
-        cameraIndex = 0; // 첫 번째 카메라로 초기화
-    }
-
-    // 카메라 설정 다이얼로그 생성 (멤버 변수로 관리)
+    // 카메라 설정 다이얼로그 생성 (카메라 연결 여부와 무관하게 생성)
     if (!cameraSettingsDialog)
     {
         cameraSettingsDialog = new CameraSettingsDialog(this);
 
-        // Spinnaker 카메라들을 다이얼로그에 설정
+        // Spinnaker 카메라들을 다이얼로그에 설정 (카메라가 있는 경우만)
 #ifdef USE_SPINNAKER
         if (!m_spinCameras.empty())
         {
@@ -929,6 +912,12 @@ QVBoxLayout *TeachingWidget::createMainLayout()
     connect(closeRecipeAction, &QAction::triggered, this, &TeachingWidget::clearAllRecipeData);
     connect(manageRecipesAction, &QAction::triggered, this, &TeachingWidget::manageRecipes);
 
+    // 테스트 메뉴 추가
+    QMenu *testMenu = menuBar->addMenu("테스트");
+    testMenu->setEnabled(true);
+    testDialogAction = testMenu->addAction("테스트");
+    testDialogAction->setEnabled(true);
+
     // 설정 메뉴
     settingsMenu = menuBar->addMenu(TR("SETTINGS_MENU"));
     settingsMenu->setEnabled(true);
@@ -971,6 +960,7 @@ QVBoxLayout *TeachingWidget::createMainLayout()
     connect(serialSettingsAction, &QAction::triggered, this, &TeachingWidget::showSerialSettings);
     connect(aboutAction, &QAction::triggered, this, &TeachingWidget::showAboutDialog);
     connect(modelManagementAction, &QAction::triggered, this, &TeachingWidget::showModelManagement);
+    connect(testDialogAction, &QAction::triggered, this, &TeachingWidget::showTestDialog);
 
     // 메뉴바 추가
     layout->setMenuBar(menuBar);
@@ -1288,7 +1278,13 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
             // 버튼 텍스트 업데이트
             stripCrimpButton->setText(checked ? "CRIMP" : "STRIP");
             stripCrimpButton->setStyleSheet(UIColors::overlayToggleButtonStyle(
-                UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, checked)); });
+                UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, checked));
+            
+            // TestDialog가 열려있으면 라디오 버튼도 동기화
+            if (testDialog) {
+                testDialog->syncStripCrimpMode(newMode);
+            }
+        });
     }
 
     connect(runStopButton, &QPushButton::toggled, this, [this](bool checked)
@@ -9140,7 +9136,7 @@ void TeachingWidget::receiveLogMessage(const QString &message)
     // 텍스트 색상 결정
     QTextCharFormat format;
 
-    // [STRIP] 또는 [CRIMP] 검사 결과 로그 - PASS/NG 색상
+    // [STRIP] 또는 [CRIMP] 검사 결과 로그 - PASS/NG/FAIL 색상
     if (message.contains("[STRIP]") || message.contains("[CRIMP]"))
     {
         if (message.contains("PASS"))
@@ -9148,9 +9144,14 @@ void TeachingWidget::receiveLogMessage(const QString &message)
             format.setForeground(QColor("#4CAF50")); // 초록색
             format.setFontWeight(QFont::Bold);
         }
-        else if (message.contains("NG") || message.contains("FAIL"))
+        else if (message.contains("NG"))
         {
-            format.setForeground(QColor(255, 165, 0)); // 주황색
+            format.setForeground(QColor("#f44336")); // 빨간색 (불량)
+            format.setFontWeight(QFont::Bold);
+        }
+        else if (message.contains("FAIL"))
+        {
+            format.setForeground(QColor(255, 165, 0)); // 주황색 (검사 실패)
             format.setFontWeight(QFont::Bold);
         }
         else
@@ -9179,16 +9180,21 @@ void TeachingWidget::receiveLogMessage(const QString &message)
             format.setFontWeight(QFont::Bold);
         }
     }
-    // INS 패턴 검사 결과 - PASS는 초록, NG/FAIL은 주황
+    // INS 패턴 검사 결과 - PASS는 초록, NG는 빨간색, FAIL은 주황색
     else if ((message.contains("EDGE:") || message.contains("FRONT:") || message.contains("REAR:") || message.contains("STRIP LENGTH:")))
     {
         if (message.contains("PASS"))
         {
             format.setForeground(QColor("#4CAF50")); // 초록색
         }
-        else if (message.contains("FAIL") || message.contains("NG"))
+        else if (message.contains("NG"))
         {
-            format.setForeground(QColor(255, 165, 0)); // 주황색
+            format.setForeground(QColor("#f44336")); // 빨간색 (불량)
+            format.setFontWeight(QFont::Bold);
+        }
+        else if (message.contains("FAIL"))
+        {
+            format.setForeground(QColor(255, 165, 0)); // 주황색 (검사 실패)
             format.setFontWeight(QFont::Bold);
         }
         else
@@ -9196,13 +9202,18 @@ void TeachingWidget::receiveLogMessage(const QString &message)
             format.setForeground(QColor("#8BCB8B")); // INS 색상 (연한 초록색)
         }
     }
-    // FID 패턴 - FID 색상, FAIL은 주황색
+    // FID/INS 패턴 - PASS는 기본색, NG는 빨간색, FAIL은 주황색
     else if (message.contains(": PASS [") || message.contains(": NG [") || message.contains(": FAIL ["))
     {
-        // "F_u4E4Y: PASS [1.00/0.80]" 형식
-        if (message.contains(": FAIL ["))
+        // "F_u4E4Y: PASS [1.00/0.80]" 또는 "I_lc46A: NG" 형식
+        if (message.contains(": NG"))
         {
-            format.setForeground(QColor(255, 165, 0)); // 주황색
+            format.setForeground(QColor("#f44336")); // 빨간색 (불량)
+            format.setFontWeight(QFont::Bold);
+        }
+        else if (message.contains(": FAIL ["))
+        {
+            format.setForeground(QColor(255, 165, 0)); // 주황색 (검사 실패)
             format.setFontWeight(QFont::Bold);
         }
         else
@@ -10119,6 +10130,16 @@ void TeachingWidget::showModelManagement()
     activeTrainDialog->activateWindow();
 }
 
+void TeachingWidget::showTestDialog()
+{
+    if (!testDialog) {
+        testDialog = new TestDialog(this);
+    }
+    testDialog->show();
+    testDialog->raise();
+    testDialog->activateWindow();
+}
+
 void TeachingWidget::openLanguageSettings()
 {
     LanguageSettingsDialog dialog(this);
@@ -10963,14 +10984,6 @@ QTreeWidgetItem *TeachingWidget::findItemById(QTreeWidgetItem *parent, const QUu
 }
 
 // 패턴 이름 가져오기 (ID로)
-QString TeachingWidget::getPatternName(const QUuid &patternId)
-{
-    PatternInfo *pattern = cameraView->getPatternById(patternId);
-    if (!pattern)
-        return "알 수 없음";
-    return pattern->name.isEmpty() ? QString("패턴 %1").arg(patternId.toString().left(8)) : pattern->name;
-}
-
 void TeachingWidget::updateCameraDetailInfo(CameraInfo &info)
 {
 #ifdef __APPLE__
@@ -13511,12 +13524,8 @@ TeachingWidget::~TeachingWidget()
     qDebug() << "[~TeachingWidget] Spinnaker SDK 해제 완료";
 #endif
 
-    // 6. SEG 모델 해제
-    if (ImageProcessor::isYoloSegModelLoaded()) {
-        ImageProcessor::releaseYoloSegModel();
-    }
-    
-    // 7. 타이머 정리
+    // 6. 타이머 정리 (먼저 정리)
+    qDebug() << "[~TeachingWidget] 타이머 정리 시작";
     if (statusUpdateTimer)
     {
         statusUpdateTimer->stop();
@@ -13524,18 +13533,49 @@ TeachingWidget::~TeachingWidget()
         delete statusUpdateTimer;
         statusUpdateTimer = nullptr;
     }
+    qDebug() << "[~TeachingWidget] 타이머 정리 완료";
 
-    // 8. InsProcessor 연결 해제
+    // 7. InsProcessor 연결 해제
+    qDebug() << "[~TeachingWidget] InsProcessor 연결 해제 시작";
     if (insProcessor)
     {
         disconnect(insProcessor, nullptr, this, nullptr);
     }
+    qDebug() << "[~TeachingWidget] InsProcessor 연결 해제 완료";
 
+    // 8. FilterDialog 정리
+    qDebug() << "[~TeachingWidget] FilterDialog 정리 시작";
     if (filterDialog)
     {
         delete filterDialog;
         filterDialog = nullptr;
     }
+    qDebug() << "[~TeachingWidget] FilterDialog 정리 완료";
+
+    // 9. TestDialog 정리
+    qDebug() << "[~TeachingWidget] TestDialog 정리 시작";
+    if (testDialog)
+    {
+        delete testDialog;
+        testDialog = nullptr;
+    }
+    qDebug() << "[~TeachingWidget] TestDialog 정리 완료";
+
+    // 10. SEG 모델 해제
+    qDebug() << "[~TeachingWidget] SEG 모델 해제 시작";
+    if (ImageProcessor::isYoloSegModelLoaded()) {
+        ImageProcessor::releaseYoloSegModel();
+    }
+    qDebug() << "[~TeachingWidget] SEG 모델 해제 완료";
+
+    // 11. ANOMALY 모델 해제
+    qDebug() << "[~TeachingWidget] ANOMALY 모델 해제 시작";
+    if (ImageProcessor::isPatchCoreModelLoaded()) {
+        ImageProcessor::releasePatchCoreModel();
+    }
+    qDebug() << "[~TeachingWidget] ANOMALY 모델 해제 완료";
+    
+    qDebug() << "[~TeachingWidget] 소멸자 완료";
 }
 
 QColor TeachingWidget::getNextColor()
@@ -15476,9 +15516,16 @@ void TeachingWidget::manageRecipes()
 
 void TeachingWidget::onRecipeSelected(const QString &recipeName)
 {
+    // 로딩 다이얼로그 표시
+    CustomMessageBox* loadingDialog = CustomMessageBox::showLoading(this, "레시피 로딩 중...");
+    loadingDialog->updateProgress(10, "레시피 파일 읽는 중...");
+    
     // 저장되지 않은 변경사항 확인
     if (hasUnsavedChanges)
     {
+        loadingDialog->close();
+        loadingDialog->deleteLater();
+        
         CustomMessageBox msgBox(this);
         msgBox.setIcon(CustomMessageBox::Question);
         msgBox.setTitle("레시피 불러오기");
@@ -15495,10 +15542,16 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         {
             saveRecipe();
         }
+        
+        // 다이얼로그 다시 표시
+        loadingDialog = CustomMessageBox::showLoading(this, "레시피 로딩 중...");
+        loadingDialog->updateProgress(10, "레시피 파일 읽는 중...");
     }
 
     RecipeManager manager;
 
+    loadingDialog->updateProgress(20, "카메라 설정 확인 중...");
+    
     // ★ CAM ON 상태에서 레시피 로드 시 스레드 일시정지 (cameraInfos 변경 방지)
     bool wasThreadsPaused = false;
     if (!camOff)
@@ -15517,6 +15570,8 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         wasThreadsPaused = true;
         QThread::msleep(100); // 스레드가 완전히 일시정지될 때까지 대기
     }
+
+    loadingDialog->updateProgress(30, "패턴 데이터 로딩 중...");
 
     // 레시피 파일 경로 설정
     QString recipeFileName = QDir(manager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(recipeName));
@@ -15769,6 +15824,8 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
 
         // cameraInfos 요약 정보 출력
 
+        loadingDialog->updateProgress(80, "모델 로딩 중...");
+        
         // ★ ANOMALY 패턴이 있으면 PatchCore 모델 미리 로딩
         {
             QList<PatternInfo> &patterns = cameraView->getPatterns();
@@ -15795,6 +15852,8 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
             }
         }
 
+        loadingDialog->updateProgress(95, "UI 업데이트 중...");
+        
         // ★ CAM ON 상태였으면 스레드 재개
         if (wasThreadsPaused)
         {
@@ -15810,10 +15869,18 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
                 uiUpdateThread->setPaused(false);
             }
         }
+        
+        // 로딩 완료
+        loadingDialog->finishLoading();
     }
     else
     {
         QString errorMsg = manager.getLastError();
+        
+        // 로딩 다이얼로그 닫기
+        loadingDialog->close();
+        loadingDialog->deleteLater();
+        
         // 레시피가 존재하지 않는 경우에는 메시지 박스를 표시하지 않음 (자동 로드 시)
         if (!errorMsg.contains("존재하지 않습니다") && !errorMsg.contains("does not exist"))
         {
@@ -16407,5 +16474,85 @@ void TeachingWidget::trainAnomalyPattern(const QString& patternName)
         process->disconnect();
         process->deleteLater();
         delete trainingTimer;
+    }
+}
+
+// === 테스트 다이얼로그용 공용 메서드 ===
+void TeachingWidget::setCameraFrame(int index, const cv::Mat& frame)
+{
+    if (frame.empty()) return;
+    
+    // cameraFrames 크기 확장
+    if (index >= static_cast<int>(cameraFrames.size())) {
+        cameraFrames.resize(index + 1);
+    }
+    
+    cameraFrames[index] = frame.clone();
+    
+    // STRIP/CRIMP 모드 이미지도 업데이트
+    if (index == 0) {
+        stripModeImage = frame.clone();
+    } else if (index == 1) {
+        crimpModeImage = frame.clone();
+    }
+    
+    // 화면 업데이트 (현재 모드에 맞는 이미지 표시)
+    if ((index == 0 && currentStripCrimpMode == 0) || 
+        (index == 1 && currentStripCrimpMode == 1)) {
+        updateCameraFrame();
+    }
+}
+
+InspectionResult TeachingWidget::runInspection()
+{
+    InspectionResult result;
+    result.isPassed = false;
+    
+    if (!insProcessor) {
+        qWarning() << "[runInspection] insProcessor가 없습니다.";
+        return result;
+    }
+    
+    if (!cameraView) {
+        qWarning() << "[runInspection] cameraView가 없습니다.";
+        return result;
+    }
+    
+    // 현재 프레임 가져오기
+    cv::Mat frame = getCurrentFrame();
+    if (frame.empty()) {
+        qWarning() << "[runInspection] 검사할 프레임이 없습니다.";
+        return result;
+    }
+    
+    // CameraView에서 패턴 리스트 가져오기
+    const QList<PatternInfo>& patterns = cameraView->getPatterns();
+    
+    // InsProcessor로 검사 실행
+    result = insProcessor->performInspection(frame, patterns, currentStripCrimpMode);
+    
+    return result;
+}
+
+QString TeachingWidget::getPatternName(const QUuid& patternId) const
+{
+    if (!cameraView) {
+        return "Unknown";
+    }
+    
+    const QList<PatternInfo>& patterns = cameraView->getPatterns();
+    for (const PatternInfo& pattern : patterns) {
+        if (pattern.id == patternId) {
+            return pattern.name;
+        }
+    }
+    
+    return "Unknown";
+}
+
+void TeachingWidget::triggerRunButton()
+{
+    if (runStopButton) {
+        runStopButton->click();
     }
 }

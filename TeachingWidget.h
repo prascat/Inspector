@@ -66,6 +66,7 @@ class SerialCommunication;
 class SerialSettingsDialog;
 class CameraSettingsDialog;
 class ClientDialog;
+class TestDialog;
 
 class CameraGrabberThread : public QThread {
     Q_OBJECT
@@ -229,6 +230,14 @@ public:
     void setStripModeImage(const cv::Mat& image) { stripModeImage = image.clone(); }
     void setCrimpModeImage(const cv::Mat& image) { crimpModeImage = image.clone(); }
     
+    // === 테스트 다이얼로그용 공용 메서드 ===
+    void setCameraFrame(int index, const cv::Mat& frame);
+    InspectionResult runInspection();
+    int getCurrentStripCrimpMode() const { return currentStripCrimpMode; }
+    void setCurrentStripCrimpMode(int mode) { currentStripCrimpMode = mode; }
+    QString getPatternName(const QUuid& patternId) const;
+    void triggerRunButton();
+    
     // === 레시피 관리 함수들 (camOff에서도 사용) ===
     void newRecipe();
     void openRecipe(bool autoMode = false);
@@ -253,6 +262,7 @@ private slots:
     void showServerSettings();
     void showSerialSettings();
     void showModelManagement();
+    void showTestDialog();
     void openGeneralSettings() {
         QMessageBox::information(this, TR("GENERAL_SETTINGS"), 
             TR("GENERAL_SETTINGS_INFO"));
@@ -353,6 +363,7 @@ private:
     QAction* serverSettingsAction = nullptr;
     QAction* serialSettingsAction = nullptr;
     QAction* modelManagementAction = nullptr;
+    QAction* testDialogAction = nullptr;
     
     // 버튼 멤버 변수들
     QPushButton* modeToggleButton = nullptr;
@@ -636,7 +647,6 @@ private:
     void createPropertyPanels();
 
     // ===== 패턴 관리 함수 =====
-    QString getPatternName(const QUuid& patternId);
     QUuid getPatternIdFromItem(QTreeWidgetItem* item);
     QColor getButtonColorForPatternType(PatternType type);
     QTreeWidgetItem* createPatternTreeItem(const PatternInfo& pattern);
@@ -705,6 +715,7 @@ private:
     enum class ResizeEdge { None, Right, Bottom, BottomRight };
     ResizeEdge rightPanelResizeEdge = ResizeEdge::None;
     FilterDialog* filterDialog;
+    TestDialog* testDialog = nullptr;
     
     // 카메라 관련
     QString cameraStatus;

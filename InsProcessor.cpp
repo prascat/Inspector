@@ -948,7 +948,22 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     }
 
     // 전체 검사 결과 로그
-    QString resultText = result.isPassed ? "PASS" : "FAIL";
+    // FID 매칭 실패가 있는지 확인
+    bool hasFidFailure = false;
+    for (auto it = result.fidResults.begin(); it != result.fidResults.end(); ++it) {
+        if (!it.value()) {
+            hasFidFailure = true;
+            break;
+        }
+    }
+    
+    // 결과 메시지 결정
+    QString resultText;
+    if (hasFidFailure) {
+        resultText = "FAIL";  // FID 매칭 실패 = 검사 실패
+    } else {
+        resultText = result.isPassed ? "PASS" : "NG";  // 불량 검출 = NG
+    }
     
     // 검사 종료 시간 측정 및 소요 시간 계산
     auto endTime = std::chrono::high_resolution_clock::now();

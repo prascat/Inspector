@@ -6,9 +6,11 @@
 #include <QIcon>
 #include <QStyle>
 #include <QPixmap>
+#include <QThread>
 
 CustomMessageBox::CustomMessageBox(QWidget* parent)
-    : QDialog(parent), currentIcon(NoIcon), result(QMessageBox::NoButton), hasInputField(false), savedParent(parent) {
+    : QDialog(parent), currentIcon(NoIcon), result(QMessageBox::NoButton), hasInputField(false), 
+      savedParent(parent), progressBar(nullptr), statusLabel(nullptr), isLoadingDialog(false) {
     
     // 다이얼로그 속성 설정
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint | Qt::X11BypassWindowManagerHint);
@@ -47,6 +49,14 @@ CustomMessageBox::CustomMessageBox(QWidget* parent)
         "QPushButton:pressed {"
         "    background-color: rgb(60, 60, 60);"
         "}"
+        "QProgressBar {"
+        "    background-color: rgb(70, 70, 70);"
+        "    border: none;"
+        "    text-align: center;"
+        "}"
+        "QProgressBar::chunk {"
+        "    background-color: rgb(42, 130, 218);"
+        "}"
     );
     
     setupUI();
@@ -54,7 +64,8 @@ CustomMessageBox::CustomMessageBox(QWidget* parent)
 
 CustomMessageBox::CustomMessageBox(QWidget* parent, IconType iconType, const QString& title,
                                    const QString& message, QMessageBox::StandardButtons buttons)
-    : QDialog(parent), currentIcon(NoIcon), result(QMessageBox::NoButton), hasInputField(false), savedParent(parent) {
+    : QDialog(parent), currentIcon(NoIcon), result(QMessageBox::NoButton), hasInputField(false), 
+      savedParent(parent), progressBar(nullptr), statusLabel(nullptr), isLoadingDialog(false) {
     
     // 다이얼로그 속성 설정
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint | Qt::X11BypassWindowManagerHint);
@@ -270,4 +281,89 @@ void CustomMessageBox::setInputField(bool enabled, const QString& defaultText) {
 QString CustomMessageBox::getInputText() const {
     if (!inputEdit) return "";
     return inputEdit->text();
+}
+
+CustomMessageBox* CustomMessageBox::showLoading(QWidget* parent, const QString& title) {
+    CustomMessageBox* dialog = new CustomMessageBox(parent);
+    dialog->isLoadingDialog = true;
+    dialog->titleText = title;
+    
+    // 기존 UI 숨기기
+    if (dialog->iconLabel) dialog->iconLabel->hide();
+    if (dialog->messageLabel) dialog->messageLabel->hide();
+    if (dialog->inputEdit) dialog->inputEdit->hide();
+    if (dialog->okButton) dialog->okButton->hide();
+    if (dialog->yesButton) dialog->yesButton->hide();
+    if (dialog->noButton) dialog->noButton->hide();
+    if (dialog->cancelButton) dialog->cancelButton->hide();
+    
+    dialog->setupLoadingUI();
+    
+    // 화면 중앙에 배치
+    if (parent) {
+        QRect parentRect = parent->geometry();
+        int x = parentRect.x() + (parentRect.width() - dialog->width()) / 2;
+        int y = parentRect.y() + (parentRect.height() - dialog->height()) / 2;
+        dialog->move(x, y);
+    } else {
+        QScreen *screen = QGuiApplication::primaryScreen();
+        QRect screenGeometry = screen->geometry();
+        int x = (screenGeometry.width() - dialog->width()) / 2;
+        int y = (screenGeometry.height() - dialog->height()) / 2;
+        dialog->move(x, y);
+    }
+    
+    dialog->show();
+    QApplication::processEvents();
+    
+    return dialog;
+}
+
+void CustomMessageBox::setupLoadingUI() {
+    titleLabel->setText(titleText);
+    titleLabel->setStyleSheet("font-size: 16px; font-weight: bold; color: white;");
+    
+    // 프로그레스바 생성
+    progressBar = new QProgressBar(this);
+    progressBar->setRange(0, 100);
+    progressBar->setValue(0);
+    progressBar->setTextVisible(false);
+    progressBar->setFixedHeight(8);
+    
+    // 상태 레이블 생성
+    statusLabel = new QLabel("초기화 중...", this);
+    statusLabel->setStyleSheet("font-size: 12px; color: rgb(200, 200, 200);");
+    statusLabel->setAlignment(Qt::AlignCenter);
+    
+    // 레이아웃에 추가
+    QVBoxLayout* mainLayout = qobject_cast<QVBoxLayout*>(layout());
+    if (mainLayout) {
+        mainLayout->insertWidget(2, progressBar);
+        mainLayout->insertWidget(3, statusLabel);
+    }
+    
+    setFixedSize(400, 150);
+}
+
+void CustomMessageBox::updateProgress(int value, const QString& status) {
+    if (progressBar) {
+        progressBar->setValue(value);
+    }
+    if (statusLabel && !status.isEmpty()) {
+        statusLabel->setText(status);
+    }
+    QApplication::processEvents();
+}
+
+void CustomMessageBox::finishLoading() {
+    if (progressBar) {
+        progressBar->setValue(100);
+    }
+    if (statusLabel) {
+        statusLabel->setText("완료!");
+    }
+    QApplication::processEvents();
+    QThread::msleep(200);
+    close();
+    deleteLater();
 }
