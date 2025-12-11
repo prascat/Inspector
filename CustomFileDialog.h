@@ -3,6 +3,8 @@
 
 #include <QFileDialog>
 #include <QString>
+#include <QLabel>
+#include <QVBoxLayout>
 
 class CustomFileDialog
 {
@@ -38,6 +40,7 @@ public:
 
 private:
     static void applyBlackTheme(QFileDialog &dialog);
+    static void addImagePreview(QFileDialog &dialog);
 };
 
 #endif // CUSTOMFILEDIALOG_H

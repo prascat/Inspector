@@ -1,4 +1,6 @@
 #include "CustomFileDialog.h"
+#include <QPixmap>
+#include <QImageReader>
 
 QString CustomFileDialog::getOpenFileName(QWidget *parent,
                                          const QString &caption,
@@ -9,8 +11,9 @@ QString CustomFileDialog::getOpenFileName(QWidget *parent,
     dialog.setFileMode(QFileDialog::ExistingFile);
     dialog.setOption(QFileDialog::DontUseNativeDialog, true);
     dialog.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
-    dialog.resize(800, 500);
+    dialog.resize(1000, 600);
     applyBlackTheme(dialog);
+    addImagePreview(dialog);
     
     QString filePath;
     if (dialog.exec() == QDialog::Accepted) {
@@ -32,8 +35,9 @@ QStringList CustomFileDialog::getOpenFileNames(QWidget *parent,
     dialog.setFileMode(QFileDialog::ExistingFiles);
     dialog.setOption(QFileDialog::DontUseNativeDialog, true);
     dialog.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint | Qt::X11BypassWindowManagerHint);
-    dialog.resize(900, 600);
+    dialog.resize(1000, 600);
     applyBlackTheme(dialog);
+    addImagePreview(dialog);
     
     // 부모 위젯 중앙에 배치
     if (parent) {
@@ -114,4 +118,54 @@ void CustomFileDialog::applyBlackTheme(QFileDialog &dialog)
         "QComboBox::drop-down { border: none; }"
         "QLabel { color: #ffffff; }"
     );
+}
+
+void CustomFileDialog::addImagePreview(QFileDialog &dialog)
+{
+    // 미리보기 레이블 생성
+    QLabel *previewLabel = new QLabel(&dialog);
+    previewLabel->setFixedSize(300, 300);
+    previewLabel->setAlignment(Qt::AlignCenter);
+    previewLabel->setStyleSheet(
+        "QLabel { "
+        "   background-color: #252525; "
+        "   border: 2px solid #3d3d3d; "
+        "   color: #888888; "
+        "}"
+    );
+    previewLabel->setText("미리보기");
+    previewLabel->setScaledContents(false);
+    
+    // 다이얼로그 레이아웃에 미리보기 추가
+    QVBoxLayout *previewLayout = new QVBoxLayout();
+    previewLayout->addWidget(previewLabel);
+    previewLayout->addStretch();
+    
+    QGridLayout *mainLayout = qobject_cast<QGridLayout*>(dialog.layout());
+    if (mainLayout) {
+        mainLayout->addLayout(previewLayout, 0, mainLayout->columnCount(), -1, 1);
+    }
+    
+    // 파일 선택 시그널 연결
+    QObject::connect(&dialog, &QFileDialog::currentChanged, [previewLabel](const QString &path) {
+        QImageReader reader(path);
+        if (reader.canRead()) {
+            QPixmap pixmap(path);
+            if (!pixmap.isNull()) {
+                // 비율 유지하며 크기 조정
+                QPixmap scaledPixmap = pixmap.scaled(
+                    previewLabel->size(),
+                    Qt::KeepAspectRatio,
+                    Qt::SmoothTransformation
+                );
+                previewLabel->setPixmap(scaledPixmap);
+            } else {
+                previewLabel->clear();
+                previewLabel->setText("미리보기\n불가");
+            }
+        } else {
+            previewLabel->clear();
+            previewLabel->setText("미리보기");
+        }
+    });
 }

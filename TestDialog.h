@@ -14,10 +14,18 @@
 #include <QRadioButton>
 #include <QButtonGroup>
 #include <QMouseEvent>
+#include <QCloseEvent>
 #include <opencv2/opencv.hpp>
 #include "CommonDefs.h"
 
 class TeachingWidget;
+
+// 테스트 검사 결과 저장용 구조체
+struct TestResultRow {
+    QString timestamp;
+    QString imageName;
+    QMap<QString, QString> patternResults; // 패턴명 -> PASS/NG
+};
 
 class TestDialog : public QDialog
 {
@@ -33,6 +41,8 @@ protected:
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
 
 private slots:
     void onLoadImages();
@@ -40,14 +50,26 @@ private slots:
     void onRunTest();
     void onClearResults();
     void onStripCrimpModeChanged(int mode);
+    void onSaveResults();
+    void onResultTableClicked(int row, int column);
+
+protected:
+    void showEvent(QShowEvent *event) override;
 
 private:
     void setupUI();
+    void rebuildResultTable();  // 레시피 패턴에 따라 테이블 재구성
     void loadImageThumbnails(const QStringList &imagePaths);
     void addResultToTable(const QString &timestamp, const QString &imageName,
                          const QString &patternName, const QString &inspectionMethod,
                          const QString &result, const QString &value);
     void runInspectionOnImage(const QString &imagePath);
+    
+    // 결과 저장 관련
+    bool hasUnsavedResults() const;
+    void saveResultsToTxt(const QString &filePath);
+    void saveResultsToXml(const QString &filePath);
+    void saveResultsToJson(const QString &filePath);
 
     TeachingWidget *teachingWidget;
     
@@ -65,6 +87,9 @@ private:
     // Data
     QStringList imagePathList;
     int currentStripCrimpMode; // 0: STRIP, 1: CRIMP
+    QList<TestResultRow> stripResults;  // STRIP 모드 결과
+    QList<TestResultRow> crimpResults;  // CRIMP 모드 결과
+    QStringList currentPatternNames;    // 현재 모드의 패턴명 리스트
     
     // Mouse drag
     QPoint dragPosition;

@@ -30,6 +30,7 @@ public:
     void setMessage(const QString& message);
     void setIcon(IconType iconType);
     void setButtons(QMessageBox::StandardButtons buttons);
+    void setButtonText(QMessageBox::StandardButton button, const QString& text);
     
     // 입력 필드 관련 함수
     void setInputField(bool enabled, const QString& defaultText = "");

@@ -1,10 +1,18 @@
 #include "TestDialog.h"
 #include "TeachingWidget.h"
 #include "CustomMessageBox.h"
+#include "CustomFileDialog.h"
 #include <QHeaderView>
 #include <QFileInfo>
 #include <QDateTime>
 #include <QDebug>
+#include <QXmlStreamWriter>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QThread>
+#include <QApplication>
+#include <QKeyEvent>
 
 TestDialog::TestDialog(TeachingWidget *parent)
     : QDialog(parent)
@@ -189,6 +197,16 @@ void TestDialog::setupUI()
     );
     bottomLayout->addWidget(clearButton);
     
+    QPushButton *saveButton = new QPushButton("결과 저장", this);
+    saveButton->setMinimumWidth(100);
+    saveButton->setStyleSheet(
+        "QPushButton { background-color: #1976d2; color: white; border: none; "
+        "padding: 8px 16px; border-radius: 4px; font-size: 13px; }"
+        "QPushButton:hover { background-color: #2196f3; }"
+        "QPushButton:pressed { background-color: #0d47a1; }"
+    );
+    bottomLayout->addWidget(saveButton);
+    
     runButton = new QPushButton("검사 실행", this);
     runButton->setMinimumWidth(100);
     runButton->setEnabled(false);
@@ -217,8 +235,10 @@ void TestDialog::setupUI()
     connect(loadButton, &QPushButton::clicked, this, &TestDialog::onLoadImages);
     connect(runButton, &QPushButton::clicked, this, &TestDialog::onRunTest);
     connect(clearButton, &QPushButton::clicked, this, &TestDialog::onClearResults);
+    connect(saveButton, &QPushButton::clicked, this, &TestDialog::onSaveResults);
     connect(closeButton, &QPushButton::clicked, this, &QDialog::close);
     connect(imageListWidget, &QListWidget::itemClicked, this, &TestDialog::onImageSelected);
+    connect(resultTableWidget, &QTableWidget::cellClicked, this, &TestDialog::onResultTableClicked);
     
     // 다크 테마 적용
     setStyleSheet("QDialog { background-color: #1e1e1e; }");
@@ -226,11 +246,11 @@ void TestDialog::setupUI()
 
 void TestDialog::onLoadImages()
 {
-    QStringList filePaths = QFileDialog::getOpenFileNames(
+    QStringList filePaths = CustomFileDialog::getOpenFileNames(
         this,
-        "이미지 선택",
+        "이미지 파일 선택",
         QDir::homePath(),
-        "이미지 파일 (*.png *.jpg *.jpeg *.bmp)"
+        "Images (*.png *.jpg *.jpeg *.bmp)"
     );
     
     if (filePaths.isEmpty()) {
@@ -309,6 +329,11 @@ void TestDialog::onRunTest()
         return;
     }
     
+    // 검사 시작 전 기존 결과 모두 클리어
+    resultTableWidget->setRowCount(0);
+    stripResults.clear();
+    crimpResults.clear();
+    
     // 현재 선택된 라디오 버튼 모드 사용
     // currentStripCrimpMode는 이미 라디오 버튼 토글로 업데이트됨
     
@@ -327,6 +352,8 @@ void TestDialog::onRunTest()
 
 void TestDialog::runInspectionOnImage(const QString &imagePath)
 {
+    if (!teachingWidget) return;
+    
     // 이미지 로드
     cv::Mat image = cv::imread(imagePath.toStdString());
     if (image.empty()) {
@@ -335,110 +362,96 @@ void TestDialog::runInspectionOnImage(const QString &imagePath)
     }
     
     // TeachingWidget의 cameraFrames에 이미지 설정
-    if (currentStripCrimpMode == 0) {
-        // STRIP 모드
-        teachingWidget->setCameraFrame(0, image);
-    } else {
-        // CRIMP 모드
-        teachingWidget->setCameraFrame(1, image);
+    int imageIndex = (currentStripCrimpMode == 0) ? 0 : 1;
+    teachingWidget->setCameraFrame(imageIndex, image);
+    
+    // RUN 버튼을 물리적으로 클릭 (FID 검출 및 패턴 회전 처리 포함)
+    teachingWidget->triggerRunButton();
+    
+    // RUN 버튼 처리 대기 (이벤트 루프 실행)
+    QApplication::processEvents();
+    QThread::msleep(100); // 검사 완료 대기
+    QApplication::processEvents();
+    
+    // CameraView에서 검사 결과 가져오기
+    CameraView *cameraView = teachingWidget->getCameraView();
+    if (!cameraView) return;
+    
+    const InspectionResult& result = cameraView->getLastInspectionResult();
+    
+    QList<PatternInfo> &patterns = cameraView->getPatterns();
+    
+    // 현재 모드의 INS 패턴만 필터링
+    QList<PatternInfo*> currentInsPatterns;
+    for (PatternInfo &pattern : patterns) {
+        if (pattern.type == PatternType::INS && 
+            pattern.stripCrimpMode == currentStripCrimpMode) {
+            currentInsPatterns.append(&pattern);
+        }
     }
     
-    // 검사 직접 실행 (RUN 버튼 시뮬레이션 없이)
-    InspectionResult result = teachingWidget->runInspection();
-    
-    // 결과를 테이블에 추가 (INS 패턴별로)
-    QFileInfo fileInfo(imagePath);
-    QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
-    
-    // 디버그: 검사 결과 개수 확인
-    qDebug() << "[TestDialog] 검사 완료 - insResults 개수:" << result.insResults.size()
-             << "insMethodTypes 개수:" << result.insMethodTypes.size();
-    
-    // INS 결과가 없으면 1행 추가 (전체 결과만)
-    if (result.insResults.isEmpty()) {
-        QString overallResult = result.isPassed ? "PASS" : "NG";
-        addResultToTable(timestamp, fileInfo.fileName(), "-", "-", overallResult, "-");
+    if (currentInsPatterns.isEmpty()) {
+        qDebug() << "[TestDialog] 현재 모드에 INS 패턴이 없음";
         return;
     }
     
-    // INS 패턴별로 행 추가
-    for (auto it = result.insResults.begin(); it != result.insResults.end(); ++it) {
-        QUuid patternId = it.key();
-        bool patternPassed = it.value();
+    // 테이블에 새 행 추가
+    int row = resultTableWidget->rowCount();
+    resultTableWidget->insertRow(row);
+    
+    QFileInfo fileInfo(imagePath);
+    QString timestamp = QDateTime::currentDateTime().toString("HH:mm:ss");
+    
+    // 시간, 이미지명
+    QTableWidgetItem *timeItem = new QTableWidgetItem(timestamp);
+    resultTableWidget->setItem(row, 0, timeItem);
+    
+    QTableWidgetItem *nameItem = new QTableWidgetItem(fileInfo.fileName());
+    resultTableWidget->setItem(row, 1, nameItem);
+    
+    // 결과 데이터 저장용
+    TestResultRow resultRow;
+    resultRow.timestamp = timestamp;
+    resultRow.imageName = fileInfo.fileName();
+    
+    // 각 INS 패턴 결과 (PASS/NG)
+    for (int i = 0; i < currentInsPatterns.size(); ++i) {
+        PatternInfo *pattern = currentInsPatterns[i];
+        int col = 2 + i; // 시간, 이미지명 다음부터
         
-        // 검사 방법 타입 확인
-        int methodType = -1;
-        if (result.insMethodTypes.contains(patternId)) {
-            methodType = result.insMethodTypes[patternId];
+        // 패턴 결과 확인
+        bool patternPassed = true;
+        if (result.insResults.contains(pattern->id)) {
+            patternPassed = result.insResults[pattern->id];
         }
         
-        // 패턴 이름 미리 가져오기 (디버그용)
-        QString patternName = "Unknown";
-        if (teachingWidget) {
-            patternName = teachingWidget->getPatternName(patternId);
-        }
-        
-        qDebug() << "[TestDialog] 패턴:" << patternName << "methodType:" << methodType 
-                 << "passed:" << patternPassed << "mode:" << currentStripCrimpMode;
-        
-        // 현재 모드에 맞지 않는 검사는 스킵
-        // STRIP 전용: StripThickness(3), StripNeckCut(4)
-        // CRIMP 전용: 나머지 검사 (PatternMatch, Segmentation, Anomaly 등)
-        if (currentStripCrimpMode == 0) {
-            // STRIP 모드: StripThickness, StripNeckCut만 표시
-            if (methodType != 3 && methodType != 4) {
-                qDebug() << "[TestDialog] STRIP 모드에서" << patternName << "스킵 (methodType:" << methodType << ")";
-                continue;
-            }
+        // 결과 (PASS/NG)
+        QString resultText = patternPassed ? "PASS" : "NG";
+        QTableWidgetItem *resultItem = new QTableWidgetItem(resultText);
+        if (patternPassed) {
+            resultItem->setForeground(QBrush(QColor("#4caf50")));
         } else {
-            // CRIMP 모드: StripThickness, StripNeckCut 제외
-            if (methodType == 3 || methodType == 4) {
-                qDebug() << "[TestDialog] CRIMP 모드에서" << patternName << "스킵 (methodType:" << methodType << ")";
-                continue;
-            }
+            resultItem->setForeground(QBrush(QColor("#f44336")));
         }
+        resultTableWidget->setItem(row, col, resultItem);
         
-        // 검사 방법 가져오기
-        QString inspectionMethod = "-";
-        switch (methodType) {
-            case 0: inspectionMethod = "PatternMatch"; break;
-            case 1: inspectionMethod = "Segmentation"; break;
-            case 2: inspectionMethod = "Anomaly"; break;
-            case 3: inspectionMethod = "StripThickness"; break;
-            case 4: inspectionMethod = "StripNeckCut"; break;
-            default: inspectionMethod = QString("Type%1").arg(methodType); break;
-        }
-        
-        // 검사 결과 (불량 검출 = NG)
-        QString inspectionResult = patternPassed ? "PASS" : "NG";
-        
-        // 검사 수치 가져오기
-        QString inspectionValue = "-";
-        
-        // 검사 방법별 수치 표시
-        if (methodType == 2) {
-            // Anomaly 검사: defect 개수 표시
-            if (result.anomalyDefectContours.contains(patternId)) {
-                int defectCount = result.anomalyDefectContours[patternId].size();
-                inspectionValue = QString("%1개 검출").arg(defectCount);
-            }
-        } else if (result.insScores.contains(patternId)) {
-            // PatternMatch, Segmentation 등: 점수 표시
-            double score = result.insScores[patternId];
-            inspectionValue = QString::number(score, 'f', 2);
-        } else if (result.stripMeasuredThicknessAvg.contains(patternId)) {
-            // StripThickness: 평균 두께
-            int avgThickness = result.stripMeasuredThicknessAvg[patternId];
-            inspectionValue = QString("%1 px").arg(avgThickness);
-        } else if (result.stripNeckAvgWidths.contains(patternId)) {
-            // StripNeckCut: 평균 너비
-            double avgWidth = result.stripNeckAvgWidths[patternId];
-            inspectionValue = QString("%1 px").arg(avgWidth, 0, 'f', 1);
-        }
-        
-        addResultToTable(timestamp, fileInfo.fileName(), patternName, 
-                        inspectionMethod, inspectionResult, inspectionValue);
+        // 결과 데이터에 저장
+        resultRow.patternResults[pattern->name] = resultText;
     }
+    
+    // 현재 모드의 결과 리스트에 추가
+    if (currentStripCrimpMode == 0) {
+        stripResults.append(resultRow);
+    } else {
+        crimpResults.append(resultRow);
+    }
+    
+    // 검사 완료 후 RUN 버튼 다시 끄기 (STOP 상태로 만들기)
+    teachingWidget->triggerRunButton();
+    QApplication::processEvents();
+    
+    // 스크롤을 가장 아래로
+    resultTableWidget->scrollToBottom();
 }
 
 void TestDialog::addResultToTable(const QString &timestamp, const QString &imageName,
@@ -486,6 +499,14 @@ void TestDialog::addResultToTable(const QString &timestamp, const QString &image
 void TestDialog::onClearResults()
 {
     resultTableWidget->setRowCount(0);
+    
+    // 현재 모드의 저장된 결과도 클리어
+    if (currentStripCrimpMode == 0) {
+        stripResults.clear();
+    } else {
+        crimpResults.clear();
+    }
+    
     statusLabel->setText("결과 지워짐");
 }
 
@@ -497,6 +518,91 @@ void TestDialog::onStripCrimpModeChanged(int mode)
     if (teachingWidget) {
         teachingWidget->setStripCrimpMode(mode);
     }
+    
+    // 모드 변경 시 테이블 재구성 (INS 패턴이 모드별로 다름)
+    rebuildResultTable();
+}
+
+void TestDialog::showEvent(QShowEvent *event)
+{
+    QDialog::showEvent(event);
+    
+    // 다이얼로그가 표시될 때 테이블 재구성
+    rebuildResultTable();
+}
+
+void TestDialog::rebuildResultTable()
+{
+    if (!teachingWidget) return;
+    
+    // 기존 테이블 내용 저장 (필요시)
+    QList<QStringList> existingData;
+    for (int row = 0; row < resultTableWidget->rowCount(); ++row) {
+        QStringList rowData;
+        for (int col = 0; col < resultTableWidget->columnCount(); ++col) {
+            QTableWidgetItem *item = resultTableWidget->item(row, col);
+            rowData << (item ? item->text() : "");
+        }
+        existingData.append(rowData);
+    }
+    
+    // CameraView에서 현재 모드의 INS 패턴 가져오기
+    CameraView *cameraView = teachingWidget->getCameraView();
+    if (!cameraView) return;
+    
+    QList<PatternInfo> &patterns = cameraView->getPatterns();
+    
+    qDebug() << "[TestDialog] rebuildResultTable - 전체 패턴 수:" << patterns.size() 
+             << "현재 모드:" << currentStripCrimpMode;
+    
+    // 현재 STRIP/CRIMP 모드에 맞는 INS 패턴만 필터링
+    QStringList insPatternNames;
+    
+    for (const PatternInfo &pattern : patterns) {
+        if (pattern.type == PatternType::INS) {
+            qDebug() << "  - INS 패턴:" << pattern.name 
+                     << "stripCrimpMode:" << pattern.stripCrimpMode 
+                     << "enabled:" << pattern.enabled;
+        }
+        
+        if (pattern.type == PatternType::INS && 
+            pattern.stripCrimpMode == currentStripCrimpMode &&
+            pattern.enabled) {
+            insPatternNames.append(pattern.name);
+        }
+    }
+    
+    // 현재 패턴명 리스트 저장 (결과 저장 시 사용)
+    currentPatternNames = insPatternNames;
+    
+    // 테이블 컬럼 재구성: 시간, 이미지명, INS패턴1, INS패턴2, ...
+    int totalColumns = 2 + insPatternNames.size(); // 시간, 이미지명 + INS 패턴들
+    
+    resultTableWidget->clear();
+    resultTableWidget->setColumnCount(totalColumns);
+    
+    // 헤더 설정
+    QStringList headers;
+    headers << "시간" << "이미지명";
+    
+    for (const QString &patternName : insPatternNames) {
+        headers << patternName;
+    }
+    
+    resultTableWidget->setHorizontalHeaderLabels(headers);
+    
+    // 컬럼 너비 설정
+    resultTableWidget->setColumnWidth(0, 150); // 시간
+    resultTableWidget->setColumnWidth(1, 200); // 이미지명
+    
+    for (int i = 0; i < insPatternNames.size(); ++i) {
+        resultTableWidget->setColumnWidth(2 + i, 100); // INS 패턴 결과
+    }
+    
+    resultTableWidget->horizontalHeader()->setStretchLastSection(true);
+    
+    qDebug() << "[TestDialog] 테이블 재구성 완료 - 현재 모드:" << (currentStripCrimpMode == 0 ? "STRIP" : "CRIMP")
+             << ", INS 패턴 수:" << insPatternNames.size() << ", 총 컬럼:" << totalColumns;
 }
 
 void TestDialog::mousePressEvent(QMouseEvent *event)
@@ -522,4 +628,352 @@ void TestDialog::mouseReleaseEvent(QMouseEvent *event)
         isDragging = false;
         event->accept();
     }
+}
+
+void TestDialog::keyPressEvent(QKeyEvent *event)
+{
+    if (event->key() == Qt::Key_Delete) {
+        // 현재 선택된 이미지 항목 삭제
+        QListWidgetItem *currentItem = imageListWidget->currentItem();
+        if (currentItem) {
+            int row = imageListWidget->row(currentItem);
+            if (row >= 0 && row < imagePathList.size()) {
+                // 리스트에서 제거
+                imagePathList.removeAt(row);
+                delete imageListWidget->takeItem(row);
+                
+                statusLabel->setText(QString("이미지 삭제됨 (남은 이미지: %1개)").arg(imagePathList.size()));
+                
+                // 이미지가 없으면 검사 버튼 비활성화
+                if (imagePathList.isEmpty()) {
+                    runButton->setEnabled(false);
+                }
+            }
+        }
+    }
+    
+    QDialog::keyPressEvent(event);
+}
+
+void TestDialog::onResultTableClicked(int row, int column)
+{
+    if (row < 0 || !teachingWidget) return;
+    
+    // 테이블에서 이미지명 가져오기 (1번 컬럼)
+    QTableWidgetItem *nameItem = resultTableWidget->item(row, 1);
+    if (!nameItem) return;
+    
+    QString imageName = nameItem->text();
+    
+    // imagePathList에서 해당 이미지 찾기
+    QString imagePath;
+    for (const QString &path : imagePathList) {
+        if (path.endsWith(imageName)) {
+            imagePath = path;
+            break;
+        }
+    }
+    
+    if (imagePath.isEmpty()) {
+        qWarning() << "[TestDialog] 이미지 경로를 찾을 수 없음:" << imageName;
+        return;
+    }
+    
+    // 이미지 로드
+    cv::Mat image = cv::imread(imagePath.toStdString());
+    if (image.empty()) {
+        qWarning() << "[TestDialog] 이미지 로드 실패:" << imagePath;
+        return;
+    }
+    
+    // TeachingWidget의 cameraFrames에 이미지 설정
+    int imageIndex = (currentStripCrimpMode == 0) ? 0 : 1;
+    teachingWidget->setCameraFrame(imageIndex, image);
+    
+    // RUN 버튼을 물리적으로 클릭 (검사 실행)
+    teachingWidget->triggerRunButton();
+    
+    statusLabel->setText(QString("검사 결과 표시: %1").arg(imageName));
+}
+
+void TestDialog::closeEvent(QCloseEvent *event)
+{
+    if (hasUnsavedResults()) {
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Question);
+        msgBox.setTitle("검사 결과 저장");
+        msgBox.setMessage("저장되지 않은 검사 결과가 있습니다.\n결과를 저장하시겠습니까?");
+        msgBox.setButtons(QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+        
+        int ret = msgBox.exec();
+        
+        if (ret == QMessageBox::Yes) {
+            onSaveResults();
+            // 저장 다이얼로그에서 취소하면 닫기도 취소
+            if (hasUnsavedResults()) {
+                event->ignore();
+                return;
+            }
+        } else if (ret == QMessageBox::Cancel) {
+            event->ignore();
+            return;
+        }
+    }
+    
+    event->accept();
+}
+
+bool TestDialog::hasUnsavedResults() const
+{
+    return !stripResults.isEmpty() || !crimpResults.isEmpty();
+}
+
+void TestDialog::onSaveResults()
+{
+    if (!hasUnsavedResults()) {
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Information);
+        msgBox.setTitle("알림");
+        msgBox.setMessage("저장할 검사 결과가 없습니다.");
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
+        return;
+    }
+    
+    // 파일 형식 선택
+    CustomMessageBox formatBox(this);
+    formatBox.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    formatBox.setStyleSheet("QDialog { background-color: #000000; }");
+    formatBox.setIcon(CustomMessageBox::Question);
+    formatBox.setTitle("저장 형식 선택");
+    formatBox.setMessage("어떤 형식으로 저장하시겠습니까?");
+    formatBox.setButtons(QMessageBox::Ok | QMessageBox::No | QMessageBox::Cancel);
+    formatBox.setButtonText(QMessageBox::Ok, "TXT");
+    formatBox.setButtonText(QMessageBox::No, "XML");
+    formatBox.setButtonText(QMessageBox::Cancel, "CANCEL");
+    
+    int formatChoice = formatBox.exec();
+    
+    QString filter;
+    QString defaultExt;
+    
+    if (formatChoice == QMessageBox::Ok) {
+        // TXT 선택
+        filter = "Text Files (*.txt)";
+        defaultExt = ".txt";
+    } else if (formatChoice == QMessageBox::No) {
+        // XML 선택
+        filter = "XML Files (*.xml)";
+        defaultExt = ".xml";
+    } else {
+        return; // CANCEL
+    }
+    
+    // 저장 경로 선택
+    QString defaultFileName = QString("test_results_%1%2")
+        .arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"))
+        .arg(defaultExt);
+    
+    QString filePath = CustomFileDialog::getSaveFileName(
+        this,
+        "검사 결과 저장",
+        defaultFileName,
+        filter
+    );
+    
+    if (filePath.isEmpty()) {
+        return;
+    }
+    
+    // 확장자 확인 및 추가
+    if (!filePath.endsWith(defaultExt, Qt::CaseInsensitive)) {
+        filePath += defaultExt;
+    }
+    
+    // 형식에 따라 저장
+    try {
+        if (formatChoice == QMessageBox::Ok) {
+            saveResultsToTxt(filePath);
+        } else if (formatChoice == QMessageBox::No) {
+            saveResultsToXml(filePath);
+        }
+        
+        // 저장 성공 시 결과 클리어
+        stripResults.clear();
+        crimpResults.clear();
+        
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Information);
+        msgBox.setTitle("저장 완료");
+        msgBox.setMessage(QString("검사 결과가 저장되었습니다.\n%1").arg(filePath));
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
+        
+    } catch (const std::exception &e) {
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Critical);
+        msgBox.setTitle("저장 실패");
+        msgBox.setMessage(QString("파일 저장 중 오류가 발생했습니다.\n%1").arg(e.what()));
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
+    }
+}
+
+void TestDialog::saveResultsToTxt(const QString &filePath)
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        throw std::runtime_error("파일을 열 수 없습니다.");
+    }
+    
+    QTextStream out(&file);
+    out.setEncoding(QStringConverter::Utf8);
+    
+    out << "===============================================\n";
+    out << "          테스트 검사 결과 리포트\n";
+    out << "===============================================\n";
+    out << "생성 일시: " << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss") << "\n\n";
+    
+    // STRIP 결과
+    if (!stripResults.isEmpty()) {
+        out << "[ STRIP 모드 검사 결과 ]\n";
+        out << "-----------------------------------------------\n";
+        
+        for (const TestResultRow &row : stripResults) {
+            out << "시간: " << row.timestamp << " | 이미지: " << row.imageName << "\n";
+            for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
+                out << "  - " << it.key() << ": " << it.value() << "\n";
+            }
+            out << "\n";
+        }
+    }
+    
+    // CRIMP 결과
+    if (!crimpResults.isEmpty()) {
+        out << "[ CRIMP 모드 검사 결과 ]\n";
+        out << "-----------------------------------------------\n";
+        
+        for (const TestResultRow &row : crimpResults) {
+            out << "시간: " << row.timestamp << " | 이미지: " << row.imageName << "\n";
+            for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
+                out << "  - " << it.key() << ": " << it.value() << "\n";
+            }
+            out << "\n";
+        }
+    }
+    
+    out << "===============================================\n";
+    file.close();
+}
+
+void TestDialog::saveResultsToXml(const QString &filePath)
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        throw std::runtime_error("파일을 열 수 없습니다.");
+    }
+    
+    QXmlStreamWriter xml(&file);
+    xml.setAutoFormatting(true);
+    xml.writeStartDocument();
+    
+    xml.writeStartElement("TestResults");
+    xml.writeAttribute("generatedAt", QDateTime::currentDateTime().toString(Qt::ISODate));
+    
+    // STRIP 결과
+    if (!stripResults.isEmpty()) {
+        xml.writeStartElement("StripMode");
+        for (const TestResultRow &row : stripResults) {
+            xml.writeStartElement("Result");
+            xml.writeAttribute("timestamp", row.timestamp);
+            xml.writeAttribute("image", row.imageName);
+            
+            for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
+                xml.writeStartElement("Pattern");
+                xml.writeAttribute("name", it.key());
+                xml.writeAttribute("result", it.value());
+                xml.writeEndElement();
+            }
+            
+            xml.writeEndElement(); // Result
+        }
+        xml.writeEndElement(); // StripMode
+    }
+    
+    // CRIMP 결과
+    if (!crimpResults.isEmpty()) {
+        xml.writeStartElement("CrimpMode");
+        for (const TestResultRow &row : crimpResults) {
+            xml.writeStartElement("Result");
+            xml.writeAttribute("timestamp", row.timestamp);
+            xml.writeAttribute("image", row.imageName);
+            
+            for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
+                xml.writeStartElement("Pattern");
+                xml.writeAttribute("name", it.key());
+                xml.writeAttribute("result", it.value());
+                xml.writeEndElement();
+            }
+            
+            xml.writeEndElement(); // Result
+        }
+        xml.writeEndElement(); // CrimpMode
+    }
+    
+    xml.writeEndElement(); // TestResults
+    xml.writeEndDocument();
+    file.close();
+}
+
+void TestDialog::saveResultsToJson(const QString &filePath)
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        throw std::runtime_error("파일을 열 수 없습니다.");
+    }
+    
+    QJsonObject root;
+    root["generatedAt"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+    
+    // STRIP 결과
+    if (!stripResults.isEmpty()) {
+        QJsonArray stripArray;
+        for (const TestResultRow &row : stripResults) {
+            QJsonObject resultObj;
+            resultObj["timestamp"] = row.timestamp;
+            resultObj["image"] = row.imageName;
+            
+            QJsonObject patternsObj;
+            for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
+                patternsObj[it.key()] = it.value();
+            }
+            resultObj["patterns"] = patternsObj;
+            
+            stripArray.append(resultObj);
+        }
+        root["stripMode"] = stripArray;
+    }
+    
+    // CRIMP 결과
+    if (!crimpResults.isEmpty()) {
+        QJsonArray crimpArray;
+        for (const TestResultRow &row : crimpResults) {
+            QJsonObject resultObj;
+            resultObj["timestamp"] = row.timestamp;
+            resultObj["image"] = row.imageName;
+            
+            QJsonObject patternsObj;
+            for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
+                patternsObj[it.key()] = it.value();
+            }
+            resultObj["patterns"] = patternsObj;
+            
+            crimpArray.append(resultObj);
+        }
+        root["crimpMode"] = crimpArray;
+    }
+    
+    QJsonDocument doc(root);
+    file.write(doc.toJson(QJsonDocument::Indented));
+    file.close();
 }

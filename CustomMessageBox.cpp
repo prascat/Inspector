@@ -249,6 +249,25 @@ void CustomMessageBox::setButtons(QMessageBox::StandardButtons buttons) {
     if (buttons & QMessageBox::Cancel) cancelButton->show();
 }
 
+void CustomMessageBox::setButtonText(QMessageBox::StandardButton button, const QString& text) {
+    switch (button) {
+        case QMessageBox::Ok:
+            okButton->setText(text);
+            break;
+        case QMessageBox::Yes:
+            yesButton->setText(text);
+            break;
+        case QMessageBox::No:
+            noButton->setText(text);
+            break;
+        case QMessageBox::Cancel:
+            cancelButton->setText(text);
+            break;
+        default:
+            break;
+    }
+}
+
 int CustomMessageBox::exec() {
     adjustSize();
     

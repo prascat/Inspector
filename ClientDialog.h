@@ -23,6 +23,10 @@ public:
     void initialize();  // 프로그램 시작 시 호출
     bool isServerConnected() const { return isConnected; }
 
+    // 메시지 전송
+    bool sendMessage(const QString& message);
+    bool sendData(const QByteArray& data);
+
     // 설정 값 가져오기
     QString getServerIp() const { return serverIp; }
     int getServerPort() const { return serverPort; }

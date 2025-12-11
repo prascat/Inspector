@@ -480,11 +480,17 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
       m_useSpinnaker(false)
 #endif
 {
+    // 로딩 프로그레스 다이얼로그 표시
+    CustomMessageBox* loadingDialog = CustomMessageBox::showLoading(nullptr, "KM Inspector");
+    loadingDialog->updateProgress(5, "언어 시스템 초기화 중...");
+    
     // 언어 시스템을 가장 먼저 초기화
     initializeLanguageSystem();
 
     // cv::Mat 타입을 메타타입으로 등록 (시그널/슬롯에서 사용 가능)
     qRegisterMetaType<cv::Mat>("cv::Mat");
+
+    loadingDialog->updateProgress(10, "카메라 SDK 초기화 중...");
 
 #ifdef USE_SPINNAKER
     // Spinnaker SDK 초기화 시도
@@ -497,12 +503,18 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     }
 #endif
 
+    loadingDialog->updateProgress(20, "설정 로딩 중...");
+    
     // 기본 초기화 및 설정
     initBasicSettings();
 
+    loadingDialog->updateProgress(30, "레시피 관리자 초기화 중...");
+    
     // 레시피 관리자 초기화
     recipeManager = new RecipeManager();
 
+    loadingDialog->updateProgress(40, "UI 레이아웃 생성 중...");
+    
     // 레이아웃 구성
     QVBoxLayout *mainLayout = createMainLayout();
     QHBoxLayout *contentLayout = createContentLayout();
@@ -512,12 +524,16 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     QVBoxLayout *cameraLayout = createCameraLayout();
     contentLayout->addLayout(cameraLayout, 1);
 
+    loadingDialog->updateProgress(50, "로그 시스템 초기화 중...");
+    
     // 로그 오버레이 생성 (화면 하단)
     setupLogOverlay();
 
     // 오른쪽 패널 오버레이 생성
     setupRightPanelOverlay();
 
+    loadingDialog->updateProgress(60, "패턴 테이블 설정 중...");
+    
     // 패턴 테이블 설정
     setupPatternTree();
 
@@ -530,6 +546,8 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     // 필터 다이얼로그 초기화
     filterDialog = new FilterDialog(cameraView, -1, this);
 
+    loadingDialog->updateProgress(70, "이벤트 연결 중...");
+    
     // 이벤트 연결
     connectEvents();
 
@@ -546,27 +564,33 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     connect(LanguageManager::instance(), &LanguageManager::languageChanged,
             this, &TeachingWidget::updateUITexts, Qt::DirectConnection);
 
+    loadingDialog->updateProgress(80, "레시피 로드 준비 중...");
+    
     // 프로그램 시작 시 최근 레시피 자동 로드
     QString lastRecipePath = ConfigManager::instance()->getLastRecipePath();
     if (!lastRecipePath.isEmpty())
     {
-        // UI가 완전히 준비된 후에 자동 로드 (QTimer 사용)
-        QTimer::singleShot(500, this, [this, lastRecipePath]()
-                           {
-            // 레시피 경로에서 레시피 이름 추출
-            QString recipeName = QFileInfo(lastRecipePath).baseName();
-            
-            
-            // 레시피 파일 존재 여부 확인
-            RecipeManager checkManager;
-            QString recipeFilePath = QDir(checkManager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(recipeName));
-            
-            if (QFile::exists(recipeFilePath)) {
-                // 레시피 선택 (메시지박스 없이)
-                onRecipeSelected(recipeName);
-            } else {
-                
-            } });
+        // 레시피 경로에서 레시피 이름 추출
+        QString recipeName = QFileInfo(lastRecipePath).baseName();
+        
+        // 레시피 파일 존재 여부 확인
+        RecipeManager checkManager;
+        QString recipeFilePath = QDir(checkManager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(recipeName));
+        
+        if (QFile::exists(recipeFilePath)) {
+            loadingDialog->updateProgress(85, "레시피 로딩 중...");
+            // 레시피 선택 (초기 로드 시 기존 다이얼로그 재사용)
+            onRecipeSelected(recipeName, false, loadingDialog);
+        }
+    }
+    
+    loadingDialog->updateProgress(95, "UI 준비 중...");
+    
+    // 로딩 다이얼로그는 레시피 로드 완료 후 또는 여기서 닫힘
+    if (!lastRecipePath.isEmpty()) {
+        // 레시피가 있으면 onRecipeSelected에서 닫음
+    } else {
+        loadingDialog->finishLoading();
     }
 
     // 전체화면 모드 초기화
@@ -1324,21 +1348,10 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
                     // 실제 카메라 모드: 카메라 프레임 확인
                     if (cameraIndex < 0 || cameraIndex >= static_cast<int>(cameraFrames.size()) || 
                         cameraFrames[cameraIndex].empty()) {
-                        
-                        
-                        
-                        if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size())) {
-                            
-                        }
                         btn->blockSignals(true);
                         btn->setChecked(false);
                         btn->blockSignals(false);
-                        CustomMessageBox msgBox(this);
-    msgBox.setIcon(CustomMessageBox::Warning);
-    msgBox.setTitle("검사 실패");
-    msgBox.setMessage("카메라 영상이 없습니다. 카메라를 시작해주세요.");
-    msgBox.setButtons(QMessageBox::Ok);
-    msgBox.exec();
+                        qDebug() << "[RUN] 카메라 영상이 없어 검사를 건너뜁니다";
                         return;
                     }
                 }
@@ -1365,12 +1378,7 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
                     btn->blockSignals(true);
                     btn->setChecked(false);
                     btn->blockSignals(false);
-                    CustomMessageBox msgBox(this);
-    msgBox.setIcon(CustomMessageBox::Warning);
-    msgBox.setTitle("검사 실패");
-    msgBox.setMessage("활성화된 패턴이 없습니다. 패턴을 추가하고 활성화하세요.");
-    msgBox.setButtons(QMessageBox::Ok);
-    msgBox.exec();
+                    qDebug() << "[RUN] 활성화된 패턴이 없어 검사를 건너뜁니다";
                     return;
                 }
                 
@@ -9359,9 +9367,6 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
         qDebug() << "[onTriggerSignalReceived] TrainDialog에 이미지 추가";
     }
 
-    // **비동기 이미지 저장 (트리거 처리와 독립적으로 실행)**
-    saveImageAsync(frame, currentStripCrimpMode);
-
     // **프레임을 cameraFrames에 저장**
     processGrabbedFrame(frame, cameraIndex);
 
@@ -12052,6 +12057,9 @@ bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex)
 
             cameraView->update();
         }
+
+        // **검사 완료 후 결과에 따라 이미지 저장 (OK/NG 폴더 구분)**
+        saveImageAsync(frame, currentStripCrimpMode, result.isPassed);
 
         return result.isPassed;
     }
@@ -15514,17 +15522,29 @@ void TeachingWidget::manageRecipes()
     dialog.exec();
 }
 
-void TeachingWidget::onRecipeSelected(const QString &recipeName)
+void TeachingWidget::onRecipeSelected(const QString &recipeName, bool showProgress, CustomMessageBox* externalLoadingDialog)
 {
-    // 로딩 다이얼로그 표시
-    CustomMessageBox* loadingDialog = CustomMessageBox::showLoading(this, "레시피 로딩 중...");
-    loadingDialog->updateProgress(10, "레시피 파일 읽는 중...");
+    // 로딩 다이얼로그 표시 (showProgress가 true일 때만, 또는 외부에서 전달된 경우 사용)
+    CustomMessageBox* loadingDialog = externalLoadingDialog;
+    bool shouldDeleteDialog = false;
+    
+    if (!loadingDialog && showProgress) {
+        loadingDialog = CustomMessageBox::showLoading(this, "레시피 로딩 중...");
+        shouldDeleteDialog = true;
+    }
+    
+    if (loadingDialog) {
+        loadingDialog->updateProgress(10, "레시피 파일 읽는 중...");
+    }
     
     // 저장되지 않은 변경사항 확인
     if (hasUnsavedChanges)
     {
-        loadingDialog->close();
-        loadingDialog->deleteLater();
+        if (loadingDialog) {
+            loadingDialog->close();
+            loadingDialog->deleteLater();
+            loadingDialog = nullptr;
+        }
         
         CustomMessageBox msgBox(this);
         msgBox.setIcon(CustomMessageBox::Question);
@@ -15543,14 +15563,16 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
             saveRecipe();
         }
         
-        // 다이얼로그 다시 표시
-        loadingDialog = CustomMessageBox::showLoading(this, "레시피 로딩 중...");
-        loadingDialog->updateProgress(10, "레시피 파일 읽는 중...");
+        // 다이얼로그 다시 표시 (showProgress일 때만)
+        if (showProgress) {
+            loadingDialog = CustomMessageBox::showLoading(this, "레시피 로딩 중...");
+            loadingDialog->updateProgress(10, "레시피 파일 읽는 중...");
+        }
     }
 
     RecipeManager manager;
 
-    loadingDialog->updateProgress(20, "카메라 설정 확인 중...");
+    if (loadingDialog) loadingDialog->updateProgress(20, "카메라 설정 확인 중...");
     
     // ★ CAM ON 상태에서 레시피 로드 시 스레드 일시정지 (cameraInfos 변경 방지)
     bool wasThreadsPaused = false;
@@ -15571,7 +15593,7 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         QThread::msleep(100); // 스레드가 완전히 일시정지될 때까지 대기
     }
 
-    loadingDialog->updateProgress(30, "패턴 데이터 로딩 중...");
+    if (loadingDialog) loadingDialog->updateProgress(30, "패턴 데이터 로딩 중...");
 
     // 레시피 파일 경로 설정
     QString recipeFileName = QDir(manager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(recipeName));
@@ -15824,7 +15846,7 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
 
         // cameraInfos 요약 정보 출력
 
-        loadingDialog->updateProgress(80, "모델 로딩 중...");
+        if (loadingDialog) loadingDialog->updateProgress(80, "모델 로딩 중...");
         
         // ★ ANOMALY 패턴이 있으면 PatchCore 모델 미리 로딩
         {
@@ -15840,19 +15862,14 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
                     
                     if (QFile::exists(fullModelPath))
                     {
-                        qDebug() << "[ANOMALY] 모델 로딩 시작:" << qPrintable(fullModelPath);
-                        if (ImageProcessor::initPatchCoreModel(fullModelPath, "CPU")) {
-                            qDebug() << "[ANOMALY] 모델 로딩 성공 - 이상탐지 검사 준비 완료 (패턴:" << qPrintable(pattern.name) << ")";
-                        } else {
-                            qDebug() << "[ANOMALY] 모델 로딩 실패 - 이상탐지 검사가 비활성화됩니다.";
-                        }
+                        ImageProcessor::initPatchCoreModel(fullModelPath, "CPU");
                         // break 제거 - 모든 ANOMALY 패턴의 모델을 로드
                     }
                 }
             }
         }
 
-        loadingDialog->updateProgress(95, "UI 업데이트 중...");
+        if (loadingDialog) loadingDialog->updateProgress(95, "UI 업데이트 중...");
         
         // ★ CAM ON 상태였으면 스레드 재개
         if (wasThreadsPaused)
@@ -15870,16 +15887,20 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
             }
         }
         
-        // 로딩 완료
-        loadingDialog->finishLoading();
+        // 로딩 완료 (외부에서 전달된 경우 finishLoading만, 내부 생성은 삭제하지 않음)
+        if (loadingDialog) {
+            loadingDialog->finishLoading();
+        }
     }
     else
     {
         QString errorMsg = manager.getLastError();
         
-        // 로딩 다이얼로그 닫기
-        loadingDialog->close();
-        loadingDialog->deleteLater();
+        // 로딩 다이얼로그 닫기 (내부 생성한 경우만 삭제)
+        if (loadingDialog && shouldDeleteDialog) {
+            loadingDialog->close();
+            loadingDialog->deleteLater();
+        }
         
         // 레시피가 존재하지 않는 경우에는 메시지 박스를 표시하지 않음 (자동 로드 시)
         if (!errorMsg.contains("존재하지 않습니다") && !errorMsg.contains("does not exist"))
@@ -15997,7 +16018,7 @@ void TeachingWidget::toggleFullScreenMode()
 }
 
 // 비동기 이미지 저장 함수
-void TeachingWidget::saveImageAsync(const cv::Mat &frame, int stripCrimpMode)
+void TeachingWidget::saveImageAsync(const cv::Mat &frame, int stripCrimpMode, bool isPassed)
 {
     if (frame.empty())
     {
@@ -16008,16 +16029,17 @@ void TeachingWidget::saveImageAsync(const cv::Mat &frame, int stripCrimpMode)
     cv::Mat frameCopy = frame.clone();
 
     // QRunnable 람다로 비동기 작업 생성
-    QThreadPool::globalInstance()->start([frameCopy, stripCrimpMode]()
+    QThreadPool::globalInstance()->start([frameCopy, stripCrimpMode, isPassed]()
     {
         // 현재 날짜와 시간으로 폴더/파일명 생성
         QDateTime now = QDateTime::currentDateTime();
         QString dateFolder = now.toString("yyyyMMdd");  // 20251203
         QString timestamp = now.toString("yyyyMMddHHmmss_zzz");  // 20251203150530_123
         
-        // 저장 경로 설정: data/20251203/strip/ or data/20251203/crimp/
+        // 저장 경로 설정: data/20251203/strip/OK or data/20251203/crimp/NG
         QString modeFolder = (stripCrimpMode == 0) ? "strip" : "crimp";
-        QString basePath = "../deploy/data/" + dateFolder + "/" + modeFolder;
+        QString resultFolder = isPassed ? "OK" : "NG";
+        QString basePath = "../deploy/data/" + dateFolder + "/" + modeFolder + "/" + resultFolder;
         
         // 디렉토리 생성 (없으면)
         QDir dir;
@@ -16025,7 +16047,7 @@ void TeachingWidget::saveImageAsync(const cv::Mat &frame, int stripCrimpMode)
             dir.mkpath(basePath);
         }
         
-        // 파일 경로 생성: data/20251203/strip/20251203150530_123.png
+        // 파일 경로 생성: data/20251203/strip/OK/20251203150530_123.png
         QString filePath = basePath + "/" + timestamp + ".png";
         
         // 이미지 저장

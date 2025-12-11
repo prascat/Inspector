@@ -475,3 +475,42 @@ void ClientDialog::tryReconnect()
     
     testSocket->connectToHost(serverIp, serverPort);
 }
+
+bool ClientDialog::sendMessage(const QString& message)
+{
+    if (!isConnected || testSocket->state() != QAbstractSocket::ConnectedState) {
+        qWarning() << "[ClientDialog] 서버에 연결되지 않아 메시지를 전송할 수 없습니다:" << message;
+        return false;
+    }
+    
+    QByteArray data = message.toUtf8();
+    qint64 bytesWritten = testSocket->write(data);
+    
+    if (bytesWritten == -1) {
+        qWarning() << "[ClientDialog] 메시지 전송 실패:" << testSocket->errorString();
+        return false;
+    }
+    
+    testSocket->flush();
+    qDebug() << "[ClientDialog] 메시지 전송 성공:" << message << "(" << bytesWritten << "bytes)";
+    return true;
+}
+
+bool ClientDialog::sendData(const QByteArray& data)
+{
+    if (!isConnected || testSocket->state() != QAbstractSocket::ConnectedState) {
+        qWarning() << "[ClientDialog] 서버에 연결되지 않아 데이터를 전송할 수 없습니다";
+        return false;
+    }
+    
+    qint64 bytesWritten = testSocket->write(data);
+    
+    if (bytesWritten == -1) {
+        qWarning() << "[ClientDialog] 데이터 전송 실패:" << testSocket->errorString();
+        return false;
+    }
+    
+    testSocket->flush();
+    qDebug() << "[ClientDialog] 데이터 전송 성공:" << bytesWritten << "bytes";
+    return true;
+}

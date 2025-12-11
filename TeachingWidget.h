@@ -243,7 +243,7 @@ public:
     void openRecipe(bool autoMode = false);
     void saveRecipeAs();
     void manageRecipes();
-    void onRecipeSelected(const QString& recipeName);
+    void onRecipeSelected(const QString& recipeName, bool showProgress = true, CustomMessageBox* externalLoadingDialog = nullptr);
     void clearAllRecipeData();
     
 signals:
@@ -274,6 +274,7 @@ private slots:
                         "무단 복제 및 배포를 금지합니다.").exec();
     }
     void saveCurrentImage();
+    void saveImageAsync(const cv::Mat &frame, int stripCrimpMode, bool isPassed);
     void loadTeachingImage();
     void processGrabbedFrame(const cv::Mat& frame, int camIdx);
     void updateUIElements();
