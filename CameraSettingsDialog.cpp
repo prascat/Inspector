@@ -484,6 +484,22 @@ void CameraSettingsDialog::setupUI() {
 #endif
             });
     cameraSelectLayout->addWidget(cameraCombo);
+    
+    // 전단/후단 교체 버튼 추가
+    QPushButton* swapCameraBtn = new QPushButton("전단↔후단 교체", this);
+    swapCameraBtn->setMinimumWidth(180);
+    swapCameraBtn->setMaximumWidth(220);
+    connect(swapCameraBtn, &QPushButton::clicked, [this]() {
+#ifdef USE_SPINNAKER
+        if (m_spinCameras.size() >= 2) {
+            // 카메라 위치 교체
+            std::swap(m_spinCameras[0], m_spinCameras[1]);
+            setSpinnakerCameras(m_spinCameras);
+            CustomMessageBox(this, CustomMessageBox::Information, "카메라 교체", "전단과 후단 카메라가 교체되었습니다.").exec();
+        }
+#endif
+    });
+    cameraSelectLayout->addWidget(swapCameraBtn);
     cameraSelectLayout->addStretch();
     
     cameraLayout->addLayout(cameraSelectLayout);
@@ -530,25 +546,29 @@ void CameraSettingsDialog::setSpinnakerCameras(const std::vector<Spinnaker::Came
             auto camera = cameras[i];
             if (camera && camera->IsInitialized()) {
                 Spinnaker::GenApi::INodeMap& nodeMap = camera->GetTLDeviceNodeMap();
-                Spinnaker::GenApi::CStringPtr ptrDeviceID = nodeMap.GetNode("DeviceID");
+                Spinnaker::GenApi::CStringPtr ptrDeviceSerialNumber = nodeMap.GetNode("DeviceSerialNumber");
                 Spinnaker::GenApi::CStringPtr ptrDeviceModelName = nodeMap.GetNode("DeviceModelName");
                 
-                QString deviceID = "Unknown";
+                QString serialNumber = "Unknown";
                 QString modelName = "Unknown";
                 
-                if (IsReadable(ptrDeviceID)) {
-                    deviceID = QString::fromLocal8Bit(ptrDeviceID->GetValue().c_str());
+                if (IsReadable(ptrDeviceSerialNumber)) {
+                    serialNumber = QString::fromLocal8Bit(ptrDeviceSerialNumber->GetValue().c_str());
                 }
                 if (IsReadable(ptrDeviceModelName)) {
                     modelName = QString::fromLocal8Bit(ptrDeviceModelName->GetValue().c_str());
                 }
                 
-                cameraCombo->addItem(QString("카메라 %1: %2 (%3)").arg(i + 1).arg(modelName).arg(deviceID));
+                // 카메라 2대 고정: 0번=전단, 1번=후단
+                QString cameraName = (i == 0) ? "전단" : "후단";
+                cameraCombo->addItem(QString("%1 (%2 - %3)").arg(cameraName, modelName, serialNumber));
             } else {
-                cameraCombo->addItem(QString("카메라 %1: 초기화되지 않음").arg(i + 1));
+                QString cameraName = (i == 0) ? "전단" : "후단";
+                cameraCombo->addItem(QString("%1: 초기화되지 않음").arg(cameraName));
             }
         } catch (const std::exception& e) {
-            cameraCombo->addItem(QString("카메라 %1: 오류").arg(i + 1));
+            QString cameraName = (i == 0) ? "전단" : "후단";
+            cameraCombo->addItem(QString("%1: 오류").arg(cameraName));
         }
     }
     

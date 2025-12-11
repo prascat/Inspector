@@ -275,7 +275,7 @@ bool RecipeManager::saveRecipe(const QString& fileName,
         // 카메라 정보 저장
         xml.writeStartElement("Camera");
         xml.writeAttribute("uuid", actualCameraInfos[camIdx].uniqueId);
-        xml.writeAttribute("name", actualCameraInfos[camIdx].name);
+        xml.writeAttribute("serialNumber", actualCameraInfos[camIdx].serialNumber);
         xml.writeAttribute("imageIndex", QString::number(actualCameraInfos[camIdx].imageIndex));
         
         // 먼저 width, height 속성 추가 (이미지 크기 정보)
@@ -1088,14 +1088,18 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
     
     // 카메라가 없으면 레시피에서 카메라 정보를 생성해서 추가
     if (!currentCameraInfo) {
-        QString cameraName = xml.attributes().value("name").toString();
-        if (cameraName.isEmpty()) {
-            cameraName = QString("Camera_%1").arg(cameraUuid);
+        // serialNumber 우선, 없으면 name(구버전 호환성), 그것도 없으면 기본값
+        QString cameraSerial = xml.attributes().value("serialNumber").toString();
+        if (cameraSerial.isEmpty()) {
+            cameraSerial = xml.attributes().value("name").toString(); // 구버전 호환
+        }
+        if (cameraSerial.isEmpty()) {
+            cameraSerial = QString("Camera_%1").arg(cameraUuid);
         }
         
         CameraInfo newCameraInfo;
         newCameraInfo.uniqueId = cameraUuid;
-        newCameraInfo.name = cameraName;
+        newCameraInfo.serialNumber = cameraSerial;
         newCameraInfo.imageIndex = imageIndex;  // 이미지 인덱스 설정
         
         // 인덱스 설정 - cameraInfos의 현재 크기를 사용
@@ -2055,8 +2059,8 @@ bool RecipeManager::saveSimulationRecipe(const QString& fileName,
     
     // 새 시뮬레이션 카메라 엘리먼트 생성
     QDomElement cameraElement = doc.createElement("Camera");
-    QString cameraDisplayName = projectName;  // projectName을 그대로 사용
-    cameraElement.setAttribute("name", cameraDisplayName);
+    QString cameraSerial = projectName;  // projectName을 serialNumber로 사용
+    cameraElement.setAttribute("serialNumber", cameraSerial);
     cameraElement.setAttribute("uuid", simulationCameraUuid);
     cameraElement.setAttribute("type", "simulation");
     cameraElement.setAttribute("imageIndex", "0");  // 기본 이미지 인덱스
@@ -2283,7 +2287,7 @@ bool RecipeManager::saveRecipeByName(const QString& recipeName, const QVector<Pa
         
         xml.writeStartElement("Camera");
         xml.writeAttribute("uuid", cameraUuid);
-        xml.writeAttribute("name", cameraUuid); // 카메라 이름은 UUID와 동일하게
+        xml.writeAttribute("serialNumber", cameraUuid); // UUID를 serialNumber로 사용
         
         // 카메라별 티칭 이미지 정보 추가
         QString teachingImageName = QString("%1.jpg").arg(cameraUuid);
@@ -2550,12 +2554,12 @@ bool RecipeManager::copyRecipe(const QString& sourceName, const QString& targetN
             return false;
         }
         
-        // 모든 Camera 요소의 name 속성 변경
+        // 모든 Camera 요소의 serialNumber 속성 변경
         QDomNodeList cameraNodes = doc.elementsByTagName("Camera");
         for (int i = 0; i < cameraNodes.count(); ++i) {
             QDomElement cameraElement = cameraNodes.at(i).toElement();
             if (!cameraElement.isNull()) {
-                cameraElement.setAttribute("name", newCameraName);
+                cameraElement.setAttribute("serialNumber", newCameraName);
             }
         }
         

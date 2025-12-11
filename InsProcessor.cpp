@@ -24,7 +24,7 @@ InsProcessor::~InsProcessor()
     logDebug("InsProcessor 소멸됨");
 }
 
-InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QList<PatternInfo> &patterns, int stripCrimpMode)
+InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QList<PatternInfo> &patterns, int stripCrimpMode, const QString& cameraName)
 {
     InspectionResult result;
 
@@ -48,8 +48,9 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     // 검사 시작 시간 측정
     auto startTime = std::chrono::high_resolution_clock::now();
     
-    // 검사 시작 로그 (패턴 개수와 관계없이 항상 출력)
-    logDebug(QString("[%1] Trigger ON 검사시작 (%2개 패턴)").arg(modeName).arg(insCount));
+    // 검사 시작 로그 (카메라 이름 포함)
+    QString cameraInfo = cameraName.isEmpty() ? "" : QString(" - %1").arg(cameraName);
+    logDebug(QString("[%1] Trigger ON 검사시작 (%2개 패턴)%3").arg(modeName).arg(insCount).arg(cameraInfo));
 
     result.isPassed = true;
     
