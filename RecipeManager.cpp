@@ -239,7 +239,7 @@ bool RecipeManager::saveRecipe(const QString& fileName,
     int savedCameraCount = 0;
     
     
-    // 모든 연결된 카메라에 대해 레시피 저장
+    // 모든 연결된 카메라에 대해 레시피 저장 (최대 2대)
     for (int camIdx = 0; camIdx < actualCameraInfos.size(); camIdx++) {
         
         QList<PatternInfo> allPatterns;
@@ -295,59 +295,64 @@ bool RecipeManager::saveRecipe(const QString& fileName,
             xml.writeAttribute("height", "");
         }
         
-        // 카메라별 티칭 이미지 정보 추가
+        // 카메라별 티칭 이미지 정보 추가 (cameraFrames 기반)
         if (teachingWidget) {
-            // STRIP/CRIMP 이미지가 있는 경우 각각 하위 요소로 저장
-            bool hasStripImage = !teachingWidget->getStripModeImage().empty();
-            bool hasCrimpImage = !teachingWidget->getCrimpModeImage().empty();
+            // frameIndex = camIdx * 2 + mode (STRIP=0, CRIMP=1)
+            int stripFrameIndex = camIdx * 2 + 0;
+            int crimpFrameIndex = camIdx * 2 + 1;
             
-            // 현재 카메라만 STRIP/CRIMP 이미지 저장 (하나라도 있으면 저장)
-            if ((hasStripImage || hasCrimpImage) && camIdx == currentCameraIndex) {
+            bool hasStripImage = stripFrameIndex < static_cast<int>(teachingWidget->cameraFrames.size()) &&
+                                 !teachingWidget->cameraFrames[stripFrameIndex].empty();
+            bool hasCrimpImage = crimpFrameIndex < static_cast<int>(teachingWidget->cameraFrames.size()) &&
+                                 !teachingWidget->cameraFrames[crimpFrameIndex].empty();
+            
+            // 해당 카메라의 STRIP/CRIMP 이미지 저장 (하나라도 있으면 저장)
+            if (hasStripImage || hasCrimpImage) {
                 std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 95};
                 
                 // STRIP 이미지 저장
                 if (hasStripImage) {
                     std::vector<uchar> stripBuffer;
+                    cv::Mat stripImage = teachingWidget->cameraFrames[stripFrameIndex];
                     
-                    if (cv::imencode(".jpg", teachingWidget->getStripModeImage(), stripBuffer, params)) {
+                    if (cv::imencode(".jpg", stripImage, stripBuffer, params)) {
                         QByteArray stripData(reinterpret_cast<const char*>(stripBuffer.data()), stripBuffer.size());
                         QString stripImageBase64 = stripData.toBase64();
                         
                         xml.writeStartElement("TeachingImage");
-                        xml.writeAttribute("imageIndex", "0");
+                        xml.writeAttribute("imageIndex", QString::number(stripFrameIndex));
                         xml.writeAttribute("name", "STRIP");
-                        xml.writeAttribute("width", QString::number(teachingWidget->getStripModeImage().cols));
-                        xml.writeAttribute("height", QString::number(teachingWidget->getStripModeImage().rows));
+                        xml.writeAttribute("width", QString::number(stripImage.cols));
+                        xml.writeAttribute("height", QString::number(stripImage.rows));
                         xml.writeCharacters(stripImageBase64);
                         xml.writeEndElement(); // TeachingImage
                         
-                        qDebug() << QString("STRIP 이미지 저장 (크기: %1 chars, 해상도: %2x%3)")
-                                    .arg(stripImageBase64.size())
-                                    .arg(teachingWidget->getStripModeImage().cols)
-                                    .arg(teachingWidget->getStripModeImage().rows);
+                        qDebug() << QString("카메라 %1 STRIP 이미지 저장 (frameIndex=%2, 크기: %3 chars, 해상도: %4x%5)")
+                                    .arg(camIdx).arg(stripFrameIndex).arg(stripImageBase64.size())
+                                    .arg(stripImage.cols).arg(stripImage.rows);
                     }
                 }
                 
                 // CRIMP 이미지 저장
                 if (hasCrimpImage) {
                     std::vector<uchar> crimpBuffer;
+                    cv::Mat crimpImage = teachingWidget->cameraFrames[crimpFrameIndex];
                     
-                    if (cv::imencode(".jpg", teachingWidget->getCrimpModeImage(), crimpBuffer, params)) {
+                    if (cv::imencode(".jpg", crimpImage, crimpBuffer, params)) {
                         QByteArray crimpData(reinterpret_cast<const char*>(crimpBuffer.data()), crimpBuffer.size());
                         QString crimpImageBase64 = crimpData.toBase64();
                         
                         xml.writeStartElement("TeachingImage");
-                        xml.writeAttribute("imageIndex", "1");
+                        xml.writeAttribute("imageIndex", QString::number(crimpFrameIndex));
                         xml.writeAttribute("name", "CRIMP");
-                        xml.writeAttribute("width", QString::number(teachingWidget->getCrimpModeImage().cols));
-                        xml.writeAttribute("height", QString::number(teachingWidget->getCrimpModeImage().rows));
+                        xml.writeAttribute("width", QString::number(crimpImage.cols));
+                        xml.writeAttribute("height", QString::number(crimpImage.rows));
                         xml.writeCharacters(crimpImageBase64);
                         xml.writeEndElement(); // TeachingImage
                         
-                        qDebug() << QString("CRIMP 이미지 저장 (크기: %1 chars, 해상도: %2x%3)")
-                                    .arg(crimpImageBase64.size())
-                                    .arg(teachingWidget->getCrimpModeImage().cols)
-                                    .arg(teachingWidget->getCrimpModeImage().rows);
+                        qDebug() << QString("카메라 %1 CRIMP 이미지 저장 (frameIndex=%2, 크기: %3 chars, 해상도: %4x%5)")
+                                    .arg(camIdx).arg(crimpFrameIndex).arg(crimpImageBase64.size())
+                                    .arg(crimpImage.cols).arg(crimpImage.rows);
                     }
                 }
             } else {
