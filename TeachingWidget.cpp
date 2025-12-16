@@ -1874,7 +1874,7 @@ void TeachingWidget::setupPreviewOverlay()
         "  color: white;"
         "  border: 2px solid #555;"
         "}");
-    previewOverlayLabel->setText("CAM 2\n" + TR("CAMERA_NO_CONNECTION"));
+    previewOverlayLabel->setText("");  // 초기 상태는 빈 텍스트
     previewOverlayLabel->setCursor(Qt::PointingHandCursor); // 클릭 가능 커서
     previewOverlayLabel->raise();                           // 최상단에 표시
 
@@ -2055,6 +2055,7 @@ void TeachingWidget::setupRightPanelOverlay()
     rightPanelOverlay->setMinimumWidth(250);
     if (savedGeometry.isValid() && savedGeometry.width() > 0) {
         rightPanelOverlay->resize(savedGeometry.width(), savedExpandedHeight > 0 ? savedExpandedHeight : 600);
+        rightPanelOverlay->move(savedGeometry.x(), savedGeometry.y());
         rightPanelExpandedHeight = savedExpandedHeight > 0 ? savedExpandedHeight : 600;
     } else {
         rightPanelOverlay->resize(400, 600);
@@ -2083,8 +2084,10 @@ void TeachingWidget::setupRightPanelOverlay()
     rightPanelOverlay->setMouseTracking(true);
     rightPanelOverlay->setAttribute(Qt::WA_Hover, true);
 
-    // 초기 위치 설정
-    QTimer::singleShot(100, this, &TeachingWidget::updateLogOverlayPosition);
+    // 초기 위치 설정 (저장된 위치가 없을 때만)
+    if (!savedGeometry.isValid() || savedGeometry.width() <= 0) {
+        QTimer::singleShot(100, this, &TeachingWidget::updateLogOverlayPosition);
+    }
 }
 
 QVBoxLayout *TeachingWidget::createRightPanel()
