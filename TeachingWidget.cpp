@@ -567,6 +567,7 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     loadingDialog->updateProgress(80, "레시피 로드 준비 중...");
     
     // 프로그램 시작 시 최근 레시피 자동 로드
+    bool recipeLoaded = false;
     QString lastRecipePath = ConfigManager::instance()->getLastRecipePath();
     if (!lastRecipePath.isEmpty())
     {
@@ -579,19 +580,16 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
         
         if (QFile::exists(recipeFilePath)) {
             loadingDialog->updateProgress(85, "레시피 로딩 중...");
-            // 레시피 선택 (초기 로드 시 기존 다이얼로그 재사용)
-            onRecipeSelected(recipeName, false, loadingDialog);
+            // 레시피 선택
+            onRecipeSelected(recipeName);
+            recipeLoaded = true;
         }
     }
     
     loadingDialog->updateProgress(95, "UI 준비 중...");
     
-    // 로딩 다이얼로그는 레시피 로드 완료 후 또는 여기서 닫힘
-    if (!lastRecipePath.isEmpty()) {
-        // 레시피가 있으면 onRecipeSelected에서 닫음
-    } else {
-        loadingDialog->finishLoading();
-    }
+    // 로딩 다이얼로그 닫기
+    loadingDialog->finishLoading();
 
     // 전체화면 모드 초기화
     isFullScreenMode = true;                       // 시작할 때 최대화 모드
@@ -10897,11 +10895,11 @@ void TeachingWidget::switchToCamera(const QString &cameraUuid)
             {
                 cv::Mat rgbImage;
                 cv::cvtColor(currentFrame, rgbImage, cv::COLOR_BGR2RGB);
-                qImage = QImage(rgbImage.data, rgbImage.cols, rgbImage.rows, rgbImage.step, QImage::Format_RGB888);
+                qImage = QImage(rgbImage.data, rgbImage.cols, rgbImage.rows, rgbImage.step, QImage::Format_RGB888).copy();
             }
             else
             {
-                qImage = QImage(currentFrame.data, currentFrame.cols, currentFrame.rows, currentFrame.step, QImage::Format_Grayscale8);
+                qImage = QImage(currentFrame.data, currentFrame.cols, currentFrame.rows, currentFrame.step, QImage::Format_Grayscale8).copy();
             }
 
             if (!qImage.isNull())
@@ -15644,30 +15642,11 @@ void TeachingWidget::manageRecipes()
     dialog.exec();
 }
 
-void TeachingWidget::onRecipeSelected(const QString &recipeName, bool showProgress, CustomMessageBox* externalLoadingDialog)
+void TeachingWidget::onRecipeSelected(const QString &recipeName)
 {
-    // 로딩 다이얼로그 표시 (showProgress가 true일 때만, 또는 외부에서 전달된 경우 사용)
-    CustomMessageBox* loadingDialog = externalLoadingDialog;
-    bool shouldDeleteDialog = false;
-    
-    if (!loadingDialog && showProgress) {
-        loadingDialog = CustomMessageBox::showLoading(this, "레시피 로딩 중...");
-        shouldDeleteDialog = true;
-    }
-    
-    if (loadingDialog) {
-        loadingDialog->updateProgress(10, "레시피 파일 읽는 중...");
-    }
-    
     // 저장되지 않은 변경사항 확인
     if (hasUnsavedChanges)
     {
-        if (loadingDialog) {
-            loadingDialog->close();
-            loadingDialog->deleteLater();
-            loadingDialog = nullptr;
-        }
-        
         CustomMessageBox msgBox(this);
         msgBox.setIcon(CustomMessageBox::Question);
         msgBox.setTitle("레시피 불러오기");
@@ -15684,18 +15663,10 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName, bool showProgre
         {
             saveRecipe();
         }
-        
-        // 다이얼로그 다시 표시 (showProgress일 때만)
-        if (showProgress) {
-            loadingDialog = CustomMessageBox::showLoading(this, "레시피 로딩 중...");
-            loadingDialog->updateProgress(10, "레시피 파일 읽는 중...");
-        }
     }
 
     RecipeManager manager;
 
-    if (loadingDialog) loadingDialog->updateProgress(20, "카메라 설정 확인 중...");
-    
     // ★ CAM ON 상태에서 레시피 로드 시 스레드 일시정지 (cameraInfos 변경 방지)
     bool wasThreadsPaused = false;
     if (!camOff)
@@ -15714,8 +15685,6 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName, bool showProgre
         wasThreadsPaused = true;
         QThread::msleep(100); // 스레드가 완전히 일시정지될 때까지 대기
     }
-
-    if (loadingDialog) loadingDialog->updateProgress(30, "패턴 데이터 로딩 중...");
 
     // 레시피 파일 경로 설정
     QString recipeFileName = QDir(manager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(recipeName));
@@ -15978,8 +15947,6 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName, bool showProgre
 
         // cameraInfos 요약 정보 출력
 
-        if (loadingDialog) loadingDialog->updateProgress(80, "모델 로딩 중...");
-        
         // ★ ANOMALY 패턴이 있으면 PatchCore 모델 미리 로딩
         {
             QList<PatternInfo> &patterns = cameraView->getPatterns();
@@ -16001,8 +15968,6 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName, bool showProgre
             }
         }
 
-        if (loadingDialog) loadingDialog->updateProgress(95, "UI 업데이트 중...");
-        
         // ★ CAM ON 상태였으면 스레드 재개
         if (wasThreadsPaused)
         {
@@ -16018,21 +15983,10 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName, bool showProgre
                 uiUpdateThread->setPaused(false);
             }
         }
-        
-        // 로딩 완료 (외부에서 전달된 경우 finishLoading만, 내부 생성은 삭제하지 않음)
-        if (loadingDialog) {
-            loadingDialog->finishLoading();
-        }
     }
     else
     {
         QString errorMsg = manager.getLastError();
-        
-        // 로딩 다이얼로그 닫기 (내부 생성한 경우만 삭제)
-        if (loadingDialog && shouldDeleteDialog) {
-            loadingDialog->close();
-            loadingDialog->deleteLater();
-        }
         
         // 레시피가 존재하지 않는 경우에는 메시지 박스를 표시하지 않음 (자동 로드 시)
         if (!errorMsg.contains("존재하지 않습니다") && !errorMsg.contains("does not exist"))

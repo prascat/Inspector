@@ -243,7 +243,7 @@ public:
     void openRecipe(bool autoMode = false);
     void saveRecipeAs();
     void manageRecipes();
-    void onRecipeSelected(const QString& recipeName, bool showProgress = true, CustomMessageBox* externalLoadingDialog = nullptr);
+    void onRecipeSelected(const QString& recipeName);
     void clearAllRecipeData();
     
 signals:
