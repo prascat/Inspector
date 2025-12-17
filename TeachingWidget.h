@@ -145,6 +145,7 @@ class TeachingWidget : public QWidget {
 public:
     // RecipeManager에서 접근 가능하도록 public으로 선언
     std::vector<cv::Mat> cameraFrames;
+    std::vector<bool> frameUpdatedFlags;  // 각 프레임의 업데이트 플래그 (트리거로 새 데이터 수신됨)
     bool camOff = true;
     int cameraIndex;
     
@@ -222,7 +223,10 @@ public:
     
     // Strip/Crimp 모드 관련
     int getStripCrimpMode() const { return currentStripCrimpMode; }
-    void setStripCrimpMode(int mode);
+    void setStripCrimpMode(int mode, bool forceUpdate = false);  // forceUpdate: 수동 전환 시 플래그 무시
+    
+    // Frame 인덱스 계산 (cameraIndex * 2 + mode)
+    int getFrameIndex(int cameraIndex, int mode) const;
     
     // STRIP/CRIMP 이미지 접근자
     const cv::Mat& getStripModeImage() const { return stripModeImage; }

@@ -3904,7 +3904,9 @@ void CameraView::setBackgroundPixmap(const QPixmap &pixmap)
         originalImageSize = QSize();
         if (bgPixmapItem)
         {
-            scene->removeItem(bgPixmapItem);
+            if (bgPixmapItem->scene() == scene) {
+                scene->removeItem(bgPixmapItem);
+            }
             delete bgPixmapItem;
             bgPixmapItem = nullptr;
         }
@@ -3921,7 +3923,9 @@ void CameraView::setBackgroundPixmap(const QPixmap &pixmap)
     // QGraphicsScene에 배경 이미지 추가
     if (bgPixmapItem)
     {
-        scene->removeItem(bgPixmapItem);
+        if (bgPixmapItem->scene() == scene) {
+            scene->removeItem(bgPixmapItem);
+        }
         delete bgPixmapItem;
     }
     bgPixmapItem = scene->addPixmap(pixmap);
