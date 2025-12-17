@@ -1520,7 +1520,10 @@ void RecipeManager::readFIDDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     pattern.minAngle = xml.attributes().value("minAngle").toDouble();
     pattern.maxAngle = xml.attributes().value("maxAngle").toDouble();
     pattern.angleStep = xml.attributes().value("angleStep").toDouble();
-    pattern.fidMatchMethod = xml.attributes().value("matchMethod").toInt();
+    
+    // matchMethod 기본값 명시적 설정 (0 = TM_CCOEFF_NORMED)
+    QString matchMethodStr = xml.attributes().value("matchMethod").toString();
+    pattern.fidMatchMethod = matchMethodStr.isEmpty() ? 0 : matchMethodStr.toInt();
     
     // runInspection 기본값은 true (XML에 값이 없으면 true)
     QString runInspectionStr = xml.attributes().value("runInspection").toString();

@@ -249,6 +249,7 @@ signals:
     
 private slots:
     void onTriggerSignalReceived(const cv::Mat& frame, int cameraIndex);
+    void onStripCrimpModeChanged(int mode);  // 서버로부터 STRIP/CRIMP 메시지 수신
     void updateUITexts();
     void openLanguageSettings();
     void showCameraSettings();
@@ -327,6 +328,9 @@ private:
     
     // 순차 프레임 인덱스 (0, 1, 2, 3 순환)
     int sequentialFrameIndex = 0;
+    
+    // 서버로부터 받은 STRIP/CRIMP 모드 (0=STRIP, 1=CRIMP)
+    int currentStripCrimpMode = 0;
     
     // 선택된 필터 정보 (티칭 모드 필터 표시용)
     QUuid selectedPatternId;

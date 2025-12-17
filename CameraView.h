@@ -215,6 +215,7 @@ public:
     void saveCurrentResultForMode(int mode, const QPixmap &frame); // 현재 패턴 상태로 저장
     bool switchToModeResult(int mode);                             // 모드별 결과로 전환, 성공 시 true 반환
     bool hasModeResult(int frameIndex) const { return frameIndex >= 0 && frameIndex < 4 && hasFrameResult[frameIndex]; }
+    const InspectionResult& getFrameResult(int frameIndex) const { return frameResults[frameIndex]; }
     void clearModeResults()
     {
         for (int i = 0; i < 4; i++) {

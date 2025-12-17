@@ -80,9 +80,6 @@ private:
     QPushButton *autoTrainButton;
     QLabel *imageCountLabel;
     QLabel *teachingImageLabel;
-    QRadioButton *stripRadio;
-    QRadioButton *crimpRadio;
-    QButtonGroup *modeButtonGroup;
     
     // 이미지 미리보기 리스트
     QListWidget *imageListWidget;
@@ -93,13 +90,11 @@ private:
     QProgressBar *trainingProgressBar;
     QLabel *trainingStatusLabel;
     
-    int currentMode;  // 0: STRIP, 1: CRIMP
     QVector<PatternInfo*> anomalyPatterns;
     QVector<PatternInfo*> allPatterns;  // 모든 패턴 (FID 찾기용)
     
-    // 캡처된 이미지 저장 (STRIP/CRIMP 별도)
-    QVector<cv::Mat> stripCapturedImages;
-    QVector<cv::Mat> crimpCapturedImages;
+    // 캡처된 이미지 저장
+    QVector<cv::Mat> capturedImages;
     
     // 체크박스와 패턴 매핑
     QMap<QString, QCheckBox*> patternCheckBoxes;

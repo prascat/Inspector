@@ -14,7 +14,6 @@
 
 TrainDialog::TrainDialog(QWidget *parent)
     : QWidget(parent)
-    , currentMode(0)
     , m_dragging(false)
     , m_firstShow(true)
     , dockerTrainProcess(nullptr)
@@ -118,25 +117,6 @@ void TrainDialog::setupUI()
     );
     leftLayout->addWidget(closeButton);
     
-    // 모드 선택
-    QWidget *modeWidget = new QWidget(this);
-    QHBoxLayout *modeLayout = new QHBoxLayout(modeWidget);
-    modeLayout->setContentsMargins(0, 5, 0, 5);
-    
-    stripRadio = new QRadioButton("STRIP", this);
-    crimpRadio = new QRadioButton("CRIMP", this);
-    stripRadio->setChecked(true);
-    
-    modeButtonGroup = new QButtonGroup(this);
-    modeButtonGroup->addButton(stripRadio, 0);
-    modeButtonGroup->addButton(crimpRadio, 1);
-    
-    modeLayout->addStretch();
-    modeLayout->addWidget(stripRadio);
-    modeLayout->addWidget(crimpRadio);
-    modeLayout->addStretch();
-    leftLayout->addWidget(modeWidget);
-    
     // 패턴 목록
     patternListWidget = new QListWidget(this);
     leftLayout->addWidget(patternListWidget);
@@ -201,7 +181,6 @@ void TrainDialog::setupUI()
     if (clearImagesButton) connect(clearImagesButton, &QPushButton::clicked, this, &TrainDialog::onClearImagesClicked);
     if (addImagesButton) connect(addImagesButton, &QPushButton::clicked, this, &TrainDialog::onAddImagesClicked);
     if (deleteSelectedImageButton) connect(deleteSelectedImageButton, &QPushButton::clicked, this, &TrainDialog::onDeleteSelectedImageClicked);
-    if (modeButtonGroup) connect(modeButtonGroup, &QButtonGroup::idClicked, this, &TrainDialog::onModeChanged);
     if (patternListWidget) connect(patternListWidget, &QListWidget::itemSelectionChanged, this, &TrainDialog::onPatternSelectionChanged);
     if (imageListWidget) connect(imageListWidget, &QListWidget::itemClicked, this, &TrainDialog::onImageItemClicked);
 }
@@ -231,11 +210,7 @@ void TrainDialog::applyBlackTheme()
 
 void TrainDialog::setAnomalyPatterns(const QVector<PatternInfo*>& patterns)
 {
-    currentMode = 0;
     anomalyPatterns = patterns;
-    
-    // 모드 라디오 버튼 설정
-    stripRadio->setChecked(true);
     
     // 리스트 초기화
     patternListWidget->clear();
@@ -301,7 +276,7 @@ void TrainDialog::setAnomalyPatterns(const QVector<PatternInfo*>& patterns)
                         break;
                     }
                 }
-                QVector<cv::Mat>& currentImages = (currentMode == 0) ? stripCapturedImages : crimpCapturedImages;
+                QVector<cv::Mat>& currentImages = capturedImages;
                 autoTrainButton->setEnabled(anyChecked && !currentImages.isEmpty());
             });
         }
@@ -323,18 +298,14 @@ void TrainDialog::setAllPatterns(const QVector<PatternInfo*>& patterns)
 
 void TrainDialog::addCapturedImage(const cv::Mat& image, int stripCrimpMode)
 {
-    // STRIP/CRIMP 별도 저장
-    if (stripCrimpMode == 0) {
-        stripCapturedImages.append(image.clone());
-    } else {
-        crimpCapturedImages.append(image.clone());
-    }
+    // 모든 이미지를 하나의 벡터에 저장
+    capturedImages.append(image.clone());
     
-    // 현재 모드의 이미지만 UI 업데이트
+    // UI 업데이트
     if (true) {
         updateImageGrid();
         
-        QVector<cv::Mat>& currentImages = (currentMode == 0) ? stripCapturedImages : crimpCapturedImages;
+        QVector<cv::Mat>& currentImages = capturedImages;
         imageCountLabel->setText(QString("이미지 개수: %1").arg(currentImages.size()));
         
         bool anyChecked = false;
@@ -355,7 +326,7 @@ void TrainDialog::updateImageGrid(bool scrollToEnd)
     
     imageListWidget->clear();
     
-    QVector<cv::Mat>& currentImages = (currentMode == 0) ? stripCapturedImages : crimpCapturedImages;
+    QVector<cv::Mat>& currentImages = capturedImages;
     
     for (int i = 0; i < currentImages.size(); ++i) {
         const cv::Mat& img = currentImages[i];
@@ -393,37 +364,30 @@ void TrainDialog::updateImageGrid(bool scrollToEnd)
 
 void TrainDialog::onModeChanged(int id)
 {
-    currentMode = id;
+    // STRIP/CRIMP 모드 구분 제거됨 - 함수 유지는 하되 동작 없음
+    Q_UNUSED(id);
     
-    // 패턴 목록 갱신 (이미지는 건드리지 않음)
+    // 패턴 목록 갱신
     setAnomalyPatterns(anomalyPatterns);
     
-    // 현재 모드의 이미지로 UI 업데이트
+    // 이미지로 UI 업데이트
     updateImageGrid();
-    QVector<cv::Mat>& currentImages = (currentMode == 0) ? stripCapturedImages : crimpCapturedImages;
-    imageCountLabel->setText(QString("이미지 개수: %1").arg(currentImages.size()));
+    imageCountLabel->setText(QString("이미지 개수: %1").arg(capturedImages.size()));
     previewImageLabel->setText("이미지를 클릭하세요");
-    
-    qDebug() << "[TrainDialog] 모드 변경:" << (id == 0 ? "STRIP" : "CRIMP") 
-             << ", STRIP 이미지:" << stripCapturedImages.size() 
-             << ", CRIMP 이미지:" << crimpCapturedImages.size();
 }
 
 void TrainDialog::onClearImagesClicked()
 {
-    QVector<cv::Mat>& currentImages = (currentMode == 0) ? stripCapturedImages : crimpCapturedImages;
-    
-    if (currentImages.isEmpty()) {
+    if (capturedImages.isEmpty()) {
         return;
     }
     
-    QString modeName = (currentMode == 0) ? "STRIP" : "CRIMP";
     CustomMessageBox msgBox(this, CustomMessageBox::Question, "확인",
-        QString("%1 모드 수집된 이미지 %2개를 모두 삭제하시겠습니까?").arg(modeName).arg(currentImages.size()),
+        QString("수집된 이미지 %1개를 모두 삭제하시겠습니까?").arg(capturedImages.size()),
         QMessageBox::Yes | QMessageBox::No);
     
     if (msgBox.exec() == QMessageBox::Yes) {
-        currentImages.clear();
+        capturedImages.clear();
         updateImageGrid();
         imageCountLabel->setText("이미지 개수: 0");
         autoTrainButton->setEnabled(false);
@@ -440,7 +404,7 @@ void TrainDialog::onPatternSelectionChanged()
     }
     
     QString patternName = item->data(Qt::UserRole).toString();
-    QVector<cv::Mat>& currentImages = (currentMode == 0) ? stripCapturedImages : crimpCapturedImages;
+    QVector<cv::Mat>& currentImages = capturedImages;
     
     // 티칭 이미지 업데이트
     updateTeachingImagePreview();
@@ -479,6 +443,8 @@ void TrainDialog::updateTeachingImagePreview()
     
     if (templateImage.isNull()) {
         teachingImageLabel->setText("티칭 이미지 없음");
+        qDebug() << "[updateTeachingImagePreview] 템플릿 이미지 없음 - 패턴:" << patternName 
+                 << "frameIndex:" << selectedPattern->frameIndex;
         return;
     }
     
@@ -505,7 +471,7 @@ void TrainDialog::onStartAutoTrainClicked()
         return;
     }
     
-    QVector<cv::Mat>& currentImages = (currentMode == 0) ? stripCapturedImages : crimpCapturedImages;
+    QVector<cv::Mat>& currentImages = capturedImages;
     if (currentImages.isEmpty()) {
         CustomMessageBox msgBox(this, CustomMessageBox::Warning, "경고",
             "수집된 학습 이미지가 없습니다.");
@@ -621,7 +587,7 @@ void TrainDialog::onImageItemClicked(QListWidgetItem* item)
     if (deleteSelectedImageButton) deleteSelectedImageButton->setEnabled(true);
     
     int index = item->data(Qt::UserRole).toInt();
-    QVector<cv::Mat>& currentImages = (currentMode == 0) ? stripCapturedImages : crimpCapturedImages;
+    QVector<cv::Mat>& currentImages = capturedImages;
     
     if (index < 0 || index >= currentImages.size()) {
         if (previewImageLabel) {
@@ -675,7 +641,7 @@ void TrainDialog::onDeleteSelectedImageClicked()
     }
     
     int index = item->data(Qt::UserRole).toInt();
-    QVector<cv::Mat>& currentImages = (currentMode == 0) ? stripCapturedImages : crimpCapturedImages;
+    QVector<cv::Mat>& currentImages = capturedImages;
     
     if (index < 0 || index >= currentImages.size()) {
         return;
@@ -708,19 +674,58 @@ void TrainDialog::onDeleteSelectedImageClicked()
 
 void TrainDialog::onAddImagesClicked()
 {
-    QStringList fileNames = CustomFileDialog::getOpenFileNames(this, 
-        "학습 이미지 선택",
-        QDir::homePath(),
-        "이미지 파일 (*.png *.jpg *.jpeg *.bmp *.tiff)");
+    // 커스텀 메시지 박스 생성
+    CustomMessageBox msgBox(this, CustomMessageBox::Question, 
+                           "이미지 추가", 
+                           "이미지 추가 방식을 선택하세요");
     
-    if (fileNames.isEmpty()) {
+    // Yes/No 버튼을 폴더/파일로 사용
+    msgBox.setButtons(QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+    msgBox.setButtonText(QMessageBox::Yes, "폴더 선택");
+    msgBox.setButtonText(QMessageBox::No, "파일 선택");
+    msgBox.setButtonText(QMessageBox::Cancel, "취소");
+    
+    // 부모 다이얼로그 중앙에 배치
+    QRect parentRect = geometry();
+    msgBox.move(parentRect.center() - msgBox.rect().center());
+    
+    int result = msgBox.exec();
+    
+    QStringList imagePaths;
+    
+    if (result == QMessageBox::Yes) {
+        // 폴더 선택
+        QString dirPath = CustomFileDialog::getExistingDirectory(this, 
+            "이미지 폴더 선택",
+            QDir::homePath());
+        
+        if (!dirPath.isEmpty()) {
+            QDir dir(dirPath);
+            QStringList filters;
+            filters << "*.png" << "*.jpg" << "*.jpeg" << "*.bmp" << "*.tiff";
+            QFileInfoList fileList = dir.entryInfoList(filters, QDir::Files);
+            
+            for (const QFileInfo &fileInfo : fileList) {
+                imagePaths.append(fileInfo.absoluteFilePath());
+            }
+        }
+    }
+    else if (result == QMessageBox::No) {
+        // 다중 파일 선택
+        imagePaths = CustomFileDialog::getOpenFileNames(this, 
+            "학습 이미지 선택",
+            QDir::homePath(),
+            "이미지 파일 (*.png *.jpg *.jpeg *.bmp *.tiff)");
+    }
+    
+    if (imagePaths.isEmpty()) {
         return;
     }
     
     int addedCount = 0;
-    QVector<cv::Mat>& currentImages = (currentMode == 0) ? stripCapturedImages : crimpCapturedImages;
+    QVector<cv::Mat>& currentImages = capturedImages;
     
-    for (const QString& fileName : fileNames) {
+    for (const QString& fileName : imagePaths) {
         cv::Mat img = cv::imread(fileName.toStdString());
         if (!img.empty()) {
             currentImages.append(img);
@@ -740,6 +745,8 @@ void TrainDialog::onAddImagesClicked()
             }
         }
         autoTrainButton->setEnabled(anyChecked && !currentImages.isEmpty());
+        
+        qDebug() << "[TrainDialog] 추가된 이미지 수:" << addedCount;
     }
 }
 
@@ -871,7 +878,7 @@ void TrainDialog::trainPattern(const QString& patternName)
         return;
     }
     
-    QVector<cv::Mat>& currentImages = (currentMode == 0) ? stripCapturedImages : crimpCapturedImages;
+    QVector<cv::Mat>& currentImages = capturedImages;
     if (currentImages.isEmpty()) {
         qWarning() << "[TRAIN] 학습할 이미지가 없음";
         trainNextPattern();

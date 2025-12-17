@@ -434,12 +434,17 @@ void CameraView::mousePressEvent(QMouseEvent *event)
         }
         else if (m_editMode == EditMode::Draw)
         {
+            qDebug() << "[Draw모드] 패턴 그리기 시작 - currentFrameIndex:" << currentFrameIndex;
             isDrawing = true;
             startPoint = originalPos;
             currentRect = QRect();
             setCursor(Qt::ArrowCursor);
             update();
             return;
+        }
+        else
+        {
+            qDebug() << "[mousePressEvent] 현재 EditMode:" << (int)m_editMode << "- 패턴 그리기 불가";
         }
     }
     QGraphicsView::mousePressEvent(event);
@@ -1134,6 +1139,11 @@ void CameraView::showContextMenu(const QPoint &pos)
                 newPattern.enabled = true;
                 newPattern.cameraUuid = currentCameraUuid;
                 newPattern.frameIndex = currentFrameIndex;
+                
+                qDebug() << "[ROI패턴생성] currentFrameIndex:" << currentFrameIndex 
+                         << "frameLabel:" << frameLabel 
+                         << "cameraUuid:" << currentCameraUuid
+                         << "newPattern.frameIndex:" << newPattern.frameIndex;
 
                 addPattern(newPattern);
                 setSelectedPatternId(newPattern.id);
@@ -1183,6 +1193,7 @@ void CameraView::showContextMenu(const QPoint &pos)
                 // 프레임 인덱스에 맞는 레이블 추가
                 QStringList frameLabels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
                 QString frameLabel = (currentFrameIndex >= 0 && currentFrameIndex < 4) ? frameLabels[currentFrameIndex] : "";
+                qDebug() << "[INS패턴생성] currentFrameIndex:" << currentFrameIndex << "frameLabel:" << frameLabel << "cameraUuid:" << currentCameraUuid;
                 newPattern.name = QString("INS_%1 [%2]").arg(newPattern.id.toString().left(8)).arg(frameLabel);
                 newPattern.rect = currentRect;
                 newPattern.color = UIColors::INSPECTION_COLOR;
@@ -1212,11 +1223,22 @@ void CameraView::showContextMenu(const QPoint &pos)
         QList<QUuid> groupedInsPatternIds;
         QList<QUuid> groupedRoiPatternIds;
 
+        qDebug() << "[컨텍스트메뉴] 선택된 패턴 수:" << selectedPatterns.size() << "currentFrameIndex:" << currentFrameIndex;
+
         for (const QUuid &id : selectedPatterns)
         {
             PatternInfo *pattern = getPatternById(id);
             if (!pattern)
                 continue;
+            
+            // 현재 프레임의 패턴만 처리
+            if (pattern->frameIndex != currentFrameIndex)
+            {
+                qDebug() << "[컨텍스트메뉴] 패턴 스킵 (다른 프레임):" << pattern->name << "frameIndex:" << pattern->frameIndex;
+                continue;
+            }
+            
+            qDebug() << "[컨텍스트메뉴] 패턴:" << pattern->name << "타입:" << (int)pattern->type << "frameIndex:" << pattern->frameIndex;
 
             if (pattern->type == PatternType::ROI)
             {
@@ -1340,18 +1362,34 @@ void CameraView::showContextMenu(const QPoint &pos)
 // 선택된 패턴을 그룹화
 void CameraView::groupPatternsInSelection(const QList<QUuid> &patternIds)
 {
-    // 1. 패턴 분류
+    qDebug() << "[그룹화] 선택된 패턴 수:" << patternIds.size();
+    
+    // 1. 패턴 분류 및 frameIndex 체크
     QUuid roiPatternId;
     QUuid fidPatternId;
     QList<QUuid> insPatternIds;
     int roiCount = 0;
     int fidCount = 0;
+    int baseFrameIndex = -1;
+    bool frameIndexMismatch = false;
 
     for (const QUuid &id : patternIds)
     {
         PatternInfo *pattern = getPatternById(id);
         if (!pattern)
             continue;
+        
+        qDebug() << "[그룹화] 패턴:" << pattern->name << "타입:" << (int)pattern->type << "frameIndex:" << pattern->frameIndex;
+
+        // frameIndex 체크
+        if (baseFrameIndex == -1)
+        {
+            baseFrameIndex = pattern->frameIndex;
+        }
+        else if (pattern->frameIndex != baseFrameIndex)
+        {
+            frameIndexMismatch = true;
+        }
 
         if (pattern->type == PatternType::ROI)
         {
@@ -1367,6 +1405,19 @@ void CameraView::groupPatternsInSelection(const QList<QUuid> &patternIds)
         {
             insPatternIds.append(id);
         }
+    }
+
+    // frameIndex가 다른 패턴들은 그룹화 불가
+    if (frameIndexMismatch)
+    {
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Warning);
+        msgBox.setTitle("그룹화 실패");
+        msgBox.setMessage("선택된 패턴들의 카메라 프레임이 다릅니다.\n"
+                          "같은 프레임의 패턴들만 그룹화할 수 있습니다.");
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
+        return;
     }
 
     // 2. 그룹화 가능성 검증
@@ -4402,6 +4453,8 @@ QUuid CameraView::addPattern(const PatternInfo &pattern)
     {
         newPattern.id = QUuid::createUuid();
     }
+    
+    qDebug() << "[addPattern] frameIndex:" << newPattern.frameIndex << "name:" << newPattern.name << "currentFrameIndex:" << currentFrameIndex;
 
     patterns.append(newPattern);
 
