@@ -8976,8 +8976,6 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat &frame, int camIdx)
         // 카메라 1: Frame 2(STRIP), 3(CRIMP)
         int frameIndex = camIdx * 2 + currentStripCrimpMode;
         
-        int frameIndex = camIdx * 2 + currentStripCrimpMode;
-        
         if (frameIndex >= 0 && frameIndex < MAX_CAMERAS)
         {
             // mutex로 프레임 쓰기 보호
