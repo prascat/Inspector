@@ -495,6 +495,7 @@ void CameraSettingsDialog::setupUI() {
             // 카메라 위치 교체
             std::swap(m_spinCameras[0], m_spinCameras[1]);
             setSpinnakerCameras(m_spinCameras);
+            emit camerasSwapped();  // 시그널 발생
             CustomMessageBox(this, CustomMessageBox::Information, "카메라 교체", "전단과 후단 카메라가 교체되었습니다.").exec();
         }
 #endif

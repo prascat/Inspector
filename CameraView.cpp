@@ -1124,12 +1124,16 @@ void CameraView::showContextMenu(const QPoint &pos)
                 PatternInfo newPattern;
                 newPattern.id = QUuid::createUuid();
                 newPattern.type = PatternType::ROI;
-                newPattern.name = QString("ROI_%1").arg(newPattern.id.toString().left(8));
+                
+                // 프레임 인덱스에 맞는 레이블 추가
+                QStringList frameLabels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
+                QString frameLabel = (currentFrameIndex >= 0 && currentFrameIndex < 4) ? frameLabels[currentFrameIndex] : "";
+                newPattern.name = QString("ROI_%1 [%2]").arg(newPattern.id.toString().left(8)).arg(frameLabel);
                 newPattern.rect = currentRect;
                 newPattern.color = UIColors::ROI_COLOR;
                 newPattern.enabled = true;
                 newPattern.cameraUuid = currentCameraUuid;
-                newPattern.stripCrimpMode = currentStripCrimpMode;
+                newPattern.frameIndex = currentFrameIndex;
 
                 addPattern(newPattern);
                 setSelectedPatternId(newPattern.id);
@@ -1142,7 +1146,12 @@ void CameraView::showContextMenu(const QPoint &pos)
                 PatternInfo newPattern;
                 newPattern.id = QUuid::createUuid();
                 newPattern.type = PatternType::FID;
-                newPattern.name = QString("FID_%1").arg(newPattern.id.toString().left(8));
+                
+                // 프레임 인덱스에 맞는 레이블 추가
+                QStringList frameLabels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
+                QString frameLabel = (currentFrameIndex >= 0 && currentFrameIndex < 4) ? frameLabels[currentFrameIndex] : "";
+                qDebug() << "[FID패턴생성] currentFrameIndex:" << currentFrameIndex << "frameLabel:" << frameLabel;
+                newPattern.name = QString("FID_%1 [%2]").arg(newPattern.id.toString().left(8)).arg(frameLabel);
                 newPattern.rect = currentRect;
                 newPattern.color = UIColors::FIDUCIAL_COLOR;
                 newPattern.enabled = true;
@@ -1156,7 +1165,7 @@ void CameraView::showContextMenu(const QPoint &pos)
 
                 newPattern.maxAngle = 360.0;
                 newPattern.angleStep = 1.0;
-                newPattern.stripCrimpMode = currentStripCrimpMode;
+                newPattern.frameIndex = currentFrameIndex;
 
                 addPattern(newPattern);
                 setSelectedPatternId(newPattern.id);
@@ -1170,7 +1179,11 @@ void CameraView::showContextMenu(const QPoint &pos)
                 PatternInfo newPattern;
                 newPattern.id = QUuid::createUuid();
                 newPattern.type = PatternType::INS;
-                newPattern.name = QString("INS_%1").arg(newPattern.id.toString().left(8));
+                
+                // 프레임 인덱스에 맞는 레이블 추가
+                QStringList frameLabels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
+                QString frameLabel = (currentFrameIndex >= 0 && currentFrameIndex < 4) ? frameLabels[currentFrameIndex] : "";
+                newPattern.name = QString("INS_%1 [%2]").arg(newPattern.id.toString().left(8)).arg(frameLabel);
                 newPattern.rect = currentRect;
                 newPattern.color = UIColors::INSPECTION_COLOR;
                 newPattern.enabled = true;
@@ -1179,7 +1192,7 @@ void CameraView::showContextMenu(const QPoint &pos)
                 newPattern.inspectionMethod = InspectionMethod::DIFF;
                 newPattern.passThreshold = 80.0; // 80%
                 newPattern.angle = 0.0;          // 각도 명시적으로 0으로 설정
-                newPattern.stripCrimpMode = currentStripCrimpMode;
+                newPattern.frameIndex = currentFrameIndex;
 
                 addPattern(newPattern);
                 setSelectedPatternId(newPattern.id);
@@ -1203,10 +1216,6 @@ void CameraView::showContextMenu(const QPoint &pos)
         {
             PatternInfo *pattern = getPatternById(id);
             if (!pattern)
-                continue;
-
-            // 현재 Strip/Crimp 모드와 다른 패턴은 제외
-            if (pattern->stripCrimpMode != currentStripCrimpMode)
                 continue;
 
             if (pattern->type == PatternType::ROI)
@@ -1856,15 +1865,15 @@ void CameraView::drawROIPatterns(QPainter &painter, const InspectionResult &resu
         if (pattern.type != PatternType::ROI || !pattern.enabled)
             continue;
 
+        // 현재 프레임의 패턴만 표시
+        if (pattern.frameIndex != currentFrameIndex)
+            continue;
+
         // 패턴 표시 조건: 패턴에 카메라 지정이 없거나, 현재 카메라가 비어있거나, 카메라가 일치하면 표시
         if (!pattern.cameraUuid.isEmpty() && !currentCameraUuid.isEmpty() && pattern.cameraUuid != currentCameraUuid)
         {
             continue;
         }
-
-        // STRIP/CRIMP 모드 체크 (검사 결과에서는 항상 현재 모드만)
-        if (pattern.stripCrimpMode != currentStripCrimpMode)
-            continue;
 
         QPointF topLeft = mapFromScene(pattern.rect.topLeft());
         QPointF bottomRight = mapFromScene(pattern.rect.bottomRight());
@@ -1936,12 +1945,12 @@ void CameraView::drawFIDPatterns(QPainter &painter, const InspectionResult &resu
         if (!patternInfo || patternInfo->type != PatternType::FID)
             continue;
 
-        bool patternVisible = (patternInfo->cameraUuid.isEmpty() || patternInfo->cameraUuid == currentCameraUuid || currentCameraUuid.isEmpty());
-        if (!patternVisible)
+        // 현재 프레임의 패턴만 표시
+        if (patternInfo->frameIndex != currentFrameIndex)
             continue;
 
-        // STRIP/CRIMP 모드 체크 (검사 결과에서는 항상 현재 모드만)
-        if (patternInfo->stripCrimpMode != currentStripCrimpMode)
+        bool patternVisible = (patternInfo->cameraUuid.isEmpty() || patternInfo->cameraUuid == currentCameraUuid || currentCameraUuid.isEmpty());
+        if (!patternVisible)
             continue;
 
         // FID 박스 그리기 (검출된 위치 기준)
@@ -2065,12 +2074,12 @@ void CameraView::drawINSPatterns(QPainter &painter, const InspectionResult &resu
             continue;
         }
 
-        bool patternVisible = (patternInfo->cameraUuid.isEmpty() || patternInfo->cameraUuid == currentCameraUuid || currentCameraUuid.isEmpty());
-        if (!patternVisible)
+        // 현재 프레임의 패턴만 표시
+        if (patternInfo->frameIndex != currentFrameIndex)
             continue;
 
-        // STRIP/CRIMP 모드 체크 (검사 결과에서는 항상 현재 모드만)
-        if (patternInfo->stripCrimpMode != currentStripCrimpMode)
+        bool patternVisible = (patternInfo->cameraUuid.isEmpty() || patternInfo->cameraUuid == currentCameraUuid || currentCameraUuid.isEmpty());
+        if (!patternVisible)
             continue;
 
         // 선택된 패턴이 있으면 그 패턴만 그리기 (INS 박스)
@@ -5068,13 +5077,12 @@ void CameraView::drawTeachingModePatterns(QPainter &painter)
         if (!pattern.enabled)
             continue;
 
+        // 현재 프레임의 패턴만 표시
+        if (pattern.frameIndex != currentFrameIndex)
+            continue;
+
         if (!pattern.cameraUuid.isEmpty() && !currentCameraUuid.isEmpty() &&
             pattern.cameraUuid != currentCameraUuid)
-        {
-            continue;
-        }
-
-        if (pattern.stripCrimpMode != currentStripCrimpMode)
         {
             continue;
         }
@@ -5152,10 +5160,9 @@ void CameraView::drawSelectedPatternHandles(QPainter &painter)
         if (pattern.id != selectedPatternId)
             continue;
 
-        if (pattern.stripCrimpMode != currentStripCrimpMode)
-        {
+        // 현재 프레임이 아니면 표시하지 않음
+        if (pattern.frameIndex != currentFrameIndex)
             continue;
-        }
 
         QPointF topLeft = mapFromScene(pattern.rect.topLeft());
         QPointF bottomRight = mapFromScene(pattern.rect.bottomRight());
@@ -5694,77 +5701,49 @@ void CameraView::drawCurrentDrawingRect(QPainter &painter)
 }
 
 // STRIP/CRIMP 모드별 검사 결과 저장
-void CameraView::saveInspectionResultForMode(int mode, const InspectionResult &result, const QPixmap &frame)
+void CameraView::saveInspectionResultForMode(int frameIndex, const InspectionResult &result, const QPixmap &frame)
 {
-    if (mode == 0)
-    { // STRIP
-        lastStripResult = result;
-        lastStripFrame = frame;
-        lastStripPatterns = patterns; // 현재 패턴 상태 저장
-        hasStripResult = true;
-    }
-    else
-    { // CRIMP
-        lastCrimpResult = result;
-        lastCrimpFrame = frame;
-        lastCrimpPatterns = patterns; // 현재 패턴 상태 저장
-        hasCrimpResult = true;
+    if (frameIndex >= 0 && frameIndex < 4)
+    {
+        frameResults[frameIndex] = result;
+        framePixmaps[frameIndex] = frame;
+        framePatterns[frameIndex] = patterns;
+        hasFrameResult[frameIndex] = true;
+        qDebug() << "[CameraView] 프레임" << frameIndex << "검사 결과 저장 (saveInspectionResultForMode)";
     }
 }
 
 // 현재 패턴 상태와 검사 결과를 모드별로 저장 (패턴 업데이트 후 호출용)
-void CameraView::saveCurrentResultForMode(int mode, const QPixmap &frame)
+void CameraView::saveCurrentResultForMode(int frameIndex, const QPixmap &frame)
 {
-    if (mode == 0)
-    {                                           // STRIP
-        lastStripResult = lastInspectionResult; // 현재 검사 결과 사용
-        lastStripFrame = frame;
-        lastStripPatterns = patterns; // 현재 패턴 상태 저장 (각도 업데이트된 상태)
-        hasStripResult = true;
-    }
-    else
-    { // CRIMP
-        lastCrimpResult = lastInspectionResult;
-        lastCrimpFrame = frame;
-        lastCrimpPatterns = patterns;
-        hasCrimpResult = true;
+    if (frameIndex >= 0 && frameIndex < 4)
+    {
+        frameResults[frameIndex] = lastInspectionResult;
+        framePixmaps[frameIndex] = frame;
+        framePatterns[frameIndex] = patterns;
+        hasFrameResult[frameIndex] = true;
+        qDebug() << "[CameraView] 프레임" << frameIndex << "검사 결과 저장 완료";
     }
 }
 
-// 모드별 검사 결과로 전환
-bool CameraView::switchToModeResult(int mode)
+// 프레임별 검사 결과로 전환
+bool CameraView::switchToModeResult(int frameIndex)
 {
-    InspectionResult *targetResult = nullptr;
-    QPixmap *targetFrame = nullptr;
-    QList<PatternInfo> *targetPatterns = nullptr;
-
-    if (mode == 0 && hasStripResult)
-    { // STRIP
-        targetResult = &lastStripResult;
-        targetFrame = &lastStripFrame;
-        targetPatterns = &lastStripPatterns;
-    }
-    else if (mode == 1 && hasCrimpResult)
-    { // CRIMP
-        targetResult = &lastCrimpResult;
-        targetFrame = &lastCrimpFrame;
-        targetPatterns = &lastCrimpPatterns;
-    }
-    else
+    if (frameIndex < 0 || frameIndex >= 4 || !hasFrameResult[frameIndex])
     {
         return false;
     }
 
     // 검사 결과 복원
-    lastInspectionResult = *targetResult;
-    lastInspectionPassed = targetResult->isPassed;
+    lastInspectionResult = frameResults[frameIndex];
+    lastInspectionPassed = frameResults[frameIndex].isPassed;
     hasInspectionResult = true;
 
     // 패턴 상태 복원 (각도, 위치 포함)
-    patterns = *targetPatterns;
+    patterns = framePatterns[frameIndex];
 
     // 배경 이미지 설정
-    setBackgroundPixmap(*targetFrame);
+    setBackgroundPixmap(framePixmaps[frameIndex]);
     update();
 
     return true;

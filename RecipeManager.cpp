@@ -267,8 +267,19 @@ bool RecipeManager::saveRecipe(const QString& fileName,
         // 현재 선택된 카메라는 패턴이 없어도 저장
         bool isCurrentCamera = (camIdx == currentCameraIndex);
         
-        if (patternCount == 0 && !isSimulationCamera && !isCurrentCamera) {
-            qDebug() << QString("카메라 '%1' 건너뜀 (패턴 없음)").arg(actualCameraInfos[camIdx].uniqueId);
+        // 티칭 이미지가 있는지 확인 (frameIndex = camIdx * 2, camIdx * 2 + 1)
+        bool hasTeachingImages = false;
+        if (teachingWidget) {
+            int stripFrameIndex = camIdx * 2;
+            int crimpFrameIndex = camIdx * 2 + 1;
+            hasTeachingImages = (stripFrameIndex < static_cast<int>(teachingWidget->cameraFrames.size()) &&
+                                !teachingWidget->cameraFrames[stripFrameIndex].empty()) ||
+                               (crimpFrameIndex < static_cast<int>(teachingWidget->cameraFrames.size()) &&
+                                !teachingWidget->cameraFrames[crimpFrameIndex].empty());
+        }
+        
+        if (patternCount == 0 && !isSimulationCamera && !isCurrentCamera && !hasTeachingImages) {
+            qDebug() << QString("카메라 '%1' 건너뜀 (패턴 없음, 티칭 이미지 없음)").arg(actualCameraInfos[camIdx].uniqueId);
             continue;
         }
         
@@ -463,6 +474,12 @@ bool RecipeManager::loadRecipe(const QString& fileName,
         QString errorMsg = QString("레시피 파일을 열 수 없습니다: %1 (에러: %2)").arg(fileName).arg(file.errorString());
         qDebug() << errorMsg;
         setError(errorMsg);
+        
+        // 파일이 없으면 config.xml의 최근 레시피 경로를 비움
+        ConfigManager::instance()->setLastRecipePath("");
+        ConfigManager::instance()->saveConfig();
+        qDebug() << "[RecipeManager] config.xml의 최근 레시피 경로를 비웠습니다.";
+        
         return false;
     }
     
@@ -479,10 +496,6 @@ bool RecipeManager::loadRecipe(const QString& fileName,
     // 관계 정보 저장용 맵
     QMap<QString, QStringList> childrenMap;
     QMap<QString, QTreeWidgetItem*> itemMap;
-    
-    // Strip/Crimp 이미지 저장용 맵
-    QMap<int, cv::Mat> stripImageMap;
-    QMap<int, cv::Mat> crimpImageMap;
     
     int totalLoadedPatterns = 0;
     QString loadedCameraNames;
@@ -520,7 +533,7 @@ bool RecipeManager::loadRecipe(const QString& fileName,
                 while (xml.readNextStartElement()) {
                     if (xml.name() == QLatin1String("Camera")) {
                         if (!readCameraSection(xml, cameraInfos, calibrationMap, cameraView, patternTree,
-                                             childrenMap, itemMap, totalLoadedPatterns, loadedCameraNames, trainingImageCallback, teachingWidget, &stripImageMap, &crimpImageMap)) {
+                                             childrenMap, itemMap, totalLoadedPatterns, loadedCameraNames, trainingImageCallback, teachingWidget)) {
                         }
                     } else {
                         xml.skipCurrentElement();
@@ -561,33 +574,14 @@ bool RecipeManager::loadRecipe(const QString& fileName,
     // 모든 Camera 로드 완료 후, teachingWidget에 저장된 이미지를 현재 모드에 맞게 cameraFrames에 설정
     // ★ CAM OFF 상태에서만 cameraFrames 및 stripModeImage/crimpModeImage 설정
     if (teachingWidget && teachingWidget->camOff) {
-        cv::Mat stripModeImg = teachingWidget->getStripModeImage();
-        cv::Mat crimpModeImg = teachingWidget->getCrimpModeImage();
+        // Strip/Crimp 모드 이미지 분리 제거됨
         
         // ★ cameraFrames를 크기 2로 초기화 (STRIP=0, CRIMP=1)
         if (teachingWidget->cameraFrames.size() < 2) {
             teachingWidget->cameraFrames.resize(2);
         }
         
-        // ★ STRIP/CRIMP 이미지를 각각의 인덱스에 저장
-        QStringList imagePaths;
-        
-        if (!stripModeImg.empty()) {
-            teachingWidget->cameraFrames[0] = stripModeImg.clone();
-            teachingWidget->setStripModeImage(stripModeImg);
-            imagePaths.append("base64_image_0");
-        }
-        
-        if (!crimpModeImg.empty()) {
-            teachingWidget->cameraFrames[1] = crimpModeImg.clone();
-            teachingWidget->setCrimpModeImage(crimpModeImg);
-            imagePaths.append("base64_image_1");
-        }
-        
-        // 이미지 로드 후 trainingImageCallback 호출
-        if (!imagePaths.isEmpty() && trainingImageCallback) {
-            trainingImageCallback(imagePaths);
-        }
+        // Strip/Crimp 이미지 분리 제거됨
     } else if (teachingWidget && !teachingWidget->camOff) {
         // CAM ON 상태 - cameraFrames 설정 건너뜀
     }
@@ -802,7 +796,7 @@ void RecipeManager::writePatternRect(QXmlStreamWriter& xml, const PatternInfo& p
     xml.writeAttribute("width", QString::number(pattern.rect.width(), 'f', 2));
     xml.writeAttribute("height", QString::number(pattern.rect.height(), 'f', 2));
     xml.writeAttribute("angle", QString::number(pattern.angle, 'f', 2));
-    xml.writeAttribute("stripCrimpMode", QString::number(pattern.stripCrimpMode));
+    xml.writeAttribute("frameIndex", QString::number(pattern.frameIndex));
     
     xml.writeEndElement();
     
@@ -939,24 +933,6 @@ void RecipeManager::writeINSDetails(QXmlStreamWriter& xml, const PatternInfo& pa
         xml.writeAttribute("templateImage", ba.toBase64());
     }
     
-    // STRIP 전용 템플릿 이미지 저장
-    if (!pattern.stripTemplateImage.isNull()) {
-        QByteArray ba;
-        QBuffer buffer(&ba);
-        buffer.open(QIODevice::WriteOnly);
-        pattern.stripTemplateImage.save(&buffer, "BMP");
-        xml.writeAttribute("stripTemplateImage", ba.toBase64());
-    }
-    
-    // CRIMP 전용 템플릿 이미지 저장
-    if (!pattern.crimpTemplateImage.isNull()) {
-        QByteArray ba;
-        QBuffer buffer(&ba);
-        buffer.open(QIODevice::WriteOnly);
-        pattern.crimpTemplateImage.save(&buffer, "BMP");
-        xml.writeAttribute("crimpTemplateImage", ba.toBase64());
-    }
-    
     // 패턴 매칭 설정 저장
     xml.writeAttribute("patternMatchEnabled", pattern.patternMatchEnabled ? "true" : "false");
     xml.writeAttribute("patternMatchMethod", QString::number(pattern.patternMatchMethod));
@@ -1064,9 +1040,7 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                                      int& totalLoadedPatterns,
                                      QString& loadedCameraNames,
                                      std::function<void(const QStringList&)> trainingImageCallback,
-                                     TeachingWidget* teachingWidget,
-                                     QMap<int, cv::Mat>* stripImageMap,
-                                     QMap<int, cv::Mat>* crimpImageMap) {
+                                     TeachingWidget* teachingWidget) {
     QString cameraUuid = xml.attributes().value("uuid").toString();
     QString imageIndexAttr = xml.attributes().value("imageIndex").toString();
     int imageIndex = imageIndexAttr.isEmpty() ? 0 : imageIndexAttr.toInt();
@@ -1074,12 +1048,6 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
     if (cameraUuid.isEmpty()) {
         xml.skipCurrentElement();
         return false;
-    }
-    
-    // ★ CAM ON 상태에서는 이미지 맵을 nullptr로 설정하여 이미지 로드 건너뜀
-    if (teachingWidget && !teachingWidget->camOff) {
-        stripImageMap = nullptr;
-        crimpImageMap = nullptr;
     }
     
     // 해당 카메라가 로드하려는 카메라 목록에 있는지 확인하고 CameraInfo 찾기
@@ -1184,18 +1152,17 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
     }
     
     try {
-        cv::Mat stripImage, crimpImage;
-        int stripWidth = 0, stripHeight = 0;
-        int crimpWidth = 0, crimpHeight = 0;
-        
         while (xml.readNextStartElement()) {
             if (xml.name() == QLatin1String("TeachingImage")) {
-                // 새 형식: TeachingImage 요소로 STRIP/CRIMP 이미지 읽기
+                // 새 형식: TeachingImage 요소로 이미지 읽기
                 int imageIndex = xml.attributes().value("imageIndex").toInt();
                 QString imageName = xml.attributes().value("name").toString();
                 int width = xml.attributes().value("width").toInt();
                 int height = xml.attributes().value("height").toInt();
                 QString base64Data = xml.readElementText();
+                
+                qDebug() << QString("[RecipeManager] TeachingImage 발견 - imageIndex=%1, name=%2, width=%3, height=%4, base64 길이=%5")
+                            .arg(imageIndex).arg(imageName).arg(width).arg(height).arg(base64Data.length());
                 
                 if (!base64Data.isEmpty() && teachingWidget) {
                     // base64 디코딩
@@ -1209,20 +1176,28 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                             cv::resize(teachingImage, teachingImage, cv::Size(width, height));
                         }
                         
-                        // imageIndex에 따라 STRIP/CRIMP 이미지 저장
-                        if (imageIndex == 0) {
-                            // STRIP 이미지
-                            teachingWidget->setStripModeImage(teachingImage);
-                            stripImage = teachingImage.clone();
-                            stripWidth = width;
-                            stripHeight = height;
-                        } else if (imageIndex == 1) {
-                            // CRIMP 이미지
-                            teachingWidget->setCrimpModeImage(teachingImage);
-                            crimpImage = teachingImage.clone();
-                            crimpWidth = width;
-                            crimpHeight = height;
+                        // ★ imageIndex를 직접 사용해서 cameraFrames에 저장
+                        // imageIndex는 0,1,2,3 순차 프레임 인덱스
+                        if (imageIndex >= 0 && imageIndex < 4) {
+                            // cameraFrames 크기 확장
+                            if (imageIndex >= static_cast<int>(teachingWidget->cameraFrames.size())) {
+                                teachingWidget->cameraFrames.resize(imageIndex + 1);
+                            }
+                            teachingWidget->cameraFrames[imageIndex] = teachingImage.clone();
+                            qDebug() << QString("[RecipeManager] ✓ cameraFrames[%1]에 이미지 저장 완료 - %2x%3")
+                                        .arg(imageIndex).arg(teachingImage.cols).arg(teachingImage.rows);
+                        } else {
+                            qDebug() << QString("[RecipeManager] ✗ imageIndex=%1은 범위를 벗어남 (0-3만 허용)").arg(imageIndex);
                         }
+                    } else {
+                        qDebug() << "[RecipeManager] ✗ 이미지 디코딩 실패";
+                    }
+                } else {
+                    if (base64Data.isEmpty()) {
+                        qDebug() << "[RecipeManager] ✗ base64 데이터가 비어있음";
+                    }
+                    if (!teachingWidget) {
+                        qDebug() << "[RecipeManager] ✗ teachingWidget이 nullptr";
                     }
                 }
             }
@@ -1334,26 +1309,6 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                 // 임시로 cameraInfos에 별도로 저장하지 않고 그냥 카운트만 증가
                 cameraPatternCount++;
                 totalLoadedPatterns++;
-            }
-        }
-        
-        // Camera 요소 읽기 완료 후, strip/crimp 이미지를 맵에 저장
-        if (teachingWidget) {
-            int cameraIdx = -1;
-            for (int i = 0; i < cameraInfos.size(); ++i) {
-                if (cameraInfos[i].uniqueId == cameraUuid) {
-                    cameraIdx = i;
-                    break;
-                }
-            }
-            
-            if (cameraIdx >= 0) {
-                if (!stripImage.empty() && stripImageMap) {
-                    (*stripImageMap)[cameraIdx] = stripImage.clone();
-                }
-                if (!crimpImage.empty() && crimpImageMap) {
-                    (*crimpImageMap)[cameraIdx] = crimpImage.clone();
-                }
             }
         }
         
@@ -1515,12 +1470,12 @@ void RecipeManager::readPatternRect(QXmlStreamReader& xml, PatternInfo& pattern)
         pattern.angle = 0.0; // 기본값 설정
     }
     
-    // Strip/Crimp 모드 읽기 (기본값 0 - STRIP)
-    QString modeStr = xml.attributes().value("stripCrimpMode").toString();
-    if (!modeStr.isEmpty()) {
-        pattern.stripCrimpMode = modeStr.toInt();
+    // frameIndex 읽기 (기본값 0) - 기존 레시피 호환성 위해 속성 존재 여부 확인
+    QString frameIndexStr = xml.attributes().value("frameIndex").toString();
+    if (!frameIndexStr.isEmpty()) {
+        pattern.frameIndex = frameIndexStr.toInt();
     } else {
-        pattern.stripCrimpMode = 0; // 기본값: STRIP
+        pattern.frameIndex = 0; // 기본값 설정
     }
     
     // 디버그: 모든 패턴의 각도값 확인
@@ -1845,20 +1800,6 @@ void RecipeManager::readINSDetails(QXmlStreamReader& xml, PatternInfo& pattern) 
     if (!imageStr.isEmpty()) {
         QByteArray imageData = QByteArray::fromBase64(imageStr.toLatin1());
         pattern.templateImage.loadFromData(imageData);
-    }
-    
-    // STRIP 전용 템플릿 이미지 로드
-    QString stripImageStr = xml.attributes().value("stripTemplateImage").toString();
-    if (!stripImageStr.isEmpty()) {
-        QByteArray imageData = QByteArray::fromBase64(stripImageStr.toLatin1());
-        pattern.stripTemplateImage.loadFromData(imageData);
-    }
-    
-    // CRIMP 전용 템플릿 이미지 로드
-    QString crimpImageStr = xml.attributes().value("crimpTemplateImage").toString();
-    if (!crimpImageStr.isEmpty()) {
-        QByteArray imageData = QByteArray::fromBase64(crimpImageStr.toLatin1());
-        pattern.crimpTemplateImage.loadFromData(imageData);
     }
     
     // 패턴 매칭 설정 로드

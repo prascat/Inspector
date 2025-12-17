@@ -117,9 +117,7 @@ private:
                           int& totalLoadedPatterns,
                           QString& loadedCameraNames,
                           std::function<void(const QStringList&)> trainingImageCallback = nullptr,
-                          TeachingWidget* teachingWidget = nullptr,
-                          QMap<int, cv::Mat>* stripImageMap = nullptr,
-                          QMap<int, cv::Mat>* crimpImageMap = nullptr);
+                          TeachingWidget* teachingWidget = nullptr);
     
     CalibrationInfo readCalibrationInfo(QXmlStreamReader& xml);
     PatternInfo readPattern(QXmlStreamReader& xml, const QString& cameraUuid);

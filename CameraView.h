@@ -17,6 +17,7 @@
 #include <QSlider>
 #include <QComboBox>
 #include <QDebug>
+#include <array>
 #include "CommonDefs.h"
 #include "ImageProcessor.h"
 #include "LanguageManager.h"
@@ -145,6 +146,16 @@ public:
     {
         return currentCameraUuid;
     }
+    
+    void setCurrentFrameIndex(int frameIdx)
+    {
+        currentFrameIndex = frameIdx;
+        qDebug() << "[CameraView] currentFrameIndex 업데이트:" << currentFrameIndex;
+    }
+    int getCurrentFrameIndex() const
+    {
+        return currentFrameIndex;
+    }
 
     void setCurrentCameraName(const QString &name)
     {
@@ -203,11 +214,12 @@ public:
     void saveInspectionResultForMode(int mode, const InspectionResult &result, const QPixmap &frame);
     void saveCurrentResultForMode(int mode, const QPixmap &frame); // 현재 패턴 상태로 저장
     bool switchToModeResult(int mode);                             // 모드별 결과로 전환, 성공 시 true 반환
-    bool hasModeResult(int mode) const { return mode == 0 ? hasStripResult : hasCrimpResult; }
+    bool hasModeResult(int frameIndex) const { return frameIndex >= 0 && frameIndex < 4 && hasFrameResult[frameIndex]; }
     void clearModeResults()
     {
-        hasStripResult = false;
-        hasCrimpResult = false;
+        for (int i = 0; i < 4; i++) {
+            hasFrameResult[i] = false;
+        }
     }
 
     // 필터 관련 메서드들 (UUID 기반으로 통일)
@@ -337,15 +349,11 @@ private:
 
     InspectionResult lastInspectionResult;
 
-    // STRIP/CRIMP 모드별 검사 결과 및 프레임 저장
-    InspectionResult lastStripResult;
-    InspectionResult lastCrimpResult;
-    QPixmap lastStripFrame;
-    QPixmap lastCrimpFrame;
-    QList<PatternInfo> lastStripPatterns; // STRIP 검사 시 패턴 상태
-    QList<PatternInfo> lastCrimpPatterns; // CRIMP 검사 시 패턴 상태
-    bool hasStripResult = false;
-    bool hasCrimpResult = false;
+    // 프레임별 검사 결과 저장 (0,1,2,3)
+    std::array<InspectionResult, 4> frameResults;
+    std::array<QPixmap, 4> framePixmaps;
+    std::array<QList<PatternInfo>, 4> framePatterns;
+    std::array<bool, 4> hasFrameResult = {false, false, false, false};
     QUuid selectedInspectionPatternId; // 선택된 검사 결과 패턴 필터링
 
     // 거리 측정 관련 변수
@@ -373,6 +381,7 @@ private:
     EditMode m_editMode = EditMode::Move; // 기본값은 이동 모드
     QString currentCameraUuid;            // 현재 카메라 UUID
     QString currentCameraName;            // 현재 카메라 이름 (표시용)
+    int currentFrameIndex = 0;            // 현재 프레임 인덱스 (0~3)
     QColor currentDrawColor = Qt::green;
     // 줌/패닝 관련
     double zoomFactor = 1.0;

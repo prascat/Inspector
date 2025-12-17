@@ -31,11 +31,11 @@ public:
     ~TrainDialog();
 
     // ANOMALY 패턴 목록 설정 (모든 패턴 포함하여 FID 찾기 가능하도록)
-    void setAnomalyPatterns(const QVector<PatternInfo*>& patterns, int stripCrimpMode);
+    void setAnomalyPatterns(const QVector<PatternInfo*>& patterns);
     void setAllPatterns(const QVector<PatternInfo*>& patterns);
     
     // 캡처된 이미지 추가
-    void addCapturedImage(const cv::Mat& image, int stripCrimpMode);
+    void addCapturedImage(const cv::Mat& image, int cameraIndex);
 
 signals:
     void trainRequested(const QString& patternName);

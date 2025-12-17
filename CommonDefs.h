@@ -215,12 +215,10 @@ struct PatternInfo {
     bool enabled = true;
     PatternType type = PatternType::ROI;
     QString cameraUuid;  // 카메라 UUID를 저장하기 위한 필드
+    int frameIndex = 0;  // 프레임 인덱스 (0~3)
     
     // 회전 각도(도 단위) 추가
     double angle = 0.0;
-    
-    // Strip/Crimp 모드 구분 (0: STRIP, 1: CRIMP)
-    int stripCrimpMode = 0;  // 기본값: STRIP
 
     // 패턴 계층 구조를 위한 필드
     QUuid parentId;  // 부모 패턴의 ID (없으면 null)
@@ -235,9 +233,7 @@ struct PatternInfo {
     double minAngle = -15.0;
     double maxAngle = 15.0;
     double angleStep = 1.0;
-    QImage templateImage;  // DIFF 검사용 또는 레거시 템플릿
-    QImage stripTemplateImage;  // STRIP 모드 전용 템플릿
-    QImage crimpTemplateImage;  // CRIMP 모드 전용 템플릿
+    QImage templateImage;  // 템플릿 이미지
     int fidMatchMethod = 0;     // FID 템플릿 매칭 방법 (0: Coefficient, 1: Correlation)
     bool runInspection = true;  // 추가: 매칭 검사 활성화 여부
     
@@ -445,12 +441,6 @@ namespace InspectionMethod {
     
     // 검사 방법 개수
     const int COUNT = 5;
-}
-
-// Strip/Crimp 모드 정의
-namespace StripCrimpMode {
-    const int STRIP_MODE = 0;   // Strip 모드
-    const int CRIMP_MODE = 1;   // Crimp 모드
 }
 
 namespace UIColors {

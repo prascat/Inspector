@@ -229,27 +229,22 @@ void TrainDialog::applyBlackTheme()
     );
 }
 
-void TrainDialog::setAnomalyPatterns(const QVector<PatternInfo*>& patterns, int stripCrimpMode)
+void TrainDialog::setAnomalyPatterns(const QVector<PatternInfo*>& patterns)
 {
-    currentMode = stripCrimpMode;
+    currentMode = 0;
     anomalyPatterns = patterns;
     
     // 모드 라디오 버튼 설정
-    if (stripCrimpMode == 0) {
-        stripRadio->setChecked(true);
-    } else {
-        crimpRadio->setChecked(true);
-    }
+    stripRadio->setChecked(true);
     
     // 리스트 초기화
     patternListWidget->clear();
     patternCheckBoxes.clear();
     
-    // ANOMALY 검사방법이고 현재 모드와 일치하는 패턴만 추가
+    // ANOMALY 검사방법 패턴만 추가
     for (PatternInfo* pattern : patterns) {
         if (pattern && pattern->type == PatternType::INS &&
-            pattern->inspectionMethod == InspectionMethod::ANOMALY &&
-            pattern->stripCrimpMode == stripCrimpMode) {
+            pattern->inspectionMethod == InspectionMethod::ANOMALY) {
             
             // 커스텀 위젯 생성 (체크박스 + 패턴 정보)
             QWidget *itemWidget = new QWidget();
@@ -336,7 +331,7 @@ void TrainDialog::addCapturedImage(const cv::Mat& image, int stripCrimpMode)
     }
     
     // 현재 모드의 이미지만 UI 업데이트
-    if (stripCrimpMode == currentMode) {
+    if (true) {
         updateImageGrid();
         
         QVector<cv::Mat>& currentImages = (currentMode == 0) ? stripCapturedImages : crimpCapturedImages;
@@ -401,7 +396,7 @@ void TrainDialog::onModeChanged(int id)
     currentMode = id;
     
     // 패턴 목록 갱신 (이미지는 건드리지 않음)
-    setAnomalyPatterns(anomalyPatterns, currentMode);
+    setAnomalyPatterns(anomalyPatterns);
     
     // 현재 모드의 이미지로 UI 업데이트
     updateImageGrid();
@@ -479,18 +474,8 @@ void TrainDialog::updateTeachingImagePreview()
         return;
     }
     
-    // 현재 모드에 맞는 템플릿 이미지 가져오기
-    QImage templateImage;
-    if (currentMode == 0) { // STRIP
-        templateImage = selectedPattern->stripTemplateImage;
-    } else { // CRIMP
-        templateImage = selectedPattern->crimpTemplateImage;
-    }
-    
-    // 템플릿 이미지가 없으면 기본 templateImage 사용
-    if (templateImage.isNull()) {
-        templateImage = selectedPattern->templateImage;
-    }
+    // 템플릿 이미지 가져오기
+    QImage templateImage = selectedPattern->templateImage;
     
     if (templateImage.isNull()) {
         teachingImageLabel->setText("티칭 이미지 없음");

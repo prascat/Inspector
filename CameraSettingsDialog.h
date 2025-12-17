@@ -45,6 +45,9 @@ public:
     void updateLiveImageDisplay(const cv::Mat& frame);  // 라이브 영상 표시
 #endif
 
+signals:
+    void camerasSwapped();
+
 public slots:
 
 private slots:

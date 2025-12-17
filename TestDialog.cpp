@@ -28,7 +28,7 @@ TestDialog::TestDialog(TeachingWidget *parent)
     
     // STRIP/CRIMP 모드 동기화
     if (teachingWidget) {
-        currentStripCrimpMode = teachingWidget->getCurrentStripCrimpMode();
+        currentStripCrimpMode = 0; // 기본값
         if (currentStripCrimpMode == 0) {
             stripRadio->setChecked(true);
         } else {
@@ -381,11 +381,10 @@ void TestDialog::runInspectionOnImage(const QString &imagePath)
     
     QList<PatternInfo> &patterns = cameraView->getPatterns();
     
-    // 현재 모드의 INS 패턴만 필터링
+    // INS 패턴 필터링
     QList<PatternInfo*> currentInsPatterns;
     for (PatternInfo &pattern : patterns) {
-        if (pattern.type == PatternType::INS && 
-            pattern.stripCrimpMode == currentStripCrimpMode) {
+        if (pattern.type == PatternType::INS) {
             currentInsPatterns.append(&pattern);
         }
     }
@@ -516,7 +515,7 @@ void TestDialog::onStripCrimpModeChanged(int mode)
     
     // TeachingWidget의 setStripCrimpMode 호출 (레시피 자동 변경)
     if (teachingWidget) {
-        teachingWidget->setStripCrimpMode(mode);
+        // setStripCrimpMode 제거됨
     }
     
     // 모드 변경 시 테이블 재구성 (INS 패턴이 모드별로 다름)
@@ -555,18 +554,16 @@ void TestDialog::rebuildResultTable()
     qDebug() << "[TestDialog] rebuildResultTable - 전체 패턴 수:" << patterns.size() 
              << "현재 모드:" << currentStripCrimpMode;
     
-    // 현재 STRIP/CRIMP 모드에 맞는 INS 패턴만 필터링
+    // INS 패턴 필터링
     QStringList insPatternNames;
     
     for (const PatternInfo &pattern : patterns) {
         if (pattern.type == PatternType::INS) {
             qDebug() << "  - INS 패턴:" << pattern.name 
-                     << "stripCrimpMode:" << pattern.stripCrimpMode 
                      << "enabled:" << pattern.enabled;
         }
         
         if (pattern.type == PatternType::INS && 
-            pattern.stripCrimpMode == currentStripCrimpMode &&
             pattern.enabled) {
             insPatternNames.append(pattern.name);
         }

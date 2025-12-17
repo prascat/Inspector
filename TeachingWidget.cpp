@@ -56,13 +56,8 @@ cv::Mat TeachingWidget::getCurrentFilteredFrame() const
 {
     cv::Mat sourceFrame;
 
-    // **시뮬레이션 모드와 일반 모드 모두 cameraFrames 사용**
-    // ★ CAM OFF일 때는 STRIP/CRIMP 모드에 따라 imageIndex 결정
-    int frameIndex = cameraIndex;
-    if (camOff)
-    {
-        frameIndex = (currentStripCrimpMode == StripCrimpMode::STRIP_MODE) ? 0 : 1;
-    }
+    // CAM OFF 모드에서는 currentDisplayFrameIndex 사용, CAM ON 모드에서는 cameraIndex 사용
+    int frameIndex = camOff ? currentDisplayFrameIndex : cameraIndex;
 
     if (frameIndex >= 0 && frameIndex < static_cast<int>(cameraFrames.size()) &&
         !cameraFrames[frameIndex].empty())
@@ -610,10 +605,6 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     QTimer::singleShot(1500, this, []()
                        { ClientDialog::instance()->initialize(); });
 
-    // ClientDialog의 STRIP/CRIMP 모드 변경 시그널 연결 (forceUpdate=false)
-    connect(ClientDialog::instance(), &ClientDialog::stripCrimpModeChanged,
-            this, [this](int mode) { setStripCrimpMode(mode, false); });
-
     // 프로그램 시작 시 카메라 자동 연결 체크
     if (ConfigManager::instance()->getCameraAutoConnect())
     {
@@ -705,6 +696,26 @@ void TeachingWidget::showCameraSettings()
         msgBoxWarn.exec();
         return;
     }
+
+    // 카메라 교체 시그널 연결
+    connect(cameraSettingsDialog, &CameraSettingsDialog::camerasSwapped, this, [this]() {
+        // cameraInfos 배열도 교체
+        if (cameraInfos.size() >= 2) {
+            std::swap(cameraInfos[0], cameraInfos[1]);
+            // index도 업데이트
+            cameraInfos[0].index = 0;
+            cameraInfos[1].index = 1;
+            qDebug() << "[카메라 교체] cameraInfos 교체 완료:";
+            qDebug() << "  전단(0번):" << cameraInfos[0].uniqueId;
+            qDebug() << "  후단(1번):" << cameraInfos[1].uniqueId;
+        }
+#ifdef USE_SPINNAKER
+        // m_spinCameras도 교체
+        if (m_spinCameras.size() >= 2) {
+            std::swap(m_spinCameras[0], m_spinCameras[1]);
+        }
+#endif
+    }, Qt::UniqueConnection);
 
     // 다이얼로그 실행
     cameraSettingsDialog->exec();
@@ -858,6 +869,10 @@ void TeachingWidget::initBasicSettings()
     // camOff 모드 초기 설정
     camOff = true;
     cameraIndex = 0;
+
+    // cameraFrames 벡터 초기화 (4개 프레임: 0,1,2,3)
+    cameraFrames.resize(MAX_CAMERAS);
+    frameUpdatedFlags.resize(MAX_CAMERAS, false);
 
     // 8개 카메라 미리보기를 고려하여 크기 확장
     setMinimumSize(1280, 800);
@@ -1057,14 +1072,6 @@ QVBoxLayout *TeachingWidget::createMainLayout()
     setupHeaderButton(modeToggleButton);
     modeToggleButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_MOVE_COLOR, UIColors::BTN_DRAW_COLOR, true));
 
-    // Strip/Crimp 토글 버튼
-    stripCrimpButton = new QPushButton("STRIP", this);
-    stripCrimpButton->setObjectName("stripCrimpButton");
-    stripCrimpButton->setCheckable(true);
-    stripCrimpButton->setChecked(false); // 기본값 STRIP 모드
-    setupHeaderButton(stripCrimpButton);
-    stripCrimpButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, false));
-
     // TEACH ON/OFF 모드 토글 버튼
     teachModeButton = new QPushButton("TEACH OFF", this);
     teachModeButton->setObjectName("teachModeButton");
@@ -1210,10 +1217,6 @@ QVBoxLayout *TeachingWidget::createCameraLayout()
     // 중앙 정렬을 위한 stretch 추가
     overlayLayout->addStretch(1);
 
-    // Strip/Crimp 토글 버튼 추가
-    overlayLayout->addWidget(stripCrimpButton);
-    overlayLayout->addSpacing(10);
-
     // 5. 패턴 타입 버튼들 추가
     overlayLayout->addWidget(roiButton);
     overlayLayout->addWidget(fidButton);
@@ -1293,26 +1296,6 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
             }
         } });
 
-    // Strip/Crimp 모드 토글 버튼 연결
-    if (stripCrimpButton)
-    {
-        connect(stripCrimpButton, &QPushButton::toggled, this, [this](bool checked)
-                {
-            int newMode = checked ? StripCrimpMode::CRIMP_MODE : StripCrimpMode::STRIP_MODE;
-            setStripCrimpMode(newMode, true);  // 수동 전환이므로 forceUpdate=true
-            
-            // 버튼 텍스트 업데이트
-            stripCrimpButton->setText(checked ? "CRIMP" : "STRIP");
-            stripCrimpButton->setStyleSheet(UIColors::overlayToggleButtonStyle(
-                UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR, checked));
-            
-            // TestDialog가 열려있으면 라디오 버튼도 동기화
-            if (testDialog) {
-                testDialog->syncStripCrimpMode(newMode);
-            }
-        });
-    }
-
     connect(runStopButton, &QPushButton::toggled, this, [this](bool checked)
             {
         QPushButton* btn = qobject_cast<QPushButton*>(sender());
@@ -1335,15 +1318,13 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
                 }
 
                 if (camOff) {
-                    // 시뮬레이션 모드: 현재 카메라 프레임이 있는지 확인
-                    // frameIndex = camIdx * 2 + (mode == CRIMP_MODE ? 1 : 0)
-                    int frameIndex = getFrameIndex(cameraIndex, currentStripCrimpMode);
-                    
-                    if (!cameraView || frameIndex < 0 || frameIndex >= static_cast<int>(cameraFrames.size()) || 
-                        cameraFrames[frameIndex].empty()) {
+                    // 시뮬레이션 모드: 현재 표시된 프레임 확인
+                    if (!cameraView || currentDisplayFrameIndex < 0 || currentDisplayFrameIndex >= static_cast<int>(cameraFrames.size()) || 
+                        cameraFrames[currentDisplayFrameIndex].empty()) {
                         btn->blockSignals(true);
                         btn->setChecked(false);
                         btn->blockSignals(false);
+                        qDebug() << "[RUN] 현재 표시된 프레임이 없음 (frameIndex=" << currentDisplayFrameIndex << ")";
                         return;
                     }
                 } else {
@@ -1370,25 +1351,44 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
                     targetSerial = getCameraInfo(cameraIndex).serialNumber;
                 }
                 
+                qDebug() << "[RUN] 패턴 검사 시작 - currentDisplayFrameIndex:" << currentDisplayFrameIndex << "camOff:" << camOff << "cameraIndex:" << cameraIndex;
+                qDebug() << "[RUN] targetUuid:" << targetUuid << "targetSerial:" << targetSerial;
+                
                 for (const PatternInfo& pattern : patterns) {
-                    // 시뮬레이션 모드이거나, UUID가 일치하거나, 시리얼 번호가 일치하는 경우
+                    qDebug() << "[RUN] 패턴:" << pattern.name << "frameIndex:" << pattern.frameIndex << "enabled:" << pattern.enabled << "cameraUuid:" << pattern.cameraUuid;
+                    
+                    // 프레임 인덱스 매칭 확인 (현재 표시된 프레임과 동일한 패턴만 검사)
+                    if (pattern.frameIndex != currentDisplayFrameIndex) {
+                        qDebug() << "[RUN] 패턴" << pattern.name << "프레임 불일치로 스킵";
+                        continue;
+                    }
+                    
+                    // frameIndex 기반으로 예상되는 카메라 인덱스 계산 (0,1->Cam0  2,3->Cam1)
+                    int expectedCameraIndex = pattern.frameIndex / 2;
+                    
+                    // 시뮬레이션 모드이거나, UUID가 비어있거나, frameIndex가 일치하면 OK
                     bool isMatch = false;
                     if (camOff || pattern.cameraUuid.isEmpty()) {
                         isMatch = true;
-                    } else if (pattern.cameraUuid == targetUuid) {
-                        isMatch = true;
+                        qDebug() << "[RUN] 패턴" << pattern.name << "camOff 또는 UUID 비어있음 -> isMatch=true";
                     } else {
-                        // UUID가 다른 경우 시리얼 넘버로 매칭
-                        for (const CameraInfo& camInfo : cameraInfos) {
-                            if (camInfo.uniqueId == pattern.cameraUuid && camInfo.serialNumber == targetSerial) {
-                                isMatch = true;
-                                break;
-                            }
+                        // frameIndex에 따른 카메라 매칭 확인
+                        // expectedCameraIndex와 현재 검사 중인 카메라 인덱스(currentDisplayFrameIndex / 2) 비교
+                        int currentCameraIndex = currentDisplayFrameIndex / 2;
+                        
+                        if (expectedCameraIndex == currentCameraIndex) {
+                            isMatch = true;
+                            qDebug() << "[RUN] 패턴" << pattern.name << "frameIndex 기반 카메라 매칭 성공 -> isMatch=true";
+                        } else {
+                            qDebug() << "[RUN] 패턴" << pattern.name << "frameIndex 기반 카메라 불일치 -> isMatch=false";
                         }
                     }
                     
+                    qDebug() << "[RUN] 패턴" << pattern.name << "최종 체크 - enabled:" << pattern.enabled << "isMatch:" << isMatch;
+                    
                     if (pattern.enabled && isMatch) {
                         hasEnabledPatterns = true;
+                        qDebug() << "[RUN] 활성화된 패턴 발견!";
                         break;
                     }
                 }
@@ -1420,32 +1420,41 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
                     cv::Mat inspectionFrame;
                     int inspectionCameraIndex;
                     
+                    qDebug() << "[RUN] 검사 실행 시작 - camOff:" << camOff << "currentDisplayFrameIndex:" << currentDisplayFrameIndex;
+                    
                     if (camOff) {                
-                        // 시뮬레이션 모드: 저장된 레시피 이미지 사용
-                        // frameIndex = camIdx * 2 + (mode == CRIMP_MODE ? 1 : 0)
-                        int frameIndex = getFrameIndex(cameraIndex, currentStripCrimpMode);
-                        
-                        if (frameIndex < 0 || frameIndex >= static_cast<int>(cameraFrames.size()) || 
-                            cameraFrames[frameIndex].empty()) {
+                        // 시뮬레이션 모드: 현재 표시된 프레임 사용
+                        if (currentDisplayFrameIndex < 0 || currentDisplayFrameIndex >= static_cast<int>(cameraFrames.size()) || 
+                            cameraFrames[currentDisplayFrameIndex].empty()) {
                             btn->blockSignals(true);
                             btn->setChecked(false);
                             btn->blockSignals(false);
-                            qDebug() << "[RUN] CAM OFF: frameIndex=" << frameIndex << "프레임 없음";
+                            qDebug() << "[RUN] CAM OFF: currentDisplayFrameIndex=" << currentDisplayFrameIndex << "프레임 없음";
                             return;
                         }
-                        inspectionFrame = cameraFrames[frameIndex].clone();
-                        inspectionCameraIndex = cameraIndex;
+                        inspectionFrame = cameraFrames[currentDisplayFrameIndex].clone();
+                        // 카메라 인덱스는 프레임 인덱스를 2로 나눈 값 (0,1->0, 2,3->1)
+                        inspectionCameraIndex = currentDisplayFrameIndex / 2;
+                        qDebug() << "[RUN] CAM OFF 모드 - 프레임 획득 완료";
                     } else {
-                        // **실제 카메라 모드: 트리거로 저장된 프레임 또는 실시간 획득**
+                        // **실제 카메라 모드: 현재 표시된 프레임 사용**
                         // 1. 먼저 cameraFrames에 저장된 프레임이 있는지 확인 (트리거 신호로 저장된 프레임)
-                        if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) && 
-                            !cameraFrames[cameraIndex].empty()) {
-                            inspectionFrame = cameraFrames[cameraIndex].clone();
-                            inspectionCameraIndex = cameraIndex;
+                        qDebug() << "[RUN] cameraFrames.size():" << cameraFrames.size() << "currentDisplayFrameIndex:" << currentDisplayFrameIndex;
+                        if (currentDisplayFrameIndex >= 0 && currentDisplayFrameIndex < static_cast<int>(cameraFrames.size())) {
+                            qDebug() << "[RUN] cameraFrames[" << currentDisplayFrameIndex << "].empty():" << cameraFrames[currentDisplayFrameIndex].empty();
+                        }
+                        
+                        if (currentDisplayFrameIndex >= 0 && currentDisplayFrameIndex < static_cast<int>(cameraFrames.size()) && 
+                            !cameraFrames[currentDisplayFrameIndex].empty()) {
+                            inspectionFrame = cameraFrames[currentDisplayFrameIndex].clone();
+                            // 카메라 인덱스는 프레임 인덱스를 2로 나눈 값 (0,1->0, 2,3->1)
+                            inspectionCameraIndex = currentDisplayFrameIndex / 2;
+                            qDebug() << "[RUN] 저장된 프레임 사용 - inspectionCameraIndex:" << inspectionCameraIndex;
                             
                         } 
                         // 2. 저장된 프레임이 없으면 Spinnaker에서 직접 획득 시도
                         else if (m_useSpinnaker && cameraIndex >= 0 && cameraIndex < static_cast<int>(m_spinCameras.size())) {
+                            qDebug() << "[RUN] Spinnaker에서 직접 프레임 획득 시도";
                             inspectionFrame = grabFrameFromSpinnakerCamera(m_spinCameras[cameraIndex]);
                             
                             if (inspectionFrame.empty()) {
@@ -1462,17 +1471,20 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
                             }
                             
                             inspectionCameraIndex = cameraIndex;
+                            qDebug() << "[RUN] Spinnaker 프레임 획득 완료";
                             
                         } else {
                             btn->blockSignals(true);
                             btn->setChecked(false);
                             btn->blockSignals(false);
-                            
+                            qDebug() << "[RUN] 프레임을 획득할 수 없음 - 검사 중단";
                             return;
                         }
                     }
                     
+                    qDebug() << "[RUN] runInspect 호출 - inspectionCameraIndex:" << inspectionCameraIndex;
                     bool passed = runInspect(inspectionFrame, inspectionCameraIndex);
+                    qDebug() << "[RUN] runInspect 완료 - passed:" << passed;
                     
                     // **8. 버튼 상태 업데이트**
                     btn->setText(TR("STOP"));
@@ -1868,22 +1880,41 @@ void TeachingWidget::setupPreviewOverlay()
     if (!cameraView)
         return;
 
-    // 메인 화면 오른쪽 상단에 미리보기 레이블 생성
-    previewOverlayLabel = new QLabel(cameraView);
-    previewOverlayLabel->setFixedSize(240, 180);
-    previewOverlayLabel->setAlignment(Qt::AlignCenter);
-    previewOverlayLabel->setStyleSheet(
-        "QLabel {"
-        "  background-color: rgba(0, 0, 0, 200);"
-        "  color: white;"
-        "  border: 2px solid #555;"
-        "}");
-    previewOverlayLabel->setText("");  // 초기 상태는 빈 텍스트
-    previewOverlayLabel->setCursor(Qt::PointingHandCursor); // 클릭 가능 커서
-    previewOverlayLabel->raise();                           // 최상단에 표시
-
-    // 클릭 이벤트 처리를 위한 이벤트 필터 설치
-    previewOverlayLabel->installEventFilter(this);
+    // 메인 화면 오른쪽에 4개 미리보기 레이블 생성 (세로 배치)
+    const int previewWidth = 240;
+    const int previewHeight = 180;
+    const QStringList labels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
+    
+    int rightMargin = 10;
+    int topMargin = 70;
+    int spacing = 5;
+    int previewX = cameraView->width() - previewWidth - rightMargin;
+    int previewY = topMargin;
+    
+    for (int i = 0; i < 4; i++)
+    {
+        previewOverlayLabels[i] = new QLabel(cameraView);
+        previewOverlayLabels[i]->setFixedSize(previewWidth, previewHeight);
+        previewOverlayLabels[i]->setAlignment(Qt::AlignTop | Qt::AlignLeft);  // 왼쪽 상단 정렬
+        previewOverlayLabels[i]->setText("  " + labels[i]);  // 초기 텍스트 설정 (여백 추가)
+        previewOverlayLabels[i]->setStyleSheet(
+            "QLabel {"
+            "  background-color: rgba(0, 0, 0, 200);"
+            "  color: white;"
+            "  border: 2px solid #555;"
+            "  font-size: 14px;"
+            "  font-weight: bold;"
+            "}");
+        previewOverlayLabels[i]->setCursor(Qt::PointingHandCursor);
+        previewOverlayLabels[i]->move(previewX, previewY);  // 초기 위치 설정
+        previewOverlayLabels[i]->raise();
+        previewOverlayLabels[i]->installEventFilter(this);
+        
+        previewY += previewHeight + spacing;
+    }
+    
+    // 하위 호환성을 위해 첫 번째를 기존 포인터로도 참조
+    previewOverlayLabel = previewOverlayLabels[0];
 
     // cameraView 크기 변경 시 미리보기 위치 재조정
     cameraView->installEventFilter(this);
@@ -2200,16 +2231,23 @@ void TeachingWidget::connectEvents()
     connect(cameraView, &CameraView::fidTemplateUpdateRequired, this,
             [this](const QUuid &patternId)
             {
-                // 현재 프레임이 있으면 템플릿 이미지 갱신
-                if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) &&
-                    !cameraFrames[cameraIndex].empty())
+                // 현재 표시된 프레임으로 템플릿 이미지 갱신
+                qDebug() << "[FID템플릿업데이트] patternId:" << patternId << "currentDisplayFrameIndex:" << currentDisplayFrameIndex;
+                if (currentDisplayFrameIndex >= 0 && currentDisplayFrameIndex < static_cast<int>(cameraFrames.size()) &&
+                    !cameraFrames[currentDisplayFrameIndex].empty())
                 {
                     PatternInfo *pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::FID)
                     {
+                        qDebug() << "[FID템플릿업데이트] 템플릿 이미지 갱신 시작";
                         // 필터 적용된 이미지로 템플릿 갱신
                         updateFidTemplateImage(pattern, pattern->rect);
+                        qDebug() << "[FID템플릿업데이트] 완료 - templateImage.isNull():" << pattern->templateImage.isNull();
+                    } else {
+                        qDebug() << "[FID템플릿업데이트] 패턴을 찾을 수 없거나 타입이 FID가 아님";
                     }
+                } else {
+                    qDebug() << "[FID템플릿업데이트] 프레임이 없거나 비어있음";
                 }
             });
 
@@ -2217,9 +2255,9 @@ void TeachingWidget::connectEvents()
     connect(cameraView, &CameraView::insTemplateUpdateRequired, this,
             [this](const QUuid &patternId)
             {
-                // 현재 프레임이 있으면 템플릿 이미지 갱신
-                if (cameraIndex >= 0 && cameraIndex < static_cast<int>(cameraFrames.size()) &&
-                    !cameraFrames[cameraIndex].empty())
+                // 현재 표시된 프레임으로 템플릿 이미지 갱신
+                if (currentDisplayFrameIndex >= 0 && currentDisplayFrameIndex < static_cast<int>(cameraFrames.size()) &&
+                    !cameraFrames[currentDisplayFrameIndex].empty())
                 {
                     PatternInfo *pattern = cameraView->getPatternById(patternId);
                     if (pattern && pattern->type == PatternType::INS)
@@ -2928,9 +2966,15 @@ void TeachingWidget::updatePatternTree()
     // 현재 카메라의 패턴만 필터링
     QList<PatternInfo> currentCameraPatterns;
 
-    // 패턴 필터링: 현재 카메라의 패턴만 추가
+    // 패턴 필터링: 현재 프레임의 패턴만 추가
     for (const PatternInfo &pattern : allPatterns)
     {
+        // 현재 표시된 프레임과 일치하는 패턴만 표시
+        if (pattern.frameIndex != currentDisplayFrameIndex)
+        {
+            continue;
+        }
+
         QString patternCameraUuid = pattern.cameraUuid.isEmpty() ? "default" : pattern.cameraUuid;
 
         // 현재 카메라 UUID와 비교 (camOn/camOff 구분 없이 동일 처리)
@@ -2951,12 +2995,7 @@ void TeachingWidget::updatePatternTree()
             continue;
         }
 
-        // Strip/Crimp 모드 체크
-        if (pattern.stripCrimpMode != currentStripCrimpMode)
-        {
-            continue;
-        }
-
+        // 현재 프레임의 패턴만 표시
         currentCameraPatterns.append(pattern);
     }
 
@@ -4829,14 +4868,13 @@ void TeachingWidget::createPropertyPanels()
             allPatternsVec.append(patPtr);  // 모든 패턴 추가 (FID 포함)
             
             if (pattern.type == PatternType::INS && 
-                pattern.inspectionMethod == InspectionMethod::ANOMALY &&
-                pattern.stripCrimpMode == currentStripCrimpMode) {
+                pattern.inspectionMethod == InspectionMethod::ANOMALY) {
                 anomalyPatterns.append(patPtr);
             }
         }
         
         if (anomalyPatterns.isEmpty()) {
-            QMessageBox::warning(this, "경고", "현재 모드에 ANOMALY 검사 방법을 사용하는 INS 패턴이 없습니다.");
+            QMessageBox::warning(this, "경고", "ANOMALY 검사 방법을 사용하는 INS 패턴이 없습니다.");
             return;
         }
         
@@ -4844,7 +4882,7 @@ void TeachingWidget::createPropertyPanels()
         TrainDialog* trainDialog = new TrainDialog(this);
         activeTrainDialog = trainDialog;  // 활성 다이얼로그 저장
         trainDialog->setAllPatterns(allPatternsVec);  // 모든 패턴 설정 (FID 찾기용)
-        trainDialog->setAnomalyPatterns(anomalyPatterns, currentStripCrimpMode);
+        trainDialog->setAnomalyPatterns(anomalyPatterns);
         
         // Train 요청 시그널 연결
         connect(trainDialog, &TrainDialog::trainRequested, this, [this](const QString& patternName) {
@@ -5326,24 +5364,8 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo *pattern, const QRectF &
         return;
     }
 
-    // ★★★ 패턴의 모드와 현재 모드가 일치하는지 확인 ★★★
-    if (pattern->stripCrimpMode != currentStripCrimpMode)
-    {
-        // 패턴의 모드와 현재 모드가 다르면 템플릿 갱신하지 않음
-        return;
-    }
-
-    // CAM OFF 시뮬레이션 모드에서는 imageIndex 사용 (STRIP=0, CRIMP=1)
-    // CAM ON 일반 모드에서는 cameraIndex 사용
-    int frameIndex;
-    if (camOff)
-    {
-        frameIndex = (currentStripCrimpMode == StripCrimpMode::STRIP_MODE) ? 0 : 1;
-    }
-    else
-    {
-        frameIndex = cameraIndex;
-    }
+    // 현재 표시된 프레임 사용
+    int frameIndex = currentDisplayFrameIndex;
 
     // cameraFrames 유효성 검사
     if (frameIndex < 0 || frameIndex >= static_cast<int>(cameraFrames.size()))
@@ -5531,35 +5553,11 @@ void TeachingWidget::updateInsTemplateImage(PatternInfo *pattern, const QRectF &
         }
     }
 
-    // 패턴의 템플릿 이미지 업데이트 (현재 화면 모드에 따라 분리 저장)
-    if (currentStripCrimpMode == StripCrimpMode::STRIP_MODE)
-    {
-        // STRIP 모드 화면에서는 stripTemplateImage에 저장
-        pattern->stripTemplateImage = qimg.copy();
-        pattern->templateImage = qimg.copy(); // 레거시 호환성
-    }
-    else if (currentStripCrimpMode == StripCrimpMode::CRIMP_MODE)
-    {
-        // CRIMP 모드 화면에서는 crimpTemplateImage에 저장
-        pattern->crimpTemplateImage = qimg.copy();
-        pattern->templateImage = qimg.copy(); // 레거시 호환성
-    }
-    else
-    {
-        // 기타 경우는 기본 템플릿 사용
-        pattern->templateImage = qimg.copy();
-    }
+    // 패턴의 템플릿 이미지 업데이트
+    pattern->templateImage = qimg.copy();
 
-    // UI 업데이트 (현재 화면 모드에 맞는 템플릿 표시)
+    // UI 업데이트
     QImage *currentTemplateImage = &pattern->templateImage;
-    if (currentStripCrimpMode == StripCrimpMode::STRIP_MODE && !pattern->stripTemplateImage.isNull())
-    {
-        currentTemplateImage = &pattern->stripTemplateImage;
-    }
-    else if (currentStripCrimpMode == StripCrimpMode::CRIMP_MODE && !pattern->crimpTemplateImage.isNull())
-    {
-        currentTemplateImage = &pattern->crimpTemplateImage;
-    }
 
     if (insTemplateImg)
     {
@@ -5601,24 +5599,8 @@ void TeachingWidget::updateFidTemplateImage(PatternInfo *pattern, const QRectF &
         return;
     }
 
-    // ★★★ 패턴의 모드와 현재 모드가 일치하는지 확인 ★★★
-    if (pattern->stripCrimpMode != currentStripCrimpMode)
-    {
-        // 패턴의 모드와 현재 모드가 다르면 템플릿 갱신하지 않음
-        return;
-    }
-
-    // CAM OFF 시뮬레이션 모드에서는 imageIndex 사용 (STRIP=0, CRIMP=1)
-    // CAM ON 일반 모드에서는 cameraIndex 사용
-    int frameIndex;
-    if (camOff)
-    {
-        frameIndex = (currentStripCrimpMode == StripCrimpMode::STRIP_MODE) ? 0 : 1;
-    }
-    else
-    {
-        frameIndex = cameraIndex;
-    }
+    // 현재 표시된 프레임 사용
+    int frameIndex = currentDisplayFrameIndex;
 
     cv::Mat sourceFrame;
 
@@ -5791,23 +5773,8 @@ void TeachingWidget::updateInsMatchTemplate(PatternInfo *pattern)
         return;
     }
 
-    // 패턴의 모드와 현재 모드가 일치하는지 확인
-    if (pattern->stripCrimpMode != currentStripCrimpMode)
-    {
-        return;
-    }
-
-    // CAM OFF 시뮬레이션 모드에서는 imageIndex 사용 (STRIP=0, CRIMP=1)
-    // CAM ON 일반 모드에서는 cameraIndex 사용
-    int frameIndex;
-    if (camOff)
-    {
-        frameIndex = (currentStripCrimpMode == StripCrimpMode::STRIP_MODE) ? 0 : 1;
-    }
-    else
-    {
-        frameIndex = cameraIndex;
-    }
+    // 현재 표시된 프레임 사용
+    int frameIndex = currentDisplayFrameIndex;
 
     cv::Mat sourceFrame;
 
@@ -7809,12 +7776,14 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                 typeColor = Qt::gray;
                 break;
             }
+            
+            // 프레임 인덱스에 맞는 레이블 추가
+            QStringList frameLabels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
+            if (pattern->frameIndex >= 0 && pattern->frameIndex < 4) {
+                typeText += " | " + frameLabels[pattern->frameIndex];
+            }
 
-            // Strip/Crimp 모드 추가 표시
-            QString modeText = pattern->stripCrimpMode == StripCrimpMode::CRIMP_MODE ? "CRIMP" : "STRIP";
-            QString fullText = QString("%1 | %2").arg(typeText).arg(modeText);
-
-            patternTypeValue->setText(fullText);
+            patternTypeValue->setText(typeText);
             patternTypeValue->setStyleSheet(QString("background-color: %1; color: %2; border-radius: 3px; padding: 2px 5px;")
                                                 .arg(typeColor.name())
                                                 .arg(UIColors::getTextColor(typeColor).name()));
@@ -8972,17 +8941,20 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat &frame, int camIdx)
     // TEACH OFF 상태에서만 cameraFrames 갱신 (TEACH ON 시 영상 정지)
     if (!teachingEnabled)
     {
-        // 카메라 인덱스와 현재 모드를 조합한 인덱스 계산
-        // camIdx=0, STRIP -> 0, camIdx=0, CRIMP -> 1
-        // camIdx=1, STRIP -> 2, camIdx=1, CRIMP -> 3
-        int frameIndex = camIdx * 2 + (currentStripCrimpMode == StripCrimpMode::CRIMP_MODE ? 1 : 0);
+        // 순차 인덱스 사용 (0, 1, 2, 3 순환)
+        int frameIndex = sequentialFrameIndex;
         cameraFrames[frameIndex] = frame.clone();
         frameUpdatedFlags[frameIndex] = true;  // 새 프레임 수신 플래그 설정
         
-        qDebug() << QString("[processGrabbedFrame] 프레임 저장 - cameraFrames[%1] (카메라: %2, 모드: %3)")
-                    .arg(frameIndex)
-                    .arg(camIdx)
-                    .arg(currentStripCrimpMode == StripCrimpMode::STRIP_MODE ? "STRIP" : "CRIMP");
+        // 로그는 onTriggerSignalReceived에서 통합하여 출력
+        
+        // 다음 순차 인덱스로 증가 (0~3 순환)
+        sequentialFrameIndex = (sequentialFrameIndex + 1) % MAX_CAMERAS;
+        
+        // 해당 미리보기 즉시 업데이트 (메인 스레드에서 실행)
+        QMetaObject::invokeMethod(this, [this, frameIndex]() {
+            updateSinglePreview(frameIndex);
+        }, Qt::QueuedConnection);
     }
 
     // 메인 카메라 처리
@@ -9100,7 +9072,7 @@ void TeachingWidget::updateStatusPanel()
 
 void TeachingWidget::updateStatusPanelPosition()
 {
-    if (!previewOverlayLabel || !serverStatusLabel || !diskSpaceLabel)
+    if (!previewOverlayLabels[0] || !serverStatusLabel || !diskSpaceLabel)
         return;
     if (!cameraView)
         return;
@@ -9109,14 +9081,22 @@ void TeachingWidget::updateStatusPanelPosition()
     int topMargin = 70; // 버튼 오버레이 아래
     int spacing = 5;
 
-    // 미리보기 오버레이 위치 (오른쪽 끝)
-    int previewX = cameraView->width() - previewOverlayLabel->width() - rightMargin;
+    // 4개 미리보기 오버레이를 오른쪽에 세로로 배치
+    int previewX = cameraView->width() - previewOverlayLabels[0]->width() - rightMargin;
     int previewY = topMargin;
-    previewOverlayLabel->move(previewX, previewY);
+    
+    for (int i = 0; i < 4; i++)
+    {
+        if (previewOverlayLabels[i])
+        {
+            previewOverlayLabels[i]->move(previewX, previewY);
+            previewY += previewOverlayLabels[i]->height() + spacing;
+        }
+    }
 
-    // 상태 패널들을 미리보기 아래에 배치 (시리얼 제거)
+    // 상태 패널들을 미리보기 아래에 배치
     int statusX = previewX;
-    int statusY = previewY + previewOverlayLabel->height() + spacing;
+    int statusY = previewY;
 
     serverStatusLabel->move(statusX, statusY);
     diskSpaceLabel->move(statusX, statusY + serverStatusLabel->height() + spacing);
@@ -9310,81 +9290,133 @@ void TeachingWidget::updatePreviewFrames()
     if (!previewOverlayLabel)
         return;
 
-    // CAM OFF 상태: 연결 없음 표시
-    if (camOff)
+    // 4개 미리보기 모두 업데이트
+    const QStringList labels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
+    
+    for (int i = 0; i < 4; i++)
     {
-        previewOverlayLabel->clear();
-        previewOverlayLabel->setText(TR("NO_CONNECTION"));
-        previewOverlayLabel->setStyleSheet(
-            "QLabel {"
-            "  background-color: rgba(0, 0, 0, 200);"
-            "  border: 2px solid #555;"
-            "  border-radius: 5px;"
-            "  color: white;"
-            "  font-size: 14px;"
-            "}");
-        return;
-    }
-
-    // CAM ON 상태: 미리보기 카메라는 메인 카메라의 반대편 (0↔1 토글)
-    int cameraCount = getCameraInfosCount();
-    if (cameraCount < 2)
-    {
-        previewOverlayLabel->clear();
-        previewOverlayLabel->setText(TR("NO_CONNECTION"));
-        return;
-    }
-
-    // 미리보기에 표시할 카메라: 현재 메인 카메라가 아닌 카메라
-    int previewCamIdx = (cameraIndex == 0) ? 1 : 0;
-    QString cameraName = (previewCamIdx == 0) ? "전단" : "후단";
-
-    // 미리보기 카메라의 현재 모드에 맞는 프레임 인덱스 계산
-    // frameIndex = cameraIndex * 2 + (mode == CRIMP ? 1 : 0)
-    int previewFrameIndex = previewCamIdx * 2 + (currentStripCrimpMode == StripCrimpMode::CRIMP_MODE ? 1 : 0);
-
-    // 카메라 프레임이 있는지 확인
-    if (previewFrameIndex >= 0 && previewFrameIndex < static_cast<int>(cameraFrames.size()) &&
-        !cameraFrames[previewFrameIndex].empty())
-    {
-
-        try
+        if (!previewOverlayLabels[i])
+            continue;
+            
+        if (i < static_cast<int>(cameraFrames.size()) && !cameraFrames[i].empty())
         {
-            // 프레임 복사 및 크기 조정
-            cv::Mat previewFrame = cameraFrames[previewFrameIndex].clone();
-            cv::cvtColor(previewFrame, previewFrame, cv::COLOR_BGR2RGB);
-
-            // QPixmap 변환
-            QImage image(previewFrame.data, previewFrame.cols, previewFrame.rows,
-                         previewFrame.step, QImage::Format_RGB888);
-            QPixmap pixmap = QPixmap::fromImage(image.copy());
-
-            // 레이블 크기에 맞춰 스케일링
-            QSize labelSize = previewOverlayLabel->size();
-            if (labelSize.width() > 0 && labelSize.height() > 0)
+            try
             {
-                QPixmap scaledPixmap = pixmap.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                previewOverlayLabel->setPixmap(scaledPixmap);
-                previewOverlayLabel->setScaledContents(false);
-                previewOverlayLabel->setStyleSheet(
-                    "QLabel {"
-                    "  background-color: rgba(0, 0, 0, 200);"
-                    "  border: 2px solid #555;"
-                    "  border-radius: 5px;"
-                    "}");
+                // 프레임 복사 및 변환
+                cv::Mat previewFrame = cameraFrames[i].clone();
+                cv::cvtColor(previewFrame, previewFrame, cv::COLOR_BGR2RGB);
+
+                // QPixmap 변환
+                QImage image(previewFrame.data, previewFrame.cols, previewFrame.rows,
+                             previewFrame.step, QImage::Format_RGB888);
+                QPixmap pixmap = QPixmap::fromImage(image.copy());
+
+                // 레이블 크기에 맞춰 스케일링
+                QSize labelSize = previewOverlayLabels[i]->size();
+                if (labelSize.width() > 0 && labelSize.height() > 0)
+                {
+                    QPixmap scaledPixmap = pixmap.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                    
+                    // 텍스트 오버레이 추가
+                    QPainter painter(&scaledPixmap);
+                    painter.setRenderHint(QPainter::Antialiasing);
+                    
+                    // 왼쪽 상단에 반투명 배경
+                    QFont font = painter.font();
+                    font.setBold(true);
+                    font.setPointSize(10);
+                    painter.setFont(font);
+                    
+                    QFontMetrics fm(font);
+                    QString text = labels[i];
+                    QRect textRect = fm.boundingRect(text);
+                    textRect.adjust(-5, -3, 5, 3);
+                    textRect.moveTo(5, 5);
+                    
+                    painter.fillRect(textRect, QColor(0, 0, 0, 150));
+                    painter.setPen(QColor(100, 255, 100)); // 초록색
+                    painter.drawText(textRect, Qt::AlignCenter, text);
+                    
+                    previewOverlayLabels[i]->setPixmap(scaledPixmap);
+                    previewOverlayLabels[i]->setScaledContents(false);
+                    previewOverlayLabels[i]->setStyleSheet(
+                        "QLabel {"
+                        "  background-color: rgba(0, 0, 0, 200);"
+                        "  border: 2px solid #555;"
+                        "  border-radius: 5px;"
+                        "}");
+                }
+            }
+            catch (const std::exception &e)
+            {
+                previewOverlayLabels[i]->clear();
+                previewOverlayLabels[i]->setText(labels[i] + "\n" + TR("PROCESSING_ERROR"));
             }
         }
-        catch (const std::exception &e)
+    }
+}
+
+void TeachingWidget::updateSinglePreview(int frameIndex)
+{
+    if (frameIndex < 0 || frameIndex >= 4 || !previewOverlayLabels[frameIndex])
+        return;
+    
+    if (frameIndex >= static_cast<int>(cameraFrames.size()) || cameraFrames[frameIndex].empty())
+        return;
+    
+    const QStringList labels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
+    
+    try
+    {
+        // 프레임 복사 및 변환
+        cv::Mat previewFrame = cameraFrames[frameIndex].clone();
+        cv::cvtColor(previewFrame, previewFrame, cv::COLOR_BGR2RGB);
+
+        // QPixmap 변환
+        QImage image(previewFrame.data, previewFrame.cols, previewFrame.rows,
+                     previewFrame.step, QImage::Format_RGB888);
+        QPixmap pixmap = QPixmap::fromImage(image.copy());
+
+        // 레이블 크기에 맞춰 스케일링
+        QSize labelSize = previewOverlayLabels[frameIndex]->size();
+        if (labelSize.width() > 0 && labelSize.height() > 0)
         {
-            previewOverlayLabel->clear();
-            previewOverlayLabel->setText(cameraName + "\n" + TR("PROCESSING_ERROR"));
+            QPixmap scaledPixmap = pixmap.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            
+            // 텍스트 오버레이 추가
+            QPainter painter(&scaledPixmap);
+            painter.setRenderHint(QPainter::Antialiasing);
+            
+            // 왼쪽 상단에 반투명 배경
+            QFont font = painter.font();
+            font.setBold(true);
+            font.setPointSize(10);
+            painter.setFont(font);
+            
+            QFontMetrics fm(font);
+            QString text = labels[frameIndex];
+            QRect textRect = fm.boundingRect(text);
+            textRect.adjust(-5, -3, 5, 3);
+            textRect.moveTo(5, 5);
+            
+            painter.fillRect(textRect, QColor(0, 0, 0, 150));
+            painter.setPen(QColor(100, 255, 100)); // 초록색
+            painter.drawText(textRect, Qt::AlignCenter, text);
+            
+            previewOverlayLabels[frameIndex]->setPixmap(scaledPixmap);
+            previewOverlayLabels[frameIndex]->setScaledContents(false);
+            previewOverlayLabels[frameIndex]->setStyleSheet(
+                "QLabel {"
+                "  background-color: rgba(0, 0, 0, 200);"
+                "  border: 2px solid #555;"
+                "  border-radius: 5px;"
+                "}");
         }
     }
-    else
+    catch (const std::exception &e)
     {
-        // 프레임이 없으면 "신호 없음" 표시
-        previewOverlayLabel->clear();
-        previewOverlayLabel->setText(cameraName + "\n" + TR("NO_SIGNAL"));
+        previewOverlayLabels[frameIndex]->clear();
+        previewOverlayLabels[frameIndex]->setText(labels[frameIndex] + "\n" + TR("PROCESSING_ERROR"));
     }
 }
 
@@ -9410,27 +9442,26 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
         return;
     }
 
-    // **카메라 정보 출력**
-    QString camSerial = (cameraIndex >= 0 && cameraIndex < cameraInfos.size()) ? cameraInfos[cameraIndex].serialNumber : "Unknown";
-    qDebug() << QString("[onTriggerSignalReceived] Trigger 수신 - 카메라 인덱스: %1, 시리얼: %2").arg(cameraIndex).arg(camSerial);
-
     // **트리거 처리 시작**
     triggerProcessing = true;
     
     // **TrainDialog가 열려있으면 이미지 추가**
     if (activeTrainDialog && activeTrainDialog->isVisible()) {
-        activeTrainDialog->addCapturedImage(frame, currentStripCrimpMode);
-        qDebug() << "[onTriggerSignalReceived] TrainDialog에 이미지 추가";
+        activeTrainDialog->addCapturedImage(frame, cameraIndex);
     }
 
     // **프레임을 cameraFrames에 저장 (트리거 전용)**
     processGrabbedFrame(frame, cameraIndex);
+    
+    // **통합 로그 출력**
+    QString camSerial = (cameraIndex >= 0 && cameraIndex < cameraInfos.size()) ? cameraInfos[cameraIndex].serialNumber : "Unknown";
+    int frameIdx = sequentialFrameIndex > 0 ? sequentialFrameIndex - 1 : MAX_CAMERAS - 1;
+    qDebug() << QString("[Trigger] Cam:%1 SN:%2 Frame[%3]").arg(cameraIndex).arg(camSerial).arg(frameIdx);
 
     // **트리거가 들어온 카메라를 메인 카메라로 전환 (동기 처리, UI 업데이트는 메인 스레드에서)**
     if (cameraIndex != this->cameraIndex && cameraIndex >= 0 && cameraIndex < cameraInfos.size())
     {
         QString triggerCameraUuid = cameraInfos[cameraIndex].uniqueId;
-        qDebug() << "[onTriggerSignalReceived] 카메라 전환:" << this->cameraIndex << "→" << cameraIndex;
         // cameraIndex만 업데이트, UI 업데이트는 메인 스레드에서
         this->cameraIndex = cameraIndex;
         
@@ -9445,30 +9476,49 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
     }
     
     // **트리거 프레임을 메인 카메라뷰에 표시 (메인 스레드에서 실행)**
-    int frameIndex = getFrameIndex(cameraIndex, currentStripCrimpMode);
-    if (frameIndex < static_cast<int>(cameraFrames.size()) && !cameraFrames[frameIndex].empty() && cameraView)
+    // 방금 저장한 frameIdx를 사용 (순차 인덱스)
+    if (frameIdx >= 0 && frameIdx < static_cast<int>(cameraFrames.size()) && !cameraFrames[frameIdx].empty() && cameraView)
     {
         cv::Mat displayImage;
-        cv::cvtColor(cameraFrames[frameIndex], displayImage, cv::COLOR_BGR2RGB);
+        cv::cvtColor(cameraFrames[frameIdx], displayImage, cv::COLOR_BGR2RGB);
         QImage qImage(displayImage.data, displayImage.cols, displayImage.rows,
                       displayImage.step, QImage::Format_RGB888);
         QPixmap pixmap = QPixmap::fromImage(qImage.copy());
         
         // UI 업데이트를 메인 스레드로 이동
-        QMetaObject::invokeMethod(this, [this, pixmap, frameIndex]() {
-            if (cameraView)
+        QMetaObject::invokeMethod(this, [this, pixmap, frameIdx, cameraIndex]() {
+            // currentDisplayFrameIndex 업데이트
+            currentDisplayFrameIndex = frameIdx;
+            
+            // 해당 프레임에 대응하는 카메라 UUID 설정 (frameIdx/2 = cameraIndex)
+            int frameCameraIndex = frameIdx / 2;
+            if (frameCameraIndex >= 0 && frameCameraIndex < cameraInfos.size())
             {
-                cameraView->setBackgroundImage(pixmap);
+                QString frameCameraUuid = cameraInfos[frameCameraIndex].uniqueId;
+                qDebug() << QString("[Trigger] currentDisplayFrameIndex=%1, 카메라 UUID=%2").arg(frameIdx).arg(frameCameraUuid);
+                
+                if (cameraView)
+                {
+                    cameraView->setBackgroundImage(pixmap);
+                    cameraView->setCurrentFrameIndex(frameIdx);
+                    cameraView->setCurrentCameraUuid(frameCameraUuid);  // 올바른 카메라 UUID 설정
+                }
             }
             updateCameraFrame();
             
+            // 현재 표시된 프레임 인덱스 업데이트
+            currentDisplayFrameIndex = frameIdx;
+            
+            // 패턴 트리 업데이트 (현재 프레임의 패턴만 표시)
+            updatePatternTree();
+            
             // 화면 업데이트 완료 후 플래그 리셋
-            if (frameIndex < static_cast<int>(frameUpdatedFlags.size()))
+            if (frameIdx < static_cast<int>(frameUpdatedFlags.size()))
             {
-                frameUpdatedFlags[frameIndex] = false;
+                frameUpdatedFlags[frameIdx] = false;
             }
             
-            qDebug() << "[onTriggerSignalReceived] 메인 카메라뷰 업데이트 - cameraFrames[" << frameIndex << "]";
+            // 로그 제거 (통합 로그로 출력)
         }, Qt::QueuedConnection);
     }
 
@@ -9483,9 +9533,13 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
     QList<PatternInfo> patterns = cameraView->getPatterns();
     if (patterns.isEmpty())
     {
-        qDebug() << "[onTriggerSignalReceived] 패턴 없음 - 프레임만 표시 (검사 스킵)";
+        qDebug() << " -> 패턴없음(검사스킵)";
         triggerProcessing = false;
         return;
+    }
+    else
+    {
+        qDebug() << QString(" -> 패턴:%1개 검사시작").arg(patterns.size());
     }
 
     // **RUN 버튼 상태 확인**
@@ -10229,7 +10283,7 @@ void TeachingWidget::showModelManagement()
     // 현재 모드 전달 (0: STRIP, 1: CRIMP)
     int currentMode = 0; // 기본값
     activeTrainDialog->setAllPatterns(allPatternsVec);  // 모든 패턴 설정 (FID 찾기용)
-    activeTrainDialog->setAnomalyPatterns(anomalyPatterns, currentMode);
+    activeTrainDialog->setAnomalyPatterns(anomalyPatterns);
     
     // 다이얼로그 표시
     activeTrainDialog->show();
@@ -10275,8 +10329,8 @@ void TeachingWidget::updateCameraFrame()
     // **시뮬레이션 모드 처리**
     if (camOff)
     {
-        // frameIndex = camIdx * 2 + (mode == CRIMP_MODE ? 1 : 0)
-        int frameIndex = getFrameIndex(cameraIndex, currentStripCrimpMode);
+        // CAM OFF 모드에서는 currentDisplayFrameIndex를 직접 사용
+        int frameIndex = currentDisplayFrameIndex;
 
         if (frameIndex < static_cast<int>(cameraFrames.size()) && !cameraFrames[frameIndex].empty())
         {
@@ -10663,23 +10717,59 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event)
         if (mouseEvent->button() == Qt::LeftButton)
         {
 
-            // **미리보기 오버레이 클릭 처리 - 카메라 0↔1 토글**
-            if (watched == previewOverlayLabel && previewOverlayLabel)
+            // **미리보기 오버레이 클릭 처리 - 해당 프레임을 메인 화면에 표시**
+            for (int i = 0; i < 4; i++)
             {
-                int cameraCount = getCameraInfosCount();
-                if (cameraCount >= 2)
+                if (watched == previewOverlayLabels[i] && previewOverlayLabels[i])
                 {
-                    // 현재 카메라가 0이면 1로, 1이면 0으로 토글
-                    int currentCam = cameraIndex;
-                    int targetCameraIndex = (currentCam == 0) ? 1 : 0;
-                    CameraInfo info = getCameraInfo(targetCameraIndex);
-                    if (info.isConnected && !info.uniqueId.isEmpty())
+                    // 클릭된 미리보기의 프레임을 메인 화면에 표시
+                    if (i < static_cast<int>(cameraFrames.size()) && !cameraFrames[i].empty())
                     {
-                        qDebug() << "[미리보기 클릭] 카메라 전환:" << currentCam << "→" << targetCameraIndex;
-                        switchToCamera(info.uniqueId);
+                        cv::Mat displayImage;
+                        cv::cvtColor(cameraFrames[i], displayImage, cv::COLOR_BGR2RGB);
+                        QImage qImage(displayImage.data, displayImage.cols, displayImage.rows,
+                                      displayImage.step, QImage::Format_RGB888);
+                        QPixmap pixmap = QPixmap::fromImage(qImage.copy());
+                        
+                        // 현재 표시된 프레임 인덱스 업데이트
+                        currentDisplayFrameIndex = i;
+                        
+                        // 해당 프레임에 대응하는 카메라 UUID 설정 (frameIdx/2 = cameraIndex)
+                        int frameCameraIndex = i / 2;
+                        
+                        // currentDisplayFrameIndex 업데이트
+                        currentDisplayFrameIndex = i;
+                        
+                        // CAM OFF 모드에서는 cameraIndex도 업데이트 (updateCameraFrame이 사용)
+                        if (camOff)
+                        {
+                            cameraIndex = frameCameraIndex;
+                        }
+                        
+                        if (cameraView)
+                        {
+                            cameraView->setBackgroundImage(pixmap);
+                            cameraView->setCurrentFrameIndex(i);
+                            
+                            // 카메라 UUID 설정
+                            if (frameCameraIndex >= 0 && frameCameraIndex < cameraInfos.size())
+                            {
+                                QString frameCameraUuid = cameraInfos[frameCameraIndex].uniqueId;
+                                cameraView->setCurrentCameraUuid(frameCameraUuid);
+                            }
+                            
+                            updateCameraFrame();
+                            cameraView->update();
+                        }
+                        
+                        // 패턴 트리 업데이트 (현재 프레임의 패턴만 표시)
+                        updatePatternTree();
+                        
+                        const QStringList labels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
+                        qDebug() << "[미리보기 클릭]" << labels[i] << "→ 메인 화면에 표시 (frameIndex=" << i << ")";
                     }
+                    return true;
                 }
-                return true;
             }
 
             // **템플릿 이미지 클릭 처리**
@@ -10910,9 +11000,8 @@ void TeachingWidget::switchToCamera(const QString &cameraUuid)
     // **화면 강제 갱신**
     if (cameraView)
     {
-        // CAM OFF/ON 모두 현재 카메라의 STRIP/CRIMP 이미지 표시
-        // frameIndex = cameraIndex * 2 + (mode == CRIMP_MODE ? 1 : 0)
-        int frameIndex = getFrameIndex(cameraIndex, currentStripCrimpMode);
+        // CAM OFF/ON 모두 현재 카메라 이미지 표시
+        int frameIndex = getFrameIndex(cameraIndex);
         
         if (frameIndex >= 0 && frameIndex < static_cast<int>(cameraFrames.size()) &&
             !cameraFrames[frameIndex].empty())
@@ -12095,7 +12184,7 @@ bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex)
     {
         // 카메라 이름 가져오기 (시리얼 번호 사용)
         QString cameraName = (targetIndex >= 0 && targetIndex < cameraInfos.size()) ? cameraInfos[targetIndex].serialNumber : "";
-        InspectionResult result = insProcessor->performInspection(frame, cameraPatterns, currentStripCrimpMode, cameraName);
+        InspectionResult result = insProcessor->performInspection(frame, cameraPatterns, cameraName);
 
         // **추가**: 검사 결과를 기반으로 패턴들을 FID 중심으로 그룹 회전
         if (!result.angles.isEmpty())
@@ -12187,14 +12276,15 @@ bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex)
             QPixmap pixmap = QPixmap::fromImage(originalImage);
             cameraView->setBackgroundPixmap(pixmap);
 
-            // ★ 현재 모드에 따라 검사 결과와 프레임 저장 (패턴 각도 업데이트 후)
-            cameraView->saveCurrentResultForMode(currentStripCrimpMode, pixmap);
+            // ★ 검사 결과와 프레임 저장 (currentDisplayFrameIndex 사용)
+            qDebug() << "[runInspect] 검사 결과 저장 - currentDisplayFrameIndex:" << currentDisplayFrameIndex;
+            cameraView->saveCurrentResultForMode(currentDisplayFrameIndex, pixmap);
 
             cameraView->update();
         }
 
         // **검사 완료 후 결과에 따라 이미지 저장 (OK/NG 폴더 구분)**
-        saveImageAsync(frame, currentStripCrimpMode, result.isPassed);
+        saveImageAsync(frame, result.isPassed);
 
         return result.isPassed;
     }
@@ -12567,213 +12657,9 @@ void TeachingWidget::updateAllPatternTemplateImages()
     }
 }
 
-int TeachingWidget::getFrameIndex(int cameraIndex, int mode) const
+int TeachingWidget::getFrameIndex(int cameraIndex) const
 {
-    return cameraIndex * 2 + (mode == StripCrimpMode::CRIMP_MODE ? 1 : 0);
-}
-
-void TeachingWidget::setStripCrimpMode(int mode, bool forceUpdate)
-{
-    currentStripCrimpMode = mode;
-
-    // 카메라 이름과 시리얼 번호 가져오기
-    QString cameraInfo = "Unknown";
-    if (cameraIndex >= 0 && cameraIndex < cameraInfos.size()) {
-        QString name = cameraInfos[cameraIndex].name;
-        QString serial = cameraInfos[cameraIndex].serialNumber;
-        if (!serial.isEmpty()) {
-            cameraInfo = QString("%1 (S/N: %2)").arg(name, serial);
-        } else {
-            cameraInfo = name;
-        }
-    }
-    
-    qDebug() << (mode == StripCrimpMode::STRIP_MODE ? "STRIP" : "CRIMP") 
-             << "수신 - 카메라:" << cameraInfo;
-
-    // Strip/Crimp 버튼 상태 업데이트
-    if (stripCrimpButton)
-    {
-        stripCrimpButton->blockSignals(true);
-        stripCrimpButton->setChecked(mode == StripCrimpMode::CRIMP_MODE);
-        stripCrimpButton->setText(mode == StripCrimpMode::CRIMP_MODE ? "CRIMP" : "STRIP");
-        stripCrimpButton->setStyleSheet(UIColors::overlayToggleButtonStyle(
-            UIColors::BTN_TEACH_OFF_COLOR, UIColors::BTN_TEACH_ON_COLOR,
-            mode == StripCrimpMode::CRIMP_MODE));
-        stripCrimpButton->blockSignals(false);
-    }
-
-    // CameraView에도 모드 전달
-    if (cameraView)
-    {
-        cameraView->setStripCrimpMode(mode);
-    }
-
-    // ★ 모드 전환 시 배경 이미지 업데이트
-    // ★ frameIndex = camIdx * 2 + (mode == CRIMP_MODE ? 1 : 0)
-    int frameIndex = getFrameIndex(cameraIndex, mode);
-    QString modeName = (mode == StripCrimpMode::STRIP_MODE) ? "STRIP" : "CRIMP";
-
-    qDebug() << "[setStripCrimpMode] 모드 전환: frameIndex=" << frameIndex
-             << ", cameraIndex=" << cameraIndex
-             << ", cameraFrames.size()=" << cameraFrames.size()
-             << ", mode=" << modeName;
-
-    // 프레임 업데이트 플래그 체크 (forceUpdate=true면 무시)
-    bool hasNewFrame = (frameIndex < static_cast<int>(frameUpdatedFlags.size())) && frameUpdatedFlags[frameIndex];
-    
-    // CAM ON 상태에서는 새 프레임이 있거나 forceUpdate여야만 갱신
-    if (!camOff && !forceUpdate && !hasNewFrame)
-    {
-        qDebug() << "[setStripCrimpMode] 새 프레임 없음 - 화면 갱신 건너뜀 (frameUpdatedFlag=" << hasNewFrame << ")";
-        return;
-    }
-
-    // CAM OFF이거나 (CAM ON + hasNewFrame) 또는 forceUpdate일 때만 배경 이미지 업데이트
-    if (frameIndex < static_cast<int>(cameraFrames.size()) && !cameraFrames[frameIndex].empty())
-    {
-        // OpenCV Mat를 QPixmap으로 변환
-        cv::Mat displayImage;
-        cv::cvtColor(cameraFrames[frameIndex], displayImage, cv::COLOR_BGR2RGB);
-        QImage qImage(displayImage.data, displayImage.cols, displayImage.rows,
-                      displayImage.step, QImage::Format_RGB888);
-        QPixmap pixmap = QPixmap::fromImage(qImage.copy());
-
-        // CameraView 배경 이미지 업데이트
-        if (cameraView)
-        {
-            cameraView->setBackgroundImage(pixmap);
-        }
-
-        qDebug() << "[setStripCrimpMode] 이미지 갱신 성공 - cameraFrames[" << frameIndex << "]";
-        updateCameraFrame();
-        
-        // 플래그 리셋은 하지 않음 (다음 트리거에서 리셋됨)
-    }
-    else  // 이미지 추가 다이얼로그 (CAM OFF 상태)
-    {
-        qDebug() << "[setStripCrimpMode] 이미지 없음 - cameraFrames[" << frameIndex << "] is empty or out of range";
-
-        // 이미지가 없으면 사용자에게 추가 여부 질문 (CustomMessageBox 사용)
-        CustomMessageBox msgBox(this, CustomMessageBox::Question,
-                                tr("이미지 없음"),
-                                tr("%1 모드 이미지가 없습니다.\n이미지를 추가하시겠습니까?").arg(modeName),
-                                QMessageBox::Yes | QMessageBox::No);
-        int result = msgBox.exec();
-
-        if (result == QMessageBox::Yes)
-        {
-            // 커스텀 파일 선택 다이얼로그
-            QString imagePath = CustomFileDialog::getOpenFileName(
-                    this,
-                    tr("%1 이미지 선택").arg(modeName),
-                    QDir::homePath(),
-                    tr("이미지 파일 (*.png *.jpg *.jpeg *.bmp)"));
-
-                if (!imagePath.isEmpty())
-                {
-                    cv::Mat loadedImage = cv::imread(imagePath.toStdString());
-                    if (!loadedImage.empty())
-                    {
-                        // frameIndex = camIdx * 2 + (mode == CRIMP_MODE ? 1 : 0)
-                        int frameIndex = getFrameIndex(cameraIndex, currentStripCrimpMode);
-                        
-                        // cameraFrames 배열 크기 확장
-                        if (frameIndex >= static_cast<int>(cameraFrames.size()))
-                        {
-                            cameraFrames.resize(frameIndex + 1);
-                        }
-                        cameraFrames[frameIndex] = loadedImage.clone();
-
-                        // stripModeImage/crimpModeImage도 업데이트
-                        if (currentStripCrimpMode == StripCrimpMode::STRIP_MODE)
-                        {
-                            stripModeImage = loadedImage.clone();
-                        }
-                        else
-                        {
-                            crimpModeImage = loadedImage.clone();
-                        }
-
-                        // 화면에 표시
-                        cv::Mat displayImage;
-                        cv::cvtColor(loadedImage, displayImage, cv::COLOR_BGR2RGB);
-                        QImage qImage(displayImage.data, displayImage.cols, displayImage.rows,
-                                      displayImage.step, QImage::Format_RGB888);
-                        QPixmap pixmap = QPixmap::fromImage(qImage.copy());
-
-                        if (cameraView)
-                        {
-                            cameraView->setBackgroundImage(pixmap);
-                        }
-
-                        qDebug() << "[setStripCrimpMode]" << modeName << "이미지 추가 완료:" << imagePath;
-                        updateCameraFrame();
-
-                        // 레시피 변경 표시
-                        hasUnsavedChanges = true;
-                    }
-                    else
-                    {
-                        CustomMessageBox errBox(this, CustomMessageBox::Warning,
-                                                tr("오류"), tr("이미지를 로드할 수 없습니다."),
-                                                QMessageBox::Ok);
-                        errBox.exec();
-                    }
-                }
-        }
-        else
-        {
-            // 사용자가 No를 선택하면 이전 모드로 복귀
-            int prevMode = (mode == StripCrimpMode::STRIP_MODE) ? StripCrimpMode::CRIMP_MODE : StripCrimpMode::STRIP_MODE;
-            if (stripCrimpButton)
-            {
-                stripCrimpButton->blockSignals(true);
-                stripCrimpButton->setChecked(prevMode == StripCrimpMode::CRIMP_MODE);
-                stripCrimpButton->setText(prevMode == StripCrimpMode::CRIMP_MODE ? "CRIMP" : "STRIP");
-                stripCrimpButton->blockSignals(false);
-            }
-            currentStripCrimpMode = prevMode;
-            if (cameraView)
-            {
-                cameraView->setStripCrimpMode(prevMode);
-            }
-        }
-    } // else if (camOff) 블록 닫기
-    
-    // CAM OFF/ON 모두 미리보기 업데이트
-    updatePreviewFrames();
-
-    // 현재 모드에 맞는 패턴만 보이도록 필터링
-    if (cameraView)
-    {
-        QList<PatternInfo> allPatterns = cameraView->getPatterns();
-        for (PatternInfo &pattern : allPatterns)
-        {
-            // UI 필터링: 현재 모드와 일치하는 패턴만 표시
-            // 하지만 enabled 상태는 변경하지 않음 (저장 시 원본 상태 유지)
-            // pattern.enabled는 사용자가 설정한 활성화 상태 유지
-        }
-        cameraView->update();
-        
-        // 현재 선택된 패턴 ID 저장
-        QUuid selectedId = cameraView->getSelectedPatternId();
-        
-        // 패턴 트리도 업데이트
-        updatePatternTree();
-        
-        // 모드 전환 후에도 같은 패턴이 선택되어 있다면 프로퍼티 패널 갱신
-        // (updatePatternTree는 트리를 재구성하지만 이미 선택된 아이템을 다시 선택하면 currentItemChanged가 발생하지 않음)
-        if (!selectedId.isNull())
-        {
-            PatternInfo *pattern = cameraView->getPatternById(selectedId);
-            if (pattern && pattern->stripCrimpMode == currentStripCrimpMode)
-            {
-                // 같은 모드의 패턴이면 프로퍼티 패널 갱신
-                updatePropertyPanel(pattern, nullptr, QUuid(), -1);
-            }
-        }
-    }
+    return cameraIndex;
 }
 
 void TeachingWidget::saveRecipe()
@@ -12813,51 +12699,22 @@ void TeachingWidget::saveRecipe()
         return;
     }
 
-    // ★ CAM ON 상태일 때: 실제 카메라 정보로 cameraInfos 업데이트
+    // ★ CAM ON 상태일 때: 모든 실제 카메라 정보 유지 (2대의 카메라 모두 저장)
     if (!camOff && cameraView)
     {
-        QString currentCameraUuid = cameraView->getCurrentCameraUuid();
-        qDebug() << "[saveRecipe] CAM ON - 현재 카메라 UUID로 패턴 저장:" << currentCameraUuid;
-
-        // 현재 카메라의 실제 정보 찾기
-        CameraInfo *currentRealCamera = nullptr;
-        int realCameraIndex = -1;
+        qDebug() << "[saveRecipe] CAM ON - 연결된 카메라" << cameraInfos.size() << "대의 정보 유지";
+        
+        // 각 카메라의 정보 출력
         for (int i = 0; i < cameraInfos.size(); i++)
         {
-            if (cameraInfos[i].uniqueId == currentCameraUuid)
-            {
-                currentRealCamera = &cameraInfos[i];
-                realCameraIndex = i;
-                break;
-            }
+            qDebug() << QString("[saveRecipe] 카메라 %1: %2 (UUID: %3)")
+                        .arg(i)
+                        .arg(cameraInfos[i].name)
+                        .arg(cameraInfos[i].uniqueId);
         }
-
-        // 현재 카메라가 실제 카메라인 경우에만 업데이트
-        if (currentRealCamera && currentRealCamera->uniqueId.startsWith("SPINNAKER_"))
-        {
-            qDebug() << "[saveRecipe] ✓ 실제 카메라 정보로 패턴 업데이트";
-
-            // ★ cameraInfos를 현재 실제 카메라 하나만 남기고 정리
-            CameraInfo realCamera = *currentRealCamera;
-            cameraInfos.clear();
-            cameraInfos.append(realCamera);
-            qDebug() << "[saveRecipe] ✓ cameraInfos를 실제 카메라 1개로 교체:" << realCamera.name << "UUID:" << realCamera.uniqueId;
-
-            // cameraView의 모든 패턴을 현재 실제 카메라 UUID에 할당 (참조로 직접 수정)
-            QList<PatternInfo> &allPatterns = cameraView->getPatterns();
-            int updatedCount = 0;
-            for (PatternInfo &pattern : allPatterns)
-            {
-                // 패턴의 cameraUuid를 현재 실제 카메라 UUID로 변경
-                if (pattern.cameraUuid != currentCameraUuid)
-                {
-                    pattern.cameraUuid = currentCameraUuid;
-                    updatedCount++;
-                }
-            }
-
-            qDebug() << "[saveRecipe] ✓ 패턴" << allPatterns.size() << "개를 카메라" << realCamera.uniqueId << "로 업데이트 (cameraUuid 변경:" << updatedCount << "개)";
-        }
+        
+        // 패턴들의 cameraUuid는 이미 올바르게 설정되어 있으므로 변경하지 않음
+        qDebug() << "[saveRecipe] ✓ 총" << cameraView->getPatterns().size() << "개 패턴 저장";
     }
 
     for (int i = 0; i < cameraInfos.size(); i++)
@@ -12877,6 +12734,17 @@ void TeachingWidget::saveRecipe()
     // 빈 시뮬레이션 이미지 패스와 빈 캘리브레이션 맵 (필요시 나중에 추가)
     QStringList simulationImagePaths;
     QMap<QString, CalibrationInfo> calibrationMap;
+
+    // 저장 전 cameraInfos 크기 확인
+    qDebug() << "[saveRecipe] 저장할 cameraInfos 개수:" << cameraInfos.size();
+    for (int i = 0; i < cameraInfos.size(); i++)
+    {
+        qDebug() << QString("[saveRecipe]   카메라 %1: %2 (UUID: %3, index: %4)")
+                    .arg(i)
+                    .arg(cameraInfos[i].name)
+                    .arg(cameraInfos[i].uniqueId)
+                    .arg(cameraInfos[i].index);
+    }
 
     // 기존 saveRecipe 함수 사용 (TeachingWidget 포인터 전달)
     if (manager.saveRecipe(recipeFileName, cameraInfos, cameraIndex, calibrationMap, cameraView, simulationImagePaths, -1, QStringList(), this))
@@ -13954,9 +13822,6 @@ void TeachingWidget::addPattern()
         pattern.name = patternName;
         pattern.type = currentPatternType;
 
-        // 현재 Strip/Crimp 모드 저장
-        pattern.stripCrimpMode = currentStripCrimpMode;
-
         // 카메라 UUID 설정 (camOn/camOff 동일 처리)
         pattern.cameraUuid = getCameraInfo(cameraIndex).uniqueId;
 
@@ -14002,11 +13867,10 @@ void TeachingWidget::addPattern()
             cv::Mat sourceImage;
             bool hasSourceImage = false;
 
-            // frameIndex 계산: cameraIndex * 2 + (CRIMP_MODE ? 1 : 0)
-            int frameIndex = getFrameIndex(cameraIndex, currentStripCrimpMode);
+            // frameIndex 계산
+            int frameIndex = getFrameIndex(cameraIndex);
             
             qDebug() << "[addPattern] 템플릿 추출 - cameraIndex:" << cameraIndex 
-                     << "mode:" << (currentStripCrimpMode == StripCrimpMode::CRIMP_MODE ? "CRIMP" : "STRIP")
                      << "frameIndex:" << frameIndex
                      << "cameraFrames.size():" << cameraFrames.size();
 
@@ -14421,7 +14285,7 @@ InspectionResult TeachingWidget::runSingleInspection(int specificCameraIndex)
                 // 직접 검사 수행
                 InsProcessor processor;
                 QString cameraName = (specificCameraIndex >= 0 && specificCameraIndex < cameraInfos.size()) ? cameraInfos[specificCameraIndex].serialNumber : "";
-                result = processor.performInspection(inspectionFrame, cameraPatterns, currentStripCrimpMode, cameraName);
+                result = processor.performInspection(inspectionFrame, cameraPatterns, cameraName);
 
                 // **UI 업데이트 (메인 카메라인 경우 또는 시뮬레이션 모드)**
                 if (specificCameraIndex == cameraIndex || camOff)
@@ -15137,36 +15001,19 @@ void TeachingWidget::newRecipe()
     // **세 번째: 이미지 찾기 또는 레시피로 읽기**
     if (useImage)
     {
-        // STRIP 이미지 파일 선택
-        QString stripImageFile = QFileDialog::getOpenFileName(this,
-                                                              "STRIP 티칭용 이미지 선택",
-                                                              "",
-                                                              "이미지 파일 (*.jpg *.jpeg *.png *.bmp *.tiff *.tif)");
+        // 이미지 파일 선택
+        QString imageFile = QFileDialog::getOpenFileName(this,
+                                                         "티칭용 이미지 선택",
+                                                         "",
+                                                         "이미지 파일 (*.jpg *.jpeg *.png *.bmp *.tiff *.tif)");
 
-        if (stripImageFile.isEmpty())
+        if (imageFile.isEmpty())
         {
             CustomMessageBox(this, CustomMessageBox::Information, "알림",
-                             "STRIP 이미지가 선택되지 않았습니다.")
+                             "이미지가 선택되지 않았습니다.")
                 .exec();
             return;
         }
-
-        // CRIMP 이미지 파일 선택
-        QString crimpImageFile = QFileDialog::getOpenFileName(this,
-                                                              "CRIMP 티칭용 이미지 선택",
-                                                              "",
-                                                              "이미지 파일 (*.jpg *.jpeg *.png *.bmp *.tiff *.tif)");
-
-        if (crimpImageFile.isEmpty())
-        {
-            CustomMessageBox(this, CustomMessageBox::Information, "알림",
-                             "CRIMP 이미지가 선택되지 않았습니다.")
-                .exec();
-            return;
-        }
-
-        // 현재 모드에 따라 이미지 로드
-        QString imageFile = (currentStripCrimpMode == StripCrimpMode::STRIP_MODE) ? stripImageFile : crimpImageFile;
 
         // 선택한 이미지를 카메라뷰에 로드
         QPixmap pixmap(imageFile);
@@ -15198,32 +15045,6 @@ void TeachingWidget::newRecipe()
             cameraFrames.resize(cameraIndex + 1);
         }
         cameraFrames[cameraIndex] = loadedImage.clone();
-
-        // STRIP/CRIMP 이미지를 별도로 저장 (모드 전환 시 사용)
-        QPixmap stripPixmap(stripImageFile);
-        QPixmap crimpPixmap(crimpImageFile);
-
-        // STRIP 이미지 변환 및 저장
-        QImage stripQImage = stripPixmap.toImage();
-        if (stripQImage.format() != QImage::Format_RGB888)
-        {
-            stripQImage = stripQImage.convertToFormat(QImage::Format_RGB888);
-        }
-        stripModeImage = cv::Mat(stripQImage.height(), stripQImage.width(), CV_8UC3,
-                                 (void *)stripQImage.constBits(), stripQImage.bytesPerLine())
-                             .clone();
-        cv::cvtColor(stripModeImage, stripModeImage, cv::COLOR_RGB2BGR);
-
-        // CRIMP 이미지 변환 및 저장
-        QImage crimpQImage = crimpPixmap.toImage();
-        if (crimpQImage.format() != QImage::Format_RGB888)
-        {
-            crimpQImage = crimpQImage.convertToFormat(QImage::Format_RGB888);
-        }
-        crimpModeImage = cv::Mat(crimpQImage.height(), crimpQImage.width(), CV_8UC3,
-                                 (void *)crimpQImage.constBits(), crimpQImage.bytesPerLine())
-                             .clone();
-        cv::cvtColor(crimpModeImage, crimpModeImage, cv::COLOR_RGB2BGR);
 
         // 생성 날짜를 카메라 이름으로 설정 (레시피 이름과 동일)
         QString cameraName = recipeName; // 레시피 이름(타임스탬프)을 카메라 이름으로 사용
@@ -15370,12 +15191,9 @@ void TeachingWidget::loadTeachingImage()
         return;
     }
 
-    // 현재 모드 확인
-    QString modeName = (currentStripCrimpMode == StripCrimpMode::STRIP_MODE) ? "STRIP" : "CRIMP";
-
     // 확인 대화상자
     CustomMessageBox confirmBox(this, CustomMessageBox::Question, "이미지 교체 확인",
-                                QString("%1 모드 티칭 이미지로 바꾸시겠습니까?").arg(modeName));
+                                "티칭 이미지로 바꾸시겠습니까?");
     confirmBox.setButtons(QMessageBox::Yes | QMessageBox::No);
 
     int reply = confirmBox.exec();
@@ -15406,17 +15224,7 @@ void TeachingWidget::loadTeachingImage()
                       .clone();
     cv::cvtColor(loadedImage, loadedImage, cv::COLOR_RGB2BGR);
 
-    // 현재 모드에 따라 이미지 저장
-    if (currentStripCrimpMode == StripCrimpMode::STRIP_MODE)
-    {
-        stripModeImage = loadedImage.clone();
-    }
-    else
-    {
-        crimpModeImage = loadedImage.clone();
-    }
-
-    // cameraFrames에도 저장
+    // cameraFrames에 저장
     if (cameraFrames.size() <= static_cast<size_t>(cameraIndex))
     {
         cameraFrames.resize(cameraIndex + 1);
@@ -15824,24 +15632,6 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
             // base64 더미 경로인 경우 특별 처리 (이미 cameraFrames에 로드됨)
             if (imagePath.startsWith("base64_image_"))
             {
-
-                // cameraFrames에 이미 이미지가 있는지 확인
-                // frameIndex = camIdx * 2 + (mode == CRIMP_MODE ? 1 : 0)
-                int stripFrameIndex = getFrameIndex(cameraIndex, StripCrimpMode::STRIP_MODE);
-                int crimpFrameIndex = getFrameIndex(cameraIndex, StripCrimpMode::CRIMP_MODE);
-                
-                if (stripFrameIndex < static_cast<int>(cameraFrames.size()) && !cameraFrames[stripFrameIndex].empty())
-                {
-                    stripModeImage = cameraFrames[stripFrameIndex].clone();
-                }
-                
-                if (crimpFrameIndex < static_cast<int>(cameraFrames.size()) && !cameraFrames[crimpFrameIndex].empty())
-                {
-                    crimpModeImage = cameraFrames[crimpFrameIndex].clone();
-                }
-                else
-                {
-                }
                 imageIndex++;
                 continue;
             }
@@ -15852,31 +15642,15 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
                 cv::Mat teachingImage = cv::imread(imagePath.toStdString());
                 if (!teachingImage.empty())
                 {
-                    // frameIndex = camIdx * 2 + (stripCrimpMode)
-                    // imageIndex는 레시피에서 읽은 순서 (0=STRIP, 1=CRIMP, 2=다음카메라STRIP, ...)
-                    int stripCrimpMode = imageIndex % 2;  // 0=STRIP, 1=CRIMP
-                    int camIdx = imageIndex / 2;          // 카메라 인덱스
-                    int frameIndex = camIdx * 2 + stripCrimpMode;
+                    // imageIndex를 cameraIndex로 직접 사용
+                    int camIdx = imageIndex;
                     
                     // cameraFrames 배열 크기 확장
-                    if (frameIndex >= static_cast<int>(cameraFrames.size()))
+                    if (camIdx >= static_cast<int>(cameraFrames.size()))
                     {
-                        cameraFrames.resize(frameIndex + 1);
+                        cameraFrames.resize(camIdx + 1);
                     }
-                    cameraFrames[frameIndex] = teachingImage.clone();
-
-                    // stripModeImage/crimpModeImage 업데이트 (현재 카메라 것만)
-                    if (camIdx == cameraIndex)
-                    {
-                        if (stripCrimpMode == 0)
-                        {
-                            stripModeImage = teachingImage.clone();
-                        }
-                        else
-                        {
-                            crimpModeImage = teachingImage.clone();
-                        }
-                    }
+                    cameraFrames[camIdx] = teachingImage.clone();
                 }
             }
             imageIndex++; // 실패해도 인덱스는 증가
@@ -15951,6 +15725,35 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         // loadMainCameraImage는 첫 번째 TeachingImage만 읽어서 현재 모드를 무시하므로 제거
 
         // TODO: 현재 연결된 카메라의 패턴만 필터링하는 기능 추가 예정
+
+        // 첫 번째 프레임을 표시 (cameraFrames[0]이 있으면)
+        if (!cameraFrames.empty() && !cameraFrames[0].empty())
+        {
+            currentDisplayFrameIndex = 0;
+            
+            // 첫 번째 프레임의 카메라 UUID 설정 (frameIndex 0 = camera 0)
+            if (!cameraInfos.isEmpty() && cameraView)
+            {
+                QString firstCameraUuid = cameraInfos[0].uniqueId;
+                qDebug() << "[onRecipeSelected] 첫 번째 프레임 표시 - frameIndex=0, cameraUuid=" << firstCameraUuid;
+                
+                cv::Mat displayImage;
+                cv::cvtColor(cameraFrames[0], displayImage, cv::COLOR_BGR2RGB);
+                QImage qImage(displayImage.data, displayImage.cols, displayImage.rows,
+                              displayImage.step, QImage::Format_RGB888);
+                QPixmap pixmap = QPixmap::fromImage(qImage.copy());
+                cameraView->setBackgroundImage(pixmap);
+                cameraView->setCurrentFrameIndex(0);
+                cameraView->setCurrentCameraUuid(firstCameraUuid);
+            }
+            updateCameraFrame();
+            updatePreviewFrames();
+        }
+        else
+        {
+            currentDisplayFrameIndex = 0;
+            qDebug() << "[onRecipeSelected] cameraFrames가 비어있음 - cameraFrames.size():" << cameraFrames.size();
+        }
 
         // 패턴 동기화 및 트리 업데이트
         updatePatternTree();
@@ -16203,7 +16006,7 @@ void TeachingWidget::toggleFullScreenMode()
 }
 
 // 비동기 이미지 저장 함수
-void TeachingWidget::saveImageAsync(const cv::Mat &frame, int stripCrimpMode, bool isPassed)
+void TeachingWidget::saveImageAsync(const cv::Mat &frame, bool isPassed)
 {
     if (frame.empty())
     {
@@ -16214,17 +16017,16 @@ void TeachingWidget::saveImageAsync(const cv::Mat &frame, int stripCrimpMode, bo
     cv::Mat frameCopy = frame.clone();
 
     // QRunnable 람다로 비동기 작업 생성
-    QThreadPool::globalInstance()->start([frameCopy, stripCrimpMode, isPassed]()
+    QThreadPool::globalInstance()->start([frameCopy, isPassed]()
     {
         // 현재 날짜와 시간으로 폴더/파일명 생성
         QDateTime now = QDateTime::currentDateTime();
         QString dateFolder = now.toString("yyyyMMdd");  // 20251203
         QString timestamp = now.toString("yyyyMMddHHmmss_zzz");  // 20251203150530_123
         
-        // 저장 경로 설정: data/20251203/strip/OK or data/20251203/crimp/NG
-        QString modeFolder = (stripCrimpMode == 0) ? "strip" : "crimp";
+        // 저장 경로 설정: data/20251203/OK or data/20251203/NG
         QString resultFolder = isPassed ? "OK" : "NG";
-        QString basePath = "../deploy/data/" + dateFolder + "/" + modeFolder + "/" + resultFolder;
+        QString basePath = "../deploy/data/" + dateFolder + "/" + resultFolder;
         
         // 디렉토리 생성 (없으면)
         QDir dir;
@@ -16696,16 +16498,8 @@ void TeachingWidget::setCameraFrame(int index, const cv::Mat& frame)
     
     cameraFrames[index] = frame.clone();
     
-    // STRIP/CRIMP 모드 이미지도 업데이트
-    if (index == 0) {
-        stripModeImage = frame.clone();
-    } else if (index == 1) {
-        crimpModeImage = frame.clone();
-    }
-    
-    // 화면 업데이트 (현재 모드에 맞는 이미지 표시)
-    if ((index == 0 && currentStripCrimpMode == 0) || 
-        (index == 1 && currentStripCrimpMode == 1)) {
+    // 화면 업데이트
+    if (index == cameraIndex) {
         updateCameraFrame();
     }
 }
@@ -16739,7 +16533,7 @@ InspectionResult TeachingWidget::runInspection()
     QString cameraName = (cameraIndex >= 0 && cameraIndex < cameraInfos.size()) ? cameraInfos[cameraIndex].serialNumber : "";
     
     // InsProcessor로 검사 실행
-    result = insProcessor->performInspection(frame, patterns, currentStripCrimpMode, cameraName);
+    result = insProcessor->performInspection(frame, patterns, cameraName);
     
     return result;
 }

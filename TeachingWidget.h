@@ -148,6 +148,7 @@ public:
     std::vector<bool> frameUpdatedFlags;  // 각 프레임의 업데이트 플래그 (트리거로 새 데이터 수신됨)
     bool camOff = true;
     int cameraIndex;
+    int currentDisplayFrameIndex = 0;  // 현재 메인 뷰에 표시된 프레임 인덱스 (0~3)
     
     // 스레드 안전 cameraInfos 접근 함수들
     QVector<CameraInfo> getCameraInfos() const;
@@ -221,24 +222,12 @@ public:
     // 레시피 로드 상태 확인
     bool hasLoadedRecipe() const;
     
-    // Strip/Crimp 모드 관련
-    int getStripCrimpMode() const { return currentStripCrimpMode; }
-    void setStripCrimpMode(int mode, bool forceUpdate = false);  // forceUpdate: 수동 전환 시 플래그 무시
-    
-    // Frame 인덱스 계산 (cameraIndex * 2 + mode)
-    int getFrameIndex(int cameraIndex, int mode) const;
-    
-    // STRIP/CRIMP 이미지 접근자
-    const cv::Mat& getStripModeImage() const { return stripModeImage; }
-    const cv::Mat& getCrimpModeImage() const { return crimpModeImage; }
-    void setStripModeImage(const cv::Mat& image) { stripModeImage = image.clone(); }
-    void setCrimpModeImage(const cv::Mat& image) { crimpModeImage = image.clone(); }
+    // Frame 인덱스 계산
+    int getFrameIndex(int cameraIndex) const;
     
     // === 테스트 다이얼로그용 공용 메서드 ===
     void setCameraFrame(int index, const cv::Mat& frame);
     InspectionResult runInspection();
-    int getCurrentStripCrimpMode() const { return currentStripCrimpMode; }
-    void setCurrentStripCrimpMode(int mode) { currentStripCrimpMode = mode; }
     QString getPatternName(const QUuid& patternId) const;
     void triggerRunButton();
     
@@ -278,7 +267,7 @@ private slots:
                         "무단 복제 및 배포를 금지합니다.").exec();
     }
     void saveCurrentImage();
-    void saveImageAsync(const cv::Mat &frame, int stripCrimpMode, bool isPassed);
+    void saveImageAsync(const cv::Mat &frame, bool isPassed);
     void loadTeachingImage();
     void processGrabbedFrame(const cv::Mat& frame, int camIdx);
     void updateUIElements();
@@ -304,8 +293,9 @@ public slots:
 private:
     void updateMainCameraUI(const InspectionResult& result, const cv::Mat& frameForInspection);
     void updatePreviewFrames();
+    void updateSinglePreview(int frameIndex);
     void initializeLanguageSystem();
-    void saveImageAsync(const cv::Mat& frame, int stripCrimpMode);
+    void saveImageAsync(const cv::Mat& frame);
     PatternInfo* findPatternById(const QUuid& patternId);
     QString getFilterTypeName(int filterType);
     void updateTreeItemTexts(QTreeWidgetItem* item);
@@ -335,12 +325,8 @@ private:
     // 패턴 업데이트 중 UI 업데이트 방지 플래그
     bool isUpdatingPattern = false;
     
-    // Strip/Crimp 모드 (기본값: STRIP)
-    int currentStripCrimpMode = 0;  // 0: STRIP, 1: CRIMP
-    
-    // Strip/Crimp 이미지 저장 (모드 전환 시 사용)
-    cv::Mat stripModeImage;
-    cv::Mat crimpModeImage;
+    // 순차 프레임 인덱스 (0, 1, 2, 3 순환)
+    int sequentialFrameIndex = 0;
     
     // 선택된 필터 정보 (티칭 모드 필터 표시용)
     QUuid selectedPatternId;
@@ -382,7 +368,6 @@ private:
     QPushButton* roiButton = nullptr;
     QPushButton* fidButton = nullptr;
     QPushButton* insButton = nullptr;
-    QPushButton* stripCrimpButton = nullptr;
     
     // 패널 및 라벨 멤버 변수들
     QLabel* emptyPanelLabel = nullptr;
@@ -725,7 +710,8 @@ private:
     // 카메라 관련
     QString cameraStatus;
     QVector<CameraInfo> cameraInfos;
-    QLabel* previewOverlayLabel = nullptr;  // 메인 화면 오른쪽 상단 미리보기
+    QLabel* previewOverlayLabel = nullptr;  // 메인 화면 오른쪽 상단 미리보기 (하위 호환용)
+    QLabel* previewOverlayLabels[4] = {nullptr, nullptr, nullptr, nullptr};  // 4개 미리보기 (0:CAM0_STRIP, 1:CAM0_CRIMP, 2:CAM1_STRIP, 3:CAM1_CRIMP)
     
     // 상태 표시 패널
     QLabel* serverStatusLabel = nullptr;

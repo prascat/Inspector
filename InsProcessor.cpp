@@ -24,7 +24,7 @@ InsProcessor::~InsProcessor()
     logDebug("InsProcessor 소멸됨");
 }
 
-InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QList<PatternInfo> &patterns, int stripCrimpMode, const QString& cameraName)
+InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QList<PatternInfo> &patterns, const QString& cameraName)
 {
     InspectionResult result;
 
@@ -34,13 +34,10 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
         return result;
     }
 
-    // 검사 시작 로그 (모드 정보 포함)
-    QString modeName = (stripCrimpMode == 0) ? "STRIP" : "CRIMP";
-    
     // 활성화된 INS 패턴 개수 카운트
     int insCount = 0;
     for (const PatternInfo &p : patterns) {
-        if (p.type == PatternType::INS && p.enabled && p.stripCrimpMode == stripCrimpMode) {
+        if (p.type == PatternType::INS && p.enabled) {
             insCount++;
         }
     }
@@ -50,7 +47,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     
     // 검사 시작 로그 (카메라 이름 포함)
     QString cameraInfo = cameraName.isEmpty() ? "" : QString(" - %1").arg(cameraName);
-    logDebug(QString("[%1] Trigger ON 검사시작 (%2개 패턴)%3").arg(modeName).arg(insCount).arg(cameraInfo));
+    logDebug(QString("Trigger ON 검사시작 (%1개 패턴)%2").arg(insCount).arg(cameraInfo));
 
     result.isPassed = true;
     
@@ -62,13 +59,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     {
         if (!pattern.enabled)
             continue;
-
-        // Strip/Crimp 모드 체크
-        if (pattern.stripCrimpMode != stripCrimpMode)
-        {
-            // 모드 불일치 - 패턴 제외
-            continue;
-        }
 
         switch (pattern.type)
         {
@@ -316,7 +306,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 // 부모 ROI 찾기
                 QUuid parentRoiId;
                 for (const PatternInfo& p : patterns) {
-                    if (p.type == PatternType::ROI && p.stripCrimpMode == stripCrimpMode) {
+                    if (p.type == PatternType::ROI) {
                         parentRoiId = p.id;
                         searchROI = cv::Rect(
                             static_cast<int>(p.rect.x()),
@@ -545,7 +535,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                                 
                                 // 부모 ROI 찾기
                                 for (const PatternInfo& p : patterns) {
-                                    if (p.type == PatternType::ROI && p.stripCrimpMode == stripCrimpMode) {
+                                    if (p.type == PatternType::ROI) {
                                         searchROI = cv::Rect(
                                             static_cast<int>(p.rect.x()),
                                             static_cast<int>(p.rect.y()),
@@ -970,7 +960,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
     
-    logDebug(QString("[%1] %2 검사종료 (%3ms)").arg(modeName).arg(resultText).arg(duration.count()));
+    logDebug(QString("%1 검사종료 (%2ms)").arg(resultText).arg(duration.count()));
 
     return result;
 }
@@ -1052,12 +1042,11 @@ bool InsProcessor::matchFiducial(const cv::Mat &image, const PatternInfo &patter
         QRectF roiRect;  // ROI 영역 저장
 
         // ★★★ 수정: ROI가 있으면 ROI 전체 영역을 검색, 없으면 패턴 주변만 검색 ★★★
-        // 모든 ROI 패턴 검색 (현재 FID 패턴과 같은 stripCrimpMode만)
+        // 모든 ROI 패턴 검색
         for (const PatternInfo &roi : allPatterns)
         {
             // ROI 패턴인지 확인하고 활성화된 상태인지 확인
-            // ★★★ 중요: FID와 같은 stripCrimpMode의 ROI만 사용 ★★★
-            if (roi.type == PatternType::ROI && roi.enabled && roi.stripCrimpMode == pattern.stripCrimpMode)
+            if (roi.type == PatternType::ROI && roi.enabled)
             {
                 // FID 패턴이 이 ROI 내부에 있는지 확인 (중심점 기준)
                 QPoint fidCenter = QPoint(
@@ -2818,14 +2807,13 @@ bool InsProcessor::checkStrip(const cv::Mat &image, const PatternInfo &pattern, 
             }
         }
 
-        // STRIP 전용 템플릿 이미지 로드
+        // 템플릿 이미지 로드
         cv::Mat templateImage;
-        const QImage *stripTemplate = pattern.stripTemplateImage.isNull() ? &pattern.templateImage : &pattern.stripTemplateImage;
 
-        if (!stripTemplate->isNull())
+        if (!pattern.templateImage.isNull())
         {
             // QImage를 cv::Mat으로 변환
-            QImage qImg = stripTemplate->convertToFormat(QImage::Format_RGB888);
+            QImage qImg = pattern.templateImage.convertToFormat(QImage::Format_RGB888);
             templateImage = cv::Mat(qImg.height(), qImg.width(), CV_8UC3, (void *)qImg.constBits(), qImg.bytesPerLine());
             templateImage = templateImage.clone(); // 데이터 복사
             cv::cvtColor(templateImage, templateImage, cv::COLOR_RGB2BGR);
@@ -4004,12 +3992,12 @@ bool InsProcessor::checkCrimp(const cv::Mat &image, const PatternInfo &pattern, 
         return false;
     }
     
-    // CRIMP 모드의 ROI 패턴 찾기 (부모 관계 상관없이)
+    // ROI 패턴 찾기 (부모 관계 상관없이)
     PatternInfo roiPattern;
     bool foundRoi = false;
     
     for (const PatternInfo& p : patterns) {
-        if (p.type == PatternType::ROI && p.stripCrimpMode == 1) {  // 1 = CRIMP 모드
+        if (p.type == PatternType::ROI) {
             roiPattern = p;
             foundRoi = true;
             break;
