@@ -31,6 +31,7 @@
 #include <QLabel>
 #include <QLocale>
 #include <QTcpSocket>
+#include <QtConcurrent/QtConcurrent>
 #include <chrono>
 #include <thread>
 
@@ -1356,44 +1357,28 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
                     targetSerial = getCameraInfo(cameraIndex).serialNumber;
                 }
                 
-                qDebug() << "[RUN] 패턴 검사 시작 - currentDisplayFrameIndex:" << currentDisplayFrameIndex << "camOff:" << camOff << "cameraIndex:" << cameraIndex;
-                qDebug() << "[RUN] targetUuid:" << targetUuid << "targetSerial:" << targetSerial;
-                
+                // 패턴 확인 (로그 최소화)
                 for (const PatternInfo& pattern : patterns) {
-                    qDebug() << "[RUN] 패턴:" << pattern.name << "frameIndex:" << pattern.frameIndex << "enabled:" << pattern.enabled << "cameraUuid:" << pattern.cameraUuid;
-                    
-                    // 프레임 인덱스 매칭 확인 (현재 표시된 프레임과 동일한 패턴만 검사)
+                    // 프레임 인덱스 매칭 확인
                     if (pattern.frameIndex != currentDisplayFrameIndex) {
-                        qDebug() << "[RUN] 패턴" << pattern.name << "프레임 불일치로 스킵";
                         continue;
                     }
                     
-                    // frameIndex 기반으로 예상되는 카메라 인덱스 계산 (0,1->Cam0  2,3->Cam1)
+                    // frameIndex 기반 카메라 매칭
                     int expectedCameraIndex = pattern.frameIndex / 2;
-                    
-                    // 시뮬레이션 모드이거나, UUID가 비어있거나, frameIndex가 일치하면 OK
                     bool isMatch = false;
+                    
                     if (camOff || pattern.cameraUuid.isEmpty()) {
                         isMatch = true;
-                        qDebug() << "[RUN] 패턴" << pattern.name << "camOff 또는 UUID 비어있음 -> isMatch=true";
                     } else {
-                        // frameIndex에 따른 카메라 매칭 확인
-                        // expectedCameraIndex와 현재 검사 중인 카메라 인덱스(currentDisplayFrameIndex / 2) 비교
                         int currentCameraIndex = currentDisplayFrameIndex / 2;
-                        
                         if (expectedCameraIndex == currentCameraIndex) {
                             isMatch = true;
-                            qDebug() << "[RUN] 패턴" << pattern.name << "frameIndex 기반 카메라 매칭 성공 -> isMatch=true";
-                        } else {
-                            qDebug() << "[RUN] 패턴" << pattern.name << "frameIndex 기반 카메라 불일치 -> isMatch=false";
                         }
                     }
                     
-                    qDebug() << "[RUN] 패턴" << pattern.name << "최종 체크 - enabled:" << pattern.enabled << "isMatch:" << isMatch;
-                    
                     if (pattern.enabled && isMatch) {
                         hasEnabledPatterns = true;
-                        qDebug() << "[RUN] 활성화된 패턴 발견!";
                         break;
                     }
                 }
@@ -2236,6 +2221,11 @@ void TeachingWidget::connectEvents()
     connect(cameraView, &CameraView::fidTemplateUpdateRequired, this,
             [this](const QUuid &patternId)
             {
+                // 레시피 로드 중에는 템플릿 업데이트 스킵
+                if (isLoadingRecipe) {
+                    qDebug() << "[FID템플릿업데이트] 레시피 로드 중이므로 스킵 - patternId:" << patternId;
+                    return;
+                }
                 // 현재 표시된 프레임으로 템플릿 이미지 갱신
                 qDebug() << "[FID템플릿업데이트] patternId:" << patternId << "currentDisplayFrameIndex:" << currentDisplayFrameIndex;
                 if (currentDisplayFrameIndex >= 0 && currentDisplayFrameIndex < static_cast<int>(cameraFrames.size()) &&
@@ -2260,6 +2250,11 @@ void TeachingWidget::connectEvents()
     connect(cameraView, &CameraView::insTemplateUpdateRequired, this,
             [this](const QUuid &patternId)
             {
+                // 레시피 로드 중에는 템플릿 업데이트 스킵
+                if (isLoadingRecipe) {
+                    qDebug() << "[INS템플릿업데이트] 레시피 로드 중이므로 스킵 - patternId:" << patternId;
+                    return;
+                }
                 PatternInfo *pattern = cameraView->getPatternById(patternId);
                 if (pattern && pattern->type == PatternType::INS)
                 {
@@ -8977,16 +8972,21 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat &frame, int camIdx)
     if (!teachingEnabled)
     {
         // frameIndex = cameraIndex * 2 + currentStripCrimpMode
-        // 전단(0) + STRIP(0) = 0, 전단(0) + CRIMP(1) = 1
-        // 후단(1) + STRIP(0) = 2, 후단(1) + CRIMP(1) = 3
+        // 카메라 0: Frame 0(STRIP), 1(CRIMP)
+        // 카메라 1: Frame 2(STRIP), 3(CRIMP)
+        int frameIndex = camIdx * 2 + currentStripCrimpMode;
+        
         int frameIndex = camIdx * 2 + currentStripCrimpMode;
         
         if (frameIndex >= 0 && frameIndex < MAX_CAMERAS)
         {
-            cameraFrames[frameIndex] = frame.clone();
-            frameUpdatedFlags[frameIndex] = true;  // 새 프레임 수신 플래그 설정
+            // mutex로 프레임 쓰기 보호
+            {
+                QMutexLocker locker(&frameMutexes[frameIndex]);
+                cameraFrames[frameIndex] = frame.clone();
+            }
             
-            // 로그는 onTriggerSignalReceived에서 통합하여 출력
+            frameUpdatedFlags[frameIndex] = true;
             
             // 해당 미리보기 즉시 업데이트 (메인 스레드에서 실행)
             QMetaObject::invokeMethod(this, [this, frameIndex]() {
@@ -9385,7 +9385,7 @@ void TeachingWidget::updatePreviewFrames()
                     textColor = QColor(0, 255, 0); // 밝은 초록
                 } else {
                     text += " (NG)";
-                    textColor = QColor(255, 0, 0); // 빨강
+                    textColor = QColor(255, 0, 0); // 순수 빨강
                 }
             }
             
@@ -9420,15 +9420,23 @@ void TeachingWidget::updateSinglePreview(int frameIndex)
     if (frameIndex < 0 || frameIndex >= 4 || !previewOverlayLabels[frameIndex])
         return;
     
-    if (frameIndex >= static_cast<int>(cameraFrames.size()) || cameraFrames[frameIndex].empty())
+    if (frameIndex >= static_cast<int>(cameraFrames.size()))
         return;
+    
+    // 프레임 복사 (mutex 보호)
+    cv::Mat previewFrame;
+    {
+        QMutexLocker locker(&frameMutexes[frameIndex]);
+        if (cameraFrames[frameIndex].empty())
+            return;
+        previewFrame = cameraFrames[frameIndex].clone();
+    }
     
     const QStringList labels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
     
     try
     {
-        // 프레임 복사 및 변환
-        cv::Mat previewFrame = cameraFrames[frameIndex].clone();
+        // 프레임 변환
         cv::cvtColor(previewFrame, previewFrame, cv::COLOR_BGR2RGB);
 
         // QPixmap 변환
@@ -9465,7 +9473,7 @@ void TeachingWidget::updateSinglePreview(int frameIndex)
                     textColor = QColor(0, 255, 0); // 밝은 초록
                 } else {
                     text += " (NG)";
-                    textColor = QColor(255, 0, 0); // 빨강
+                    textColor = QColor(255, 0, 0); // 순수 빨강
                 }
             }
             
@@ -9561,14 +9569,11 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
     // 방금 저장한 frameIdx를 사용 (순차 인덱스)
     if (frameIdx >= 0 && frameIdx < static_cast<int>(cameraFrames.size()) && !cameraFrames[frameIdx].empty() && cameraView)
     {
-        cv::Mat displayImage;
-        cv::cvtColor(cameraFrames[frameIdx], displayImage, cv::COLOR_BGR2RGB);
-        QImage qImage(displayImage.data, displayImage.cols, displayImage.rows,
-                      displayImage.step, QImage::Format_RGB888);
-        QPixmap pixmap = QPixmap::fromImage(qImage.copy());
+        // cv::Mat을 복사하여 람다에 캡처 (지역 변수 무효화 방지)
+        cv::Mat frameCopy = cameraFrames[frameIdx].clone();
         
         // UI 업데이트를 메인 스레드로 이동
-        QMetaObject::invokeMethod(this, [this, pixmap, frameIdx, cameraIndex]() {
+        QMetaObject::invokeMethod(this, [this, frameCopy, frameIdx, cameraIndex]() {
             // currentDisplayFrameIndex 업데이트
             currentDisplayFrameIndex = frameIdx;
             
@@ -9581,15 +9586,24 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
                 
                 if (cameraView)
                 {
+                    // 람다 내에서 이미지 변환 및 설정
+                    cv::Mat displayImage;
+                    cv::cvtColor(frameCopy, displayImage, cv::COLOR_BGR2RGB);
+                    QImage qImage(displayImage.data, displayImage.cols, displayImage.rows,
+                                  displayImage.step, QImage::Format_RGB888);
+                    QPixmap pixmap = QPixmap::fromImage(qImage.copy());
+                    
                     cameraView->setBackgroundImage(pixmap);
                     cameraView->setCurrentFrameIndex(frameIdx);
                     cameraView->setCurrentCameraUuid(frameCameraUuid);  // 올바른 카메라 UUID 설정
                 }
             }
-            updateCameraFrame();
             
             // 현재 표시된 프레임 인덱스 업데이트
             currentDisplayFrameIndex = frameIdx;
+            
+            // 카메라 프레임 업데이트
+            updateCameraFrame();
             
             // 패턴 트리 업데이트 (현재 프레임의 패턴만 표시)
             updatePatternTree();
@@ -9615,50 +9629,78 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
     QList<PatternInfo> patterns = cameraView->getPatterns();
     if (patterns.isEmpty())
     {
-        qDebug() << " -> 패턴없음(검사스킵)";
-        triggerProcessing = false;
-        return;
-    }
-    else
-    {
-        qDebug() << QString(" -> 패턴:%1개 검사시작").arg(patterns.size());
-    }
-
-    // **RUN 버튼 상태 확인**
-    if (!runStopButton)
-    {
         triggerProcessing = false;
         return;
     }
 
-    bool isRunning = runStopButton->isChecked();
-
-    if (!isRunning)
+    // **프레임을 검사 큐에 추가 (thread-safe)**
     {
-        // STOP 상태 → RUN으로 전환 (검사 시작)
-        QMetaObject::invokeMethod(runStopButton, "click", Qt::QueuedConnection);
-
-        // 처리 완료 (200ms 후)
-        QTimer::singleShot(200, this, [this]()
-                           { triggerProcessing = false; });
+        QMutexLocker locker(&queueMutexes[frameIdx]);
+        inspectionQueues[frameIdx].enqueue(frame.clone());
     }
-    else
+    
+    // **검사 중이 아니면 검사 시작**
+    if (!frameInspecting[frameIdx].load())
     {
-        // RUN 상태(검사 결과 표시 중) → STOP 클릭 → 다시 RUN 클릭
-        QMetaObject::invokeMethod(runStopButton, "click", Qt::QueuedConnection);
+        processNextInspection(frameIdx);
+    }
+    
+    // 트리거 처리 완료
+    triggerProcessing = false;
+}
 
-        // 100ms 후 다시 RUN 클릭 (QPointer로 안전하게 처리)
-        QPointer<QPushButton> safeButton = runStopButton;
-        QTimer::singleShot(100, this, [this, safeButton]()
-                           {
-            if (safeButton) {
-                QMetaObject::invokeMethod(safeButton, "click", Qt::QueuedConnection);
+// 큐에서 다음 검사 처리
+void TeachingWidget::processNextInspection(int frameIdx)
+{
+    // 큐에서 프레임 꺼내기 (thread-safe)
+    cv::Mat frameCopy;
+    {
+        QMutexLocker locker(&queueMutexes[frameIdx]);
+        if (inspectionQueues[frameIdx].isEmpty())
+        {
+            return;  // 큐가 비어있으면 종료
+        }
+        frameCopy = inspectionQueues[frameIdx].dequeue();
+    }
+    
+    // 검사 중 플래그 설정
+    frameInspecting[frameIdx].store(true);
+    
+    int inspectionCameraIndex = frameIdx / 2;
+    
+    // 비동기 검사 실행
+    (void)QtConcurrent::run([this, frameCopy, inspectionCameraIndex, frameIdx]() {
+        // currentDisplayFrameIndex를 임시로 설정
+        int savedFrameIndex = currentDisplayFrameIndex;
+        currentDisplayFrameIndex = frameIdx;
+        
+        // 백그라운드 스레드에서 검사 수행 (트리거 모드: 메인 카메라뷰 업데이트 안함)
+        bool passed = runInspect(frameCopy, inspectionCameraIndex, false);
+        
+        // 원래 값 복원
+        currentDisplayFrameIndex = savedFrameIndex;
+        
+        // 메인 스레드로 결과 처리
+        QMetaObject::invokeMethod(this, [this, frameIdx, passed]() {
+            // 검사 완료 - 플래그 해제
+            frameInspecting[frameIdx].store(false);
+            
+            // 미리보기 업데이트 (검사 결과 반영)
+            updatePreviewFrames();
+            
+            // 큐에 남은게 있으면 다음 검사 시작
+            {
+                QMutexLocker locker(&queueMutexes[frameIdx]);
+                if (!inspectionQueues[frameIdx].isEmpty())
+                {
+                    // 메인 스레드에서 다음 검사 시작
+                    QMetaObject::invokeMethod(this, [this, frameIdx]() {
+                        processNextInspection(frameIdx);
+                    }, Qt::QueuedConnection);
+                }
             }
-            // 처리 완료 (추가 100ms 후)
-            QTimer::singleShot(100, this, [this]() {
-                triggerProcessing = false;
-            }); });
-    }
+        }, Qt::QueuedConnection);
+    });
 }
 
 void TeachingWidget::startCamera()
@@ -9748,9 +9790,6 @@ void TeachingWidget::startCamera()
     }
 
     // 5. 미리보기 오버레이는 updatePreviewFrames에서 자동 업데이트됨
-
-    // 6. 미리보기 UI 업데이트
-    updatePreviewUI();
 
     // 7. 카메라 스레드 생성 및 시작
     for (int i = 0; i < cameraInfos.size(); i++)
@@ -10393,11 +10432,7 @@ void TeachingWidget::openLanguageSettings()
     }
 }
 
-void TeachingWidget::updatePreviewUI()
-{
-    // 미리보기 오버레이는 updatePreviewFrames에서 자동 업데이트됨
-    // (기존 cameraPreviewLabels 대신 단일 오버레이 사용)
-}
+
 
 void TeachingWidget::selectFilterForPreview(const QUuid &patternId, int filterIndex)
 {
@@ -10504,7 +10539,7 @@ void TeachingWidget::updateCameraFrame()
 
                 QImage image(displayFrame.data, displayFrame.cols, displayFrame.rows,
                              displayFrame.step, QImage::Format_RGB888);
-                QPixmap pixmap = QPixmap::fromImage(image);
+                QPixmap pixmap = QPixmap::fromImage(image.copy());
 
                 QSize origSize(frame.cols, frame.rows);
                 cameraView->setScalingInfo(origSize, cameraView->size());
@@ -10544,7 +10579,7 @@ void TeachingWidget::updateCameraFrame()
 
                     QImage image(displayFrame.data, displayFrame.cols, displayFrame.rows,
                                  displayFrame.step, QImage::Format_RGB888);
-                    QPixmap pixmap = QPixmap::fromImage(image);
+                    QPixmap pixmap = QPixmap::fromImage(image.copy());
 
                     QSize origSize(frame.cols, frame.rows);
                     cameraView->setScalingInfo(origSize, cameraView->size());
@@ -12168,7 +12203,7 @@ QString TeachingWidget::getCameraName(int index)
     return cameraName;
 }
 
-bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex)
+bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex, bool updateMainView)
 {
     if (frame.empty())
     {
@@ -12366,16 +12401,26 @@ bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex)
         if (!originalImage.isNull())
         {
             QPixmap pixmap = QPixmap::fromImage(originalImage);
-            cameraView->setBackgroundPixmap(pixmap);
-
-            // ★ 검사 결과와 프레임 저장 (currentDisplayFrameIndex 사용)
-            qDebug() << "[runInspect] 검사 결과 저장 - currentDisplayFrameIndex:" << currentDisplayFrameIndex;
-            cameraView->saveCurrentResultForMode(currentDisplayFrameIndex, pixmap);
-
-            cameraView->update();
             
-            // 미리보기 4개 모두 업데이트 (검사 결과 표시)
-            updatePreviewFrames();
+            // ★ 검사 결과와 프레임 저장 (currentDisplayFrameIndex 사용)
+            cameraView->saveCurrentResultForMode(currentDisplayFrameIndex, pixmap);
+            
+            // updateMainView가 true일 때만 메인 카메라뷰 업데이트 (RUN 버튼 모드)
+            if (updateMainView)
+            {
+                cameraView->setBackgroundPixmap(pixmap);
+            }
+
+            // UI 업데이트를 메인 스레드로 이동 (QBasicTimer 경고 방지)
+            QMetaObject::invokeMethod(this, [this, updateMainView]() {
+                // updateMainView가 true일 때만 메인 카메라뷰 업데이트
+                if (updateMainView && cameraView)
+                {
+                    cameraView->update();
+                }
+                // 미리보기 4개 모두 업데이트 (검사 결과 표시)
+                updatePreviewFrames();
+            }, Qt::QueuedConnection);
         }
 
         // **검사 완료 후 결과에 따라 이미지 저장 (OK/NG 폴더 구분)**
@@ -14297,9 +14342,6 @@ void TeachingWidget::updateUIElements()
 
     // UI 업데이트 - 패턴 및 사각형 그리기
     cameraView->update();
-
-    // 미리보기 UI 업데이트
-    updatePreviewUI();
 }
 
 InspectionResult TeachingWidget::runSingleInspection(int specificCameraIndex)
@@ -15653,6 +15695,9 @@ void TeachingWidget::manageRecipes()
 
 void TeachingWidget::onRecipeSelected(const QString &recipeName)
 {
+    // 레시피 로드 시작 - 템플릿 자동 업데이트 방지
+    isLoadingRecipe = true;
+    
     // 저장되지 않은 변경사항 확인
     if (hasUnsavedChanges)
     {
@@ -15719,12 +15764,8 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
     // 티칭 이미지 콜백 함수 정의 (camOn/camOff 공통)
     auto teachingImageCallback = [this](const QStringList &imagePaths)
     {
-        // ★ CAM ON 상태에서는 티칭 이미지 로드 건너뜀 (패턴만 로드)
-        if (!camOff)
-        {
-            return;
-        }
-
+        // ★ CAM ON/OFF 모두 티칭 이미지를 cameraFrames에 로드 (CAM ON에서는 임시로, 라이브 프레임이 들어오면 덮어써짐)
+        
         // **카메라 ON/OFF 모두 티칭 이미지를 cameraFrames에 로드**
 
         int imageIndex = 0;
@@ -15848,7 +15889,10 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
                 cameraView->setCurrentFrameIndex(0);
                 cameraView->setCurrentCameraUuid(firstCameraUuid);
             }
-            updateCameraFrame();
+            // CAM OFF 상태에서만 updateCameraFrame 호출 (CAM ON에서는 배경 이미지 유지)
+            if (camOff) {
+                updateCameraFrame();
+            }
             updatePreviewFrames();
         }
         else
@@ -15859,6 +15903,9 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
 
         // 패턴 동기화 및 트리 업데이트
         updatePatternTree();
+        
+        // 레시피 로드 완료 - 템플릿 자동 업데이트 재활성화
+        isLoadingRecipe = false;
 
         if (!cameraInfos.isEmpty())
         {
@@ -15975,6 +16022,20 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         // ★ CAM ON 상태였으면 스레드 재개
         if (wasThreadsPaused)
         {
+            // 배경 이미지 확실히 유지 (스레드 재개 전)
+            if (!cameraFrames.empty() && !cameraFrames[0].empty() && cameraView)
+            {
+                cv::Mat displayImage;
+                cv::cvtColor(cameraFrames[0], displayImage, cv::COLOR_BGR2RGB);
+                QImage qImage(displayImage.data, displayImage.cols, displayImage.rows,
+                              displayImage.step, QImage::Format_RGB888);
+                QPixmap pixmap = QPixmap::fromImage(qImage.copy());
+                cameraView->setBackgroundImage(pixmap);
+                cameraView->repaint();
+                QApplication::processEvents();
+            }
+            
+            // 스레드 재개 (트리거 모드에서는 트리거 신호가 올 때까지 프레임이 들어오지 않음)
             for (CameraGrabberThread *thread : cameraThreads)
             {
                 if (thread)

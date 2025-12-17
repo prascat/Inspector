@@ -41,6 +41,7 @@
 #include <QMutex>
 #include <QWaitCondition>
 #include <QSlider>
+#include <QQueue>
 #include <QProgressDialog>
 #include <QStringList>
 #include <QShortcut>
@@ -271,6 +272,7 @@ private slots:
     void saveImageAsync(const cv::Mat &frame, bool isPassed);
     void loadTeachingImage();
     void processGrabbedFrame(const cv::Mat& frame, int camIdx);
+    void processNextInspection(int frameIdx);  // 큐에서 다음 검사 처리
     void updateUIElements();
     void addPattern();
     void removePattern();
@@ -281,7 +283,7 @@ private slots:
 
     void switchToRecipeMode();
     void switchToTestMode();
-    bool runInspect(const cv::Mat& frame, int specificCameraIndex = -1);
+    bool runInspect(const cv::Mat& frame, int specificCameraIndex = -1, bool updateMainView = true);
     void onBackButtonClicked();
     void toggleFullScreenMode();
     
@@ -340,6 +342,7 @@ private:
     RecipeManager* recipeManager;
     QString currentRecipeName;
     bool hasUnsavedChanges = false;
+    bool isLoadingRecipe = false;  // 레시피 로드 중 플래그 (템플릿 자동 업데이트 방지)
 
     // 메뉴 및 액션
     QMenuBar* menuBar = nullptr;
@@ -635,7 +638,6 @@ private:
     void connectPropertyPanelEvents();
     
     // ===== UI 업데이트 함수 =====
-    void updatePreviewUI();
     void updatePropertyPanel(PatternInfo* pattern, const FilterInfo* filter, const QUuid& patternId, int filterIndex);
     void updatePropertySpinBoxes(const QRect& rect);
     void createPropertyPanels();
@@ -741,6 +743,14 @@ private:
     // 티칭 모드 관련
     bool teachingEnabled = false;  // 티칭 모드 활성화 상태
     bool triggerProcessing = false;  // 트리거 처리 중 플래그
+    
+    // 프레임별 검사 중 플래그 (비동기 검사용)
+    std::array<std::atomic<bool>, 4> frameInspecting = {false, false, false, false};
+    std::array<QMutex, 4> frameMutexes;
+    
+    // 프레임별 검사 큐 (트리거 순차 처리)
+    std::array<QQueue<cv::Mat>, 4> inspectionQueues;
+    std::array<QMutex, 4> queueMutexes;
     
     // 패턴 스타일링 관련
     QVector<QColor> patternColors;
