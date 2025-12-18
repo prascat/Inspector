@@ -3824,10 +3824,94 @@ void CameraView::drawINSAnomalyVisualization(QPainter &painter, const Inspection
 
 void CameraView::paintEvent(QPaintEvent *event)
 {
-    // QGraphicsView 기본 렌더링 (배경 이미지 포함)
+    // 4분할 뷰 모드
+    if (isQuadViewMode)
+    {
+        QPainter painter(viewport());
+        painter.setRenderHint(QPainter::Antialiasing);
+        
+        QRect viewRect = viewport()->rect();
+        int halfWidth = viewRect.width() / 2;
+        int halfHeight = viewRect.height() / 2;
+        
+        // 4개 사분면 정의
+        QRect quadrants[4] = {
+            QRect(0, 0, halfWidth, halfHeight),                     // 좌상: Frame 0
+            QRect(halfWidth, 0, halfWidth, halfHeight),             // 우상: Frame 1
+            QRect(0, halfHeight, halfWidth, halfHeight),            // 좌하: Frame 2
+            QRect(halfWidth, halfHeight, halfWidth, halfHeight)     // 우하: Frame 3
+        };
+        
+        // 각 프레임 렌더링
+        for (int i = 0; i < 4; i++)
+        {
+            QRect rect = quadrants[i];
+            
+            // 배경 (검은색)
+            painter.fillRect(rect, Qt::black);
+            
+            // 프레임 이미지 그리기
+            if (i < (int)quadFrames.size() && !quadFrames[i].empty())
+            {
+                cv::Mat frame = quadFrames[i];
+                QImage img;
+                
+                if (frame.channels() == 3)
+                    img = QImage(frame.data, frame.cols, frame.rows, frame.step, QImage::Format_BGR888);
+                else if (frame.channels() == 1)
+                    img = QImage(frame.data, frame.cols, frame.rows, frame.step, QImage::Format_Grayscale8);
+                
+                if (!img.isNull())
+                {
+                    QPixmap pixmap = QPixmap::fromImage(img);
+                    // 사분면에 맞게 스케일링
+                    QPixmap scaled = pixmap.scaled(rect.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                    
+                    // 중앙 정렬
+                    int x = rect.x() + (rect.width() - scaled.width()) / 2;
+                    int y = rect.y() + (rect.height() - scaled.height()) / 2;
+                    painter.drawPixmap(x, y, scaled);
+                }
+            }
+            
+            // 검사 결과 오버레이
+            if (hasFrameResult[i])
+            {
+                // 프레임 테두리 색상 (PASS=녹색, NG=빨강)
+                QColor borderColor = frameResults[i].isPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+                painter.setPen(QPen(borderColor, 4));
+                painter.drawRect(rect.adjusted(2, 2, -2, -2));
+                
+                // 결과 텍스트 (상단)
+                QString resultText = frameResults[i].isPassed ? "PASS" : "NG";
+                painter.setPen(borderColor);
+                painter.setFont(QFont("Arial", 16, QFont::Bold));
+                painter.drawText(rect.adjusted(10, 10, -10, -10), Qt::AlignTop | Qt::AlignLeft, resultText);
+                
+                // 검사 시간 표시 (하단)
+                if (frameResults[i].inspectionTimeMs > 0)
+                {
+                    painter.setPen(Qt::yellow);
+                    painter.setFont(QFont("Arial", 14, QFont::Bold));
+                    QString timeText = QString("%1ms").arg(frameResults[i].inspectionTimeMs);
+                    painter.drawText(rect.adjusted(10, 10, -10, -30), Qt::AlignBottom | Qt::AlignLeft, timeText);
+                }
+            }
+            
+            // 프레임 레이블 (Frame 0, 1, 2, 3) - 우측 하단
+            painter.setPen(Qt::white);
+            painter.setFont(QFont("Arial", 12));
+            painter.drawText(rect.adjusted(10, 10, -10, -10), 
+                           Qt::AlignBottom | Qt::AlignRight, 
+                           QString("Frame %1").arg(i));
+        }
+        
+        return;
+    }
+    
+    // 단일 뷰 모드 (기존 로직)
     QGraphicsView::paintEvent(event);
 
-    // 패턴 오버레이 렌더링 (뷰포트 좌표계 - 고정)
     QPainter painter(viewport());
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setTransform(QTransform());

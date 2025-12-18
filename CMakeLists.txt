@@ -27,13 +27,13 @@ if(APPLE)
     
 elseif(UNIX AND NOT APPLE)
     # ===== Linux (Ubuntu) 설정 =====
-    # Qt 6.9.3 경로 (custom installation)
-    set(CMAKE_PREFIX_PATH "/home/km/Qt/6.9.3/gcc_64;/home/km/Qt/6.9.3/gcc_64/lib/cmake")
-    set(Qt6_DIR "/home/km/Qt/6.9.3/gcc_64/lib/cmake/Qt6")
+    # Qt 6.10.1 경로 (custom installation)
+    set(CMAKE_PREFIX_PATH "/home/km/Qt/6.10.1/gcc_64;/home/km/Qt/6.10.1/gcc_64/lib/cmake")
+    set(Qt6_DIR "/home/km/Qt/6.10.1/gcc_64/lib/cmake/Qt6")
     
     message(STATUS "Linux Build Configuration:")
-    message(STATUS "  Qt6 Path: /home/km/Qt/6.9.3/gcc_64")
-    message(STATUS "  Linux platform detected - Qt 6.9.3 at /home/km/Qt/6.9.3/gcc_64")
+    message(STATUS "  Qt6 Path: /home/km/Qt/6.10.1/gcc_64")
+    message(STATUS "  Linux platform detected - Qt 6.10.1 at /home/km/Qt/6.10.1/gcc_64")
 endif()
 
 # 플랫폼별 추가 설정
@@ -60,9 +60,8 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Xml Network SerialPort)
 # OpenCV 패키지 찾기
 find_package(OpenCV REQUIRED)
 
-# OpenVINO 패키지 찾기
-set(OpenVINO_DIR "/usr/lib/cmake/openvino2025.3.0")
-find_package(OpenVINO REQUIRED COMPONENTS Runtime)
+# OpenVINO 패키지 찾기 (옵셔널)
+find_package(OpenVINO COMPONENTS Runtime)
 if(OpenVINO_FOUND)
     message(STATUS "Found OpenVINO: ${OpenVINO_VERSION}")
     message(STATUS "  Include: ${OpenVINO_INCLUDE_DIRS}")

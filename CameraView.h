@@ -45,6 +45,22 @@ public:
 
     void updateInspectionResult(bool passed, const InspectionResult &result);
     bool getInspectionMode() const { return isInspectionMode; }
+    
+    // 4분할 뷰 모드 설정
+    void setQuadViewMode(bool enabled)
+    {
+        isQuadViewMode = enabled;
+        viewport()->update();
+    }
+    bool getQuadViewMode() const { return isQuadViewMode; }
+    
+    // 4분할 뷰용 프레임 데이터 설정
+    void setQuadFrames(const std::vector<cv::Mat>& frames)
+    {
+        quadFrames = frames;
+        if (isQuadViewMode)
+            viewport()->update();
+    }
 
     // Strip/Crimp 모드 설정/획득
     void setStripCrimpMode(int mode) { currentStripCrimpMode = mode; }
@@ -347,6 +363,7 @@ private:
     bool hasInspectionResult = false;
     bool lastInspectionPassed = false;
     int currentStripCrimpMode = 0; // 0: STRIP, 1: CRIMP
+    bool isQuadViewMode = false;  // 4분할 뷰 모드
 
     InspectionResult lastInspectionResult;
 
@@ -356,6 +373,9 @@ private:
     std::array<QList<PatternInfo>, 4> framePatterns;
     std::array<bool, 4> hasFrameResult = {false, false, false, false};
     QUuid selectedInspectionPatternId; // 선택된 검사 결과 패턴 필터링
+    
+    // 4분할 뷰용 프레임 데이터
+    std::vector<cv::Mat> quadFrames;
 
     // 거리 측정 관련 변수
     bool isMeasuring = false;

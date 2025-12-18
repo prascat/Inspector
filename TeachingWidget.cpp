@@ -602,6 +602,33 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     // UI 텍스트 초기 갱신
     QTimer::singleShot(100, this, &TeachingWidget::updateUITexts);
 
+    // 초기 UI 상태 설정 (TEACH OFF)
+    QTimer::singleShot(50, this, [this]() {
+        if (cameraView)
+            cameraView->setQuadViewMode(true);
+        if (rightPanelOverlay)
+            rightPanelOverlay->hide();
+        for (int i = 0; i < 4; i++)
+        {
+            if (previewOverlayLabels[i])
+                previewOverlayLabels[i]->hide();
+        }
+        if (logTextEdit && logTextEdit->parentWidget())
+            logTextEdit->parentWidget()->hide();
+        
+        // TEACH OFF 버튼 빼고 모든 버튼 숨김
+        if (modeToggleButton) modeToggleButton->hide();
+        if (startCameraButton) startCameraButton->hide();
+        if (runStopButton) runStopButton->hide();
+        if (saveRecipeButton) saveRecipeButton->hide();
+        if (addPatternButton) addPatternButton->hide();
+        if (addFilterButton) addFilterButton->hide();
+        if (removeButton) removeButton->hide();
+        if (roiButton) roiButton->hide();
+        if (fidButton) fidButton->hide();
+        if (insButton) insButton->hide();
+    });
+
     // ClientDialog 초기화 (자동 연결 처리)
     QTimer::singleShot(1500, this, [this]() {
         ClientDialog::instance()->initialize();
@@ -1117,7 +1144,7 @@ QVBoxLayout *TeachingWidget::createMainLayout()
     saveRecipeButton->setStyleSheet(UIColors::overlayButtonStyle(UIColors::BTN_SAVE_COLOR));
 
     // 패턴 추가 버튼
-    QPushButton *addPatternButton = new QPushButton("ADD", this);
+    addPatternButton = new QPushButton("ADD", this);
     addPatternButton->setObjectName("addPatternButton");
     setupHeaderButton(addPatternButton);
     addPatternButton->setStyleSheet(UIColors::overlayButtonStyle(UIColors::BTN_ADD_COLOR));
@@ -9411,6 +9438,12 @@ void TeachingWidget::updatePreviewFrames()
             previewOverlayLabels[i]->setText(labels[i] + "\n" + TR("PROCESSING_ERROR"));
         }
     }
+    
+    // 4분할 뷰 모드일 때 cameraView에 프레임 전달
+    if (cameraView && cameraView->getQuadViewMode())
+    {
+        cameraView->setQuadFrames(cameraFrames);
+    }
 }
 
 void TeachingWidget::updateSinglePreview(int frameIndex)
@@ -9509,6 +9542,8 @@ void TeachingWidget::onStripCrimpModeChanged(int mode)
 
 void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraIndex)
 {
+    auto triggerStartTime = std::chrono::high_resolution_clock::now();
+    
     // **이미 트리거 처리 중이면 무시 (중복 방지)**
     if (triggerProcessing)
     {
@@ -9642,6 +9677,11 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
     {
         processNextInspection(frameIdx);
     }
+    
+    // 트리거 처리 완료 시간 측정
+    auto triggerEndTime = std::chrono::high_resolution_clock::now();
+    auto triggerDuration = std::chrono::duration_cast<std::chrono::milliseconds>(triggerEndTime - triggerStartTime).count();
+    qDebug() << QString("[Trigger] 전체 처리 시간: %1ms (Cam:%2 Frame[%3])").arg(triggerDuration).arg(cameraIndex).arg(frameIdx);
     
     // 트리거 처리 완료
     triggerProcessing = false;
@@ -13963,10 +14003,12 @@ void TeachingWidget::addPattern()
         // 카메라 UUID 설정 (camOn/camOff 동일 처리)
         pattern.cameraUuid = getCameraInfo(cameraIndex).uniqueId;
         
-        // frameIndex 설정 (CAM OFF 모드에서는 currentDisplayFrameIndex 사용)
-        pattern.frameIndex = camOff ? currentDisplayFrameIndex : (cameraIndex * 2 + currentStripCrimpMode);
+        // frameIndex 설정 - CameraView의 currentFrameIndex 사용 (화면에 표시된 프레임)
+        int viewFrameIndex = cameraView ? cameraView->getCurrentFrameIndex() : currentDisplayFrameIndex;
+        pattern.frameIndex = viewFrameIndex;
         
         qDebug() << "[TeachingWidget::addPattern] frameIndex:" << pattern.frameIndex 
+                 << "viewFrameIndex:" << viewFrameIndex
                  << "currentDisplayFrameIndex:" << currentDisplayFrameIndex 
                  << "cameraIndex:" << cameraIndex;
 
@@ -16093,6 +16135,33 @@ void TeachingWidget::onTeachModeToggled(bool checked)
         // TEACH ON 상태일 때 Save 버튼 활성화
         if (saveRecipeButton)
             saveRecipeButton->setEnabled(true);
+        
+        // 단일 뷰 모드로 전환
+        if (cameraView)
+            cameraView->setQuadViewMode(false);
+        
+        // UI 요소들 표시
+        if (rightPanelOverlay)
+            rightPanelOverlay->show();
+        for (int i = 0; i < 4; i++)
+        {
+            if (previewOverlayLabels[i])
+                previewOverlayLabels[i]->show();
+        }
+        if (logTextEdit)
+            logTextEdit->parentWidget()->show();
+        
+        // 모든 버튼들 표시
+        if (modeToggleButton) modeToggleButton->show();
+        if (startCameraButton) startCameraButton->show();
+        if (runStopButton) runStopButton->show();
+        if (saveRecipeButton) saveRecipeButton->show();
+        if (addPatternButton) addPatternButton->show();
+        if (addFilterButton) addFilterButton->show();
+        if (removeButton) removeButton->show();
+        if (roiButton) roiButton->show();
+        if (fidButton) fidButton->show();
+        if (insButton) insButton->show();
     }
     else
     {
@@ -16102,6 +16171,33 @@ void TeachingWidget::onTeachModeToggled(bool checked)
         // TEACH OFF 상태일 때 Save 버튼 비활성화
         if (saveRecipeButton)
             saveRecipeButton->setEnabled(false);
+        
+        // 4분할 뷰 모드로 전환
+        if (cameraView)
+            cameraView->setQuadViewMode(true);
+        
+        // UI 요소들 숨김
+        if (rightPanelOverlay)
+            rightPanelOverlay->hide();
+        for (int i = 0; i < 4; i++)
+        {
+            if (previewOverlayLabels[i])
+                previewOverlayLabels[i]->hide();
+        }
+        if (logTextEdit)
+            logTextEdit->parentWidget()->hide();
+        
+        // TEACH OFF 버튼 빼고 모든 버튼 숨김
+        if (modeToggleButton) modeToggleButton->hide();
+        if (startCameraButton) startCameraButton->hide();
+        if (runStopButton) runStopButton->hide();
+        if (saveRecipeButton) saveRecipeButton->hide();
+        if (addPatternButton) addPatternButton->hide();
+        if (addFilterButton) addFilterButton->hide();
+        if (removeButton) removeButton->hide();
+        if (roiButton) roiButton->hide();
+        if (fidButton) fidButton->hide();
+        if (insButton) insButton->hide();
     }
 
     // 티칭 관련 버튼들 활성화/비활성화

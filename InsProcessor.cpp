@@ -213,7 +213,11 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             double matchAngle = 0.0;
 
             // **중요**: matchFiducial에 그룹 ROI 정보도 전달
+            auto fidStart = std::chrono::high_resolution_clock::now();
             bool fidMatched = matchFiducial(image, pattern, matchScore, matchLoc, matchAngle, patterns);
+            auto fidEnd = std::chrono::high_resolution_clock::now();
+            auto fidDuration = std::chrono::duration_cast<std::chrono::milliseconds>(fidEnd - fidStart).count();
+            qDebug() << QString("[FID] 패턴 '%1' 매칭 시간: %2ms").arg(pattern.name).arg(fidDuration);
 
             // 매칭 성공 시 검출된 각도를 FID 그룹 전체에 적용
             if (fidMatched)
@@ -383,6 +387,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                     double matchScore = 0.0;
                     double matchAngle = pattern.angle;
 
+                    auto insMatchStart = std::chrono::high_resolution_clock::now();
                     bool matched = performTemplateMatching(
                         searchRegion,
                         templateMat,
@@ -395,6 +400,9 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                         pattern.patternMatchUseRotation ? pattern.patternMatchAngleStep : 1.0,
                         maskMat  // 마스크 전달
                     );
+                    auto insMatchEnd = std::chrono::high_resolution_clock::now();
+                    auto insMatchDuration = std::chrono::duration_cast<std::chrono::milliseconds>(insMatchEnd - insMatchStart).count();
+                    qDebug() << QString("[INS 패턴매칭] 패턴 '%1' 시간: %2ms (점수: %3)").arg(pattern.name).arg(insMatchDuration).arg(matchScore * 100.0, 0, 'f', 1);
 
                     // 패턴 매칭 완료
 
@@ -960,7 +968,39 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
     
+    // 검사 결과에 시간 저장
+    result.inspectionTimeMs = duration.count();
+    
     logDebug(QString("%1 검사종료 (%2ms)").arg(resultText).arg(duration.count()));
+
+    // 이미지 저장 (NG/OK 상관없이 모두 저장)
+    // frameIndex를 패턴 목록에서 가져오기 (첫 번째 패턴의 frameIndex 사용)
+    int frameIndex = 0;
+    if (!patterns.isEmpty())
+    {
+        frameIndex = patterns.first().frameIndex;
+    }
+    
+    QString dataDir = QCoreApplication::applicationDirPath() + "/data";
+    QString dateFolder = QDateTime::currentDateTime().toString("yyyyMMdd");
+    QString frameFolder = QString::number(frameIndex);
+    QString savePath = dataDir + "/" + dateFolder + "/" + frameFolder;
+    
+    // 디렉토리 생성 (날짜/프레임인덱스)
+    QDir dir;
+    if (!dir.exists(savePath))
+    {
+        dir.mkpath(savePath);
+    }
+    
+    // 파일명: 타임스탬프_결과.jpg
+    QString timestamp = QDateTime::currentDateTime().toString("HHmmss_zzz");
+    QString fileName = QString("%1_%2.jpg").arg(timestamp).arg(resultText);
+    QString filePath = savePath + "/" + fileName;
+    
+    // 이미지 저장
+    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 95};
+    cv::imwrite(filePath.toStdString(), image, params);
 
     return result;
 }
@@ -1099,6 +1139,13 @@ bool InsProcessor::matchFiducial(const cv::Mat &image, const PatternInfo &patter
                          .arg(searchRoi.height));
             return false;
         }
+        
+        // 검색 영역 크기 로그
+        logDebug(QString("[FID] 패턴 '%1': ROI=%2x%3, 템플릿=%4x%5, 회전허용=%6")
+                    .arg(pattern.name)
+                    .arg(searchRoi.width).arg(searchRoi.height)
+                    .arg(templateMat.cols).arg(templateMat.rows)
+                    .arg(pattern.useRotation ? "ON" : "OFF"));
 
         // 템플릿이 검색 영역보다 큰지 확인
         if (templateMat.rows > searchRoi.height || templateMat.cols > searchRoi.width)
@@ -1118,21 +1165,8 @@ bool InsProcessor::matchFiducial(const cv::Mat &image, const PatternInfo &patter
         // **수정**: 템플릿은 티칭할 때 저장된 원본 그대로 사용 (검사 시 갱신하지 않음)
         cv::Mat processedTemplate = templateMat.clone();
 
-        // ★ 마스크 준비 (matchTemplateMask 사용 - INS와 동일)
-        cv::Mat maskMat;
-        if (!pattern.matchTemplateMask.isNull())
-        {
-            QImage maskImg = pattern.matchTemplateMask;
-            if (maskImg.format() == QImage::Format_Grayscale8)
-            {
-                maskMat = cv::Mat(maskImg.height(), maskImg.width(), CV_8UC1,
-                                 (void *)maskImg.constBits(), maskImg.bytesPerLine()).clone();
-                logDebug(QString("FID 패턴 '%1': 마스크 로드됨 - 크기=%2x%3")
-                            .arg(pattern.name)
-                            .arg(maskMat.cols)
-                            .arg(maskMat.rows));
-            }
-        }
+        // FID는 마스크를 사용하지 않음 (속도 최적화)
+        cv::Mat maskMat; // 빈 마스크
 
         // FID는 필터를 사용하지 않음 (원본 이미지로만 매칭)
 
@@ -1151,7 +1185,7 @@ bool InsProcessor::matchFiducial(const cv::Mat &image, const PatternInfo &patter
         }
 
         // fidMatchMethod: 0=Coefficient (TM_CCOEFF_NORMED), 1=Correlation (TM_CCORR_NORMED)
-        // ★ 마스크 전달
+        // FID는 마스크 없이 매칭 (속도 최적화)
         matched = performTemplateMatching(roi, processedTemplate, localMatchLoc, score, tempAngle,
                                           pattern, tmplMinA, tmplMaxA, tmplStep, maskMat);
 
@@ -2264,7 +2298,14 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     cv::Mat anomalyMap;
     float anomalyScore = 0.0f;
     
-    if (!ImageProcessor::runPatchCoreInference(fullModelPath, roiImage, anomalyScore, anomalyMap, 0.0f))
+    auto anomalyStart = std::chrono::high_resolution_clock::now();
+    bool inferenceSuccess = ImageProcessor::runPatchCoreInference(fullModelPath, roiImage, anomalyScore, anomalyMap, 0.0f);
+    auto anomalyEnd = std::chrono::high_resolution_clock::now();
+    auto anomalyDuration = std::chrono::duration_cast<std::chrono::milliseconds>(anomalyEnd - anomalyStart).count();
+    
+    qDebug() << QString("[ANOMALY] 패턴 '%1' 추론 시간: %2ms").arg(pattern.name).arg(anomalyDuration);
+    
+    if (!inferenceSuccess)
     {
         logDebug(QString("ANOMALY 검사 실패: PatchCore 추론 실패 - 패턴 '%1'").arg(pattern.name));
         score = 0.0;

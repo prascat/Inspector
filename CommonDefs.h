@@ -45,6 +45,7 @@
 
 struct InspectionResult {
     bool isPassed = false;
+    int inspectionTimeMs = 0;              // 검사 소요 시간 (밀리초)
     QMap<QUuid, bool> fidResults;          // FID 검사 결과 (패턴 ID -> 통과 여부)
     QMap<QUuid, bool> insResults;          // INS 검사 결과 (패턴 ID -> 통과 여부)
     QMap<QUuid, double> matchScores;       // 매칭 점수 (패턴 ID -> 점수)
