@@ -329,7 +329,6 @@ struct PatternInfo {
 // 카메라 정보 구조체 (수정)
 struct CameraInfo {
     int index;                  // 카메라 인덱스
-    int videoDeviceIndex;       // V4L2 장치 인덱스 (Linux 전용)
     int imageIndex;             // 티칭 이미지 인덱스 (0, 1, 2, ...)
     QString name;               // 카메라 이름
     QString uniqueId;           // 카메라 고유 식별자
@@ -337,17 +336,14 @@ struct CameraInfo {
     QString serialNumber;       // 시리얼 번호
     QString vendorId;           // 벤더 ID
     QString productId;          // 제품 ID
-    cv::VideoCapture* capture;  // 카메라 캡처 객체
     bool isConnected;           // 연결 상태
     
-    CameraInfo() : index(-1), videoDeviceIndex(-1), imageIndex(0), capture(nullptr), isConnected(false) {}
+    CameraInfo() : index(-1), imageIndex(0), isConnected(false) {}
     
     CameraInfo(int idx) : 
         index(idx), 
-        videoDeviceIndex(idx),
         imageIndex(0),
         name(QString("카메라 %1").arg(idx + 1)), 
-        capture(nullptr), 
         isConnected(false) {}
 };
 

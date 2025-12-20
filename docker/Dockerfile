@@ -31,18 +31,21 @@ RUN pip install --no-cache-dir \
     timm \
     imgaug \
     onnx \
-    onnxscript
+    onnxscript \
+    faiss-cpu
 
 # Install OpenVINO dev tools
 RUN pip install --no-cache-dir openvino-dev
 
-# Copy the project (only what we need) into the image
-# We intentionally copy the whole repo so training/export scripts are available
-COPY . /workspace
+# Copy the training scripts from docker/ directory to /workspace
+COPY docker/train_patchcore_anomalib.py /workspace/train_patchcore_anomalib.py
+COPY docker/run_train.sh /workspace/run_train.sh
+COPY docker/convert_patchcore_to_ir.py /workspace/convert_patchcore_to_ir.py
+RUN chmod +x /workspace/run_train.sh
 
 # Default entrypoint uses train_patchcore_anomalib.py directly
 ENTRYPOINT ["python3", "/workspace/train_patchcore_anomalib.py"]
 
 # helpful labels
 LABEL org.opencontainers.image.description="Train PatchCore (anomalib) and export ONNX/OpenVINO IR for C++ inference"
-LABEL maintainer="you@example.com"
+LABEL maintainer=""

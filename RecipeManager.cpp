@@ -117,13 +117,11 @@ bool RecipeManager::saveRecipe(const QString& fileName,
         // 시뮬레이션 카메라 정보 자동 생성
         CameraInfo simCameraInfo;
         simCameraInfo.index = 0;
-        simCameraInfo.videoDeviceIndex = -1;  // 시뮬레이션 표시
         simCameraInfo.name = currentUuid;
         simCameraInfo.uniqueId = currentUuid;
         simCameraInfo.locationId = "SIMULATION";
         simCameraInfo.vendorId = "SIM_VENDOR";
         simCameraInfo.productId = "SIM_PRODUCT";
-        simCameraInfo.capture = nullptr;
         simCameraInfo.isConnected = true;
         
         // 시뮬레이션 데이터를 JSON으로 생성
@@ -651,9 +649,7 @@ void RecipeManager::writeCameraSettings(QXmlStreamWriter& xml, const CameraInfo&
         }
     } else {
         // 실제 카메라 (Spinnaker 또는 OpenCV)
-        xml.writeStartElement("videoDeviceIndex");
-        xml.writeCharacters(QString::number(cameraInfo.videoDeviceIndex));
-        xml.writeEndElement();
+        // videoDeviceIndex 제거됨 (Spinnaker SDK만 사용)
         
         xml.writeStartElement("deviceId");
         xml.writeCharacters(cameraInfo.uniqueId);  // Spinnaker UUID 또는 OpenCV device ID
@@ -663,16 +659,8 @@ void RecipeManager::writeCameraSettings(QXmlStreamWriter& xml, const CameraInfo&
         xml.writeCharacters(cameraInfo.uniqueId);
         xml.writeEndElement();
         
-        // 실제 카메라의 경우 추가 정보 저장
-        if (cameraInfo.capture && cameraInfo.capture->isOpened()) {
-            double fps = cameraInfo.capture->get(cv::CAP_PROP_FPS);
-            xml.writeAttribute("fps", QString::number(fps));
-            
-            double exposure = cameraInfo.capture->get(cv::CAP_PROP_EXPOSURE);
-            double brightness = cameraInfo.capture->get(cv::CAP_PROP_BRIGHTNESS);
-            xml.writeAttribute("exposure", QString::number(exposure));
-            xml.writeAttribute("brightness", QString::number(brightness));
-        }
+        // OpenCV capture 제거됨 (Spinnaker SDK만 사용)
+        // 카메라 설정은 Spinnaker UserSet으로 관리됨
     }
 }
 
@@ -1077,7 +1065,7 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
         
         // 인덱스 설정 - cameraInfos의 현재 크기를 사용
         newCameraInfo.index = cameraInfos.size();
-        newCameraInfo.videoDeviceIndex = cameraInfos.size();
+        // videoDeviceIndex 제거됨
         
         // 시뮬레이션 모드 체크 - cameraInfos가 비어있다면 시뮬레이션 모드
         if (cameraInfos.isEmpty()) {
@@ -2015,9 +2003,7 @@ bool RecipeManager::saveSimulationRecipe(const QString& fileName,
     cameraElement.setAttribute("imageIndex", "0");  // 기본 이미지 인덱스
     
     // 시뮬레이션 카메라 설정
-    QDomElement videoDeviceIndex = doc.createElement("videoDeviceIndex");
-    videoDeviceIndex.appendChild(doc.createTextNode("-1")); // -1은 시뮬레이션 카메라 표시
-    cameraElement.appendChild(videoDeviceIndex);
+    // videoDeviceIndex 제거됨 (Spinnaker SDK만 사용)
     
     QDomElement deviceId = doc.createElement("deviceId");
     deviceId.appendChild(doc.createTextNode("SIMULATION"));

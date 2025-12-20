@@ -22,6 +22,8 @@
 #include "ImageProcessor.h"
 #include "LanguageManager.h"
 
+class TeachingWidget;  // Forward declaration
+
 #ifndef TR
 #define TR(key) LanguageManager::instance()->getText(key)
 #endif
@@ -43,7 +45,7 @@ public:
         viewport()->update();
     }
 
-    void updateInspectionResult(bool passed, const InspectionResult &result);
+    void updateInspectionResult(bool passed, const InspectionResult &result, int frameIndex = -1);
     bool getInspectionMode() const { return isInspectionMode; }
     
     // 4분할 뷰 모드 설정
@@ -54,12 +56,29 @@ public:
     }
     bool getQuadViewMode() const { return isQuadViewMode; }
     
+    // TEACH OFF 상태 설정
+    void setTeachOff(bool off)
+    {
+        isTeachOff = off;
+        viewport()->update();
+    }
+    bool getTeachOff() const { return isTeachOff; }
+    
     // 4분할 뷰용 프레임 데이터 설정
     void setQuadFrames(const std::vector<cv::Mat>& frames)
     {
         quadFrames = frames;
         if (isQuadViewMode)
             viewport()->update();
+    }
+    
+    // TeachingWidget 포인터 설정 (cameraFrames 직접 접근용)
+    void setTeachingWidget(TeachingWidget* widget) { 
+        teachingWidget = widget;
+        if (widget == nullptr) {
+            // TeachingWidget 소멸 시 즉시 paintEvent 차단
+            setUpdatesEnabled(false);
+        }
     }
 
     // Strip/Crimp 모드 설정/획득
@@ -364,6 +383,8 @@ private:
     bool lastInspectionPassed = false;
     int currentStripCrimpMode = 0; // 0: STRIP, 1: CRIMP
     bool isQuadViewMode = false;  // 4분할 뷰 모드
+    bool isTeachOff = true;  // TEACH OFF 상태
+    TeachingWidget* teachingWidget = nullptr;  // TeachingWidget 포인터 (cameraFrames 접근용)
 
     InspectionResult lastInspectionResult;
 
@@ -437,6 +458,10 @@ private:
     QGraphicsPixmapItem *bgPixmapItem = nullptr;
 
     void drawInspectionResults(QPainter &painter, const InspectionResult &result);
+
+    // 좌표 변환 헬퍼: painter transform 상태에 따라 scene 좌표를 viewport 좌표로 변환
+    QPointF sceneToViewport(QPainter &painter, const QPointF &scenePoint);
+    QRectF sceneToViewport(QPainter &painter, const QRectF &sceneRect);
 
     // 검사 결과 시각화 서브 함수들
     void drawROIPatterns(QPainter &painter, const InspectionResult &result);

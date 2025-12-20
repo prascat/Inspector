@@ -206,8 +206,7 @@ void CameraGrabberThread::run()
         // 일시정지 상태 확인
         if (m_paused)
         {
-            QMutexLocker locker(&m_mutex);
-            m_condition.wait(&m_mutex);
+            msleep(10);
             continue;
         }
 
@@ -385,9 +384,10 @@ void CameraGrabberThread::run()
 #endif
                 }
                 // OpenCV 카메라 처리
-                else if (info.capture && info.capture->isOpened())
+                // OpenCV capture 제거됨 (Spinnaker SDK만 사용)
+                else
                 {
-                    grabbed = info.capture->read(frame);
+                    grabbed = false;
                 }
             }
         }
@@ -441,8 +441,7 @@ void UIUpdateThread::run()
         // 일시정지 상태 확인
         if (m_paused)
         {
-            QMutexLocker locker(&m_mutex);
-            m_condition.wait(&m_mutex); // 일시정지 상태에서는 대기
+            msleep(10);
             continue;
         }
 
@@ -562,9 +561,9 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
 
     loadingDialog->updateProgress(80, "레시피 로드 준비 중...");
     
-    // 프로그램 시작 시 최근 레시피 자동 로드 (CAM OFF 상태에서는 스킵)
+    // 프로그램 시작 시 최근 레시피 자동 로드 (CAM OFF 상태일 때만)
     bool recipeLoaded = false;
-    if (!camOff) {
+    if (camOff) {
         QString lastRecipePath = ConfigManager::instance()->getLastRecipePath();
         if (!lastRecipePath.isEmpty())
         {
@@ -580,10 +579,17 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
                 // 레시피 선택
                 onRecipeSelected(recipeName);
                 recipeLoaded = true;
+                
+                // 4분할 뷰 강제 업데이트
+                if (cameraView && cameraView->getQuadViewMode())
+                {
+                    cameraView->setQuadFrames(cameraFrames);
+                    cameraView->viewport()->update();
+                    cameraView->repaint();
+                }
+                updatePreviewFrames();
             }
         }
-    } else {
-        qDebug() << "[TeachingWidget] CAM OFF 상태 - 레시피 자동 로드 스킵";
     }
     
     loadingDialog->updateProgress(95, "UI 준비 중...");
@@ -902,6 +908,12 @@ void TeachingWidget::initBasicSettings()
     // camOff 모드 초기 설정
     camOff = true;
     cameraIndex = 0;
+    
+    // CameraView에 TEACH OFF 상태 전달
+    if (cameraView)
+    {
+        cameraView->setTeachOff(true);
+    }
 
     // cameraFrames 벡터 초기화 (4개 프레임: 0,1,2,3)
     cameraFrames.resize(MAX_CAMERAS);
@@ -1233,6 +1245,7 @@ QVBoxLayout *TeachingWidget::createCameraLayout()
     // 2. 카메라 뷰 초기화
     cameraView = new CameraView(cameraContainer);
     cameraView->setGeometry(0, 0, 640, 480);
+    cameraView->setTeachingWidget(this);  // TeachingWidget 포인터 설정
 
     // 3. 버튼 오버레이 위젯 생성
     QWidget *buttonOverlay = new QWidget(cameraContainer);
@@ -8724,19 +8737,8 @@ void TeachingWidget::detectCameras()
     QApplication::processEvents();
 
     int cameraCount = getCameraInfosCount();
-    for (int i = 0; i < cameraCount; i++)
-    {
-        CameraInfo info = getCameraInfo(i);
-        if (info.capture)
-        {
-            // 수정된 info를 다시 설정해야 함
-            info.capture->release();
-            delete info.capture;
-            info.capture = nullptr;
-            setCameraInfo(i, info);
-        }
-    }
-    clearCameraInfos(); // 마지막에 전체 클리어
+    // OpenCV capture 제거됨 (Spinnaker SDK만 사용)
+    clearCameraInfos(); // 전체 클리어
 
 #ifdef USE_SPINNAKER
     // Spinnaker SDK 사용 가능한 경우
@@ -8818,150 +8820,11 @@ void TeachingWidget::detectCameras()
 #endif
 
 #ifdef __linux__
-    // **개선된 Linux 카메라 검색**
-    progressDialog->setLabelText("Linux 카메라 장치 검색 중...");
-    progressDialog->setValue(50);
-    QApplication::processEvents();
-
-    setenv("GST_DEBUG", "1", 1);
-    setenv("OPENCV_VIDEOIO_PRIORITY_GSTREAMER", "0", 1);
-
-    QList<int> realCameraIndices;
-
-    // /dev/video* 장치 스캔
-    int totalDevices = 20;
-    for (int deviceIndex = 0; deviceIndex < totalDevices; deviceIndex += 2)
-    {
-        if (progressDialog->wasCanceled())
-        {
-            progressDialog->deleteLater();
-            return;
-        }
-
-        progressDialog->setLabelText(QString("장치 /dev/video%1 확인 중...").arg(deviceIndex));
-        int progressValue = 50 + (deviceIndex * 20 / totalDevices); // 50-70%
-        progressDialog->setValue(progressValue);
-        QApplication::processEvents();
-
-        QString devicePath = QString("/dev/video%1").arg(deviceIndex);
-
-        if (!QFile::exists(devicePath))
-        {
-            continue;
-        }
-
-        cv::VideoCapture testCapture(deviceIndex, cv::CAP_V4L2);
-        if (testCapture.isOpened())
-        {
-            cv::Mat testFrame;
-            bool canRead = testCapture.read(testFrame);
-            testCapture.release();
-
-            if (canRead && !testFrame.empty() && testFrame.cols > 0 && testFrame.rows > 0)
-            {
-                realCameraIndices.append(deviceIndex);
-            }
-        }
-    }
-
-    progressDialog->setLabelText(QString("실제 카메라 %1개 발견, 연결 중...").arg(realCameraIndices.size()));
-    progressDialog->setValue(70);
-    QApplication::processEvents();
-
-    // **각 실제 카메라에 대해 순차적 인덱스 할당**
-    for (int i = 0; i < realCameraIndices.size(); i++)
-    {
-        if (progressDialog->wasCanceled())
-        {
-            progressDialog->deleteLater();
-            return;
-        }
-
-        int deviceIndex = realCameraIndices[i];
-
-        progressDialog->setLabelText(QString("카메라 %1/%2 연결 중... (/dev/video%3)").arg(i + 1).arg(realCameraIndices.size()).arg(deviceIndex));
-        int progressValue = 70 + (i * 20 / realCameraIndices.size()); // 70-90%
-        progressDialog->setValue(progressValue);
-        QApplication::processEvents();
-
-        cv::VideoCapture *capture = new cv::VideoCapture(deviceIndex, cv::CAP_V4L2);
-        if (capture->isOpened())
-        {
-            // 기본 설정
-            capture->set(cv::CAP_PROP_FPS, FRAME_RATE);
-            capture->set(cv::CAP_PROP_FRAME_WIDTH, FRAME_WIDTH);
-            capture->set(cv::CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT);
-            capture->set(cv::CAP_PROP_BUFFERSIZE, 1);
-
-            CameraInfo info;
-            info.index = i;                      // **순차적 인덱스 (0, 1, 2, ...)**
-            info.videoDeviceIndex = deviceIndex; // **실제 장치 번호 (0, 2, 4, ...)**
-            info.capture = capture;
-            info.isConnected = true;
-            info.name = QString("카메라 %1 (장치 %2)").arg(i + 1).arg(deviceIndex);
-
-            // 고유 ID 생성
-            updateCameraDetailInfo(info);
-
-            appendCameraInfo(info);
-            connectedCameras++;
-        }
-        else
-        {
-            delete capture;
-        }
-    }
-
+    // OpenCV 카메라 검색 제거 - Spinnaker SDK만 사용
+    qDebug() << "[scanCamera] Linux OpenCV 카메라 검색 생략 (Spinnaker SDK만 사용)";
 #else
-    // Windows/macOS용 카메라 검색 코드
-    progressDialog->setLabelText("USB 카메라 검색 중...");
-    progressDialog->setValue(50);
-    QApplication::processEvents();
-
-    int totalCameras = 8;
-    for (int i = 0; i < totalCameras; i++)
-    {
-        if (progressDialog->wasCanceled())
-        {
-            progressDialog->deleteLater();
-            return;
-        }
-
-        progressDialog->setLabelText(QString("카메라 %1/%2 확인 중...").arg(i + 1).arg(totalCameras));
-        int progressValue = 50 + (i * 40 / totalCameras); // 50-90%
-        progressDialog->setValue(progressValue);
-        QApplication::processEvents();
-
-        cv::VideoCapture *capture = new cv::VideoCapture(i);
-        if (capture->isOpened())
-        {
-            // 기본 설정 적용
-            capture->set(cv::CAP_PROP_FPS, FRAME_RATE);
-            capture->set(cv::CAP_PROP_FRAME_WIDTH, FRAME_WIDTH);
-            capture->set(cv::CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT);
-            capture->set(cv::CAP_PROP_BUFFERSIZE, 1);
-
-            CameraInfo info;
-            info.index = i;
-            info.videoDeviceIndex = i;
-            info.capture = capture;
-            info.isConnected = true;
-            info.name = QString("카메라 %1").arg(i + 1);
-
-            // 카메라 연결되어도 camOff 상태는 사용자가 명시적으로 켜기 전까지 유지
-            // camOff 상태와 카메라 연결은 독립적
-
-            // 상세 정보 업데이트
-            updateCameraDetailInfo(info);
-
-            appendCameraInfo(info);
-            connectedCameras++;
-        }
-        else
-        {
-            delete capture;
-        }
-    }
+    // OpenCV 카메라 검색 제거 - Spinnaker SDK만 사용
+    qDebug() << "[scanCamera] OpenCV 카메라 검색 생략 (Spinnaker SDK만 사용)";
 #endif
 
     // 미리보기 오버레이는 updatePreviewFrames에서 자동 업데이트됨
@@ -9005,11 +8868,8 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat &frame, int camIdx)
         
         if (frameIndex >= 0 && frameIndex < MAX_CAMERAS)
         {
-            // mutex로 프레임 쓰기 보호
-            {
-                QMutexLocker locker(&frameMutexes[frameIndex]);
-                cameraFrames[frameIndex] = frame.clone();
-            }
+            // 프레임 쓰기
+            cameraFrames[frameIndex] = frame.clone();
             
             frameUpdatedFlags[frameIndex] = true;
             
@@ -9454,14 +9314,11 @@ void TeachingWidget::updateSinglePreview(int frameIndex)
     if (frameIndex >= static_cast<int>(cameraFrames.size()))
         return;
     
-    // 프레임 복사 (mutex 보호)
+    // 프레임 복사
     cv::Mat previewFrame;
-    {
-        QMutexLocker locker(&frameMutexes[frameIndex]);
-        if (cameraFrames[frameIndex].empty())
-            return;
-        previewFrame = cameraFrames[frameIndex].clone();
-    }
+    if (cameraFrames[frameIndex].empty())
+        return;
+    previewFrame = cameraFrames[frameIndex].clone();
     
     const QStringList labels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
     
@@ -9666,11 +9523,8 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
         return;
     }
 
-    // **프레임을 검사 큐에 추가 (thread-safe)**
-    {
-        QMutexLocker locker(&queueMutexes[frameIdx]);
-        inspectionQueues[frameIdx].enqueue(frame.clone());
-    }
+    // **프레임을 검사 큐에 추가**
+    inspectionQueues[frameIdx].enqueue(frame.clone());
     
     // **검사 중이 아니면 검사 시작**
     if (!frameInspecting[frameIdx].load())
@@ -9690,16 +9544,13 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
 // 큐에서 다음 검사 처리
 void TeachingWidget::processNextInspection(int frameIdx)
 {
-    // 큐에서 프레임 꺼내기 (thread-safe)
+    // 큐에서 프레임 꺼내기
     cv::Mat frameCopy;
+    if (inspectionQueues[frameIdx].isEmpty())
     {
-        QMutexLocker locker(&queueMutexes[frameIdx]);
-        if (inspectionQueues[frameIdx].isEmpty())
-        {
-            return;  // 큐가 비어있으면 종료
-        }
-        frameCopy = inspectionQueues[frameIdx].dequeue();
+        return;  // 큐가 비어있으면 종료
     }
+    frameCopy = inspectionQueues[frameIdx].dequeue();
     
     // 검사 중 플래그 설정
     frameInspecting[frameIdx].store(true);
@@ -9727,15 +9578,12 @@ void TeachingWidget::processNextInspection(int frameIdx)
             updatePreviewFrames();
             
             // 큐에 남은게 있으면 다음 검사 시작
+            if (!inspectionQueues[frameIdx].isEmpty())
             {
-                QMutexLocker locker(&queueMutexes[frameIdx]);
-                if (!inspectionQueues[frameIdx].isEmpty())
-                {
-                    // 메인 스레드에서 다음 검사 시작
-                    QMetaObject::invokeMethod(this, [this, frameIdx]() {
-                        processNextInspection(frameIdx);
-                    }, Qt::QueuedConnection);
-                }
+                // 메인 스레드에서 다음 검사 시작
+                QMetaObject::invokeMethod(this, [this, frameIdx]() {
+                    processNextInspection(frameIdx);
+                }, Qt::QueuedConnection);
             }
         }, Qt::QueuedConnection);
     });
@@ -9746,6 +9594,12 @@ void TeachingWidget::startCamera()
 
     // ★ CAM ON 상태로 변경
     camOff = false;
+
+    // CameraView에 TEACH OFF 상태 전달
+    if (cameraView)
+    {
+        cameraView->setTeachOff(false);
+    }
 
     // ★ 모든 레시피 데이터 초기화 (공용 함수 사용)
     // clearAllRecipeData() 내부에 CAM ON 체크가 있으므로 직접 초기화
@@ -9803,6 +9657,13 @@ void TeachingWidget::startCamera()
         
         // ★ 카메라가 없으면 camOff 상태로 복원
         camOff = true;
+        
+        // CameraView에 TEACH OFF 상태 전달
+        if (cameraView)
+        {
+            cameraView->setTeachOff(true);
+        }
+        
         updateCameraButtonState(false); // 버튼 상태 업데이트
         return;
     }
@@ -9832,7 +9693,7 @@ void TeachingWidget::startCamera()
     // 7. 카메라 스레드 생성 및 시작
     for (int i = 0; i < cameraInfos.size(); i++)
     {
-        if (cameraInfos[i].isConnected && cameraInfos[i].capture)
+        if (cameraInfos[i].isConnected)
         {
             CameraGrabberThread *thread = new CameraGrabberThread(this);
             thread->setCameraIndex(i);
@@ -9865,7 +9726,7 @@ void TeachingWidget::startCamera()
     bool cameraStarted = false;
     for (const auto &cameraInfo : cameraInfos)
     {
-        if (cameraInfo.isConnected && cameraInfo.capture)
+        if (cameraInfo.isConnected)
         {
             cameraStarted = true;
             break;
@@ -9918,6 +9779,12 @@ void TeachingWidget::stopCamera()
 
     // ★ CAM OFF 상태로 변경
     camOff = true;
+    
+    // CameraView에 TEACH OFF 상태 전달
+    if (cameraView)
+    {
+        cameraView->setTeachOff(true);
+    }
 
     // ★ cameraFrames 초기화 - CAM ON에서 사용한 프레임 제거
     cameraFrames.clear();
@@ -10011,12 +9878,7 @@ void TeachingWidget::stopCamera()
     // 4. OpenCV 카메라 자원 해제
     for (int i = 0; i < cameraInfos.size(); i++)
     {
-        if (cameraInfos[i].capture && !cameraInfos[i].uniqueId.startsWith("SPINNAKER_"))
-        {
-            cameraInfos[i].capture->release();
-            delete cameraInfos[i].capture;
-            cameraInfos[i].capture = nullptr;
-        }
+        // OpenCV capture 제거됨 (Spinnaker SDK만 사용)
         cameraInfos[i].isConnected = false;
     }
 
@@ -10586,46 +10448,8 @@ void TeachingWidget::updateCameraFrame()
                 cameraView->setBackgroundPixmap(pixmap);
             }
         }
-        else
 #endif
-            // OpenCV 카메라 사용
-            if (cameraInfos[cameraIndex].capture)
-            {
-                cv::Mat frame;
-                if (cameraInfos[cameraIndex].capture->read(frame))
-                {
-                    // **벡터에 저장**
-                    if (cameraIndex >= static_cast<int>(cameraFrames.size()))
-                    {
-                        cameraFrames.resize(cameraIndex + 1);
-                    }
-
-                    cameraFrames[cameraIndex] = frame.clone();
-
-                    // 선택된 필터만 적용 (getCurrentFilteredFrame 사용)
-                    cv::Mat filteredFrame = getCurrentFilteredFrame();
-
-                    // 필터링된 프레임이 없으면 원본 사용
-                    if (filteredFrame.empty())
-                    {
-                        filteredFrame = cameraFrames[cameraIndex].clone();
-                    }
-
-                    // RGB 변환 및 UI 업데이트
-                    cv::Mat displayFrame;
-                    cv::cvtColor(filteredFrame, displayFrame, cv::COLOR_BGR2RGB);
-
-                    QImage image(displayFrame.data, displayFrame.cols, displayFrame.rows,
-                                 displayFrame.step, QImage::Format_RGB888);
-                    QPixmap pixmap = QPixmap::fromImage(image.copy());
-
-                    QSize origSize(frame.cols, frame.rows);
-                    cameraView->setScalingInfo(origSize, cameraView->size());
-                    cameraView->setStatusInfo(QString("CAM%1").arg(cameraIndex + 1));
-
-                    cameraView->setBackgroundPixmap(pixmap);
-                }
-            }
+        // OpenCV 카메라 제거됨 (Spinnaker SDK만 사용)
     }
 }
 
@@ -10906,6 +10730,9 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event)
                             // 드래그 중인 사각형 제거 (프레임 전환 시)
                             cameraView->clearCurrentRect();
                             
+                            // 검사 모드 해제 (프레임 전환 시)
+                            cameraView->setInspectionMode(false);
+                            
                             // 프레임 인덱스와 카메라 UUID를 먼저 설정
                             cameraView->setCurrentFrameIndex(i);
                             
@@ -10920,6 +10747,16 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event)
                             cameraView->setBackgroundImage(pixmap);
                             updateCameraFrame();
                             cameraView->update();
+                        }
+                        
+                        // RUN 버튼 상태 초기화 (STOP -> RUN)
+                        if (runStopButton && runStopButton->isChecked())
+                        {
+                            runStopButton->blockSignals(true);
+                            runStopButton->setChecked(false);
+                            runStopButton->setText("RUN");
+                            runStopButton->setStyleSheet(UIColors::overlayToggleButtonStyle(UIColors::BTN_ADD_COLOR, QColor("#4CAF50"), false));
+                            runStopButton->blockSignals(false);
                         }
                         
                         // 패턴 트리 업데이트 (현재 프레임의 패턴만 표시)
@@ -11603,11 +11440,12 @@ void TeachingWidget::updateCameraDetailInfo(CameraInfo &info)
     if (info.serialNumber.isEmpty() && info.locationId.isEmpty())
     {
         // OpenCV의 카메라 프레임에서 직접 카메라 정보 추출 시도
-        if (info.capture && info.capture->isOpened())
+        // OpenCV capture 제거됨 (Spinnaker SDK만 사용)
+        if (false)
         {
-            double deviceId = info.capture->get(cv::CAP_PROP_POS_FRAMES);     // 실패하면 0
-            double apiId = info.capture->get(cv::CAP_PROP_PVAPI_PIXELFORMAT); // 실패하면 0
-            double backend = info.capture->get(cv::CAP_PROP_BACKEND);         // 카메라 백엔드 ID
+            double deviceId = 0;
+            double apiId = 0;
+            double backend = 0;
 
             QString generatedId = QString("CV_%1_%2_%3_%4")
                                       .arg(info.index)
@@ -11770,36 +11608,9 @@ void TeachingWidget::updateCameraDetailInfo(CameraInfo &info)
         info.uniqueId = QString("WIN_CAM_%1").arg(info.index);
     }
 
-    // 4. 카메라 프레임에서 추가 정보 수집
-    if (info.capture && info.capture->isOpened())
-    {
-        try
-        {
-            // OpenCV에서 가능한 카메라 정보 수집
-            double width = info.capture->get(cv::CAP_PROP_FRAME_WIDTH);
-            double height = info.capture->get(cv::CAP_PROP_FRAME_HEIGHT);
-            double fps = info.capture->get(cv::CAP_PROP_FPS);
-            double backend = info.capture->get(cv::CAP_PROP_BACKEND);
+    // OpenCV capture 제거됨 (Spinnaker SDK만 사용)
 
-            // 캡처 백엔드가 DirectShow(200)인 경우, USB 카메라로 간주
-            if (backend == 200)
-            {
-                if (info.uniqueId.isEmpty() || !info.uniqueId.startsWith("VID_"))
-                {
-                    info.uniqueId = QString("DSHOW_%1_%2x%3_%4")
-                                        .arg(info.index)
-                                        .arg((int)width)
-                                        .arg((int)height)
-                                        .arg(QRandomGenerator::global()->bounded(1000, 9999));
-                }
-            }
-        }
-        catch (const cv::Exception &e)
-        {
-        }
-    }
-
-    // 5. 최소 고유 ID 보장
+    // 최소 고유 ID 보장
     if (info.uniqueId.isEmpty())
     {
         // 고유 ID 생성
@@ -11966,19 +11777,7 @@ void TeachingWidget::updateCameraDetailInfo(CameraInfo &info)
         info.uniqueId = QString("LNX_CAM_%1").arg(info.index);
     }
 
-    // 4. 추가 정보 수집 (OpenCV)
-    if (info.capture && info.capture->isOpened())
-    {
-        try
-        {
-            double width = info.capture->get(cv::CAP_PROP_FRAME_WIDTH);
-            double height = info.capture->get(cv::CAP_PROP_FRAME_HEIGHT);
-            double fps = info.capture->get(cv::CAP_PROP_FPS);
-        }
-        catch (const cv::Exception &e)
-        {
-        }
-    }
+    // OpenCV capture 제거됨 (Spinnaker SDK만 사용)
 
     // 5. 최소 고유 ID 보장
     if (info.uniqueId.isEmpty())
@@ -12432,7 +12231,7 @@ bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex, b
         }
 
         // 검사 결과를 CameraView에 전달
-        cameraView->updateInspectionResult(result.isPassed, result);
+        cameraView->updateInspectionResult(result.isPassed, result, currentDisplayFrameIndex);
 
         // 배경은 원본 이미지만 설정 (검사 결과 오버레이 없이)
         QImage originalImage = InsProcessor::matToQImage(frame);
@@ -12651,19 +12450,8 @@ void TeachingWidget::switchToTestMode()
             }
         }
     }
-    else
 #endif
-        // **OpenCV 카메라 처리 - camera 포인터 대신 cameraInfos 사용**
-        if (cameraIndex >= 0 && cameraIndex < cameraInfos.size() &&
-            cameraInfos[cameraIndex].capture && cameraInfos[cameraIndex].capture->isOpened())
-        {
-
-            // OpenCV 카메라에서 프레임 가져오기
-            if (cameraInfos[cameraIndex].capture->read(testFrame))
-            {
-                gotFrame = true;
-            }
-        }
+    // OpenCV 카메라 제거됨 (Spinnaker SDK만 사용)
 
     // 프레임을 가져왔거나 기존 프레임이 있는 경우 사용
     if (gotFrame)
@@ -13007,13 +12795,11 @@ bool TeachingWidget::hasLoadedRecipe() const
 
 QVector<CameraInfo> TeachingWidget::getCameraInfos() const
 {
-    QMutexLocker locker(&cameraInfosMutex);
     return cameraInfos;
 }
 
 CameraInfo TeachingWidget::getCameraInfo(int index) const
 {
-    QMutexLocker locker(&cameraInfosMutex);
     if (index >= 0 && index < cameraInfos.size())
     {
         return cameraInfos[index];
@@ -13023,7 +12809,6 @@ CameraInfo TeachingWidget::getCameraInfo(int index) const
 
 bool TeachingWidget::setCameraInfo(int index, const CameraInfo &info)
 {
-    QMutexLocker locker(&cameraInfosMutex);
     if (index >= 0 && index < cameraInfos.size())
     {
         cameraInfos[index] = info;
@@ -13034,22 +12819,11 @@ bool TeachingWidget::setCameraInfo(int index, const CameraInfo &info)
 
 int TeachingWidget::getCameraInfosCount() const
 {
-    QMutexLocker locker(&cameraInfosMutex);
     return cameraInfos.size();
 }
 
 void TeachingWidget::clearCameraInfos()
 {
-    QMutexLocker locker(&cameraInfosMutex);
-    for (auto &info : cameraInfos)
-    {
-        if (info.capture)
-        {
-            info.capture->release();
-            delete info.capture;
-            info.capture = nullptr;
-        }
-    }
     cameraInfos.clear();
 
     // 레시피 초기화 시 타이틀도 초기화
@@ -13058,35 +12832,25 @@ void TeachingWidget::clearCameraInfos()
 
 void TeachingWidget::appendCameraInfo(const CameraInfo &info)
 {
-    QMutexLocker locker(&cameraInfosMutex);
     cameraInfos.append(info);
 }
 
 void TeachingWidget::removeCameraInfo(int index)
 {
-    QMutexLocker locker(&cameraInfosMutex);
     if (index >= 0 && index < cameraInfos.size())
     {
-        if (cameraInfos[index].capture)
-        {
-            cameraInfos[index].capture->release();
-            delete cameraInfos[index].capture;
-            cameraInfos[index].capture = nullptr;
-        }
         cameraInfos.removeAt(index);
     }
 }
 
 bool TeachingWidget::isValidCameraIndex(int index) const
 {
-    QMutexLocker locker(&cameraInfosMutex);
     return (index >= 0 && index < cameraInfos.size());
 }
 
 // 연결된 모든 카메라의 UUID 목록 반환
 QStringList TeachingWidget::getConnectedCameraUuids() const
 {
-    QMutexLocker locker(&cameraInfosMutex);
     QStringList uuids;
 
     for (const CameraInfo &cameraInfo : cameraInfos)
@@ -13175,12 +12939,15 @@ void TeachingWidget::releaseSpinnakerSDK()
         // 5. 추가 지연
         QThread::msleep(100);
 
-        // 6. 시스템 인스턴스 해제
+        // 6. 시스템 인스턴스 해제 (Spinnaker SDK 내부 mutex 문제로 인해 ReleaseInstance() 호출 생략)
+        // 프로세스 종료 시 자동으로 정리됨
         if (m_spinSystem)
         {
-            m_spinSystem->ReleaseInstance();
+            qDebug() << "[releaseSpinnakerSDK] System ReleaseInstance 생략 (프로세스 종료 시 자동 정리)";
             m_spinSystem = nullptr;
         }
+        
+        qDebug() << "[releaseSpinnakerSDK] 완료";
     }
     catch (Spinnaker::Exception &e)
     {
@@ -13482,11 +13249,7 @@ bool TeachingWidget::connectSpinnakerCamera(int index, CameraInfo &info)
         // 연결 상태 설정
         info.isConnected = true;
 
-        // **중요**: startCamera()에서 capture 체크를 하므로 더미 capture 생성
-        info.capture = new cv::VideoCapture();
-
-        // 카메라 연결되어도 camOff 상태는 사용자가 명시적으로 켜기 전까지 유지
-        // camOff 상태와 카메라 연결은 독립적
+        // OpenCV capture 제거됨 (Spinnaker SDK만 사용)
 
         return true;
     }
@@ -13731,7 +13494,28 @@ TeachingWidget::~TeachingWidget()
 {
     qDebug() << "[~TeachingWidget] 소멸자 시작";
     
-    // 0. ClientDialog reconnect 스레드 중지 (Spinnaker SDK 정리 전에 필수)
+    // 0. CameraView에 포인터 해제 알림 (제일 먼저!)
+    if (cameraView) {
+        cameraView->setTeachingWidget(nullptr);
+    }
+    
+    // 0-1. 비동기 작업(QtConcurrent::run) 정리
+    // 글로벌 스레드 풀의 대기 중인 작업 제거 및 실행 중인 작업 완료 대기
+    qDebug() << "[~TeachingWidget] 비동기 작업 정리 시작";
+    QThreadPool::globalInstance()->clear();
+    QThreadPool::globalInstance()->waitForDone();
+    qDebug() << "[~TeachingWidget] 비동기 작업 정리 완료";
+    
+    // 0-2. cameraFrames 명시적 해제 (OpenCV Mat 소멸자 mutex 문제 방지)
+    for (auto& frame : cameraFrames) {
+        if (!frame.empty()) {
+            frame.release();
+        }
+    }
+    cameraFrames.clear();
+    cameraFrames.shrink_to_fit();
+    
+    // 1. ClientDialog reconnect 스레드 중지 (Spinnaker SDK 정리 전에 필수)
     qDebug() << "[~TeachingWidget] ClientDialog reconnect 스레드 중지 시작";
     if (ClientDialog::instance()) {
         ClientDialog::instance()->stopReconnectThread();
@@ -13762,17 +13546,10 @@ TeachingWidget::~TeachingWidget()
     }
     qDebug() << "[~TeachingWidget] UI 스레드 중지 완료";
 
-    // 3. 카메라 자원 해제
-    qDebug() << "[~TeachingWidget] 카메라 자원 해제 시작";
-    for (int i = 0; i < getCameraInfosCount(); i++)
-    {
-        if (getCameraInfo(i).capture)
-        {
-            getCameraInfo(i).capture->release();
-            removeCameraInfo(i);
-        }
-    }
-    qDebug() << "[~TeachingWidget] 카메라 자원 해제 완료";
+    // 3. 카메라 정보 정리 (Spinnaker SDK만 사용)
+    qDebug() << "[~TeachingWidget] 카메라 정보 정리 시작";
+    cameraInfos.clear();
+    qDebug() << "[~TeachingWidget] 카메라 정보 정리 완료";
     
     // 4. Docker 학습 프로세스 종료
     if (dockerTrainProcess && dockerTrainProcess->state() == QProcess::Running) {
@@ -13788,10 +13565,14 @@ TeachingWidget::~TeachingWidget()
     }
 
 #ifdef USE_SPINNAKER
-    // 5. Spinnaker SDK 정리 (스레드가 모두 종료된 후)
-    qDebug() << "[~TeachingWidget] Spinnaker SDK 해제 시작";
-    releaseSpinnakerSDK();
-    qDebug() << "[~TeachingWidget] Spinnaker SDK 해제 완료";
+    // 5. Spinnaker SDK 정리 (완전히 생략 - mutex 크래시 방지)
+    qDebug() << "[~TeachingWidget] Spinnaker SDK 해제 생략 (프로세스 종료 시 자동 정리)";
+    
+    // 카메라 참조만 정리 (ReleaseInstance 호출 안 함)
+    m_spinCameras.clear();
+    m_spinSystem = nullptr;
+    
+    qDebug() << "[~TeachingWidget] Spinnaker SDK 참조 정리 완료";
 #endif
 
     // 6. 타이머 정리 (먼저 정리)
@@ -13845,7 +13626,14 @@ TeachingWidget::~TeachingWidget()
     }
     qDebug() << "[~TeachingWidget] ANOMALY 모델 해제 완료";
     
+    // 12. OpenCV 전역 리소스 해제 (생략 - mutex 문제 가능성)
+    // cv::destroyAllWindows();
+    
     qDebug() << "[~TeachingWidget] 소멸자 완료";
+    
+    // 강제로 표준 출력 플러시 (로그가 확실히 출력되도록)
+    fflush(stdout);
+    fflush(stderr);
 }
 
 QColor TeachingWidget::getNextColor()
@@ -14323,21 +14111,8 @@ void TeachingWidget::onBackButtonClicked()
     }
 #endif
 
-    // **4. OpenCV 카메라 자원 해제**
-    int cameraCount = getCameraInfosCount();
-    for (int i = cameraCount - 1; i >= 0; i--)
-    { // 역순으로 삭제
-        CameraInfo info = getCameraInfo(i);
-        if (info.capture && !info.uniqueId.startsWith("SPINNAKER_"))
-        {
-            info.capture->release();
-            delete info.capture;
-            info.capture = nullptr;
-        }
-        info.isConnected = false;
-        setCameraInfo(i, info);
-    }
-    clearCameraInfos(); // 마지막에 전체 클리어
+    // OpenCV 카메라 제거됨 (Spinnaker SDK만 사용)
+    clearCameraInfos(); // 전체 클리어
     cameraIndex = -1;
 
     // **6. 이전 화면으로 돌아가기**
@@ -14565,7 +14340,7 @@ void TeachingWidget::updateMainCameraUI(const InspectionResult &result, const cv
     if (cameraView)
     {
         cameraView->setInspectionMode(true);
-        cameraView->updateInspectionResult(result.isPassed, result);
+        cameraView->updateInspectionResult(result.isPassed, result, currentDisplayFrameIndex);
 
         // **원본 이미지를 배경으로 설정**
         QImage originalImage = InsProcessor::matToQImage(frameForInspection);
@@ -14582,6 +14357,12 @@ void TeachingWidget::updateMainCameraUI(const InspectionResult &result, const cv
 void TeachingWidget::onCamModeToggled()
 {
     camOff = !camOff;
+    
+    // CameraView에 TEACH OFF 상태 전달
+    if (cameraView)
+    {
+        cameraView->setTeachOff(camOff);
+    }
 
     if (camOff)
     {
@@ -14642,6 +14423,12 @@ void TeachingWidget::onSimulationImageSelected(const cv::Mat &image, const QStri
 
         // 시뮬레이션 모드 활성화
         camOff = true;
+        
+        // CameraView에 TEACH OFF 상태 전달
+        if (cameraView)
+        {
+            cameraView->setTeachOff(true);
+        }
 
         // 현재 시뮬레이션 이미지를 cameraFrames에 저장
         if (cameraIndex >= 0)
@@ -15240,7 +15027,7 @@ void TeachingWidget::newRecipe()
         virtualCamera.name = cameraName;
         virtualCamera.uniqueId = cameraName;
         virtualCamera.index = 0;
-        virtualCamera.videoDeviceIndex = 0;
+        // videoDeviceIndex 제거됨
         virtualCamera.isConnected = true; // 시뮬레이션 모드에서는 연결된 것으로 표시
         virtualCamera.serialNumber = "SIM_SERIAL";
 
@@ -15880,6 +15667,15 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
 
         // 프리뷰 화면들도 업데이트
         updatePreviewFrames();
+        
+        // 4분할 뷰에 프레임 설정 (영상이 있으면 무조건 표시)
+        if (cameraView && cameraView->getQuadViewMode())
+        {
+            qDebug() << "[teachingImageCallback] 4분할 화면 업데이트 - cameraFrames.size:" << cameraFrames.size();
+            cameraView->setQuadFrames(cameraFrames);
+            cameraView->viewport()->update();
+            cameraView->repaint();
+        }
     };
 
     // ★ CAM ON 상태에서는 레시피 로드 전에 기존 패턴 제거 (중복 방지)
@@ -16059,6 +15855,16 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
             }
         }
 
+        // 4분할 화면 업데이트 (영상이 있으면 무조건 표시)
+        if (cameraView && cameraView->getQuadViewMode())
+        {
+            qDebug() << "[onRecipeSelected] 4분할 화면 최종 업데이트 - cameraFrames.size:" << cameraFrames.size();
+            cameraView->setQuadFrames(cameraFrames);
+            cameraView->viewport()->update();
+            cameraView->repaint();
+            QApplication::processEvents();
+        }
+        
         // ★ CAM ON 상태였으면 스레드 재개
         if (wasThreadsPaused)
         {

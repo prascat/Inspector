@@ -17,10 +17,20 @@ import argparse
 from pathlib import Path
 import shutil
 import warnings
+import os
 
 # PatchCore는 optimizer 없이 학습하므로 경고 무시
 warnings.filterwarnings("ignore", message=".*configure_optimizers.*returned.*None.*")
 warnings.filterwarnings("ignore", category=UserWarning, module="lightning")
+
+# FAISS 사용 가능 여부 확인
+try:
+    import faiss
+    FAISS_AVAILABLE = True
+    print("✅ FAISS detected - will use for faster nearest neighbor search")
+except ImportError:
+    FAISS_AVAILABLE = False
+    print("⚠️  FAISS not available - using PyTorch (slower)")
 
 
 def setup_dataset(source_dir: Path, output_dir: Path):
@@ -273,6 +283,14 @@ def train_patchcore(data_dir: Path, output_dir: Path, config: dict):
     print(f"   Image size: {config['image_size']}")
     print(f"   Coreset ratio: {config['coreset_sampling_ratio']}")
     
+    # FAISS 사용 설정
+    if config.get('use_faiss', False):
+        print("🚀 Using FAISS for nearest neighbor search (3-10x faster)")
+        os.environ['ANOMALIB_USE_FAISS'] = '1'
+    else:
+        print("⚙️  Using PyTorch for nearest neighbor search")
+        os.environ.pop('ANOMALIB_USE_FAISS', None)
+    
     # Setup data module - let anomalib handle transforms
     datamodule = Folder(
         name="copper_anomaly",
@@ -396,9 +414,9 @@ def parse_args():
                         help='Layers to extract features from')
     parser.add_argument('--image-size', type=int, nargs=2, default=[224, 224],
                         help='Input image size')
-    parser.add_argument('--coreset-ratio', type=float, default=0.1,
+    parser.add_argument('--coreset-ratio', type=float, default=0.001,
                         help='Coreset sampling ratio (0.0-1.0)')
-    parser.add_argument('--num-neighbors', type=int, default=9,
+    parser.add_argument('--num-neighbors', type=int, default=5,
                         help='Number of nearest neighbors')
     parser.add_argument('--batch-size', type=int, default=32,
                         help='Batch size')
@@ -406,6 +424,10 @@ def parse_args():
                         help='ROI 모드: 첫 이미지에서 ROI 선택 후 템플릿 매칭으로 전체 crop')
     parser.add_argument('--roi-threshold', type=float, default=0.5,
                         help='ROI 템플릿 매칭 임계값 (0.0-1.0)')
+    parser.add_argument('--use-faiss', action='store_true', default=FAISS_AVAILABLE,
+                        help='Use FAISS for faster nearest neighbor search (default: auto-detect)')
+    parser.add_argument('--no-use-faiss', dest='use_faiss', action='store_false',
+                        help='Disable FAISS (use default sklearn)')
     return parser.parse_args()
 
 
@@ -456,6 +478,7 @@ def main():
         'num_neighbors': args.num_neighbors,
         'batch_size': args.batch_size,
         'pattern_name': args.pattern_name,  # 패턴 이름 전달
+        'use_faiss': args.use_faiss and FAISS_AVAILABLE,
     }
     
     # Train

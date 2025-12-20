@@ -5,6 +5,7 @@
 #include <QDateTime>
 #include <QVector>
 #include <QScreen>
+#include <unistd.h>  // _exit()
 #include "TeachingWidget.h"
 #include "CustomMessageBox.h"
 
@@ -114,5 +115,21 @@ int main(int argc, char *argv[]) {
     // 최대화 모드로 시작
     widget.showMaximized();
     
-    return app.exec();
+    int result = app.exec();
+    
+    qDebug() << "[main] app.exec() 종료";
+    
+    // QApplication 종료 전에 전역 포인터 정리
+    g_teachingWidget = nullptr;
+    qInstallMessageHandler(nullptr);
+    
+    qDebug() << "[main] 애플리케이션 정상 종료";
+    fflush(stdout);
+    fflush(stderr);
+    
+    // 빠른 종료 - 모든 정적/전역 객체 소멸자를 건너뛰고 프로세스 종료
+    // Spinnaker SDK, OpenVINO 등의 mutex 문제 회피
+    _exit(result);
+    
+    // return result;  // 도달하지 않음
 }

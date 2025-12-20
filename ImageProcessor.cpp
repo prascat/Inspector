@@ -2923,11 +2923,17 @@ bool ImageProcessor::initYoloSegModel(const QString& modelPath, const QString& d
 
 void ImageProcessor::releaseYoloSegModel()
 {
-    s_yoloSegInferRequest.reset();
-    s_yoloSegModel.reset();
-    s_ovinoCore.reset();
-    s_yoloSegModelLoaded = false;
-    qDebug() << "[SEG] 모델 해제됨";
+    try {
+        s_yoloSegInferRequest.reset();
+        s_yoloSegModel.reset();
+        s_yoloSegModelLoaded = false;
+        qDebug() << "[SEG] 모델 해제됨";
+        
+        // OpenVINO Core는 마지막에 해제 (또는 프로세스 종료에 맡김)
+        // s_ovinoCore.reset();  // 이 줄 주석 처리하여 전역 소멸 시 mutex 문제 방지
+    } catch (...) {
+        qDebug() << "[SEG] 모델 해제 중 예외 무시";
+    }
 }
 
 bool ImageProcessor::isYoloSegModelLoaded()
@@ -3443,8 +3449,21 @@ bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString&
 
 void ImageProcessor::releasePatchCoreModel()
 {
-    s_patchCoreModels.clear();
-    qDebug() << "[ANOMALY] 모든 이상탐지 모델 해제됨";
+    try {
+        // QMap의 각 모델 명시적 해제
+        for (auto iter = s_patchCoreModels.begin(); iter != s_patchCoreModels.end(); ++iter) {
+            if (iter->inferRequest) {
+                iter->inferRequest.reset();
+            }
+            if (iter->model) {
+                iter->model.reset();
+            }
+        }
+        s_patchCoreModels.clear();
+        qDebug() << "[ANOMALY] 모든 이상탐지 모델 해제됨";
+    } catch (...) {
+        qDebug() << "[ANOMALY] 모델 해제 중 예외 무시";
+    }
 }
 
 bool ImageProcessor::isPatchCoreModelLoaded()

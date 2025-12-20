@@ -1772,7 +1772,7 @@ void CameraSettingsDialog::onStopTriggerTest() {
         "QPushButton:pressed { background-color: #1565C0; }"
     );
     
-    triggerStatusLabel->setText(QString("완료 (감지: %1회)").arg(triggerDetectionCount));
+    triggerStatusLabel->setText(QString("완료 (감지: %1회)").arg(triggerDetectionCount.load()));
     triggerStatusLabel->setStyleSheet("QLabel { font-weight: bold; color: #4CAF50; }");
     
     triggerIndicatorLabel->setText("Done!");
@@ -1849,26 +1849,32 @@ void CameraSettingsDialog::updateTriggerTestStatus() {
         
         if (pImage && !pImage->IsIncomplete()) {
             // ✓ 유효한 이미지 획득 = 트리거 감지!
-            {
-                std::lock_guard<std::mutex> lock(triggerCountMutex);
-                triggerDetectionCount++;
-            }
+            int currentCount = ++triggerDetectionCount;
             
-            // UI 피드백
-            triggerCountLabel->setText(QString::number(triggerDetectionCount));
-            triggerCountLabel->setStyleSheet("QLabel { font-weight: bold; color: #2196F3; font-size: 14px; }");
-            
-            triggerStatusLabel->setText("Trigger On!");
-            triggerStatusLabel->setStyleSheet("QLabel { font-weight: bold; color: #4CAF50; font-size: 13px; }");
-            
-            // 상태 표시기: 초록색 점멸
-            triggerIndicatorLabel->setText("On!");
-            triggerIndicatorLabel->setStyleSheet("QLabel { background-color: #4CAF50; border: 2px solid #2E7D32; border-radius: 5px; color: white; font-weight: bold; font-size: 11px; }");
+            // UI 피드백 (메인 스레드에서 실행)
+            QMetaObject::invokeMethod(this, [this, currentCount]() {
+                if (!isTriggerTesting) return;
+                
+                if (triggerCountLabel) {
+                    triggerCountLabel->setText(QString::number(currentCount));
+                    triggerCountLabel->setStyleSheet("QLabel { font-weight: bold; color: #2196F3; font-size: 14px; }");
+                }
+                
+                if (triggerStatusLabel) {
+                    triggerStatusLabel->setText("Trigger On!");
+                    triggerStatusLabel->setStyleSheet("QLabel { font-weight: bold; color: #4CAF50; font-size: 13px; }");
+                }
+                
+                if (triggerIndicatorLabel) {
+                    triggerIndicatorLabel->setText("On!");
+                    triggerIndicatorLabel->setStyleSheet("QLabel { background-color: #4CAF50; border: 2px solid #2E7D32; border-radius: 5px; color: white; font-weight: bold; font-size: 11px; }");
+                }
+            }, Qt::QueuedConnection);
             
             uint64_t timestamp = pImage->GetTimeStamp();
             size_t width = pImage->GetWidth();
             size_t height = pImage->GetHeight();
-            qDebug() << "[TriggerTest] ✓ #" << triggerDetectionCount << width << "x" << height;
+            qDebug() << "[TriggerTest] ✓ #" << currentCount << width << "x" << height;
             
             // ===== 이미지 표시 =====
             try {
@@ -1894,7 +1900,12 @@ void CameraSettingsDialog::updateTriggerTestStatus() {
                                   static_cast<int>(rgbImage.step), QImage::Format_RGB888);
                     QPixmap pixmap = QPixmap::fromImage(qImage);
                     
-                    triggerImageLabel->setPixmap(pixmap);
+                    // UI 업데이트 (메인 스레드에서 실행)
+                    QMetaObject::invokeMethod(this, [this, pixmap]() {
+                        if (isTriggerTesting && triggerImageLabel) {
+                            triggerImageLabel->setPixmap(pixmap);
+                        }
+                    }, Qt::QueuedConnection);
                     
                     convertedImage->Release();
                 }

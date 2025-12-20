@@ -20,7 +20,6 @@
 #include <QCheckBox>
 #include <chrono>
 #include <thread>
-#include <mutex>
 #include <atomic>
 #include "CommonDefs.h"
 #include "ConfigManager.h"
@@ -103,16 +102,14 @@ protected:
     QLabel* triggerActivationLabel;     // 트리거 활성화 정보
     QLabel* triggerCountLabel;          // 트리거 감지 횟수
     QLabel* triggerImageLabel;          // 트리거/라이브 영상 표시 라벨
-    bool isTriggerTesting;              // 트리거 테스트 실행 여부
+    std::atomic<bool> isTriggerTesting;              // 트리거 테스트 실행 여부
     std::atomic<bool> liveImageThreadRunning;  // 라이브 영상 스레드 실행 여부
     std::atomic<bool> triggerTestThreadRunning;  // 트리거 테스트 스레드 실행 여부
     std::thread* liveImageThread;       // 라이브 영상 업데이트 스레드
     std::thread* triggerTestThread;     // 트리거 테스트 스레드
-    int triggerDetectionCount;          // 트리거 감지 횟수
-    std::mutex triggerCountMutex;       // 트리거 카운트 보호용 뮤텍스
+    std::atomic<int> triggerDetectionCount;     // 트리거 감지 횟수
     int lastExposureCount;              // 마지막 노출 카운트
     Spinnaker::ImagePtr lastCapturedImage;  // 마지막 캡처 이미지
-    std::mutex imageMutex;              // 이미지 보호용 뮤텍스
     
     // 카메라 인덱스
     int currentCameraIndex;
