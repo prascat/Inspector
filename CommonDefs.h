@@ -43,6 +43,9 @@
 #define LABEL_FONT_SIZE 12
 #define LABEL_FONT_WEIGHT QFont::Bold
 
+// 프레임별 스테이지 레이블 (4분할 화면용)
+const QStringList FRAME_LABELS = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
+
 struct InspectionResult {
     bool isPassed = false;
     int inspectionTimeMs = 0;              // 검사 소요 시간 (밀리초)

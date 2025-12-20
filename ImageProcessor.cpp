@@ -3438,6 +3438,18 @@ bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString&
         // Map에 저장
         s_patchCoreModels[modelPath] = modelInfo;
         
+        // 워밍업: 더미 추론 실행 (첫 추론 오버헤드 제거)
+        try {
+            cv::Mat dummyImage = cv::Mat::zeros(modelInfo.inputHeight, modelInfo.inputWidth, CV_8UC3);
+            auto inputTensor = modelInfo.inferRequest->get_input_tensor();
+            float* inputData = inputTensor.data<float>();
+            std::memset(inputData, 0, modelInfo.inputHeight * modelInfo.inputWidth * 3 * sizeof(float));
+            modelInfo.inferRequest->infer();  // 첫 추론 워밍업
+            qDebug() << "[ANOMALY] 워밍업 추론 완료:" << modelPath;
+        } catch (const std::exception& e) {
+            qWarning() << "[ANOMALY] 워밍업 실패 (무시):" << e.what();
+        }
+        
         return true;
         
     } catch (const std::exception& e) {

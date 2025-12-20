@@ -439,7 +439,7 @@ void CameraView::mousePressEvent(QMouseEvent *event)
         }
         else if (m_editMode == EditMode::Draw)
         {
-            qDebug() << "[Draw모드] 패턴 그리기 시작 - currentFrameIndex:" << currentFrameIndex;
+            // Draw 모드 패턴 그리기 시작 (로그 제거)
             isDrawing = true;
             startPoint = originalPos;
             currentRect = QRect();
@@ -1810,10 +1810,7 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
     // frameIndex가 -1이면 currentFrameIndex 사용 (하위 호환성)
     int targetFrameIndex = (frameIndex >= 0) ? frameIndex : currentFrameIndex;
     
-    qDebug() << "[updateInspectionResult] 호출됨 - isQuadViewMode:" << isQuadViewMode 
-             << "frameIndex:" << frameIndex
-             << "targetFrameIndex:" << targetFrameIndex
-             << "PASS:" << passed;
+    // updateInspectionResult 호출 (로그 제거)
     
     isInspectionMode = true;
     hasInspectionResult = true;
@@ -1919,10 +1916,10 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
     }
 
     // 프레임별 검사 결과 저장 (frameIndex가 유효하면 저장)
-    qDebug() << "[updateInspectionResult] 저장 조건 체크 - targetFrameIndex:" << targetFrameIndex;
+    // 저장 조건 체크 (로그 제거)
     if (targetFrameIndex >= 0 && targetFrameIndex < 4)
     {
-        qDebug() << "[updateInspectionResult] 조건 통과! frameResults에 저장 시작";
+        // frameResults에 저장 시작 (로그 제거)
         frameResults[targetFrameIndex] = result;
         
         // 해당 프레임의 패턴만 필터링하여 저장
@@ -1949,11 +1946,7 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
             }
         }
         
-        qDebug() << "[CameraView] 프레임" << targetFrameIndex << "검사 결과 frameResults에 저장 완료!"
-                 << "PASS:" << result.isPassed
-                 << "전체 patterns:" << patterns.size()
-                 << "필터링된 patterns:" << frameSpecificPatterns.size()
-                 << "hasFrameResult:" << hasFrameResult[0] << hasFrameResult[1] << hasFrameResult[2] << hasFrameResult[3];
+        // frameResults 저장 완료 (로그 제거)
     }
     else
     {
@@ -3957,7 +3950,7 @@ void CameraView::paintEvent(QPaintEvent *event)
         // 디버그 로그
         static int paintCount = 0;
         if (paintCount++ % 100 == 0) {
-            qDebug() << "[CameraView::paintEvent] 4분할 모드 - frames:" << framesCopy.size();
+            // 4분할 모드 렌더링 (로그 제거)
         }
         
         // 각 프레임 렌더링
@@ -4044,27 +4037,60 @@ void CameraView::paintEvent(QPaintEvent *event)
                 painter.restore();
             }
             
-            // PASS/NG 텍스트 오버레이
+            // PASS/NG 텍스트 오버레이 (상단 중앙)
+            // 프레임별 레이블 (CommonDefs.h의 FRAME_LABELS 사용)
+            QString stageLabel = (i >= 0 && i < FRAME_LABELS.size()) ? FRAME_LABELS[i] : "";
+            QString resultText;
+            QColor textColor;
+            
             if (hasFrameResult[i])
             {
+                // 검사 결과가 있는 경우
                 const InspectionResult &result = frameResults[i];
-                QColor textColor = result.isPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+                textColor = result.isPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
                 
-                // 결과 텍스트 (왼쪽 상단)
-                QString resultText = result.isPassed ? "PASS" : "NG";
-                painter.setPen(textColor);
-                painter.setFont(QFont("Arial", 16, QFont::Bold));
-                painter.drawText(rect.adjusted(10, 10, -10, -10), Qt::AlignTop | Qt::AlignLeft, resultText);
+                // 결과 텍스트 생성 (STAGE 레이블 포함)
+                QString passNgText = result.isPassed ? "PASS" : "NG";
                 
-                // 검사 시간 표시 (하단)
+                // 검사 시간 포함
                 if (result.inspectionTimeMs > 0)
                 {
-                    painter.setPen(Qt::yellow);
-                    painter.setFont(QFont("Arial", 14, QFont::Bold));
-                    QString timeText = QString("%1ms").arg(result.inspectionTimeMs);
-                    painter.drawText(rect.adjusted(10, 10, -10, -30), Qt::AlignBottom | Qt::AlignLeft, timeText);
+                    resultText = QString("%1 (%2 - %3ms)").arg(stageLabel).arg(passNgText).arg(result.inspectionTimeMs);
+                }
+                else
+                {
+                    resultText = QString("%1 (%2)").arg(stageLabel).arg(passNgText);
                 }
             }
+            else
+            {
+                // 검사 결과가 없는 경우 - 흰색으로 STAGE 레이블만 표시
+                resultText = stageLabel;
+                textColor = Qt::white;
+            }
+            
+            // 폰트 설정 및 텍스트 크기 측정
+            QFont font("Arial", 18, QFont::Bold);
+            painter.setFont(font);
+            QFontMetrics fm(font);
+            int textWidth = fm.horizontalAdvance(resultText);
+            int textHeight = fm.height();
+            
+            // 배경 사각형 (상단 중앙)
+            int padding = 10;
+            QRect bgRect(
+                rect.center().x() - (textWidth + padding * 2) / 2,
+                rect.top() + 10,
+                textWidth + padding * 2,
+                textHeight + padding
+            );
+            
+            // 반투명 배경
+            painter.fillRect(bgRect, QBrush(QColor(0, 0, 0, 180)));
+            
+            // 텍스트 그리기
+            painter.setPen(textColor);
+            painter.drawText(bgRect, Qt::AlignCenter, resultText);
             
             // TEACH ON 상태일 때만 프레임 레이블 표시
             if (!isTeachOff)
@@ -4718,7 +4744,7 @@ QUuid CameraView::addPattern(const PatternInfo &pattern)
         newPattern.id = QUuid::createUuid();
     }
     
-    qDebug() << "[addPattern] frameIndex:" << newPattern.frameIndex << "name:" << newPattern.name << "currentFrameIndex:" << currentFrameIndex;
+    // 패턴 추가 (로그 제거)
 
     patterns.append(newPattern);
 
@@ -6049,7 +6075,7 @@ void CameraView::saveCurrentResultForMode(int frameIndex, const QPixmap &frame)
         }
         framePatterns[frameIndex] = frameSpecificPatterns;
         hasFrameResult[frameIndex] = true;
-        qDebug() << "[CameraView] 프레임" << frameIndex << "검사 결과 저장 완료 (필터링:" << frameSpecificPatterns.size() << "개)";
+        // 검사 결과 저장 완료 (로그 제거)
     }
 }
 

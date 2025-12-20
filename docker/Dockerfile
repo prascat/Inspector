@@ -37,10 +37,10 @@ RUN pip install --no-cache-dir \
 # Install OpenVINO dev tools
 RUN pip install --no-cache-dir openvino-dev
 
-# Copy the training scripts from docker/ directory to /workspace
-COPY docker/train_patchcore_anomalib.py /workspace/train_patchcore_anomalib.py
-COPY docker/run_train.sh /workspace/run_train.sh
-COPY docker/convert_patchcore_to_ir.py /workspace/convert_patchcore_to_ir.py
+# Copy the training scripts to /workspace
+COPY train_patchcore_anomalib.py /workspace/train_patchcore_anomalib.py
+COPY run_train.sh /workspace/run_train.sh
+COPY convert_patchcore_to_ir.py /workspace/convert_patchcore_to_ir.py
 RUN chmod +x /workspace/run_train.sh
 
 # Default entrypoint uses train_patchcore_anomalib.py directly

@@ -31,6 +31,7 @@
 #include <QLabel>
 #include <QLocale>
 #include <QTcpSocket>
+#include <QRegularExpression>
 #include <QtConcurrent/QtConcurrent>
 #include <chrono>
 #include <thread>
@@ -1450,8 +1451,6 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
                     cv::Mat inspectionFrame;
                     int inspectionCameraIndex;
                     
-                    qDebug() << "[RUN] 검사 실행 시작 - camOff:" << camOff << "currentDisplayFrameIndex:" << currentDisplayFrameIndex;
-                    
                     if (camOff) {                
                         // 시뮬레이션 모드: 현재 표시된 프레임 사용
                         if (currentDisplayFrameIndex < 0 || currentDisplayFrameIndex >= static_cast<int>(cameraFrames.size()) || 
@@ -1459,32 +1458,23 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
                             btn->blockSignals(true);
                             btn->setChecked(false);
                             btn->blockSignals(false);
-                            qDebug() << "[RUN] CAM OFF: currentDisplayFrameIndex=" << currentDisplayFrameIndex << "프레임 없음";
                             return;
                         }
                         inspectionFrame = cameraFrames[currentDisplayFrameIndex].clone();
                         // 카메라 인덱스는 프레임 인덱스를 2로 나눈 값 (0,1->0, 2,3->1)
                         inspectionCameraIndex = currentDisplayFrameIndex / 2;
-                        qDebug() << "[RUN] CAM OFF 모드 - 프레임 획득 완료";
                     } else {
                         // **실제 카메라 모드: 현재 표시된 프레임 사용**
                         // 1. 먼저 cameraFrames에 저장된 프레임이 있는지 확인 (트리거 신호로 저장된 프레임)
-                        qDebug() << "[RUN] cameraFrames.size():" << cameraFrames.size() << "currentDisplayFrameIndex:" << currentDisplayFrameIndex;
-                        if (currentDisplayFrameIndex >= 0 && currentDisplayFrameIndex < static_cast<int>(cameraFrames.size())) {
-                            qDebug() << "[RUN] cameraFrames[" << currentDisplayFrameIndex << "].empty():" << cameraFrames[currentDisplayFrameIndex].empty();
-                        }
-                        
                         if (currentDisplayFrameIndex >= 0 && currentDisplayFrameIndex < static_cast<int>(cameraFrames.size()) && 
                             !cameraFrames[currentDisplayFrameIndex].empty()) {
                             inspectionFrame = cameraFrames[currentDisplayFrameIndex].clone();
                             // 카메라 인덱스는 프레임 인덱스를 2로 나눈 값 (0,1->0, 2,3->1)
                             inspectionCameraIndex = currentDisplayFrameIndex / 2;
-                            qDebug() << "[RUN] 저장된 프레임 사용 - inspectionCameraIndex:" << inspectionCameraIndex;
                             
                         } 
                         // 2. 저장된 프레임이 없으면 Spinnaker에서 직접 획득 시도
                         else if (m_useSpinnaker && cameraIndex >= 0 && cameraIndex < static_cast<int>(m_spinCameras.size())) {
-                            qDebug() << "[RUN] Spinnaker에서 직접 프레임 획득 시도";
                             inspectionFrame = grabFrameFromSpinnakerCamera(m_spinCameras[cameraIndex]);
                             
                             if (inspectionFrame.empty()) {
@@ -1501,20 +1491,31 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
                             }
                             
                             inspectionCameraIndex = cameraIndex;
-                            qDebug() << "[RUN] Spinnaker 프레임 획득 완료";
                             
                         } else {
                             btn->blockSignals(true);
                             btn->setChecked(false);
                             btn->blockSignals(false);
-                            qDebug() << "[RUN] 프레임을 획득할 수 없음 - 검사 중단";
                             return;
                         }
                     }
                     
-                    qDebug() << "[RUN] runInspect 호출 - inspectionCameraIndex:" << inspectionCameraIndex;
-                    bool passed = runInspect(inspectionFrame, inspectionCameraIndex);
-                    qDebug() << "[RUN] runInspect 완료 - passed:" << passed;
+                    // 비동기 검사 실행
+                    cv::Mat frameCopy = inspectionFrame.clone();
+                    int frameIdx = currentDisplayFrameIndex;
+                    int camIdx = inspectionCameraIndex;
+                    
+                    QFuture<void> future = QtConcurrent::run([this, frameCopy, camIdx, frameIdx]() {
+                        // 검사 실행 (UI 업데이트 없이)
+                        runInspect(frameCopy, camIdx, false);
+                        
+                        // 결과를 메인 스레드로 전달하여 UI 업데이트
+                        QMetaObject::invokeMethod(this, [this, frameIdx]() {
+                            if (cameraView) {
+                                cameraView->update();
+                            }
+                        }, Qt::QueuedConnection);
+                    });
                     
                     // **8. 버튼 상태 업데이트**
                     btn->setText(TR("STOP"));
@@ -1781,7 +1782,7 @@ void TeachingWidget::setupLogOverlay()
         "  background-color: transparent;"
         "  color: white;"
         "  border: none;"
-        "  font-family: 'Courier New', monospace;"
+        "  font-family: 'Courier New';"
         "  font-size: 12px;"
         "}"
         "QMenu {"
@@ -2263,7 +2264,7 @@ void TeachingWidget::connectEvents()
             {
                 // 레시피 로드 중에는 템플릿 업데이트 스킵
                 if (isLoadingRecipe) {
-                    qDebug() << "[FID템플릿업데이트] 레시피 로드 중이므로 스킵 - patternId:" << patternId;
+                    // 레시피 로드 중 스킵 (로그 제거)
                     return;
                 }
                 // 현재 표시된 프레임으로 템플릿 이미지 갱신
@@ -2292,7 +2293,7 @@ void TeachingWidget::connectEvents()
             {
                 // 레시피 로드 중에는 템플릿 업데이트 스킵
                 if (isLoadingRecipe) {
-                    qDebug() << "[INS템플릿업데이트] 레시피 로드 중이므로 스킵 - patternId:" << patternId;
+                    // 레시피 로드 중 스킵 (로그 제거)
                     return;
                 }
                 PatternInfo *pattern = cameraView->getPatternById(patternId);
@@ -3618,7 +3619,7 @@ void TeachingWidget::createPropertyPanels()
     patternIdLabel->setStyleSheet("color: white;");
     patternIdValue = new QLabel(basicInfoGroup);
     patternIdValue->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    patternIdValue->setStyleSheet("color: #ccc; font-family: monospace; background-color: transparent;");
+    patternIdValue->setStyleSheet("color: #ccc; font-family: 'Courier New'; background-color: transparent;");
     basicInfoLayout->addRow(patternIdLabel, patternIdValue);
 
     // 패턴 이름
@@ -9075,7 +9076,44 @@ void TeachingWidget::receiveLogMessage(const QString &message)
     cursor.movePosition(QTextCursor::End);
     logTextEdit->setTextCursor(cursor);
 
-    // 텍스트 색상 결정
+    // HTML 태그 파싱 및 처리
+    QString processedMessage = message;
+    QList<QPair<QString, QColor>> segments; // (텍스트, 색상) 쌍
+    
+    // HTML 태그 파싱
+    if (message.contains("<font color=")) {
+        QRegularExpression fontRegex("<font color='([^']+)'>([^<]*)</font>");
+        QRegularExpressionMatchIterator it = fontRegex.globalMatch(message);
+        
+        int lastPos = 0;
+        while (it.hasNext()) {
+            QRegularExpressionMatch match = it.next();
+            
+            // 태그 이전 텍스트 (기본 색상)
+            if (match.capturedStart() > lastPos) {
+                QString beforeText = message.mid(lastPos, match.capturedStart() - lastPos);
+                segments.append(qMakePair(beforeText, QColor("#FFFFFF")));
+            }
+            
+            // 태그 내부 텍스트 (지정 색상)
+            QString colorStr = match.captured(1);
+            QString text = match.captured(2);
+            segments.append(qMakePair(text, QColor(colorStr)));
+            
+            lastPos = match.capturedEnd();
+        }
+        
+        // 마지막 태그 이후 텍스트
+        if (lastPos < message.length()) {
+            QString afterText = message.mid(lastPos);
+            segments.append(qMakePair(afterText, QColor("#FFFFFF")));
+        }
+    } else {
+        // HTML 태그가 없으면 기존 로직 사용
+        segments.append(qMakePair(message, QColor("#FFFFFF")));
+    }
+
+    // 텍스트 색상 결정 (HTML 태그가 없는 경우에만 적용)
     QTextCharFormat format;
 
     // [STRIP] 또는 [CRIMP] 검사 결과 로그 - PASS/NG/FAIL 색상
@@ -9168,33 +9206,30 @@ void TeachingWidget::receiveLogMessage(const QString &message)
         format.setForeground(QColor("#FFFFFF")); // 기본 흰색
     }
 
-    // 타임스탬프 분리 처리
-    if (message.contains("\" - \""))
-    {
-        QStringList parts = message.split("\" - \"");
-        if (parts.size() >= 2)
-        {
+    // HTML 태그가 있으면 segments로 출력, 없으면 기존 방식
+    if (message.contains("<font color=")) {
+        // HTML 태그가 있는 경우: segments 순회하며 색상 적용
+        for (const auto& segment : segments) {
+            QTextCharFormat segFormat;
+            segFormat.setForeground(segment.second);
+            cursor.insertText(segment.first, segFormat);
+        }
+    } else {
+        // HTML 태그가 없는 경우: 기존 로직 (타임스탬프 분리)
+        if (message.contains(" - ")) {
+            int separatorIndex = message.indexOf(" - ");
+            
             // 타임스탬프 부분 (회색)
             QTextCharFormat timestampFormat;
             timestampFormat.setForeground(QColor("#9E9E9E"));
-            cursor.insertText(parts[0] + "\" - \"", timestampFormat);
+            cursor.insertText(message.left(separatorIndex + 3), timestampFormat);
 
             // 메시지 부분 (위에서 결정된 색상)
-            QString msg = parts[1];
-            if (msg.endsWith("\""))
-            {
-                msg.chop(1);
-            }
+            QString msg = message.mid(separatorIndex + 3);
             cursor.insertText(msg, format);
-        }
-        else
-        {
+        } else {
             cursor.insertText(message, format);
         }
-    }
-    else
-    {
-        cursor.insertText(message, format);
     }
 
     cursor.insertText("\n");
@@ -10762,8 +10797,7 @@ bool TeachingWidget::eventFilter(QObject *watched, QEvent *event)
                         // 패턴 트리 업데이트 (현재 프레임의 패턴만 표시)
                         updatePatternTree();
                         
-                        const QStringList labels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
-                        qDebug() << "[미리보기 클릭]" << labels[i] << "→ 메인 화면에 표시 (frameIndex=" << i << ")";
+                        // 미리보기 클릭 (로그 제거)
                     }
                     return true;
                 }
@@ -12231,7 +12265,17 @@ bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex, b
         }
 
         // 검사 결과를 CameraView에 전달
-        cameraView->updateInspectionResult(result.isPassed, result, currentDisplayFrameIndex);
+        // 메인 스레드에서 호출해야 함 (QTimer 관련 문제 방지)
+        if (updateMainView) {
+            cameraView->updateInspectionResult(result.isPassed, result, currentDisplayFrameIndex);
+        } else {
+            // 비동기 호출 시에는 메인 스레드로 전달 (lambda capture 사용)
+            QMetaObject::invokeMethod(this, [this, result, frameIdx = currentDisplayFrameIndex]() {
+                if (cameraView) {
+                    cameraView->updateInspectionResult(result.isPassed, result, frameIdx);
+                }
+            }, Qt::QueuedConnection);
+        }
 
         // 배경은 원본 이미지만 설정 (검사 결과 오버레이 없이)
         QImage originalImage = InsProcessor::matToQImage(frame);
@@ -15714,7 +15758,7 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
             if (!cameraInfos.isEmpty() && cameraView)
             {
                 QString firstCameraUuid = cameraInfos[0].uniqueId;
-                qDebug() << "[onRecipeSelected] 첫 번째 프레임 표시 - frameIndex=0, cameraUuid=" << firstCameraUuid;
+                // 첫 번째 프레임 표시 (로그 제거)
                 
                 cv::Mat displayImage;
                 cv::cvtColor(cameraFrames[0], displayImage, cv::COLOR_BGR2RGB);

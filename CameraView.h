@@ -185,7 +185,7 @@ public:
     void setCurrentFrameIndex(int frameIdx)
     {
         currentFrameIndex = frameIdx;
-        qDebug() << "[CameraView] currentFrameIndex 업데이트:" << currentFrameIndex;
+        // currentFrameIndex 업데이트 (로그 제거)
     }
     int getCurrentFrameIndex() const
     {

@@ -1149,8 +1149,7 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                 int height = xml.attributes().value("height").toInt();
                 QString base64Data = xml.readElementText();
                 
-                qDebug() << QString("[RecipeManager] TeachingImage 발견 - imageIndex=%1, name=%2, width=%3, height=%4, base64 길이=%5")
-                            .arg(imageIndex).arg(imageName).arg(width).arg(height).arg(base64Data.length());
+                // TeachingImage 발견 (로그 제거)
                 
                 if (!base64Data.isEmpty() && teachingWidget) {
                     // base64 디코딩
@@ -1172,8 +1171,7 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                                 teachingWidget->cameraFrames.resize(imageIndex + 1);
                             }
                             teachingWidget->cameraFrames[imageIndex] = teachingImage.clone();
-                            qDebug() << QString("[RecipeManager] ✓ cameraFrames[%1]에 이미지 저장 완료 - %2x%3")
-                                        .arg(imageIndex).arg(teachingImage.cols).arg(teachingImage.rows);
+                            // cameraFrames 저장 완료 (로그 제거)
                         } else {
                             qDebug() << QString("[RecipeManager] ✗ imageIndex=%1은 범위를 벗어남 (0-3만 허용)").arg(imageIndex);
                         }

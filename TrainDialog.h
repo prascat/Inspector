@@ -19,6 +19,9 @@
 #include <QProgressBar>
 #include <QProcess>
 #include <QElapsedTimer>
+#include <QComboBox>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
 #include <opencv2/opencv.hpp>
 #include "CommonDefs.h"
 
@@ -52,6 +55,7 @@ private slots:
     void onImageItemClicked(QListWidgetItem* item);
     void onDockerOutputReady();
     void onDockerFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void onRebuildDockerClicked();
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -59,6 +63,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void showEvent(QShowEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     void setupUI();
@@ -81,6 +86,12 @@ private:
     QLabel *imageCountLabel;
     QLabel *teachingImageLabel;
     
+    // PatchCore 옵션 UI
+    QComboBox *backboneComboBox;
+    QDoubleSpinBox *coresetRatioSpinBox;
+    QSpinBox *numNeighborsSpinBox;
+    QPushButton *rebuildDockerButton;
+    
     // 이미지 미리보기 리스트
     QListWidget *imageListWidget;
     QLabel *previewImageLabel;
@@ -93,8 +104,11 @@ private:
     QVector<PatternInfo*> anomalyPatterns;
     QVector<PatternInfo*> allPatterns;  // 모든 패턴 (FID 찾기용)
     
-    // 캡처된 이미지 저장
-    QVector<cv::Mat> capturedImages;
+    // 패턴별 캡처된 이미지 저장 (패턴 이름 -> 이미지 리스트)
+    QMap<QString, QVector<cv::Mat>> patternImages;
+    
+    // 현재 선택된 패턴 이름
+    QString currentSelectedPattern;
     
     // 체크박스와 패턴 매핑
     QMap<QString, QCheckBox*> patternCheckBoxes;

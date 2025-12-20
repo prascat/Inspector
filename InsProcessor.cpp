@@ -45,9 +45,18 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     // 검사 시작 시간 측정
     auto startTime = std::chrono::high_resolution_clock::now();
     
-    // 검사 시작 로그 (카메라 이름 포함)
-    QString cameraInfo = cameraName.isEmpty() ? "" : QString(" - %1").arg(cameraName);
-    logDebug(QString("Trigger ON 검사시작 (%1개 패턴)%2").arg(insCount).arg(cameraInfo));
+    // 패턴 프레임 인덱스 추출 (로그용)
+    int frameIndex = -1;
+    if (!patterns.isEmpty()) {
+        frameIndex = patterns.first().frameIndex;
+    }
+    
+    // 프레임별 레이블 (CommonDefs.h의 FRAME_LABELS 사용)
+    QString stageLabel = (frameIndex >= 0 && frameIndex < FRAME_LABELS.size()) ? FRAME_LABELS[frameIndex] : QString("Frame %1").arg(frameIndex);
+    
+    // 검사 시작 로그 (옵션 2 형식)
+    QString cameraInfo = cameraName.isEmpty() ? "" : QString(" (Cam %1)").arg(cameraName);
+    logDebug(QString("[검사 시작] %1%2").arg(stageLabel).arg(cameraInfo));
 
     result.isPassed = true;
     
@@ -217,7 +226,9 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             bool fidMatched = matchFiducial(image, pattern, matchScore, matchLoc, matchAngle, patterns);
             auto fidEnd = std::chrono::high_resolution_clock::now();
             auto fidDuration = std::chrono::duration_cast<std::chrono::milliseconds>(fidEnd - fidStart).count();
-            qDebug() << QString("[FID] 패턴 '%1' 매칭 시간: %2ms").arg(pattern.name).arg(fidDuration);
+            
+            // FID 패턴 로그 (옵션 2 형식)
+            logDebug(QString("  └─ FID: %1 (%2ms)").arg(pattern.name).arg(fidDuration));
 
             // 매칭 성공 시 검출된 각도를 FID 그룹 전체에 적용
             if (fidMatched)
@@ -851,6 +862,15 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 insResultText = "NG";
             }
 
+            // HTML 색상 태그 (Qt 로그용)
+            QString colorGreen = "<font color='#8BCB8B'>";    // 연한 초록색 (INS 패턴)
+            QString colorPass = "<font color='#00FF00'>";     // 초록색 (PASS)
+            QString colorNG = "<font color='#FF0000'>";       // 빨간색 (NG, FAIL)
+            QString colorEnd = "</font>";                      // 색상 종료
+            
+            // 결과 색상 선택
+            QString resultColor = inspPassed ? colorPass : colorNG;
+
             // 검사 방법별 결과 포맷팅
             QString resultDetail;
             if (pattern.inspectionMethod == InspectionMethod::ANOMALY)
@@ -865,15 +885,17 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                         if (bbox.width > maxW) maxW = bbox.width;
                         if (bbox.height > maxH) maxH = bbox.height;
                     }
-                    resultDetail = QString("  %1: W:%2 H:%3 Detects:%4")
-                                       .arg(pattern.name)
+                    resultDetail = QString("  └─ %1%2(%3)%4: W:%5 H:%6 Detects:%7")
+                                       .arg(colorGreen).arg(pattern.name)
+                                       .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
                                        .arg(maxW)
                                        .arg(maxH)
                                        .arg(defectCount);
                 } else {
-                    resultDetail = QString("  %1: %2")
-                                       .arg(pattern.name)
-                                       .arg(insResultText);
+                    resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7")
+                                       .arg(colorGreen).arg(pattern.name)
+                                       .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
+                                       .arg(resultColor).arg(insResultText).arg(colorEnd);
                 }
             }
             else if (pattern.inspectionMethod == InspectionMethod::STRIP)
@@ -883,27 +905,26 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 
                 // gradient points 부족으로 검사 실패한 경우 (score = 0.0)
                 if (inspScore == 0.0 && !result.stripPointsValid.value(pattern.id, false)) {
-                    resultDetail = QString("  %1: %2 STRIP 검사불가 (gradient points 부족)")
-                                       .arg(pattern.name)
-                                       .arg(insResultText);
+                    resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (gradient points 부족)")
+                                       .arg(colorGreen).arg(pattern.name)
+                                       .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
+                                       .arg(resultColor).arg(insResultText).arg(colorEnd);
                 } else {
                     if (result.frontResult != "PASS") stripDetails << QString("FRONT:%1").arg(result.frontDetail);
                     if (result.rearResult != "PASS") stripDetails << QString("REAR:%1").arg(result.rearDetail);
                     if (result.edgeResult != "PASS") stripDetails << QString("EDGE:%1").arg(result.edgeDetail);
                     
                     if (stripDetails.isEmpty()) {
-                        resultDetail = QString("  %1: %2 STRIP[%3/%4]")
-                                           .arg(pattern.name)
-                                           .arg(insResultText)
-                                           .arg(QString::number(inspScore * 100.0, 'f', 1))
-                                           .arg(QString::number(pattern.passThreshold, 'f', 1));
+                        resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7")
+                                           .arg(colorGreen).arg(pattern.name)
+                                           .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
+                                           .arg(resultColor).arg(insResultText).arg(colorEnd);
                     } else {
-                        resultDetail = QString("  %1: %2 STRIP[%3/%4] %5")
-                                           .arg(pattern.name)
-                                           .arg(insResultText)
-                                           .arg(QString::number(inspScore * 100.0, 'f', 1))
-                                           .arg(QString::number(pattern.passThreshold, 'f', 1))
-                                           .arg(stripDetails.join(" "));
+                        resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (%8)")
+                                           .arg(colorGreen).arg(pattern.name)
+                                           .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
+                                           .arg(resultColor).arg(insResultText).arg(colorEnd)
+                                           .arg(stripDetails.join(", "));
                     }
                 }
             }
@@ -912,30 +933,31 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 // CRIMP: YOLO 검출 정보
                 bool crimpLeft = result.barrelLeftResults.value(pattern.id, false);
                 bool crimpRight = result.barrelRightResults.value(pattern.id, false);
-                int leftW = result.barrelLeftContourWidth.value(pattern.id, 0);
-                int leftH = result.barrelLeftContourHeight.value(pattern.id, 0);
-                int rightW = result.barrelRightContourWidth.value(pattern.id, 0);
-                int rightH = result.barrelRightContourHeight.value(pattern.id, 0);
-                resultDetail = QString("  %1: %2 CRIMP[%3/%4] L:%5(W:%6 H:%7) R:%8(W:%9 H:%10)")
-                                   .arg(pattern.name)
-                                   .arg(insResultText)
-                                   .arg(QString::number(inspScore * 100.0, 'f', 1))
-                                   .arg(QString::number(pattern.passThreshold, 'f', 1))
-                                   .arg(crimpLeft ? "PASS" : "FAIL")
-                                   .arg(leftW)
-                                   .arg(leftH)
-                                   .arg(crimpRight ? "PASS" : "FAIL")
-                                   .arg(rightW)
-                                   .arg(rightH);
+                
+                QStringList crimpDetails;
+                if (!crimpLeft) crimpDetails << "L:FAIL";
+                if (!crimpRight) crimpDetails << "R:FAIL";
+                
+                if (crimpDetails.isEmpty()) {
+                    resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7")
+                                       .arg(colorGreen).arg(pattern.name)
+                                       .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
+                                       .arg(resultColor).arg(insResultText).arg(colorEnd);
+                } else {
+                    resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (%8)")
+                                       .arg(colorGreen).arg(pattern.name)
+                                       .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
+                                       .arg(resultColor).arg(insResultText).arg(colorEnd)
+                                       .arg(crimpDetails.join(", "));
+                }
             }
             else
             {
-                // 기본 형식 (SSIM 등)
-                resultDetail = QString("  %1: %2 [%3/%4]")
-                                   .arg(pattern.name)
-                                   .arg(insResultText)
-                                   .arg(QString::number(inspScore * 100.0, 'f', 1))
-                                   .arg(QString::number(pattern.passThreshold, 'f', 1));
+                // 기본 형식 (DIFF, SSIM 등)
+                resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7")
+                                   .arg(colorGreen).arg(pattern.name)
+                                   .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
+                                   .arg(resultColor).arg(insResultText).arg(colorEnd);
             }
             
             logDebug(resultDetail);
@@ -971,11 +993,11 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     // 검사 결과에 시간 저장
     result.inspectionTimeMs = duration.count();
     
-    logDebug(QString("%1 검사종료 (%2ms)").arg(resultText).arg(duration.count()));
+    // 검사 종료 로그 (옵션 2 형식)
+    logDebug(QString("  └─ 결과: %1 (%2ms)").arg(resultText).arg(duration.count()));
 
     // 이미지 저장 (NG/OK 상관없이 모두 저장)
-    // frameIndex를 패턴 목록에서 가져오기 (첫 번째 패턴의 frameIndex 사용)
-    int frameIndex = 0;
+    // frameIndex는 이미 위에서 선언됨 (line 49)
     if (!patterns.isEmpty())
     {
         frameIndex = patterns.first().frameIndex;
@@ -1140,12 +1162,7 @@ bool InsProcessor::matchFiducial(const cv::Mat &image, const PatternInfo &patter
             return false;
         }
         
-        // 검색 영역 크기 로그
-        logDebug(QString("[FID] 패턴 '%1': ROI=%2x%3, 템플릿=%4x%5, 회전허용=%6")
-                    .arg(pattern.name)
-                    .arg(searchRoi.width).arg(searchRoi.height)
-                    .arg(templateMat.cols).arg(templateMat.rows)
-                    .arg(pattern.useRotation ? "ON" : "OFF"));
+        // (FID 검색 영역 로그는 제거 - 너무 상세함)
 
         // 템플릿이 검색 영역보다 큰지 확인
         if (templateMat.rows > searchRoi.height || templateMat.cols > searchRoi.width)
@@ -2303,7 +2320,7 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     auto anomalyEnd = std::chrono::high_resolution_clock::now();
     auto anomalyDuration = std::chrono::duration_cast<std::chrono::milliseconds>(anomalyEnd - anomalyStart).count();
     
-    qDebug() << QString("[ANOMALY] 패턴 '%1' 추론 시간: %2ms").arg(pattern.name).arg(anomalyDuration);
+    // ANOMALY 추론 로그는 제거 (너무 상세함, 최종 결과에만 표시)
     
     if (!inferenceSuccess)
     {

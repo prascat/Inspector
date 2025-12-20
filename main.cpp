@@ -117,7 +117,7 @@ int main(int argc, char *argv[]) {
     
     int result = app.exec();
     
-    qDebug() << "[main] app.exec() 종료";
+    // app.exec() 종료 (로그 제거)
     
     // QApplication 종료 전에 전역 포인터 정리
     g_teachingWidget = nullptr;

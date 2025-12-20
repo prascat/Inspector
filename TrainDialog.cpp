@@ -9,6 +9,8 @@
 #include <QTimer>
 #include <QDateTime>
 #include <QScrollBar>
+#include <QFormLayout>
+#include <QThread>
 #include "CustomFileDialog.h"
 #include "CustomMessageBox.h"
 
@@ -82,6 +84,45 @@ void TrainDialog::setupUI()
     QVBoxLayout *leftLayout = new QVBoxLayout(leftWidget);
     leftLayout->setContentsMargins(0, 0, 0, 0);
     leftLayout->setSpacing(10);
+    
+    // 모델 옵션 UI
+    QGroupBox *optionsGroupBox = new QGroupBox("모델 옵션", this);
+    QFormLayout *optionsLayout = new QFormLayout(optionsGroupBox);
+    optionsLayout->setSpacing(8);
+    
+    // Backbone 선택
+    backboneComboBox = new QComboBox(this);
+    backboneComboBox->addItem("resnet18");
+    backboneComboBox->addItem("resnet50");
+    backboneComboBox->addItem("wide_resnet50_2");
+    backboneComboBox->setCurrentIndex(2);  // 기본값: wide_resnet50_2
+    optionsLayout->addRow("Backbone:", backboneComboBox);
+    
+    // Coreset Ratio
+    coresetRatioSpinBox = new QDoubleSpinBox(this);
+    coresetRatioSpinBox->setRange(0.0, 1.0);
+    coresetRatioSpinBox->setSingleStep(0.001);
+    coresetRatioSpinBox->setDecimals(3);
+    coresetRatioSpinBox->setValue(0.001);  // 기본값: 0.001
+    optionsLayout->addRow("Coreset Ratio:", coresetRatioSpinBox);
+    
+    // Num Neighbors
+    numNeighborsSpinBox = new QSpinBox(this);
+    numNeighborsSpinBox->setRange(1, 50);
+    numNeighborsSpinBox->setValue(5);  // 기본값: 5
+    optionsLayout->addRow("Num Neighbors:", numNeighborsSpinBox);
+    
+    // ReBuild Docker 버튼
+    rebuildDockerButton = new QPushButton("🔄 Docker 이미지 재빌드", this);
+    rebuildDockerButton->setMinimumHeight(35);
+    rebuildDockerButton->setStyleSheet(
+        "QPushButton { background-color: #f57c00; color: #ffffff; border: 1px solid #e65100; }"
+        "QPushButton:hover { background-color: #fb8c00; }"
+        "QPushButton:pressed { background-color: #e65100; }"
+    );
+    optionsLayout->addRow(rebuildDockerButton);
+    
+    leftLayout->addWidget(optionsGroupBox);
     
     // 버튼들 (맨 위에 배치)
     addImagesButton = new QPushButton("이미지 추가", this);
@@ -183,6 +224,7 @@ void TrainDialog::setupUI()
     if (deleteSelectedImageButton) connect(deleteSelectedImageButton, &QPushButton::clicked, this, &TrainDialog::onDeleteSelectedImageClicked);
     if (patternListWidget) connect(patternListWidget, &QListWidget::itemSelectionChanged, this, &TrainDialog::onPatternSelectionChanged);
     if (imageListWidget) connect(imageListWidget, &QListWidget::itemClicked, this, &TrainDialog::onImageItemClicked);
+    if (rebuildDockerButton) connect(rebuildDockerButton, &QPushButton::clicked, this, &TrainDialog::onRebuildDockerClicked);
 }
 
 void TrainDialog::applyBlackTheme()
@@ -276,8 +318,17 @@ void TrainDialog::setAnomalyPatterns(const QVector<PatternInfo*>& patterns)
                         break;
                     }
                 }
-                QVector<cv::Mat>& currentImages = capturedImages;
-                autoTrainButton->setEnabled(anyChecked && !currentImages.isEmpty());
+                
+                // 체크된 패턴 중 이미지가 있는지 확인
+                bool hasImages = false;
+                for (auto it = patternImages.begin(); it != patternImages.end(); ++it) {
+                    if (!it.value().isEmpty()) {
+                        hasImages = true;
+                        break;
+                    }
+                }
+                
+                autoTrainButton->setEnabled(anyChecked && hasImages);
             });
         }
     }
@@ -293,30 +344,43 @@ void TrainDialog::setAnomalyPatterns(const QVector<PatternInfo*>& patterns)
 void TrainDialog::setAllPatterns(const QVector<PatternInfo*>& patterns)
 {
     allPatterns = patterns;
-    qDebug() << "[TrainDialog] 전체 패턴 설정:" << allPatterns.size() << "개";
+    // 전체 패턴 설정 (로그 제거)
 }
 
 void TrainDialog::addCapturedImage(const cv::Mat& image, int stripCrimpMode)
 {
-    // 모든 이미지를 하나의 벡터에 저장
-    capturedImages.append(image.clone());
+    // 현재 선택된 패턴에 이미지 추가
+    if (currentSelectedPattern.isEmpty()) {
+        qWarning() << "[TRAIN] 패턴이 선택되지 않아 이미지 추가 실패";
+        return;
+    }
+    
+    patternImages[currentSelectedPattern].append(image.clone());
     
     // UI 업데이트
-    if (true) {
-        updateImageGrid();
-        
-        QVector<cv::Mat>& currentImages = capturedImages;
-        imageCountLabel->setText(QString("이미지 개수: %1").arg(currentImages.size()));
-        
-        bool anyChecked = false;
-        for (auto checkbox : patternCheckBoxes) {
-            if (checkbox->isChecked()) {
-                anyChecked = true;
-                break;
-            }
+    updateImageGrid();
+    
+    QVector<cv::Mat>& currentImages = patternImages[currentSelectedPattern];
+    imageCountLabel->setText(QString("이미지 개수: %1").arg(currentImages.size()));
+    
+    bool anyChecked = false;
+    for (auto checkbox : patternCheckBoxes) {
+        if (checkbox->isChecked()) {
+            anyChecked = true;
+            break;
         }
-        autoTrainButton->setEnabled(anyChecked && !currentImages.isEmpty());
     }
+    
+    // 체크된 패턴 중 이미지가 있는지 확인
+    bool hasImages = false;
+    for (auto it = patternImages.begin(); it != patternImages.end(); ++it) {
+        if (!it.value().isEmpty()) {
+            hasImages = true;
+            break;
+        }
+    }
+    
+    autoTrainButton->setEnabled(anyChecked && hasImages);
 }
 
 void TrainDialog::updateImageGrid(bool scrollToEnd)
@@ -326,7 +390,12 @@ void TrainDialog::updateImageGrid(bool scrollToEnd)
     
     imageListWidget->clear();
     
-    QVector<cv::Mat>& currentImages = capturedImages;
+    // 현재 선택된 패턴의 이미지만 표시
+    if (currentSelectedPattern.isEmpty()) {
+        return;
+    }
+    
+    QVector<cv::Mat>& currentImages = patternImages[currentSelectedPattern];
     
     for (int i = 0; i < currentImages.size(); ++i) {
         const cv::Mat& img = currentImages[i];
@@ -353,7 +422,7 @@ void TrainDialog::updateImageGrid(bool scrollToEnd)
     }
     
     // 스크롤 위치 처리
-    if (scrollToEnd) {
+    if (scrollToEnd && imageListWidget->count() > 0) {
         // 스크롤바를 맨 오른쪽으로 이동 (최신 이미지 보이도록)
         imageListWidget->scrollToItem(imageListWidget->item(imageListWidget->count() - 1));
     } else {
@@ -370,27 +439,58 @@ void TrainDialog::onModeChanged(int id)
     // 패턴 목록 갱신
     setAnomalyPatterns(anomalyPatterns);
     
-    // 이미지로 UI 업데이트
+    // 현재 선택된 패턴의 이미지로 UI 업데이트
     updateImageGrid();
-    imageCountLabel->setText(QString("이미지 개수: %1").arg(capturedImages.size()));
+    if (!currentSelectedPattern.isEmpty()) {
+        int imageCount = patternImages.value(currentSelectedPattern).size();
+        imageCountLabel->setText(QString("이미지 개수: %1").arg(imageCount));
+    } else {
+        imageCountLabel->setText("이미지 개수: 0");
+    }
     previewImageLabel->setText("이미지를 클릭하세요");
 }
 
 void TrainDialog::onClearImagesClicked()
 {
-    if (capturedImages.isEmpty()) {
+    if (currentSelectedPattern.isEmpty()) {
+        CustomMessageBox msgBox(this, CustomMessageBox::Warning, "경고",
+                                "패턴을 먼저 선택하세요.");
+        msgBox.exec();
+        return;
+    }
+    
+    QVector<cv::Mat>& currentImages = patternImages[currentSelectedPattern];
+    if (currentImages.isEmpty()) {
         return;
     }
     
     CustomMessageBox msgBox(this, CustomMessageBox::Question, "확인",
-        QString("수집된 이미지 %1개를 모두 삭제하시겠습니까?").arg(capturedImages.size()),
+        QString("패턴 [%1]의 이미지 %2개를 모두 삭제하시겠습니까?").arg(currentSelectedPattern).arg(currentImages.size()),
         QMessageBox::Yes | QMessageBox::No);
     
     if (msgBox.exec() == QMessageBox::Yes) {
-        capturedImages.clear();
+        currentImages.clear();
         updateImageGrid();
         imageCountLabel->setText("이미지 개수: 0");
-        autoTrainButton->setEnabled(false);
+        
+        // 체크된 패턴 중 이미지가 있는지 확인
+        bool hasImages = false;
+        for (auto it = patternImages.begin(); it != patternImages.end(); ++it) {
+            if (!it.value().isEmpty()) {
+                hasImages = true;
+                break;
+            }
+        }
+        
+        bool anyChecked = false;
+        for (auto checkbox : patternCheckBoxes) {
+            if (checkbox->isChecked()) {
+                anyChecked = true;
+                break;
+            }
+        }
+        
+        autoTrainButton->setEnabled(anyChecked && hasImages);
         previewImageLabel->setText("이미지를 클릭하세요");
     }
 }
@@ -400,11 +500,20 @@ void TrainDialog::onPatternSelectionChanged()
     QListWidgetItem *item = patternListWidget->currentItem();
     if (!item) {
         teachingImageLabel->setText("패턴을 선택하세요");
+        currentSelectedPattern.clear();
+        updateImageGrid();
         return;
     }
     
     QString patternName = item->data(Qt::UserRole).toString();
-    QVector<cv::Mat>& currentImages = capturedImages;
+    currentSelectedPattern = patternName;
+    
+    // 선택된 패턴의 이미지 리스트 업데이트
+    updateImageGrid();
+    
+    // 이미지 개수 업데이트
+    int imageCount = patternImages.value(patternName).size();
+    imageCountLabel->setText(QString("이미지 개수: %1").arg(imageCount));
     
     // 티칭 이미지 업데이트
     updateTeachingImagePreview();
@@ -471,10 +580,18 @@ void TrainDialog::onStartAutoTrainClicked()
         return;
     }
     
-    QVector<cv::Mat>& currentImages = capturedImages;
-    if (currentImages.isEmpty()) {
+    // 체크된 패턴 중 이미지가 있는지 확인
+    bool hasAnyImages = false;
+    for (const QString& patternName : checkedPatterns) {
+        if (!patternImages.value(patternName).isEmpty()) {
+            hasAnyImages = true;
+            break;
+        }
+    }
+    
+    if (!hasAnyImages) {
         CustomMessageBox msgBox(this, CustomMessageBox::Warning, "경고",
-            "수집된 학습 이미지가 없습니다.");
+            "체크된 패턴에 학습 이미지가 없습니다.");
         msgBox.exec();
         return;
     }
@@ -584,10 +701,18 @@ void TrainDialog::onImageItemClicked(QListWidgetItem* item)
         return;
     }
     
+    if (currentSelectedPattern.isEmpty()) {
+        if (previewImageLabel) {
+            previewImageLabel->clear();
+            previewImageLabel->setText("패턴을 선택하세요");
+        }
+        return;
+    }
+    
     if (deleteSelectedImageButton) deleteSelectedImageButton->setEnabled(true);
     
     int index = item->data(Qt::UserRole).toInt();
-    QVector<cv::Mat>& currentImages = capturedImages;
+    QVector<cv::Mat>& currentImages = patternImages[currentSelectedPattern];
     
     if (index < 0 || index >= currentImages.size()) {
         if (previewImageLabel) {
@@ -640,8 +765,12 @@ void TrainDialog::onDeleteSelectedImageClicked()
         return;
     }
     
+    if (currentSelectedPattern.isEmpty()) {
+        return;
+    }
+    
     int index = item->data(Qt::UserRole).toInt();
-    QVector<cv::Mat>& currentImages = capturedImages;
+    QVector<cv::Mat>& currentImages = patternImages[currentSelectedPattern];
     
     if (index < 0 || index >= currentImages.size()) {
         return;
@@ -661,7 +790,15 @@ void TrainDialog::onDeleteSelectedImageClicked()
     // 삭제 버튼 비활성화
     deleteSelectedImageButton->setEnabled(false);
     
-    // 자동 학습 버튼 상태 업데이트
+    // 체크된 패턴 중 이미지가 있는지 확인
+    bool hasImages = false;
+    for (auto it = patternImages.begin(); it != patternImages.end(); ++it) {
+        if (!it.value().isEmpty()) {
+            hasImages = true;
+            break;
+        }
+    }
+    
     bool anyChecked = false;
     for (auto checkbox : patternCheckBoxes) {
         if (checkbox->isChecked()) {
@@ -669,7 +806,8 @@ void TrainDialog::onDeleteSelectedImageClicked()
             break;
         }
     }
-    autoTrainButton->setEnabled(anyChecked && !currentImages.isEmpty());
+    
+    autoTrainButton->setEnabled(anyChecked && hasImages);
 }
 
 void TrainDialog::onAddImagesClicked()
@@ -722,8 +860,16 @@ void TrainDialog::onAddImagesClicked()
         return;
     }
     
+    // 현재 선택된 패턴 확인
+    if (currentSelectedPattern.isEmpty()) {
+        CustomMessageBox msgBox(this, CustomMessageBox::Warning, "경고",
+                                "패턴을 먼저 선택하세요.");
+        msgBox.exec();
+        return;
+    }
+    
     int addedCount = 0;
-    QVector<cv::Mat>& currentImages = capturedImages;
+    QVector<cv::Mat>& currentImages = patternImages[currentSelectedPattern];
     
     for (const QString& fileName : imagePaths) {
         cv::Mat img = cv::imread(fileName.toStdString());
@@ -744,7 +890,16 @@ void TrainDialog::onAddImagesClicked()
                 break;
             }
         }
-        autoTrainButton->setEnabled(anyChecked && !currentImages.isEmpty());
+        
+        // 체크된 패턴 중 하나라도 이미지가 있으면 활성화
+        bool hasImages = false;
+        for (auto it = patternImages.begin(); it != patternImages.end(); ++it) {
+            if (!it.value().isEmpty()) {
+                hasImages = true;
+                break;
+            }
+        }
+        autoTrainButton->setEnabled(anyChecked && hasImages);
         
         qDebug() << "[TrainDialog] 추가된 이미지 수:" << addedCount;
     }
@@ -802,6 +957,16 @@ void TrainDialog::showEvent(QShowEvent *event)
             int y = parentTopLeft.y() + (parentWidget()->height() - height()) / 2;
             move(x, y);
         }
+    }
+}
+
+void TrainDialog::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    
+    // 오버레이가 있으면 다이얼로그 크기에 맞춤
+    if (trainingOverlay) {
+        trainingOverlay->setGeometry(rect());
     }
 }
 
@@ -878,12 +1043,15 @@ void TrainDialog::trainPattern(const QString& patternName)
         return;
     }
     
-    QVector<cv::Mat>& currentImages = capturedImages;
+    // 해당 패턴의 이미지 가져오기
+    QVector<cv::Mat>& currentImages = patternImages[patternName];
     if (currentImages.isEmpty()) {
-        qWarning() << "[TRAIN] 학습할 이미지가 없음";
+        qWarning() << "[TRAIN] 패턴" << patternName << "에 학습할 이미지가 없음";
         trainNextPattern();
         return;
     }
+    
+    qDebug() << "[TRAIN] 패턴" << patternName << "이미지 개수:" << currentImages.size();
     
     // 임시 폴더 생성
     tempTrainingDir = QCoreApplication::applicationDirPath() + QString("/../deploy/data/train/temp_%1_%2")
@@ -1049,6 +1217,13 @@ void TrainDialog::trainPattern(const QString& patternName)
     QStringList args;
     args << tempTrainingDir << outputDir << patternName;
     
+    // PatchCore 옵션 추가
+    if (backboneComboBox && coresetRatioSpinBox && numNeighborsSpinBox) {
+        args << "--backbone" << backboneComboBox->currentText();
+        args << "--coreset-ratio" << QString::number(coresetRatioSpinBox->value(), 'f', 3);
+        args << "--num-neighbors" << QString::number(numNeighborsSpinBox->value());
+    }
+    
     qDebug() << "[TRAIN] Docker 학습 시작:" << dockerScript << args;
     updateTrainingProgress(QString("%1 Training model '%2'...%3")
         .arg(getPatternProgressString()).arg(patternName).arg(getTotalTimeString()));
@@ -1202,6 +1377,242 @@ void TrainDialog::onDockerFinished(int exitCode, QProcess::ExitStatus exitStatus
         
         // 다음 패턴 학습
         QTimer::singleShot(500, this, &TrainDialog::trainNextPattern);
+    }
+}
+
+void TrainDialog::onRebuildDockerClicked()
+{
+    // 학습 중이면 무시
+    if (isTraining) {
+        QMessageBox::warning(this, "경고", "학습 중에는 Docker 이미지를 재빌드할 수 없습니다.");
+        return;
+    }
+    
+    // CustomMessageBox로 질문
+    CustomMessageBox msgBox(this, CustomMessageBox::Question, "Docker 이미지 재빌드",
+                            "Docker 이미지를 재빌드하시겠습니까?\n기존 이미지가 삭제되고 새로 빌드됩니다.",
+                            QMessageBox::Yes | QMessageBox::No);
+    msgBox.setButtonText(QMessageBox::Yes, "예");
+    msgBox.setButtonText(QMessageBox::No, "아니오");
+    
+    if (msgBox.exec() != QMessageBox::Yes) {
+        return;
+    }
+    
+    rebuildDockerButton->setEnabled(false);
+    rebuildDockerButton->setText("재빌드 중...");
+    
+    // 버튼 진행률 표시 함수
+    auto updateButtonProgress = [this](int progress) {
+        QString style;
+        if (progress >= 100) {
+            // 100%일 때는 전체 녹색
+            style = "QPushButton { "
+                    "  background-color: #4caf50; "
+                    "  color: white; "
+                    "  padding: 10px 20px; "
+                    "  border-radius: 5px; "
+                    "  font-weight: bold; "
+                    "}";
+        } else {
+            // 진행 중일 때는 그라디언트
+            style = QString(
+                "QPushButton { "
+                "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+                "    stop:0 #4caf50, stop:%1 #4caf50, stop:%1 #555555, stop:1 #555555); "
+                "  color: white; "
+                "  padding: 10px 20px; "
+                "  border-radius: 5px; "
+                "  font-weight: bold; "
+                "}"
+            ).arg(progress / 100.0, 0, 'f', 2);
+        }
+        rebuildDockerButton->setStyleSheet(style);
+    };
+    
+    // 초기 진행률 0%
+    updateButtonProgress(0);
+    QApplication::processEvents();
+    
+    // docker 폴더 경로 찾기
+    QString appPath = QCoreApplication::applicationDirPath();
+    QString dockerDir = QDir(appPath).filePath("../docker");
+    QDir dir(dockerDir);
+    if (!dir.exists()) {
+        dockerDir = QDir(appPath).filePath("../../docker");  // macOS 앱 번들
+        dir.setPath(dockerDir);
+    }
+    
+    if (!dir.exists()) {
+        if (trainingOverlay) trainingOverlay->hide();
+        
+        CustomMessageBox msgBox(this, CustomMessageBox::Critical, "오류",
+                                "Docker 폴더를 찾을 수 없습니다: " + dockerDir);
+        msgBox.exec();
+        
+        rebuildDockerButton->setEnabled(true);
+        rebuildDockerButton->setText("🔄 Docker 이미지 재빌드");
+        return;
+    }
+    
+    dockerDir = dir.absolutePath();
+    QString imageName = "patchcore-trainer";
+    
+    // 1단계: Docker 설치 확인 (0-10%)
+    rebuildDockerButton->setText("🔄 Docker 설치 확인 중... (0%)");
+    updateButtonProgress(5);
+    QApplication::processEvents();
+    
+    QProcess checkDocker;
+    checkDocker.start("docker", QStringList() << "--version");
+    checkDocker.waitForFinished(5000);
+    
+    if (checkDocker.exitCode() != 0) {
+        if (trainingOverlay) trainingOverlay->hide();
+        
+        CustomMessageBox msgBox(this, CustomMessageBox::Critical, "오류",
+                                "Docker가 설치되지 않았거나 실행할 수 없습니다.\nDocker Desktop을 설치하고 실행해주세요.");
+        msgBox.exec();
+        
+        rebuildDockerButton->setEnabled(true);
+        rebuildDockerButton->setText("🔄 Docker 이미지 재빌드");
+        return;
+    }
+    
+    qDebug() << "[Docker] Version:" << checkDocker.readAllStandardOutput();
+    
+    rebuildDockerButton->setText("🔄 Docker 설치 확인 완료 (10%)");
+    updateButtonProgress(10);
+    QApplication::processEvents();
+    
+    // 2단계: 기존 이미지 삭제 (10-20%)
+    rebuildDockerButton->setText("🗑️ 기존 이미지 삭제 중... (10%)");
+    QApplication::processEvents();
+    
+    QProcess removeProcess;
+    removeProcess.start("docker", QStringList() << "rmi" << "-f" << imageName);
+    removeProcess.waitForFinished(30000);  // 30초 대기
+    
+    QString removeOutput = removeProcess.readAllStandardOutput();
+    QString removeError = removeProcess.readAllStandardError();
+    qDebug() << "[Docker Remove] Output:" << removeOutput;
+    qDebug() << "[Docker Remove] Error:" << removeError;
+    
+    rebuildDockerButton->setText("✅ 이미지 삭제 완료 (20%)");
+    updateButtonProgress(20);
+    QApplication::processEvents();
+    
+    // 3단계: 새 이미지 빌드 (20-100%)
+    rebuildDockerButton->setText("🔨 Docker 이미지 빌드 시작... (20%)");
+    QApplication::processEvents();
+    
+    QProcess buildProcess;
+    buildProcess.setProcessChannelMode(QProcess::MergedChannels);  // stdout과 stderr 합치기
+    buildProcess.setWorkingDirectory(dockerDir);
+    buildProcess.start("docker", QStringList() << "build" << "-t" << imageName << ".");
+    
+    qDebug() << "[Docker Build] Working directory:" << dockerDir;
+    qDebug() << "[Docker Build] Command: docker build -t" << imageName << ".";
+    
+    // 빌드 진행 상황 표시 및 로그 수집
+    int stepCount = 0;
+    int totalSteps = 15;  // Dockerfile의 대략적인 단계 수 (추정)
+    QString allOutput;
+    QString allError;
+    
+    while (buildProcess.state() == QProcess::Running) {
+        buildProcess.waitForReadyRead(500);
+        QString output = buildProcess.readAllStandardOutput();
+        
+        if (!output.isEmpty()) {
+            allOutput += output;
+            qDebug() << "[Docker Build Output]" << output.trimmed();
+            
+            // "Step X/Y" 패턴 찾기
+            if (output.contains("Step ", Qt::CaseInsensitive)) {
+                QRegularExpression re("Step (\\d+)/(\\d+)", QRegularExpression::CaseInsensitiveOption);
+                QRegularExpressionMatch match = re.match(output);
+                if (match.hasMatch()) {
+                    int currentStep = match.captured(1).toInt();
+                    totalSteps = match.captured(2).toInt();
+                    stepCount = currentStep;
+                    
+                    // 20% ~ 100% 사이로 매핑
+                    int progress = 20 + (stepCount * 80 / totalSteps);
+                    
+                    rebuildDockerButton->setText(QString("🔨 빌드 중... Step %1/%2 (%3%)").arg(stepCount).arg(totalSteps).arg(progress));
+                    updateButtonProgress(progress);
+                    
+                    qDebug() << "[Docker Build Progress]" << progress << "% - Step" << stepCount << "/" << totalSteps;
+                }
+            }
+            QApplication::processEvents();
+        } else {
+            // 출력이 없으면 잠시 대기
+            QThread::msleep(100);
+        }
+    }
+    
+    buildProcess.waitForFinished(-1);
+    int exitCode = buildProcess.exitCode();
+    
+    // 남은 출력 읽기
+    QString remainingOutput = buildProcess.readAllStandardOutput();
+    if (!remainingOutput.isEmpty()) {
+        allOutput += remainingOutput;
+        qDebug() << "[Docker Build Remaining]" << remainingOutput.trimmed();
+    }
+    
+    qDebug() << "[Docker Build] Exit code:" << exitCode;
+    qDebug() << "[Docker Build] Final output length:" << allOutput.length();
+    
+    // 빌드 완료 시 진행률 100%로
+    rebuildDockerButton->setText("✅ 빌드 완료! (100%)");
+    updateButtonProgress(100);
+    QApplication::processEvents();
+    
+    // 1.5초 후 원래 스타일로 복구
+    QTimer::singleShot(1500, [this]() {
+        rebuildDockerButton->setEnabled(true);
+        rebuildDockerButton->setText("🔄 Docker 이미지 재빌드");
+        rebuildDockerButton->setStyleSheet("");  // 원래 스타일로
+    });
+    
+    if (exitCode == 0) {
+        CustomMessageBox msgBox(this, CustomMessageBox::Information, "완료",
+                                "Docker 이미지가 성공적으로 재빌드되었습니다.");
+        msgBox.exec();
+    } else {
+        rebuildDockerButton->setEnabled(true);
+        rebuildDockerButton->setText("❌ 재빌드 실패");
+        rebuildDockerButton->setStyleSheet("QPushButton { background-color: #d32f2f; color: white; padding: 10px 20px; border-radius: 5px; font-weight: bold; }");
+        
+        // 3초 후 원래 스타일로 복구
+        QTimer::singleShot(3000, [this]() {
+            rebuildDockerButton->setText("🔄 Docker 이미지 재빌드");
+            rebuildDockerButton->setStyleSheet("");
+        });
+        
+        // 상세 에러 메시지 구성
+        QString msg = QString("Docker 이미지 빌드 실패 (Exit code: %1)\n\n").arg(exitCode);
+        
+        // 출력의 마지막 30줄 표시
+        QStringList outputLines = allOutput.split('\n', Qt::SkipEmptyParts);
+        
+        if (!outputLines.isEmpty()) {
+            msg += "=== 빌드 출력 (마지막 30줄) ===\n";
+            int startIdx = qMax(0, outputLines.size() - 30);
+            for (int i = startIdx; i < outputLines.size(); i++) {
+                msg += outputLines[i] + "\n";
+            }
+        } else {
+            msg += "출력 없음. Docker가 실행 중인지 확인하세요.";
+        }
+        
+        qDebug() << "[Docker Build Failed] Full output:" << allOutput;
+        
+        CustomMessageBox msgBox(this, CustomMessageBox::Critical, "오류", msg);
+        msgBox.exec();
     }
 }
 
