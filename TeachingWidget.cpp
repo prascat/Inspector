@@ -9235,8 +9235,8 @@ void TeachingWidget::receiveLogMessage(const QString &message)
     cursor.insertText("\n");
     logTextEdit->ensureCursorVisible();
 
-    // 오버레이가 숨겨져 있으면 표시
-    if (!logOverlayWidget->isVisible())
+    // TEACH ON 상태일 때만 오버레이 자동 표시
+    if (teachingEnabled && !logOverlayWidget->isVisible())
     {
         logOverlayWidget->show();
         logOverlayWidget->raise();
@@ -12465,8 +12465,12 @@ void TeachingWidget::switchToTestMode()
     if (logTextEdit && logOverlayWidget)
     {
         receiveLogMessage("검사 모드로 전환되었습니다.");
-        logOverlayWidget->show();
-        logOverlayWidget->raise();
+        // TEACH ON 상태일 때만 로그창 자동 표시
+        if (teachingEnabled)
+        {
+            logOverlayWidget->show();
+            logOverlayWidget->raise();
+        }
         // 로그창 위치는 사용자가 지정한 위치 유지 (강제 이동 제거)
     }
 

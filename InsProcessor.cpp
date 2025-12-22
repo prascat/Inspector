@@ -227,8 +227,8 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             auto fidEnd = std::chrono::high_resolution_clock::now();
             auto fidDuration = std::chrono::duration_cast<std::chrono::milliseconds>(fidEnd - fidStart).count();
             
-            // FID 패턴 로그 (옵션 2 형식)
-            logDebug(QString("  └─ FID: %1 (%2ms)").arg(pattern.name).arg(fidDuration));
+            // FID 패턴 로그 (옵션 2 형식) - FID 색상 적용
+            logDebug(QString("  └─ <font color='#7094DB'>FID: %1</font> (%2ms)").arg(pattern.name).arg(fidDuration));
 
             // 매칭 성공 시 검출된 각도를 FID 그룹 전체에 적용
             if (fidMatched)
@@ -1008,8 +1008,11 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     // 검사 결과에 시간 저장
     result.inspectionTimeMs = duration.count();
     
-    // 검사 종료 로그 (옵션 2 형식)
-    logDebug(QString("  └─ 결과: %1 (%2ms)").arg(resultText).arg(duration.count()));
+    // 검사 종료 로그 (옵션 2 형식) - PASS/FAIL 색상 적용
+    QString coloredResult = result.isPassed 
+        ? QString("<font color='#4CAF50'>%1</font>").arg(resultText)
+        : QString("<font color='#f44336'>%1</font>").arg(resultText);
+    logDebug(QString("  └─ 결과: %1 (%2ms)").arg(coloredResult).arg(duration.count()));
 
     // 이미지 저장 (NG/OK 상관없이 모두 저장)
     // frameIndex는 이미 위에서 선언됨 (line 49)
