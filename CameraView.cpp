@@ -1949,12 +1949,13 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
             const cv::Mat& frame = teachingWidget->cameraFrames[targetFrameIndex];
             if (!frame.empty())
             {
-                // ROI 영역만 crop
+                // ROI 영역만 crop (경계선 5픽셀 안쪽)
+                int inset = 5;
                 cv::Rect cvRoiRect(
-                    static_cast<int>(roiRect.x()),
-                    static_cast<int>(roiRect.y()),
-                    static_cast<int>(roiRect.width()),
-                    static_cast<int>(roiRect.height())
+                    static_cast<int>(roiRect.x()) + inset,
+                    static_cast<int>(roiRect.y()) + inset,
+                    static_cast<int>(roiRect.width()) - inset * 2,
+                    static_cast<int>(roiRect.height()) - inset * 2
                 );
                 cvRoiRect = cvRoiRect & cv::Rect(0, 0, frame.cols, frame.rows);
                 
@@ -1969,8 +1970,8 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
                 QPainter overlayPainter(&croppedImageCopy);
                 overlayPainter.setRenderHint(QPainter::Antialiasing);
                 
-                // ROI 기준으로 좌표 이동 (전체 이미지 좌표 -> ROI 좌표)
-                overlayPainter.translate(-roiRect.x(), -roiRect.y());
+                // ROI 기준으로 좌표 이동 (전체 이미지 좌표 -> 크롭된 ROI 좌표)
+                overlayPainter.translate(-cvRoiRect.x, -cvRoiRect.y);
                 
                 // 임시로 현재 상태 저장
                 int savedFrameIndex = currentFrameIndex;
@@ -3997,11 +3998,12 @@ void CameraView::paintEvent(QPaintEvent *event)
                 if (!framePatterns[i].isEmpty()) {
                     for (const PatternInfo &p : framePatterns[i]) {
                         if (p.type == PatternType::ROI) {
-                            // ROI 패턴의 rect를 이미지 좌표로 변환
-                            roiRect.x = static_cast<int>(p.rect.x());
-                            roiRect.y = static_cast<int>(p.rect.y());
-                            roiRect.width = static_cast<int>(p.rect.width());
-                            roiRect.height = static_cast<int>(p.rect.height());
+                            // ROI 패턴의 rect를 이미지 좌표로 변환 (경계선 5픽셀 안쪽)
+                            int inset = 5;
+                            roiRect.x = static_cast<int>(p.rect.x()) + inset;
+                            roiRect.y = static_cast<int>(p.rect.y()) + inset;
+                            roiRect.width = static_cast<int>(p.rect.width()) - inset * 2;
+                            roiRect.height = static_cast<int>(p.rect.height()) - inset * 2;
                             
                             // 이미지 범위 내로 제한
                             roiRect.x = std::max(0, std::min(roiRect.x, frame.cols - 1));
@@ -4101,6 +4103,13 @@ void CameraView::paintEvent(QPaintEvent *event)
             }
             // TEACH OFF: 아무 텍스트도 표시하지 않음
         }
+        
+        // 4분할 영역 경계선 그리기 (흰색 얇은 선)
+        painter.setPen(QPen(Qt::white, 1));
+        // 세로 중앙선
+        painter.drawLine(halfWidth, 0, halfWidth, viewRect.height());
+        // 가로 중앙선
+        painter.drawLine(0, halfHeight, viewRect.width(), halfHeight);
         
         return;
     }

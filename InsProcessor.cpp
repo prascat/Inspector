@@ -785,6 +785,9 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 adjustedPattern.angle = pattern.angle; // 패턴 각도만
             }
 
+            // 검사 시간 측정
+            auto insStart = std::chrono::high_resolution_clock::now();
+            
             switch (pattern.inspectionMethod)
             {
             case InspectionMethod::DIFF:
@@ -828,6 +831,10 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                              .arg(pattern.name));
                 break;
             }
+            
+            // 검사 시간 종료
+            auto insEnd = std::chrono::high_resolution_clock::now();
+            auto insDuration = std::chrono::duration_cast<std::chrono::milliseconds>(insEnd - insStart).count();
 
             // 결과 기록
             result.insResults[pattern.id] = inspPassed;
@@ -885,17 +892,19 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                         if (bbox.width > maxW) maxW = bbox.width;
                         if (bbox.height > maxH) maxH = bbox.height;
                     }
-                    resultDetail = QString("  └─ %1%2(%3)%4: W:%5 H:%6 Detects:%7")
+                    resultDetail = QString("  └─ %1%2(%3)%4: W:%5 H:%6 Detects:%7 (%8ms)")
                                        .arg(colorGreen).arg(pattern.name)
                                        .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
                                        .arg(maxW)
                                        .arg(maxH)
-                                       .arg(defectCount);
+                                       .arg(defectCount)
+                                       .arg(insDuration);
                 } else {
-                    resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7")
+                    resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (%8ms)")
                                        .arg(colorGreen).arg(pattern.name)
                                        .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
-                                       .arg(resultColor).arg(insResultText).arg(colorEnd);
+                                       .arg(resultColor).arg(insResultText).arg(colorEnd)
+                                       .arg(insDuration);
                 }
             }
             else if (pattern.inspectionMethod == InspectionMethod::STRIP)
@@ -905,26 +914,29 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 
                 // gradient points 부족으로 검사 실패한 경우 (score = 0.0)
                 if (inspScore == 0.0 && !result.stripPointsValid.value(pattern.id, false)) {
-                    resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (gradient points 부족)")
+                    resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (gradient points 부족) (%8ms)")
                                        .arg(colorGreen).arg(pattern.name)
                                        .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
-                                       .arg(resultColor).arg(insResultText).arg(colorEnd);
+                                       .arg(resultColor).arg(insResultText).arg(colorEnd)
+                                       .arg(insDuration);
                 } else {
                     if (result.frontResult != "PASS") stripDetails << QString("FRONT:%1").arg(result.frontDetail);
                     if (result.rearResult != "PASS") stripDetails << QString("REAR:%1").arg(result.rearDetail);
                     if (result.edgeResult != "PASS") stripDetails << QString("EDGE:%1").arg(result.edgeDetail);
                     
                     if (stripDetails.isEmpty()) {
-                        resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7")
-                                           .arg(colorGreen).arg(pattern.name)
-                                           .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
-                                           .arg(resultColor).arg(insResultText).arg(colorEnd);
-                    } else {
-                        resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (%8)")
+                        resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (%8ms)")
                                            .arg(colorGreen).arg(pattern.name)
                                            .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
                                            .arg(resultColor).arg(insResultText).arg(colorEnd)
-                                           .arg(stripDetails.join(", "));
+                                           .arg(insDuration);
+                    } else {
+                        resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (%8) (%9ms)")
+                                           .arg(colorGreen).arg(pattern.name)
+                                           .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
+                                           .arg(resultColor).arg(insResultText).arg(colorEnd)
+                                           .arg(stripDetails.join(", "))
+                                           .arg(insDuration);
                     }
                 }
             }
@@ -939,25 +951,28 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 if (!crimpRight) crimpDetails << "R:FAIL";
                 
                 if (crimpDetails.isEmpty()) {
-                    resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7")
-                                       .arg(colorGreen).arg(pattern.name)
-                                       .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
-                                       .arg(resultColor).arg(insResultText).arg(colorEnd);
-                } else {
-                    resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (%8)")
+                    resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (%8ms)")
                                        .arg(colorGreen).arg(pattern.name)
                                        .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
                                        .arg(resultColor).arg(insResultText).arg(colorEnd)
-                                       .arg(crimpDetails.join(", "));
+                                       .arg(insDuration);
+                } else {
+                    resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (%8) (%9ms)")
+                                       .arg(colorGreen).arg(pattern.name)
+                                       .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
+                                       .arg(resultColor).arg(insResultText).arg(colorEnd)
+                                       .arg(crimpDetails.join(", "))
+                                       .arg(insDuration);
                 }
             }
             else
             {
                 // 기본 형식 (DIFF, SSIM 등)
-                resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7")
+                resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (%8ms)")
                                    .arg(colorGreen).arg(pattern.name)
                                    .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
-                                   .arg(resultColor).arg(insResultText).arg(colorEnd);
+                                   .arg(resultColor).arg(insResultText).arg(colorEnd)
+                                   .arg(insDuration);
             }
             
             logDebug(resultDetail);
