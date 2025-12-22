@@ -1934,15 +1934,61 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
         framePatterns[targetFrameIndex] = frameSpecificPatterns;
         hasFrameResult[targetFrameIndex] = true;
         
-        // 현재 프레임 픽스맵도 저장 (teachingWidget에서 가져옴)
+        // ROI 영역 찾기
+        QRectF roiRect(0, 0, 1920, 1200);
+        for (const PatternInfo &p : frameSpecificPatterns) {
+            if (p.type == PatternType::ROI) {
+                roiRect = p.rect;
+                break;
+            }
+        }
+        
+        // 검사 결과 오버레이 포함해서 ROI 영역만 캡쳐
         if (teachingWidget && targetFrameIndex < (int)teachingWidget->cameraFrames.size())
         {
             const cv::Mat& frame = teachingWidget->cameraFrames[targetFrameIndex];
             if (!frame.empty())
             {
-                QImage qImage(frame.data, frame.cols, frame.rows, frame.step, 
-                             frame.channels() == 1 ? QImage::Format_Grayscale8 : QImage::Format_RGB888);
-                framePixmaps[targetFrameIndex] = QPixmap::fromImage(qImage.copy());
+                // ROI 영역만 crop
+                cv::Rect cvRoiRect(
+                    static_cast<int>(roiRect.x()),
+                    static_cast<int>(roiRect.y()),
+                    static_cast<int>(roiRect.width()),
+                    static_cast<int>(roiRect.height())
+                );
+                cvRoiRect = cvRoiRect & cv::Rect(0, 0, frame.cols, frame.rows);
+                
+                cv::Mat croppedFrame = frame(cvRoiRect).clone();
+                
+                // QImage로 변환
+                QImage croppedImage(croppedFrame.data, croppedFrame.cols, croppedFrame.rows, croppedFrame.step, 
+                                   croppedFrame.channels() == 1 ? QImage::Format_Grayscale8 : QImage::Format_BGR888);
+                QImage croppedImageCopy = croppedImage.copy();
+                
+                // 검사 결과 오버레이 그리기
+                QPainter overlayPainter(&croppedImageCopy);
+                overlayPainter.setRenderHint(QPainter::Antialiasing);
+                
+                // ROI 기준으로 좌표 이동 (전체 이미지 좌표 -> ROI 좌표)
+                overlayPainter.translate(-roiRect.x(), -roiRect.y());
+                
+                // 임시로 현재 상태 저장
+                int savedFrameIndex = currentFrameIndex;
+                QList<PatternInfo> savedPatterns = patterns;
+                
+                currentFrameIndex = targetFrameIndex;
+                patterns = frameSpecificPatterns;
+                
+                // 검사 결과 그리기
+                drawInspectionResults(overlayPainter, result);
+                
+                // 상태 복원
+                currentFrameIndex = savedFrameIndex;
+                patterns = savedPatterns;
+                
+                overlayPainter.end();
+                
+                framePixmaps[targetFrameIndex] = QPixmap::fromImage(croppedImageCopy);
             }
         }
         
@@ -2450,37 +2496,7 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
     // ===== 2. REAR 박스 시각화 (stripGradientEndPercent 위치) =====
     if (result.stripRearBoxSize.contains(patternId))
     {
-        // INS 박스의 회전된 좌표들을 얻기 위해 4개 모서리점 변환
-        QPointF topLeftScene = inspRectScene.topLeft();
-        QPointF topRightScene(inspRectScene.right(), inspRectScene.top());
-        QPointF bottomLeftScene(inspRectScene.left(), inspRectScene.bottom());
-        QPointF bottomRightScene = inspRectScene.bottomRight();
-
-        // Viewport로 변환
-        QPointF topLeftVP = sceneToViewport(painter, topLeftScene);
-        QPointF topRightVP = sceneToViewport(painter, topRightScene);
-        QPointF bottomLeftVP = sceneToViewport(painter, bottomLeftScene);
-        QPointF bottomRightVP = sceneToViewport(painter, bottomRightScene);
-
-        // 회전 각도를 라디안으로 변환
-        double radians = insAngle * M_PI / 180.0;
-        double cosA = std::cos(radians);
-        double sinA = std::sin(radians);
-
-        // 회전 변환 함수
-        auto rotatePointFunc = [&](QPointF pt, QPointF center) -> QPointF
-        {
-            double dx = pt.x() - center.x();
-            double dy = pt.y() - center.y();
-            double newX = center.x() + dx * cosA - dy * sinA;
-            double newY = center.y() + dx * sinA + dy * cosA;
-            return QPointF(newX, newY);
-        };
-
-        QPointF rotTopLeftVP = rotatePointFunc(topLeftVP, centerViewport);
-        QPointF rotTopRightVP = rotatePointFunc(topRightVP, centerViewport);
-        QPointF rotBottomLeftVP = rotatePointFunc(bottomLeftVP, centerViewport);
-        QPointF rotBottomRightVP = rotatePointFunc(bottomRightVP, centerViewport);
+        // 기존에 계산된 좌표 재사용 (rotTopLeftVP, rotTopRightVP, rotBottomLeftVP, rotBottomRightVP)
 
         // 가로 방향 벡터 (회전 후)
         double widthVectorX = rotTopRightVP.x() - rotTopLeftVP.x();
@@ -2815,8 +2831,8 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
                         QPoint pt1Scene = scanLines[i];
                         QPoint pt2Scene = scanLines[i + 1];
 
-                        QPointF pt1VP = mapFromScene(QPointF(pt1Scene.x(), pt1Scene.y()));
-                        QPointF pt2VP = mapFromScene(QPointF(pt2Scene.x(), pt2Scene.y()));
+                        QPointF pt1VP = sceneToViewport(painter, QPointF(pt1Scene.x(), pt1Scene.y()));
+                        QPointF pt2VP = sceneToViewport(painter, QPointF(pt2Scene.x(), pt2Scene.y()));
 
                         // 박스 중심 기준으로 상대 좌표 계산
                         QPointF rel1 = pt1VP - frontBoxCenterVP;
@@ -2935,7 +2951,7 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
                 QPointF pointScene(absPoint.x(), absPoint.y());
 
                 // 씬 좌표 -> 뷰포트 좌표 변환 (이것만 적용!)
-                QPointF pointVP = mapFromScene(pointScene);
+                QPointF pointVP = sceneToViewport(painter, pointScene);
                 vpPoints.push_back(pointVP);
             }
 
@@ -2973,7 +2989,7 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
         }
     }
 
-    // ===== 스캔 라인 시각화 (디버그) =====
+    // ===== 스캔 라인 시각화 =====
     // FRONT 스캔 라인
     if (result.stripFrontScanLines.contains(patternId))
     {
@@ -2982,8 +2998,8 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
 
         for (const auto &line : scanLines)
         {
-            QPointF pt1VP = mapFromScene(QPointF(line.first.x(), line.first.y()));
-            QPointF pt2VP = mapFromScene(QPointF(line.second.x(), line.second.y()));
+            QPointF pt1VP = sceneToViewport(painter, QPointF(line.first.x(), line.first.y()));
+            QPointF pt2VP = sceneToViewport(painter, QPointF(line.second.x(), line.second.y()));
             painter.drawLine(pt1VP, pt2VP);
         }
     }
@@ -2996,8 +3012,8 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
 
         for (const auto &line : scanLines)
         {
-            QPointF pt1VP = mapFromScene(QPointF(line.first.x(), line.first.y()));
-            QPointF pt2VP = mapFromScene(QPointF(line.second.x(), line.second.y()));
+            QPointF pt1VP = sceneToViewport(painter, QPointF(line.first.x(), line.first.y()));
+            QPointF pt2VP = sceneToViewport(painter, QPointF(line.second.x(), line.second.y()));
             painter.drawLine(pt1VP, pt2VP);
         }
     }
@@ -3013,7 +3029,7 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
 
         // 티칭 모드와 동일하게 계산
         QPointF center = patternInfo->rect.center();
-        QPointF centerDisplay = mapFromScene(center);
+        QPointF centerDisplay = sceneToViewport(painter, center);
         QSizeF displaySize(patternInfo->rect.width() * currentScale, patternInfo->rect.height() * currentScale);
         QRectF displayRect(centerDisplay.x() - displaySize.width() / 2,
                            centerDisplay.y() - displaySize.height() / 2,
@@ -3175,7 +3191,7 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
 
                 // 포인트 표시
                 QPointF ptScene(pt.x(), pt.y());
-                QPointF ptVP = mapFromScene(ptScene);
+                QPointF ptVP = sceneToViewport(painter, ptScene);
 
                 painter.setPen(QPen(pointColor, 1));
                 painter.setBrush(QBrush(pointColor));
@@ -3209,8 +3225,8 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
                 QPointF lineBottom(x2, lastDrawnY);
 
                 // Scene 좌표로 변환
-                QPointF lineTopVP = mapFromScene(lineTop);
-                QPointF lineBottomVP = mapFromScene(lineBottom);
+                QPointF lineTopVP = sceneToViewport(painter, lineTop);
+                QPointF lineBottomVP = sceneToViewport(painter, lineBottom);
 
                 // 평균선의 중간점
                 avgLineCenter = (lineTopVP + lineBottomVP) / 2.0;
@@ -3230,7 +3246,7 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
 
                     // Scene 좌표로 변환
                     QPointF endScene(endPt.x(), endPt.y());
-                    QPointF endVP = mapFromScene(endScene);
+                    QPointF endVP = sceneToViewport(painter, endScene);
 
                     // 마젠타색 실선으로 길이 측정선 그리기 (회전 없이 직선 연결)
                     QPen lengthPen(QColor(255, 0, 255), 2); // 마젠타색, 2px
@@ -3961,80 +3977,61 @@ void CameraView::paintEvent(QPaintEvent *event)
             // 배경 (검은색)
             painter.fillRect(rect, Qt::black);
             
-            // 실제 이미지가 그려진 영역 계산을 위한 변수
-            QRect actualImageRect = rect;
-            
-            // 프레임 이미지 그리기
-            if (i < (int)framesCopy.size() && !framesCopy[i].empty())
+            // 검사 결과가 있으면 저장된 pixmap 보여주기 (오버레이 포함)
+            if (hasFrameResult[i] && !framePixmaps[i].isNull())
+            {
+                QPixmap scaled = framePixmaps[i].scaled(rect.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                
+                // 중앙 정렬
+                int x = rect.x() + (rect.width() - scaled.width()) / 2;
+                int y = rect.y() + (rect.height() - scaled.height()) / 2;
+                painter.drawPixmap(x, y, scaled);
+            }
+            // 검사 결과 없으면 프레임 이미지만 보여주기
+            else if (i < (int)framesCopy.size() && !framesCopy[i].empty())
             {
                 cv::Mat frame = framesCopy[i];
-                QImage img;
                 
-                if (frame.channels() == 3)
-                    img = QImage(frame.data, frame.cols, frame.rows, frame.step, QImage::Format_BGR888);
-                else if (frame.channels() == 1)
-                    img = QImage(frame.data, frame.cols, frame.rows, frame.step, QImage::Format_Grayscale8);
+                // ROI 패턴 찾기
+                cv::Rect roiRect(0, 0, frame.cols, frame.rows);
+                if (!framePatterns[i].isEmpty()) {
+                    for (const PatternInfo &p : framePatterns[i]) {
+                        if (p.type == PatternType::ROI) {
+                            // ROI 패턴의 rect를 이미지 좌표로 변환
+                            roiRect.x = static_cast<int>(p.rect.x());
+                            roiRect.y = static_cast<int>(p.rect.y());
+                            roiRect.width = static_cast<int>(p.rect.width());
+                            roiRect.height = static_cast<int>(p.rect.height());
+                            
+                            // 이미지 범위 내로 제한
+                            roiRect.x = std::max(0, std::min(roiRect.x, frame.cols - 1));
+                            roiRect.y = std::max(0, std::min(roiRect.y, frame.rows - 1));
+                            roiRect.width = std::min(roiRect.width, frame.cols - roiRect.x);
+                            roiRect.height = std::min(roiRect.height, frame.rows - roiRect.y);
+                            break;
+                        }
+                    }
+                }
+                
+                // ROI 영역만 crop
+                cv::Mat croppedFrame = frame(roiRect);
+                
+                QImage img;
+                if (croppedFrame.channels() == 3)
+                    img = QImage(croppedFrame.data, croppedFrame.cols, croppedFrame.rows, croppedFrame.step, QImage::Format_BGR888);
+                else if (croppedFrame.channels() == 1)
+                    img = QImage(croppedFrame.data, croppedFrame.cols, croppedFrame.rows, croppedFrame.step, QImage::Format_Grayscale8);
                 
                 if (!img.isNull())
                 {
                     QPixmap pixmap = QPixmap::fromImage(img);
                     QPixmap scaled = pixmap.scaled(rect.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
                     
-                    // 중앙 정렬 - 실제 그려진 위치 저장
+                    // 중앙 정렬
                     int x = rect.x() + (rect.width() - scaled.width()) / 2;
                     int y = rect.y() + (rect.height() - scaled.height()) / 2;
                     painter.drawPixmap(x, y, scaled);
-                    
-                    // 실제 이미지가 그려진 영역 저장
-                    actualImageRect = QRect(x, y, scaled.width(), scaled.height());
                 }
-            }
-            
-            // 검사 결과 패턴 오버레이 - painter transform으로 scene 좌표계 매핑
-            if (hasFrameResult[i])
-            {
-                const InspectionResult &result = frameResults[i];
-                
-                // 원본 이미지 크기 계산
-                double imageWidth = 1920.0;
-                double imageHeight = 1200.0;
-                if (i < (int)framesCopy.size() && !framesCopy[i].empty())
-                {
-                    imageWidth = framesCopy[i].cols;
-                    imageHeight = framesCopy[i].rows;
-                }
-                
-                // 실제 그려진 이미지 영역을 기준으로 스케일 계산
-                double scaleX = actualImageRect.width() / imageWidth;
-                double scaleY = actualImageRect.height() / imageHeight;
-                
-                painter.save();
-                
-                // painter transform 설정: scene 좌표를 quadrant 좌표로 매핑
-                painter.translate(actualImageRect.topLeft());
-                painter.scale(scaleX, scaleY);
-                
-                // 임시로 currentFrameIndex, patterns, cameraUuid 변경
-                int savedFrameIndex = currentFrameIndex;
-                QList<PatternInfo> savedPatterns = patterns;
-                QString savedCameraUuid = currentCameraUuid;
-                
-                currentFrameIndex = i;
-                patterns = framePatterns[i];  // 해당 프레임의 패턴만 사용
-                
-                // 해당 프레임의 cameraUuid 설정 (첫 번째 패턴에서 가져오기)
-                if (!framePatterns[i].isEmpty()) {
-                    currentCameraUuid = framePatterns[i].first().cameraUuid;
-                }
-                
-                // 기존 drawInspectionResults 호출 (mapFromScene 대신 scene 좌표 직접 사용)
-                drawInspectionResults(painter, result);
-                
-                // 원래 상태 복원
-                currentFrameIndex = savedFrameIndex;
-                patterns = savedPatterns;
-                currentCameraUuid = savedCameraUuid;
-                painter.restore();
             }
             
             // PASS/NG 텍스트 오버레이 (상단 중앙)
@@ -5592,14 +5589,6 @@ void CameraView::drawSelectedPatternHandles(QPainter &painter)
         painter.drawLine(QPointF(displayRect.center().x(), displayRect.top()), rotateHandlePos);
 
         painter.restore();
-
-        // INS STRIP 패턴의 추가 UI 요소
-        if (pattern.type == PatternType::INS &&
-            pattern.inspectionMethod == InspectionMethod::STRIP)
-        {
-            drawStripGradientRange(painter, pattern);
-            drawStripThicknessBoxes(painter, pattern);
-        }
 
         // INS CRIMP 패턴의 추가 UI 요소 (배럴 좌우 박스)
         if (pattern.type == PatternType::INS &&
