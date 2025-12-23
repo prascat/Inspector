@@ -1498,6 +1498,11 @@ void TrainDialog::onRebuildDockerClicked()
     qDebug() << "[Docker Remove] Output:" << removeOutput;
     qDebug() << "[Docker Remove] Error:" << removeError;
     
+    // 이미지가 없어도 에러를 무시하고 계속 진행 (이미지가 없으면 새로 빌드하면 됨)
+    if (removeError.contains("No such image", Qt::CaseInsensitive)) {
+        qDebug() << "[Docker Remove] 이미지가 없음. 새로 빌드 진행.";
+    }
+    
     rebuildDockerButton->setText("✅ 이미지 삭제 완료 (20%)");
     updateButtonProgress(20);
     QApplication::processEvents();
@@ -1513,6 +1518,18 @@ void TrainDialog::onRebuildDockerClicked()
     
     qDebug() << "[Docker Build] Working directory:" << dockerDir;
     qDebug() << "[Docker Build] Command: docker build -t" << imageName << ".";
+    
+    if (!buildProcess.waitForStarted(10000)) {
+        qDebug() << "[Docker Build] Failed to start:" << buildProcess.errorString();
+        rebuildDockerButton->setEnabled(true);
+        rebuildDockerButton->setText("❌ Docker 시작 실패");
+        CustomMessageBox msgBox(this, CustomMessageBox::Critical, "오류", 
+                                "Docker 프로세스를 시작할 수 없습니다.\nDocker가 설치되어 있고 실행 중인지 확인하세요.");
+        msgBox.exec();
+        return;
+    }
+    
+    qDebug() << "[Docker Build] Process started successfully";
     
     // 빌드 진행 상황 표시 및 로그 수집
     int stepCount = 0;

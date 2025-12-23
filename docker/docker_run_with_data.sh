@@ -14,16 +14,17 @@ set -euo pipefail
 HOST_DATA_DIR=${1:-}
 HOST_OUTPUT_DIR=${2:-}
 PATTERN_NAME=${3:-model}
+shift 3  # 처음 3개 인자 제거
+
+# 나머지 인자는 학습 스크립트로 전달
+EXTRA_ARGS="$@"
+
 COPY_MODE=false
-IMAGE=${4:-patchcore-trainer}
+IMAGE="patchcore-trainer"
 
 if [[ -z "${HOST_DATA_DIR}" || -z "${HOST_OUTPUT_DIR}" ]]; then
-  echo "Usage: $(basename "$0") <host_data_dir> <host_output_dir> [--copy] [--image patchcore-train]"
+  echo "Usage: $(basename "$0") <host_data_dir> <host_output_dir> <pattern_name> [training options...]"
   exit 1
-fi
-
-if [[ "${3:-}" == "--copy" ]]; then
-  COPY_MODE=true
 fi
 
 # Normalize paths
@@ -34,6 +35,8 @@ HOST_OUTPUT_DIR=$(cd "${HOST_OUTPUT_DIR}" && pwd)
 echo "Running training container"
 echo "  dataset: ${HOST_DATA_DIR}"
 echo "  output: ${HOST_OUTPUT_DIR}"
+echo "  pattern: ${PATTERN_NAME}"
+echo "  extra_args: ${EXTRA_ARGS}"
 echo "  image: ${IMAGE}"
 echo "  copy_mode: ${COPY_MODE}"
 
@@ -48,7 +51,7 @@ if [[ "${COPY_MODE}" == "false" ]]; then
     --entrypoint /bin/bash \
     -v "${HOST_DATA_DIR}:/workspace/data:ro" \
     -v "${HOST_OUTPUT_DIR}:/workspace/output" \
-    ${IMAGE} -c "/workspace/run_train.sh /workspace/data /workspace/output ${PATTERN_NAME} && chmod -R 777 /workspace/output"
+    ${IMAGE} -c "/workspace/run_train.sh /workspace/data /workspace/output ${PATTERN_NAME} ${EXTRA_ARGS} && chmod -R 777 /workspace/output"
 else
   # Copy mode: create a temporary container, copy dataset into container FS, then run training inside it
   TMP_NAME="patchcore_tmp_$RANDOM"

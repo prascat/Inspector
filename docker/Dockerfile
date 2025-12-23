@@ -15,27 +15,13 @@ RUN python3 -m pip install --upgrade pip setuptools wheel
 # Set workdir
 WORKDIR /workspace
 
-# Install PyTorch CPU version first
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# Install PyTorch CPU FIRST (prevents GPU version download)
+# pip 캐시 사용 (--no-cache-dir 제거)
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
-# Install anomalib and dependencies
-RUN pip install --no-cache-dir \
-    anomalib \
-    opencv-python \
-    matplotlib \
-    scikit-learn \
-    scikit-image \
-    pandas \
-    tqdm \
-    albumentations \
-    timm \
-    imgaug \
-    onnx \
-    onnxscript \
-    faiss-cpu
-
-# Install OpenVINO dev tools
-RUN pip install --no-cache-dir openvino-dev
+# Copy requirements and install remaining packages
+COPY requirements.txt /workspace/requirements.txt
+RUN pip install -r requirements.txt
 
 # Copy the training scripts to /workspace
 COPY train_patchcore_anomalib.py /workspace/train_patchcore_anomalib.py
