@@ -150,6 +150,7 @@ public:
     bool camOff = true;
     int cameraIndex;
     int currentDisplayFrameIndex = 0;  // 현재 메인 뷰에 표시된 프레임 인덱스 (0~3)
+    int nextInspectionFrameIndex = -1;  // 다음 트리거 시 검사할 프레임 인덱스 (-1: 미지정)
     
     // 스레드 안전 cameraInfos 접근 함수들
     QVector<CameraInfo> getCameraInfos() const;
@@ -251,6 +252,7 @@ signals:
 private slots:
     void onTriggerSignalReceived(const cv::Mat& frame, int cameraIndex);
     void onStripCrimpModeChanged(int mode);  // 서버로부터 STRIP/CRIMP 메시지 수신
+    void onFrameIndexReceived(int frameIndex);  // 서버로부터 프레임 인덱스 수신 (0~3)
     void updateUITexts();
     void openLanguageSettings();
     void showCameraSettings();
@@ -272,6 +274,7 @@ private slots:
     void saveImageAsync(const cv::Mat &frame, bool isPassed);
     void loadTeachingImage();
     void processGrabbedFrame(const cv::Mat& frame, int camIdx);
+    void processGrabbedFrame(const cv::Mat& frame, int camIdx, int forceFrameIndex);  // 프레임 인덱스 강제 지정
     void processNextInspection(int frameIdx);  // 큐에서 다음 검사 처리
     void updateUIElements();
     void addPattern();
@@ -283,7 +286,7 @@ private slots:
 
     void switchToRecipeMode();
     void switchToTestMode();
-    bool runInspect(const cv::Mat& frame, int specificCameraIndex = -1, bool updateMainView = true);
+    bool runInspect(const cv::Mat& frame, int specificCameraIndex = -1, bool updateMainView = true, int frameIndexForResult = -1);
     void onBackButtonClicked();
     void toggleFullScreenMode();
     

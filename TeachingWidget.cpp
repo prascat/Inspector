@@ -643,6 +643,10 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
         // STRIP/CRIMP 모드 변경 시그널 연결
         connect(ClientDialog::instance(), &ClientDialog::stripCrimpModeChanged,
                 this, &TeachingWidget::onStripCrimpModeChanged);
+        
+        // 프레임 인덱스 수신 시그널 연결
+        connect(ClientDialog::instance(), &ClientDialog::frameIndexReceived,
+                this, &TeachingWidget::onFrameIndexReceived);
     });
 
     // 프로그램 시작 시 카메라 자동 연결 체크
@@ -687,6 +691,9 @@ void TeachingWidget::initializeLanguageSystem()
     }
 
     // ConfigManager의 언어 변경 시그널 연결
+    // 주의: 중복 연결을 방지하기 위해 먼저 disconnect
+    disconnect(ConfigManager::instance(), &ConfigManager::languageChanged,
+               this, nullptr);
     connect(ConfigManager::instance(), &ConfigManager::languageChanged,
             this, [this](const QString &newLanguage)
             {
@@ -909,12 +916,6 @@ void TeachingWidget::initBasicSettings()
     // camOff 모드 초기 설정
     camOff = true;
     cameraIndex = 0;
-    
-    // CameraView에 TEACH OFF 상태 전달
-    if (cameraView)
-    {
-        cameraView->setTeachOff(true);
-    }
 
     // cameraFrames 벡터 초기화 (4개 프레임: 0,1,2,3)
     cameraFrames.resize(MAX_CAMERAS);
@@ -1247,6 +1248,7 @@ QVBoxLayout *TeachingWidget::createCameraLayout()
     cameraView = new CameraView(cameraContainer);
     cameraView->setGeometry(0, 0, 640, 480);
     cameraView->setTeachingWidget(this);  // TeachingWidget 포인터 설정
+    cameraView->setTeachOff(true);  // TEACH OFF 상태 초기화
 
     // 3. 버튼 오버레이 위젯 생성
     QWidget *buttonOverlay = new QWidget(cameraContainer);
@@ -8880,6 +8882,45 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat &frame, int camIdx)
             }, Qt::QueuedConnection);
         }
     }
+}
+
+// 프레임 인덱스를 강제 지정하는 오버로드
+void TeachingWidget::processGrabbedFrame(const cv::Mat &frame, int camIdx, int forceFrameIndex)
+{
+    // 프레임이 비어 있으면 무시
+    if (frame.empty())
+    {
+        return;
+    }
+
+    if (camIdx >= MAX_CAMERAS / 2)  // MAX_CAMERAS=4이면 카메라는 최대 2대
+        return;
+
+    // 벡터 크기를 4개로 한 번만 설정
+    if (cameraFrames.size() != MAX_CAMERAS)
+    {
+        cameraFrames.resize(MAX_CAMERAS);
+        frameUpdatedFlags.resize(MAX_CAMERAS, false);  // 플래그도 같이 초기화
+    }
+
+    // TEACH OFF 상태에서만 cameraFrames 갱신 (TEACH ON 시 영상 정지)
+    if (!teachingEnabled)
+    {
+        int frameIndex = forceFrameIndex;
+        
+        if (frameIndex >= 0 && frameIndex < MAX_CAMERAS)
+        {
+            // 프레임 쓰기
+            cameraFrames[frameIndex] = frame.clone();
+            
+            frameUpdatedFlags[frameIndex] = true;
+            
+            // 해당 미리보기 즉시 업데이트 (메인 스레드에서 실행)
+            QMetaObject::invokeMethod(this, [this, frameIndex]() {
+                updateSinglePreview(frameIndex);
+            }, Qt::QueuedConnection);
+        }
+    }
 
     // 메인 카메라 처리
     if (camIdx == cameraIndex)
@@ -9360,11 +9401,17 @@ void TeachingWidget::updateSinglePreview(int frameIndex)
     try
     {
         // 프레임 변환
-        cv::cvtColor(previewFrame, previewFrame, cv::COLOR_BGR2RGB);
+        cv::Mat rgbFrame;
+        cv::cvtColor(previewFrame, rgbFrame, cv::COLOR_BGR2RGB);
+        
+        // 메모리 정렬 보장을 위해 연속적인 메모리로 복사
+        if (!rgbFrame.isContinuous()) {
+            rgbFrame = rgbFrame.clone();
+        }
 
         // QPixmap 변환
-        QImage image(previewFrame.data, previewFrame.cols, previewFrame.rows,
-                     previewFrame.step, QImage::Format_RGB888);
+        QImage image(rgbFrame.data, rgbFrame.cols, rgbFrame.rows,
+                     rgbFrame.step, QImage::Format_RGB888);
         QPixmap pixmap = QPixmap::fromImage(image.copy());
 
         // 레이블 크기에 맞춰 스케일링
@@ -9432,6 +9479,19 @@ void TeachingWidget::onStripCrimpModeChanged(int mode)
     qDebug() << QString("[서버 메시지] %1 모드로 전환됨").arg(modeStr);
 }
 
+void TeachingWidget::onFrameIndexReceived(int frameIndex)
+{
+    if (frameIndex >= 0 && frameIndex <= 3) {
+        nextInspectionFrameIndex = frameIndex;
+        // 프레임 인덱스로부터 자동으로 Strip/Crimp 모드 동기화 (0,2=STRIP / 1,3=CRIMP)
+        currentStripCrimpMode = frameIndex % 2;
+        QString modeStr = (currentStripCrimpMode == 0) ? "STRIP" : "CRIMP";
+        qDebug() << QString("[서버 메시지] 다음 검사 프레임 인덱스 설정: %1 (모드 자동 동기화: %2)").arg(frameIndex).arg(modeStr);
+    } else {
+        qWarning() << QString("[서버 메시지] 유효하지 않은 프레임 인덱스: %1").arg(frameIndex);
+    }
+}
+
 void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraIndex)
 {
     auto triggerStartTime = std::chrono::high_resolution_clock::now();
@@ -9464,13 +9524,28 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
         activeTrainDialog->addCapturedImage(frame, cameraIndex);
     }
 
-    // **프레임을 cameraFrames에 저장 (트리거 전용)**
-    processGrabbedFrame(frame, cameraIndex);
+    // **서버로부터 프레임 인덱스를 받았는지 확인**
+    int frameIdx;
+    if (nextInspectionFrameIndex >= 0 && nextInspectionFrameIndex <= 3) {
+        // 서버로부터 지정된 프레임 인덱스 사용
+        frameIdx = nextInspectionFrameIndex;
+        qDebug() << QString("[Trigger] 서버 지정 프레임 인덱스 사용: %1").arg(frameIdx);
+        // 프레임을 지정된 인덱스에 저장
+        processGrabbedFrame(frame, cameraIndex, frameIdx);
+        // 사용 후 초기화
+        nextInspectionFrameIndex = -1;
+    } else {
+        // 기존 방식: cameraIndex와 currentStripCrimpMode로 계산
+        frameIdx = cameraIndex * 2 + currentStripCrimpMode;
+        qDebug() << QString("[Trigger] 자동 계산 프레임 인덱스 사용: %1").arg(frameIdx);
+        // 프레임을 자동 계산된 인덱스에 저장
+        processGrabbedFrame(frame, cameraIndex);
+    }
     
     // **통합 로그 출력**
     QString camSerial = (cameraIndex >= 0 && cameraIndex < cameraInfos.size()) ? cameraInfos[cameraIndex].serialNumber : "Unknown";
-    int frameIdx = cameraIndex * 2 + currentStripCrimpMode;
-    QString modeStr = (currentStripCrimpMode == 0) ? "STRIP" : "CRIMP";
+    // frameIdx에서 실제 모드 추출 (0,2=STRIP / 1,3=CRIMP)
+    QString modeStr = (frameIdx % 2 == 0) ? "STRIP" : "CRIMP";
     qDebug() << QString("[Trigger] Cam:%1 SN:%2 Mode:%3 Frame[%4]").arg(cameraIndex).arg(camSerial).arg(modeStr).arg(frameIdx);
 
     // **트리거가 들어온 카메라를 메인 카메라로 전환 (동기 처리, UI 업데이트는 메인 스레드에서)**
@@ -9486,7 +9561,7 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int cameraInd
             {
                 cameraView->setCurrentCameraUuid(triggerCameraUuid);
             }
-            updatePatternTree();
+            // updatePatternTree는 아래 한 곳에서만 호출 (중복 방지)
         }, Qt::QueuedConnection);
     }
     
@@ -9594,15 +9669,9 @@ void TeachingWidget::processNextInspection(int frameIdx)
     
     // 비동기 검사 실행
     (void)QtConcurrent::run([this, frameCopy, inspectionCameraIndex, frameIdx]() {
-        // currentDisplayFrameIndex를 임시로 설정
-        int savedFrameIndex = currentDisplayFrameIndex;
-        currentDisplayFrameIndex = frameIdx;
-        
         // 백그라운드 스레드에서 검사 수행 (트리거 모드: 메인 카메라뷰 업데이트 안함)
-        bool passed = runInspect(frameCopy, inspectionCameraIndex, false);
-        
-        // 원래 값 복원
-        currentDisplayFrameIndex = savedFrameIndex;
+        // frameIdx를 명시적으로 전달하여 검사 결과가 올바른 위치에 저장되도록 함
+        bool passed = runInspect(frameCopy, inspectionCameraIndex, false, frameIdx);
         
         // 메인 스레드로 결과 처리
         QMetaObject::invokeMethod(this, [this, frameIdx, passed]() {
@@ -9732,8 +9801,9 @@ void TeachingWidget::startCamera()
         {
             CameraGrabberThread *thread = new CameraGrabberThread(this);
             thread->setCameraIndex(i);
+            // 오버로드 함수를 명시적으로 지정
             connect(thread, &CameraGrabberThread::frameGrabbed,
-                    this, &TeachingWidget::processGrabbedFrame, Qt::QueuedConnection);
+                    this, static_cast<void(TeachingWidget::*)(const cv::Mat&, int)>(&TeachingWidget::processGrabbedFrame), Qt::QueuedConnection);
             connect(thread, &CameraGrabberThread::triggerSignalReceived,
                     this, &TeachingWidget::onTriggerSignalReceived, Qt::DirectConnection);
             thread->start(QThread::NormalPriority);
@@ -12074,13 +12144,16 @@ QString TeachingWidget::getCameraName(int index)
     return cameraName;
 }
 
-bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex, bool updateMainView)
+bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex, bool updateMainView, int frameIndexForResult)
 {
     if (frame.empty())
     {
 
         return false;
     }
+    
+    // frameIndexForResult이 지정되지 않으면 currentDisplayFrameIndex 사용
+    int resultFrameIndex = (frameIndexForResult >= 0) ? frameIndexForResult : currentDisplayFrameIndex;
 
     //   // 로그 제거
 
@@ -12144,8 +12217,8 @@ bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex, b
 
     for (const PatternInfo &pattern : allPatterns)
     {
-        // **현재 표시된 프레임과 일치하는 패턴만 검사**
-        if (pattern.frameIndex != currentDisplayFrameIndex) {
+        // **검사할 프레임과 일치하는 패턴만 검사**
+        if (pattern.frameIndex != resultFrameIndex) {
             continue;
         }
         
@@ -12267,10 +12340,10 @@ bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex, b
         // 검사 결과를 CameraView에 전달
         // 메인 스레드에서 호출해야 함 (QTimer 관련 문제 방지)
         if (updateMainView) {
-            cameraView->updateInspectionResult(result.isPassed, result, currentDisplayFrameIndex);
+            cameraView->updateInspectionResult(result.isPassed, result, resultFrameIndex);
         } else {
             // 비동기 호출 시에는 메인 스레드로 전달 (lambda capture 사용)
-            QMetaObject::invokeMethod(this, [this, result, frameIdx = currentDisplayFrameIndex]() {
+            QMetaObject::invokeMethod(this, [this, result, frameIdx = resultFrameIndex]() {
                 if (cameraView) {
                     cameraView->updateInspectionResult(result.isPassed, result, frameIdx);
                 }
@@ -12283,8 +12356,8 @@ bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex, b
         {
             QPixmap pixmap = QPixmap::fromImage(originalImage);
             
-            // ★ 검사 결과와 프레임 저장 (currentDisplayFrameIndex 사용)
-            cameraView->saveCurrentResultForMode(currentDisplayFrameIndex, pixmap);
+            // ★ 검사 결과와 프레임 저장 (resultFrameIndex 사용)
+            cameraView->saveCurrentResultForMode(resultFrameIndex, pixmap);
             
             // updateMainView가 true일 때만 메인 카메라뷰 업데이트 (RUN 버튼 모드)
             if (updateMainView)

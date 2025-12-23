@@ -4092,15 +4092,15 @@ void CameraView::paintEvent(QPaintEvent *event)
             painter.drawText(bgRect, Qt::AlignCenter, resultText);
             
             // TEACH ON 상태일 때만 프레임 레이블 표시
-            if (!isTeachOff)
-            {
-                // TEACH ON: 우측 하단에 Frame 0, 1, 2, 3 표시
-                painter.setPen(Qt::white);
-                painter.setFont(QFont("Arial", 12));
-                painter.drawText(rect.adjusted(10, 10, -10, -10), 
-                               Qt::AlignBottom | Qt::AlignRight, 
-                               QString("Frame %1").arg(i));
-            }
+            // if (!isTeachOff)
+            // {
+            //     // TEACH ON: 우측 하단에 Frame 0, 1, 2, 3 표시
+            //     painter.setPen(Qt::white);
+            //     painter.setFont(QFont("Arial", 12));
+            //     painter.drawText(rect.adjusted(10, 10, -10, -10), 
+            //                    Qt::AlignBottom | Qt::AlignRight, 
+            //                    QString("Frame %1").arg(i));
+            // }
             // TEACH OFF: 아무 텍스트도 표시하지 않음
         }
         

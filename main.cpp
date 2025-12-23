@@ -99,25 +99,29 @@ int main(int argc, char *argv[]) {
     // 커스텀 메시지 핸들러 먼저 설치 (초기 로그도 캡처하기 위해)
     qInstallMessageHandler(customMessageHandler);
     
-    // 티칭 위젯 생성 (내부에서 프로그레스바 표시)
-    TeachingWidget widget(0, "카메라 1");
-    g_teachingWidget = &widget;
+    // 티칭 위젯을 힙에 생성 (소멸자 호출을 건너뛰기 위해)
+    TeachingWidget *widget = new TeachingWidget(0, "카메라 1");
+    g_teachingWidget = widget;
     
     // 버퍼에 저장된 초기 로그를 위젯에 전달
     flushPendingLogs();
     
     // 윈도우 타이틀 설정
-    widget.setWindowTitle("KM Inspector");
+    widget->setWindowTitle("KM Inspector");
     
     // 프레임리스 윈도우로 설정 (타이틀바 제거)
-    widget.setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
+    widget->setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
     
     // 최대화 모드로 시작
-    widget.showMaximized();
+    widget->showMaximized();
     
     int result = app.exec();
     
-    // app.exec() 종료 (로그 제거)
+    // app.exec() 종료 후 빠른 정리
+    qDebug() << "[main] 애플리케이션 종료 시작";
+    
+    // 설정 저장 (명시적으로)
+    ConfigManager::instance()->saveConfig();
     
     // QApplication 종료 전에 전역 포인터 정리
     g_teachingWidget = nullptr;
@@ -127,7 +131,8 @@ int main(int argc, char *argv[]) {
     fflush(stdout);
     fflush(stderr);
     
-    // 빠른 종료 - 모든 정적/전역 객체 소멸자를 건너뛰고 프로세스 종료
+    // 빠른 종료 - 모든 객체 소멸자를 건너뛰고 프로세스 종료
+    // widget은 삭제하지 않음 (소멸자에서 Spinnaker SDK, OpenVINO mutex 문제)
     // Spinnaker SDK, OpenVINO 등의 mutex 문제 회피
     _exit(result);
     

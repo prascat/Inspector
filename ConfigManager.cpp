@@ -11,7 +11,7 @@ ConfigManager* ConfigManager::m_instance = nullptr;
 
 ConfigManager* ConfigManager::instance() {
     if (!m_instance) {
-        m_instance = new ConfigManager();
+        m_instance = new ConfigManager(nullptr);
     }
     return m_instance;
 }
@@ -40,8 +40,8 @@ ConfigManager::ConfigManager(QObject* parent) : QObject(parent) {
 }
 
 ConfigManager::~ConfigManager() {
-    // 소멸자에서 설정 저장
-    saveConfig();
+    // 소멸자에서 설정 저장하지 않음 (충돌 방지)
+    // 필요시 명시적으로 saveConfig() 호출
 }
 
 QString ConfigManager::getConfigFilePath() const {

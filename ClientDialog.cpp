@@ -337,12 +337,25 @@ void ClientDialog::onDataReceived()
     QByteArray data = testSocket->readAll();
     QString message = QString::fromUtf8(data).trimmed();
     
+    qDebug() << "[소켓통신 READ] 수신 데이터:" << data.toHex(' ') << "| 메시지:" << message << "| 크기:" << data.size() << "bytes";
+    
     if (!message.isEmpty()) {
         // STRIP/CRIMP 모드 전환 처리
         if (message.toUpper() == "STRIP") {
+            qDebug() << "[소켓통신 READ] STRIP 모드로 전환";
             emit stripCrimpModeChanged(0);
         } else if (message.toUpper() == "CRIMP") {
+            qDebug() << "[소켓통신 READ] CRIMP 모드로 전환";
             emit stripCrimpModeChanged(1);
+        }
+        // 프레임 인덱스 처리 (0, 1, 2, 3)
+        else {
+            bool ok;
+            int frameIndex = message.toInt(&ok);
+            if (ok && frameIndex >= 0 && frameIndex <= 3) {
+                qDebug() << "[소켓통신 READ] 프레임 인덱스 수신:" << frameIndex << "(다음 트리거 시 사용)";
+                emit frameIndexReceived(frameIndex);
+            }
         }
     }
 }
