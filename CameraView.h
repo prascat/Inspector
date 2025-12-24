@@ -153,7 +153,7 @@ public:
         Right
     };
 
-    QList<PatternInfo> &getPatterns() { return patterns; }
+    QList<PatternInfo> getPatterns() const { return patterns; }  // 복사본 반환으로 스레드 안전성 확보
     CameraView(QWidget *parent = nullptr);
     void setStatusInfo(const QString &info)
     {
@@ -230,7 +230,6 @@ public:
     // 선택된 패턴 정보 접근 메서드
     QUuid getSelectedPatternId() const { return selectedPatternId; }
     int getSelectedPatternIndex() const;
-    const QList<PatternInfo> &getPatterns() const { return patterns; }
     PatternInfo *getPatternById(const QUuid &id);
     const PatternInfo *getPatternById(const QUuid &id) const;
     void updateFidTemplateImage(const QUuid &patternId, const QImage &templateImage);
@@ -250,12 +249,41 @@ public:
     void saveCurrentResultForMode(int mode, const QPixmap &frame); // 현재 패턴 상태로 저장
     bool switchToModeResult(int mode);                             // 모드별 결과로 전환, 성공 시 true 반환
     bool hasModeResult(int frameIndex) const { return frameIndex >= 0 && frameIndex < 4 && hasFrameResult[frameIndex]; }
-    const InspectionResult& getFrameResult(int frameIndex) const { return frameResults[frameIndex]; }
+    const InspectionResult& getFrameResult(int frameIndex) const { 
+        static InspectionResult emptyResult;
+        if (frameIndex < 0 || frameIndex >= 4) return emptyResult;
+        return frameResults[frameIndex]; 
+    }
+    const QPixmap& getFramePixmap(int frameIndex) const { 
+        static QPixmap emptyPixmap;
+        if (frameIndex < 0 || frameIndex >= 4) return emptyPixmap;
+        return framePixmaps[frameIndex]; 
+    }
     void clearModeResults()
     {
         for (int i = 0; i < 4; i++) {
             hasFrameResult[i] = false;
         }
+    }
+    
+    // 검사 횟수 카운트 관리
+    void incrementInspectionCount(int frameIndex) {
+        if (frameIndex >= 0 && frameIndex < 4) {
+            frameInspectionCount[frameIndex]++;
+        }
+    }
+    void resetInspectionCount(int frameIndex) {
+        if (frameIndex >= 0 && frameIndex < 4) {
+            frameInspectionCount[frameIndex] = 0;
+        }
+    }
+    void resetAllInspectionCounts() {
+        for (int i = 0; i < 4; i++) {
+            frameInspectionCount[i] = 0;
+        }
+    }
+    int getInspectionCount(int frameIndex) const {
+        return (frameIndex >= 0 && frameIndex < 4) ? frameInspectionCount[frameIndex] : 0;
     }
 
     // 필터 관련 메서드들 (UUID 기반으로 통일)
@@ -393,6 +421,7 @@ private:
     std::array<QPixmap, 4> framePixmaps;
     std::array<QList<PatternInfo>, 4> framePatterns;
     std::array<bool, 4> hasFrameResult = {false, false, false, false};
+    std::array<int, 4> frameInspectionCount = {0, 0, 0, 0};  // 각 프레임별 검사 횟수 카운트
     QUuid selectedInspectionPatternId; // 선택된 검사 결과 패턴 필터링
     
     // 4분할 뷰용 프레임 데이터
@@ -457,16 +486,16 @@ private:
     QGraphicsScene *scene = nullptr;
     QGraphicsPixmapItem *bgPixmapItem = nullptr;
 
-    void drawInspectionResults(QPainter &painter, const InspectionResult &result);
+    void drawInspectionResults(QPainter &painter, const InspectionResult &result, int renderFrameIndex = -1);
 
     // 좌표 변환 헬퍼: painter transform 상태에 따라 scene 좌표를 viewport 좌표로 변환
     QPointF sceneToViewport(QPainter &painter, const QPointF &scenePoint);
     QRectF sceneToViewport(QPainter &painter, const QRectF &sceneRect);
 
     // 검사 결과 시각화 서브 함수들
-    void drawROIPatterns(QPainter &painter, const InspectionResult &result);
-    void drawFIDPatterns(QPainter &painter, const InspectionResult &result);
-    void drawINSPatterns(QPainter &painter, const InspectionResult &result);
+    void drawROIPatterns(QPainter &painter, const InspectionResult &result, int renderFrameIndex = -1);
+    void drawFIDPatterns(QPainter &painter, const InspectionResult &result, int renderFrameIndex = -1);
+    void drawINSPatterns(QPainter &painter, const InspectionResult &result, int renderFrameIndex = -1);
 
     // INS 검사방법별 시각화 함수들
     void drawINSStripVisualization(QPainter &painter, const InspectionResult &result,

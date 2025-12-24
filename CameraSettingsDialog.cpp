@@ -708,6 +708,17 @@ void CameraSettingsDialog::setupTriggerTestUI() {
     triggerCountLabel->setStyleSheet("QLabel { font-weight: bold; color: white; font-size: 14px; }");
     infoLayout->addWidget(triggerCountLabel, 3, 1);
     
+    // 카메라별 트리거 횟수
+    infoLayout->addWidget(new QLabel("CAM0 트리거:", this), 4, 0);
+    cam0TriggerCountLabel = new QLabel("0", this);
+    cam0TriggerCountLabel->setStyleSheet("QLabel { font-weight: bold; color: #4CAF50; font-size: 12px; }");
+    infoLayout->addWidget(cam0TriggerCountLabel, 4, 1);
+    
+    infoLayout->addWidget(new QLabel("CAM1 트리거:", this), 5, 0);
+    cam1TriggerCountLabel = new QLabel("0", this);
+    cam1TriggerCountLabel->setStyleSheet("QLabel { font-weight: bold; color: #2196F3; font-size: 12px; }");
+    infoLayout->addWidget(cam1TriggerCountLabel, 5, 1);
+    
     infoLayout->setColumnStretch(1, 1);
     leftLayout->addLayout(infoLayout);
     leftLayout->addStretch();
@@ -1708,6 +1719,12 @@ void CameraSettingsDialog::onStartTriggerTest() {
         triggerDetectionCount = 0;
         lastExposureCount = 0;
         
+        // 카메라별 트리거 카운터 초기화
+        cam0TriggerCount = 0;
+        cam1TriggerCount = 0;
+        if (cam0TriggerCountLabel) cam0TriggerCountLabel->setText("0");
+        if (cam1TriggerCountLabel) cam1TriggerCountLabel->setText("0");
+        
         triggerToggleBtn->setText("테스트 중지");
         triggerToggleBtn->setStyleSheet(
             "QPushButton { "
@@ -1851,13 +1868,34 @@ void CameraSettingsDialog::updateTriggerTestStatus() {
             // ✓ 유효한 이미지 획득 = 트리거 감지!
             int currentCount = ++triggerDetectionCount;
             
+            // 카메라별 카운터 증가
+            int camIdx = selectedCameraIndex;
+            int cam0Count = 0;
+            int cam1Count = 0;
+            if (camIdx == 0) {
+                cam0Count = ++cam0TriggerCount;
+                qDebug() << "[TriggerTest] CAM0 트리거 카운트:" << cam0Count;
+            } else if (camIdx == 1) {
+                cam1Count = ++cam1TriggerCount;
+                qDebug() << "[TriggerTest] CAM1 트리거 카운트:" << cam1Count;
+            }
+            
             // UI 피드백 (메인 스레드에서 실행)
-            QMetaObject::invokeMethod(this, [this, currentCount]() {
+            QMetaObject::invokeMethod(this, [this, currentCount, camIdx, cam0Count, cam1Count]() {
                 if (!isTriggerTesting) return;
                 
                 if (triggerCountLabel) {
                     triggerCountLabel->setText(QString::number(currentCount));
                     triggerCountLabel->setStyleSheet("QLabel { font-weight: bold; color: #2196F3; font-size: 14px; }");
+                }
+                
+                // 카메라별 UI 업데이트
+                if (camIdx == 0 && cam0TriggerCountLabel) {
+                    cam0TriggerCountLabel->setText(QString::number(cam0Count));
+                    cam0TriggerCountLabel->setStyleSheet("font-weight: bold; color: white; font-size: 12px; background-color: #4CAF50; padding: 2px;");
+                } else if (camIdx == 1 && cam1TriggerCountLabel) {
+                    cam1TriggerCountLabel->setText(QString::number(cam1Count));
+                    cam1TriggerCountLabel->setStyleSheet("font-weight: bold; color: white; font-size: 12px; background-color: #2196F3; padding: 2px;");
                 }
                 
                 if (triggerStatusLabel) {

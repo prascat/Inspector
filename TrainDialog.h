@@ -74,6 +74,7 @@ private:
     void trainNextPattern();
     void updateTrainingProgress(const QString& message);
     void startDockerTraining(const QString& patternName, const QString& tempDir, const QString& outputDir);
+    void checkAndCleanDockerImages();  // Docker 이미지 확인 및 정리
     QString getTotalTimeString() const;  // 총 경과 시간 문자열 반환
     QString getPatternProgressString() const;  // 패턴 진행률 문자열 반환 [1/3]
 
@@ -91,6 +92,7 @@ private:
     QDoubleSpinBox *coresetRatioSpinBox;
     QSpinBox *numNeighborsSpinBox;
     QPushButton *rebuildDockerButton;
+    QLabel *dockerImageInfoLabel;  // Docker 이미지 빌드 옵션 표시
     
     // 이미지 미리보기 리스트
     QListWidget *imageListWidget;

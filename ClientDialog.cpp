@@ -335,27 +335,20 @@ void ClientDialog::onSocketError(QAbstractSocket::SocketError error)
 void ClientDialog::onDataReceived()
 {
     QByteArray data = testSocket->readAll();
-    QString message = QString::fromUtf8(data).trimmed();
     
-    qDebug() << "[소켓통신 READ] 수신 데이터:" << data.toHex(' ') << "| 메시지:" << message << "| 크기:" << data.size() << "bytes";
+    qDebug() << "[소켓통신 READ] 수신 데이터:" << data.toHex(' ') << "| 크기:" << data.size() << "bytes";
     
-    if (!message.isEmpty()) {
-        // STRIP/CRIMP 모드 전환 처리
-        if (message.toUpper() == "STRIP") {
-            qDebug() << "[소켓통신 READ] STRIP 모드로 전환";
-            emit stripCrimpModeChanged(0);
-        } else if (message.toUpper() == "CRIMP") {
-            qDebug() << "[소켓통신 READ] CRIMP 모드로 전환";
-            emit stripCrimpModeChanged(1);
-        }
-        // 프레임 인덱스 처리 (0, 1, 2, 3)
-        else {
-            bool ok;
-            int frameIndex = message.toInt(&ok);
-            if (ok && frameIndex >= 0 && frameIndex <= 3) {
-                qDebug() << "[소켓통신 READ] 프레임 인덱스 수신:" << frameIndex << "(다음 트리거 시 사용)";
-                emit frameIndexReceived(frameIndex);
-            }
+    // 바이너리 바이트 값(0x00, 0x01, 0x02, 0x03)을 정수로 변환 → 프레임 트리거로 사용
+    // 여러 바이트를 동시에 받은 경우 모두 처리
+    for (int i = 0; i < data.size(); ++i) {
+        unsigned char byte = static_cast<unsigned char>(data[i]);
+        int frameIndex = static_cast<int>(byte);
+        
+        if (frameIndex >= 0 && frameIndex <= 3) {
+            qDebug() << "[소켓통신 READ] 프레임" << frameIndex << "트리거 수신";
+            emit frameIndexReceived(frameIndex);
+        } else {
+            qWarning() << "[소켓통신 READ] 유효하지 않은 데이터:" << frameIndex;
         }
     }
 }

@@ -379,7 +379,7 @@ void TestDialog::runInspectionOnImage(const QString &imagePath)
     
     const InspectionResult& result = cameraView->getLastInspectionResult();
     
-    QList<PatternInfo> &patterns = cameraView->getPatterns();
+    QList<PatternInfo> patterns = cameraView->getPatterns();
     
     // INS 패턴 필터링
     QList<PatternInfo*> currentInsPatterns;
@@ -549,7 +549,7 @@ void TestDialog::rebuildResultTable()
     CameraView *cameraView = teachingWidget->getCameraView();
     if (!cameraView) return;
     
-    QList<PatternInfo> &patterns = cameraView->getPatterns();
+    QList<PatternInfo> patterns = cameraView->getPatterns();
     
     qDebug() << "[TestDialog] rebuildResultTable - 전체 패턴 수:" << patterns.size() 
              << "현재 모드:" << currentStripCrimpMode;

@@ -11,6 +11,8 @@
 #include <QScrollBar>
 #include <QFormLayout>
 #include <QThread>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include "CustomFileDialog.h"
 #include "CustomMessageBox.h"
 
@@ -121,6 +123,16 @@ void TrainDialog::setupUI()
         "QPushButton:pressed { background-color: #e65100; }"
     );
     optionsLayout->addRow(rebuildDockerButton);
+    
+    // Docker 이미지 정보 표시 라벨
+    dockerImageInfoLabel = new QLabel("Docker 이미지 확인 중...", this);
+    dockerImageInfoLabel->setWordWrap(true);
+    dockerImageInfoLabel->setStyleSheet(
+        "QLabel { color: #aaaaaa; font-size: 11px; padding: 5px; "
+        "background-color: #2a2a2a; border: 1px solid #3d3d3d; border-radius: 3px; }"
+    );
+    dockerImageInfoLabel->setMinimumHeight(60);
+    optionsLayout->addRow(dockerImageInfoLabel);
     
     leftLayout->addWidget(optionsGroupBox);
     
@@ -286,7 +298,35 @@ void TrainDialog::setAnomalyPatterns(const QVector<PatternInfo*>& patterns)
                 .arg(static_cast<int>(pattern->rect.height()));
             
             if (isTrained) {
-                labelText += " [Trained]";
+                // 메타데이터에서 모델 옵션 읽기
+                QString metadataPath = QCoreApplication::applicationDirPath() + 
+                                      QString("/../deploy/weights/%1/metadata.json").arg(pattern->name);
+                QFile metaFile(metadataPath);
+                QString modelInfo;
+                
+                if (metaFile.exists() && metaFile.open(QIODevice::ReadOnly)) {
+                    QByteArray data = metaFile.readAll();
+                    metaFile.close();
+                    
+                    QJsonDocument doc = QJsonDocument::fromJson(data);
+                    if (!doc.isNull() && doc.isObject()) {
+                        QJsonObject obj = doc.object();
+                        QString backbone = obj.value("backbone").toString("unknown");
+                        double coresetRatio = obj.value("coreset_ratio").toDouble(-1.0);
+                        int numNeighbors = obj.value("num_neighbors").toInt(-1);
+                        
+                        modelInfo = QString(" [%1, CR:% 2, NN:%3]")
+                            .arg(backbone)
+                            .arg(coresetRatio, 0, 'f', 3)
+                            .arg(numNeighbors);
+                    } else {
+                        modelInfo = " [Trained]";
+                    }
+                } else {
+                    modelInfo = " [Trained]";
+                }
+                
+                labelText += modelInfo;
             }
             
             QLabel *label = new QLabel(labelText);
@@ -958,6 +998,81 @@ void TrainDialog::showEvent(QShowEvent *event)
             move(x, y);
         }
     }
+    
+    // Docker 이미지 상태 확인 및 정리
+    checkAndCleanDockerImages();
+}
+
+void TrainDialog::checkAndCleanDockerImages()
+{
+    // Docker 이미지 확인
+    QProcess checkProcess;
+    checkProcess.start("docker", QStringList() << "images" << "--format" << "{{.Repository}}:{{.Tag}}");
+    checkProcess.waitForFinished(3000);
+    
+    if (checkProcess.exitCode() != 0) {
+        qWarning() << "[Docker] Docker 이미지 확인 실패";
+        if (dockerImageInfoLabel) {
+            dockerImageInfoLabel->setText("❌ Docker 이미지 확인 실패\nDocker가 실행 중인지 확인하세요.");
+            dockerImageInfoLabel->setStyleSheet(
+                "QLabel { color: #ff5555; font-size: 11px; padding: 5px; "
+                "background-color: #2a2a2a; border: 1px solid #ff5555; border-radius: 3px; }"
+            );
+        }
+        return;
+    }
+    
+    QString output = checkProcess.readAllStandardOutput();
+    QStringList images = output.split('\n', Qt::SkipEmptyParts);
+    
+    bool hasPatchcoreTrainer = false;
+    for (const QString& image : images) {
+        if (image.contains("patchcore-trainer:latest")) {
+            hasPatchcoreTrainer = true;
+            break;
+        }
+    }
+    
+    // patchcore-trainer 이미지가 없으면 경고
+    if (!hasPatchcoreTrainer) {
+        qWarning() << "[Docker] patchcore-trainer:latest 이미지가 없습니다.";
+        
+        if (dockerImageInfoLabel) {
+            dockerImageInfoLabel->setText(
+                "⚠️ Docker 이미지 없음\n\n"
+                "'Docker 이미지 재빌드' 버튼을 눌러\n"
+                "이미지를 생성하세요."
+            );
+            dockerImageInfoLabel->setStyleSheet(
+                "QLabel { color: #ffaa00; font-size: 11px; padding: 5px; "
+                "background-color: #2a2a2a; border: 1px solid #ffaa00; border-radius: 3px; }"
+            );
+        }
+        
+        QTimer::singleShot(100, this, [this]() {
+            CustomMessageBox msgBox(this);
+            msgBox.setIcon(CustomMessageBox::Warning);
+            msgBox.setTitle("Docker 이미지 없음");
+            msgBox.setMessage("patchcore-trainer:latest Docker 이미지가 없습니다.\n\n"
+                            "'Docker 이미지 재빌드' 버튼을 눌러 이미지를 생성하세요.");
+            msgBox.setButtons(QMessageBox::Ok);
+            msgBox.exec();
+        });
+    } else {
+        // Docker 이미지 있음
+        if (dockerImageInfoLabel) {
+            dockerImageInfoLabel->setText("✅ Docker 이미지 있음");
+            dockerImageInfoLabel->setStyleSheet(
+                "QLabel { color: #55ff55; font-size: 11px; padding: 5px; "
+                "background-color: #2a2a2a; border: 1px solid #55ff55; border-radius: 3px; }"
+            );
+        }
+        qDebug() << "[Docker] patchcore-trainer:latest 이미지 있음";
+    }
+    
+    // 댕글링 이미지 정리 (백그라운드)
+    QProcess::startDetached("docker", QStringList() << "image" << "prune" << "-f");
+    qDebug() << "[Docker] 댕글링 이미지 자동 정리 실행";
 }
 
 void TrainDialog::resizeEvent(QResizeEvent *event)
@@ -1648,4 +1763,7 @@ void TrainDialog::updateTrainingProgress(const QString& message)
         trainingStatusLabel->setText(message);
     }
     qDebug() << "[TRAIN STATUS]" << message;
+    
+    // UI 블로킹 방지 - 이벤트 루프 처리
+    QApplication::processEvents();
 }

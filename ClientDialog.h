@@ -45,7 +45,6 @@ public:
 
 signals:
     void settingsChanged();
-    void stripCrimpModeChanged(int mode);  // 0: STRIP, 1: CRIMP
     void frameIndexReceived(int frameIndex);  // 검사할 프레임 인덱스 수신 (0~3)
 
 private slots:

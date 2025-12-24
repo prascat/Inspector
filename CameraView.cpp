@@ -15,6 +15,7 @@
 #include <QGestureEvent>
 #include <QPinchGesture>
 #include <QScrollBar>
+#include <QElapsedTimer>
 #include <cmath>
 #include <algorithm>
 
@@ -1916,10 +1917,8 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
     }
 
     // 프레임별 검사 결과 저장 (frameIndex가 유효하면 저장)
-    // 저장 조건 체크 (로그 제거)
     if (targetFrameIndex >= 0 && targetFrameIndex < 4)
     {
-        // frameResults에 저장 시작 (로그 제거)
         frameResults[targetFrameIndex] = result;
         
         // 해당 프레임의 패턴만 필터링하여 저장
@@ -1933,6 +1932,14 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
         }
         framePatterns[targetFrameIndex] = frameSpecificPatterns;
         hasFrameResult[targetFrameIndex] = true;
+        frameInspectionCount[targetFrameIndex]++;  // 검사 횟수 증가
+        
+        // 검사 결과 저장 로그
+        qDebug() << QString("[CameraView] Frame[%1] 검사 결과 저장: hasFrameResult=%2, 패턴수=%3, isPassed=%4")
+                    .arg(targetFrameIndex)
+                    .arg(hasFrameResult[targetFrameIndex] ? "true" : "false")
+                    .arg(frameSpecificPatterns.size())
+                    .arg(result.isPassed ? "PASS" : "NG");
         
         // ROI 영역 찾기
         QRectF roiRect(0, 0, 1920, 1200);
@@ -1944,11 +1951,22 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
         }
         
         // 검사 결과 오버레이 포함해서 ROI 영역만 캡쳐
+        qDebug() << QString("[CameraView] Frame[%1] 오버레이 생성 시도 - teachingWidget=%2, cameraFrames.size=%3")
+                    .arg(targetFrameIndex)
+                    .arg(teachingWidget ? "valid" : "null")
+                    .arg(teachingWidget ? (int)teachingWidget->cameraFrames.size() : -1);
+        
         if (teachingWidget && targetFrameIndex < (int)teachingWidget->cameraFrames.size())
         {
             const cv::Mat& frame = teachingWidget->cameraFrames[targetFrameIndex];
             if (!frame.empty())
             {
+                qDebug() << QString("[CameraView] Frame[%1] pixmap 생성 시작: 프레임 크기=%2x%3, channels=%4")
+                            .arg(targetFrameIndex)
+                            .arg(frame.cols)
+                            .arg(frame.rows)
+                            .arg(frame.channels());
+                
                 // ROI 영역만 crop (경계선 5픽셀 안쪽)
                 int inset = 5;
                 cv::Rect cvRoiRect(
@@ -1959,48 +1977,151 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
                 );
                 cvRoiRect = cvRoiRect & cv::Rect(0, 0, frame.cols, frame.rows);
                 
-                cv::Mat croppedFrame = frame(cvRoiRect).clone();
+                // ROI 유효성 검사
+                if (cvRoiRect.width <= 0 || cvRoiRect.height <= 0 ||
+                    cvRoiRect.x < 0 || cvRoiRect.y < 0 ||
+                    cvRoiRect.x + cvRoiRect.width > frame.cols ||
+                    cvRoiRect.y + cvRoiRect.height > frame.rows)
+                {
+                    qDebug() << QString("[CameraView] Frame[%1] 오버레이 생성 실패: ROI 영역 무효 (x=%2, y=%3, w=%4, h=%5)")
+                                .arg(targetFrameIndex)
+                                .arg(cvRoiRect.x).arg(cvRoiRect.y)
+                                .arg(cvRoiRect.width).arg(cvRoiRect.height);
+                }
+                else
+                {
+                    qDebug() << QString("[CameraView] Frame[%1] ROI 영역: x=%2, y=%3, w=%4, h=%5")
+                            .arg(targetFrameIndex)
+                            .arg(cvRoiRect.x).arg(cvRoiRect.y)
+                            .arg(cvRoiRect.width).arg(cvRoiRect.height);
                 
-                // QImage로 변환
-                QImage croppedImage(croppedFrame.data, croppedFrame.cols, croppedFrame.rows, croppedFrame.step, 
-                                   croppedFrame.channels() == 1 ? QImage::Format_Grayscale8 : QImage::Format_BGR888);
-                QImage croppedImageCopy = croppedImage.copy();
+                cv::Mat croppedFrame;
+                bool cropSuccess = true;
+                try {
+                    croppedFrame = frame(cvRoiRect).clone();
+                } catch (const cv::Exception& e) {
+                    qDebug() << QString("[CameraView] Frame[%1] crop 실패: %2")
+                                .arg(targetFrameIndex)
+                                .arg(e.what());
+                    cropSuccess = false;
+                }
                 
-                // 검사 결과 오버레이 그리기
-                QPainter overlayPainter(&croppedImageCopy);
-                overlayPainter.setRenderHint(QPainter::Antialiasing);
-                
-                // ROI 기준으로 좌표 이동 (전체 이미지 좌표 -> 크롭된 ROI 좌표)
-                overlayPainter.translate(-cvRoiRect.x, -cvRoiRect.y);
-                
-                // 임시로 현재 상태 저장
-                int savedFrameIndex = currentFrameIndex;
-                QList<PatternInfo> savedPatterns = patterns;
-                
-                currentFrameIndex = targetFrameIndex;
-                patterns = frameSpecificPatterns;
-                
-                // 검사 결과 그리기
-                drawInspectionResults(overlayPainter, result);
-                
-                // 상태 복원
-                currentFrameIndex = savedFrameIndex;
-                patterns = savedPatterns;
-                
-                overlayPainter.end();
-                
-                framePixmaps[targetFrameIndex] = QPixmap::fromImage(croppedImageCopy);
+                if (cropSuccess && !croppedFrame.empty() && croppedFrame.isContinuous())
+                {
+                    // BGR로 변환 (QImage는 RGB 필요)
+                    cv::Mat rgbFrame;
+                    bool convertSuccess = true;
+                    
+                    if (croppedFrame.channels() == 3) {
+                        cv::cvtColor(croppedFrame, rgbFrame, cv::COLOR_BGR2RGB);
+                    } else if (croppedFrame.channels() == 1) {
+                        rgbFrame = croppedFrame.clone();
+                    } else {
+                        qDebug() << QString("[CameraView] Frame[%1] 지원하지 않는 채널 수: %2")
+                                    .arg(targetFrameIndex).arg(croppedFrame.channels());
+                        convertSuccess = false;
+                    }
+                    
+                    if (convertSuccess)
+                    {
+                        // QImage로 변환 (step 포함)
+                        QImage croppedImage(rgbFrame.data, rgbFrame.cols, rgbFrame.rows, rgbFrame.step,
+                                           rgbFrame.channels() == 1 ? QImage::Format_Grayscale8 : QImage::Format_RGB888);
+                        QImage croppedImageCopy = croppedImage.copy();
+                        
+                        if (!croppedImageCopy.isNull())
+                        {
+                            
+                            // 검사 결과 오버레이 그리기
+                            QPainter overlayPainter(&croppedImageCopy);
+                            overlayPainter.setRenderHint(QPainter::Antialiasing);
+                            
+                            // ROI 기준으로 좌표 이동 (전체 이미지 좌표 -> 크롭된 ROI 좌표)
+                            overlayPainter.translate(-cvRoiRect.x, -cvRoiRect.y);
+                            
+                            // 임시로 현재 상태 저장
+                            int savedFrameIndex = currentFrameIndex;
+                            QList<PatternInfo> savedPatterns = patterns;
+                            QString savedCameraUuid = currentCameraUuid;
+                            
+                            currentFrameIndex = targetFrameIndex;
+                            patterns = frameSpecificPatterns;
+                            
+                            // targetFrameIndex에 해당하는 카메라 UUID 설정
+                            if (!patterns.isEmpty() && !patterns[0].cameraUuid.isEmpty()) {
+                                currentCameraUuid = patterns[0].cameraUuid;
+                            } else {
+                                currentCameraUuid.clear(); // 모든 카메라 허용
+                            }
+                            
+                            // 검사 결과 그리기 (targetFrameIndex 명시적 전달)
+                            qDebug() << QString("[CameraView] Frame[%1] 오버레이 그리기 시작: 패턴수=%2, FID결과=%3, INS결과=%4")
+                                        .arg(targetFrameIndex)
+                                        .arg(frameSpecificPatterns.size())
+                                        .arg(result.fidResults.size())
+                                        .arg(result.insResults.size());
+                            
+                            drawInspectionResults(overlayPainter, result, targetFrameIndex);
+                            
+                            qDebug() << QString("[CameraView] Frame[%1] 오버레이 그리기 완료")
+                                        .arg(targetFrameIndex);
+                            
+                            // 상태 복원
+                            currentFrameIndex = savedFrameIndex;
+                            patterns = savedPatterns;
+                            currentCameraUuid = savedCameraUuid;
+                            
+                            overlayPainter.end();
+                            
+                            framePixmaps[targetFrameIndex] = QPixmap::fromImage(croppedImageCopy);
+                            
+                            qDebug() << QString("[CameraView] Frame[%1] framePixmap 저장 완료: isNull=%2")
+                                        .arg(targetFrameIndex)
+                                        .arg(framePixmaps[targetFrameIndex].isNull() ? "true" : "false");
+                        }
+                        else
+                        {
+                            qDebug() << QString("[CameraView] Frame[%1] QImage 생성 실패")
+                                        .arg(targetFrameIndex);
+                        }
+                    }
+                }
+                else
+                {
+                    qDebug() << QString("[CameraView] Frame[%1] croppedFrame 무효 (empty=%2, continuous=%3)")
+                                .arg(targetFrameIndex)
+                                .arg(croppedFrame.empty() ? "true" : "false")
+                                .arg(croppedFrame.isContinuous() ? "true" : "false");
+                }
+                }  // ROI 유효성 체크 else 블록 닫기
+            }
+            else
+            {
+                qDebug() << QString("[CameraView] Frame[%1] 오버레이 생성 실패: 프레임이 비어있음")
+                            .arg(targetFrameIndex);
             }
         }
+        else
+        {
+            qDebug() << QString("[CameraView] ⚠ Frame[%1] 오버레이 생성 실패: teachingWidget 조건 불충족 (tWidget=%2, size=%3)")
+                        .arg(targetFrameIndex)
+                        .arg(teachingWidget ? "valid" : "null")
+                        .arg(teachingWidget ? (int)teachingWidget->cameraFrames.size() : -1);
+        }
         
-        // frameResults 저장 완료 (로그 제거)
+        // frameResults 저장 완료
     }
     else
     {
         qDebug() << "[updateInspectionResult] 조건 실패 - targetFrameIndex가 범위 밖:" << targetFrameIndex;
     }
 
-    update();
+    // 4분할 뷰 모드에서는 viewport()->update() 호출 필요
+    if (isQuadViewMode) {
+        viewport()->update();
+    } else {
+        update();
+    }
 }
 
 // 좌표 변환 헬퍼: painter transform 상태에 따라 scene 좌표를 viewport 좌표로 변환
@@ -2028,22 +2149,25 @@ QRectF CameraView::sceneToViewport(QPainter &painter, const QRectF &sceneRect)
     return QRectF(topLeft, bottomRight);
 }
 
-void CameraView::drawInspectionResults(QPainter &painter, const InspectionResult &result)
+void CameraView::drawInspectionResults(QPainter &painter, const InspectionResult &result, int renderFrameIndex)
 {
-    drawROIPatterns(painter, result);
-    drawFIDPatterns(painter, result);
-    drawINSPatterns(painter, result);
+    drawROIPatterns(painter, result, renderFrameIndex);
+    drawFIDPatterns(painter, result, renderFrameIndex);
+    drawINSPatterns(painter, result, renderFrameIndex);
 }
 
-void CameraView::drawROIPatterns(QPainter &painter, const InspectionResult &result)
+void CameraView::drawROIPatterns(QPainter &painter, const InspectionResult &result, int renderFrameIndex)
 {
+    // renderFrameIndex가 지정되면 그 값을, 아니면 currentFrameIndex 사용
+    int targetFrameIdx = (renderFrameIndex >= 0) ? renderFrameIndex : currentFrameIndex;
+    
     for (const PatternInfo &pattern : patterns)
     {
         if (pattern.type != PatternType::ROI || !pattern.enabled)
             continue;
 
         // 현재 프레임의 패턴만 표시
-        if (pattern.frameIndex != currentFrameIndex)
+        if (pattern.frameIndex != targetFrameIdx)
             continue;
 
         // 패턴 표시 조건: 패턴에 카메라 지정이 없거나, 현재 카메라가 비어있거나, 카메라가 일치하면 표시
@@ -2090,8 +2214,11 @@ void CameraView::drawROIPatterns(QPainter &painter, const InspectionResult &resu
     }
 }
 
-void CameraView::drawFIDPatterns(QPainter &painter, const InspectionResult &result)
+void CameraView::drawFIDPatterns(QPainter &painter, const InspectionResult &result, int renderFrameIndex)
 {
+    // renderFrameIndex가 지정되면 그 값을, 아니면 currentFrameIndex 사용
+    int targetFrameIdx = (renderFrameIndex >= 0) ? renderFrameIndex : currentFrameIndex;
+    
     bool hasSelectedPattern = !selectedInspectionPatternId.isNull();
 
     for (auto it = result.fidResults.begin(); it != result.fidResults.end(); ++it)
@@ -2121,8 +2248,8 @@ void CameraView::drawFIDPatterns(QPainter &painter, const InspectionResult &resu
         if (!patternInfo || patternInfo->type != PatternType::FID)
             continue;
 
-        // 현재 프레임의 패턴만 표시
-        if (patternInfo->frameIndex != currentFrameIndex)
+        // 렌더링 대상 프레임의 패턴만 표시
+        if (patternInfo->frameIndex != targetFrameIdx)
             continue;
 
         bool patternVisible = (patternInfo->cameraUuid.isEmpty() || patternInfo->cameraUuid == currentCameraUuid || currentCameraUuid.isEmpty());
@@ -2218,8 +2345,11 @@ void CameraView::drawFIDPatterns(QPainter &painter, const InspectionResult &resu
     }
 }
 
-void CameraView::drawINSPatterns(QPainter &painter, const InspectionResult &result)
+void CameraView::drawINSPatterns(QPainter &painter, const InspectionResult &result, int renderFrameIndex)
 {
+    // renderFrameIndex가 지정되면 그 값을, 아니면 currentFrameIndex 사용
+    int targetFrameIdx = (renderFrameIndex >= 0) ? renderFrameIndex : currentFrameIndex;
+    
     bool hasSelectedPattern = !selectedInspectionPatternId.isNull();
     
     // painter transform이 설정되어 있는지 확인 (4분할 모드)
@@ -2263,9 +2393,11 @@ void CameraView::drawINSPatterns(QPainter &painter, const InspectionResult &resu
             continue;
         }
 
-        // 현재 프레임의 패턴만 표시
-        if (patternInfo->frameIndex != currentFrameIndex)
+        // 렌더링 대상 프레임의 패턴만 표시
+        if (patternInfo->frameIndex != targetFrameIdx)
+        {
             continue;
+        }
 
         bool patternVisible = (patternInfo->cameraUuid.isEmpty() || patternInfo->cameraUuid == currentCameraUuid || currentCameraUuid.isEmpty());
         if (!patternVisible)
@@ -3964,11 +4096,7 @@ void CameraView::paintEvent(QPaintEvent *event)
             }
         }
         
-        // 디버그 로그
-        static int paintCount = 0;
-        if (paintCount++ % 100 == 0) {
-            // 4분할 모드 렌더링 (로그 제거)
-        }
+
         
         // 각 프레임 렌더링
         for (int i = 0; i < 4; i++)
@@ -4090,6 +4218,31 @@ void CameraView::paintEvent(QPaintEvent *event)
             // 텍스트 그리기
             painter.setPen(textColor);
             painter.drawText(bgRect, Qt::AlignCenter, resultText);
+            
+            // 검사 횟수 카운트 표시 (오른쪽 상단, 작은 흰색 텍스트) - 항상 표시 (0부터)
+            {
+                QString countText = QString("%1").arg(frameInspectionCount[i]);
+                QFont countFont("Arial", 12);  // 작은 폰트
+                painter.setFont(countFont);
+                QFontMetrics countFm(countFont);
+                int countWidth = countFm.horizontalAdvance(countText);
+                int countHeight = countFm.height();
+                
+                // 오른쪽 상단 위치
+                QRect countRect(
+                    rect.right() - countWidth - 15,
+                    rect.top() + 10,
+                    countWidth + 10,
+                    countHeight + 4
+                );
+                
+                // 반투명 배경
+                painter.fillRect(countRect, QBrush(QColor(0, 0, 0, 150)));
+                
+                // 흰색 텍스트
+                painter.setPen(Qt::white);
+                painter.drawText(countRect, Qt::AlignCenter, countText);
+            }
             
             // TEACH ON 상태일 때만 프레임 레이블 표시
             // if (!isTeachOff)
@@ -5605,6 +5758,14 @@ void CameraView::drawSelectedPatternHandles(QPainter &painter)
         {
             drawCrimpBarrelBoxes(painter, pattern);
         }
+
+        // INS STRIP 패턴의 추가 UI 요소 (그라디언트 범위 및 두께 박스)
+        if (pattern.type == PatternType::INS &&
+            pattern.inspectionMethod == InspectionMethod::STRIP)
+        {
+            drawStripGradientRange(painter, pattern);
+            drawStripThicknessBoxes(painter, pattern);
+        }
     }
 }
 
@@ -6050,7 +6211,8 @@ void CameraView::saveInspectionResultForMode(int frameIndex, const InspectionRes
         framePixmaps[frameIndex] = frame;
         framePatterns[frameIndex] = patterns;
         hasFrameResult[frameIndex] = true;
-        qDebug() << "[CameraView] 프레임" << frameIndex << "검사 결과 저장 (saveInspectionResultForMode)";
+        frameInspectionCount[frameIndex]++;  // 검사 횟수 증가
+        qDebug() << "[CameraView] 프레임" << frameIndex << "검사 결과 저장 (saveInspectionResultForMode) - 검사 횟수:" << frameInspectionCount[frameIndex];
     }
 }
 

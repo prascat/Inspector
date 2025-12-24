@@ -51,6 +51,7 @@
 #include <QRunnable>
 #include "TrainDialog.h"
 #include <QDir>
+#include <queue>
 #include <opencv2/opencv.hpp>
 
 #include "CommonDefs.h"
@@ -150,7 +151,7 @@ public:
     bool camOff = true;
     int cameraIndex;
     int currentDisplayFrameIndex = 0;  // 현재 메인 뷰에 표시된 프레임 인덱스 (0~3)
-    int nextInspectionFrameIndex = -1;  // 다음 트리거 시 검사할 프레임 인덱스 (-1: 미지정)
+    std::vector<std::queue<int>> nextInspectionFrameIndex;  // 각 카메라별 프레임 인덱스 큐 [cam0, cam1]
     
     // 스레드 안전 cameraInfos 접근 함수들
     QVector<CameraInfo> getCameraInfos() const;
@@ -251,7 +252,6 @@ signals:
     
 private slots:
     void onTriggerSignalReceived(const cv::Mat& frame, int cameraIndex);
-    void onStripCrimpModeChanged(int mode);  // 서버로부터 STRIP/CRIMP 메시지 수신
     void onFrameIndexReceived(int frameIndex);  // 서버로부터 프레임 인덱스 수신 (0~3)
     void updateUITexts();
     void openLanguageSettings();
@@ -333,9 +333,6 @@ private:
     
     // 순차 프레임 인덱스 (0, 1, 2, 3 순환)
     int sequentialFrameIndex = 0;
-    
-    // 서버로부터 받은 STRIP/CRIMP 모드 (0=STRIP, 1=CRIMP)
-    int currentStripCrimpMode = 0;
     
     // 선택된 필터 정보 (티칭 모드 필터 표시용)
     QUuid selectedPatternId;
@@ -745,7 +742,7 @@ private:
     
     // 티칭 모드 관련
     bool teachingEnabled = false;  // 티칭 모드 활성화 상태
-    bool triggerProcessing = false;  // 트리거 처리 중 플래그
+    std::atomic<bool> triggerProcessing{false};  // 트리거 처리 중 플래그 (스레드 안전)
     
     // 프레임별 검사 중 플래그 (비동기 검사용)
     std::array<std::atomic<bool>, 4> frameInspecting = {false, false, false, false};
@@ -754,6 +751,9 @@ private:
     // 프레임별 검사 큐 (트리거 순차 처리)
     std::array<QQueue<cv::Mat>, 4> inspectionQueues;
     std::array<QMutex, 4> queueMutexes;
+    
+    // 프레임별 패턴 리스트 (레시피 로드 시 미리 분리해서 저장)
+    std::array<QList<PatternInfo>, 4> framePatternLists;
     
     // 패턴 스타일링 관련
     QVector<QColor> patternColors;
