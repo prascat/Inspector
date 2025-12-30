@@ -111,7 +111,7 @@ void ClientDialog::setupUI()
     autoConnectCheckBox = new QCheckBox("프로그램 시작 시 자동 연결", this);
     formLayout->addRow("", autoConnectCheckBox);
     // 자동연결 체크박스 변경 시 즉시 재연결 시작/중단
-    connect(autoConnectCheckBox, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState state) {
+    connect(autoConnectCheckBox, &QCheckBox::stateChanged, this, [this](int state) {
         if (state == Qt::Checked) {
             qDebug() << "[자동연결] 체크됨 - 재연결 스레드 시작";
             startReconnectThread();

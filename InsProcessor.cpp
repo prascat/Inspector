@@ -227,8 +227,12 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             auto fidEnd = std::chrono::high_resolution_clock::now();
             auto fidDuration = std::chrono::duration_cast<std::chrono::milliseconds>(fidEnd - fidStart).count();
             
-            // FID 패턴 로그 (옵션 2 형식) - FID 색상 적용
-            logDebug(QString("  └─ <font color='#7094DB'>FID: %1</font> (%2ms)").arg(pattern.name).arg(fidDuration));
+            // FID 패턴 로그 (점수 포함)
+            logDebug(QString("  └─ <font color='#7094DB'>FID: %1</font> [%2%/%3%] (%4ms)")
+                .arg(pattern.name)
+                .arg(matchScore * 100.0, 0, 'f', 1)
+                .arg(pattern.matchThreshold, 0, 'f', 1)
+                .arg(fidDuration));
 
             // 매칭 성공 시 검출된 각도를 FID 그룹 전체에 적용
             if (fidMatched)
@@ -2423,53 +2427,7 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     result.anomalyHeatmap[pattern.id] = colorHeatmap.clone();
     result.anomalyHeatmapRect[pattern.id] = pattern.rect;
     
-    // 불량일 경우 data/날짜/detect/ 폴더에 원본+검사결과 저장
-    if (hasDefect) {
-        // 날짜 폴더 생성
-        QDateTime now = QDateTime::currentDateTime();
-        QString dateFolder = now.toString("yyyyMMdd");
-        QString timestamp = now.toString("yyyyMMddHHmmss_zzz");
-        QString basePath = "../deploy/data/" + dateFolder + "/detect";
-        
-        QDir dir;
-        if (!dir.exists(basePath)) {
-            dir.mkpath(basePath);
-        }
-        
-        // 원본 ROI 이미지
-        cv::Mat roiOriginal = roiImage.clone();
-        
-        // 검사결과 그린 ROI 이미지 (컨투어 + 히트맵 오버레이)
-        cv::Mat roiWithDetection = roiImage.clone();
-        if (roiWithDetection.channels() == 1) {
-            cv::cvtColor(roiWithDetection, roiWithDetection, cv::COLOR_GRAY2BGR);
-        }
-        
-        // 히트맵 오버레이 (반투명)
-        cv::Mat colorHeatmapResized;
-        cv::resize(colorHeatmap, colorHeatmapResized, roiWithDetection.size());
-        cv::addWeighted(roiWithDetection, 0.6, colorHeatmapResized, 0.4, 0, roiWithDetection);
-        
-        // 불량 컨투어 그리기 (ROI 상대좌표)
-        for (const auto& contour : contours) {
-            int blobSize = static_cast<int>(cv::contourArea(contour));
-            if (blobSize >= pattern.anomalyMinBlobSize) {
-                cv::drawContours(roiWithDetection, std::vector<std::vector<cv::Point>>{contour}, 
-                                 -1, cv::Scalar(0, 0, 255), 2);
-            }
-        }
-        
-        // 원본과 검사결과를 가로로 합치기
-        cv::Mat combined;
-        cv::hconcat(roiOriginal.channels() == 1 ? 
-                    (cv::cvtColor(roiOriginal, roiOriginal, cv::COLOR_GRAY2BGR), roiOriginal) : roiOriginal, 
-                    roiWithDetection, combined);
-        
-        // 파일 저장
-        QString filePath = basePath + "/" + timestamp + "_" + pattern.name + ".png";
-        cv::imwrite(filePath.toStdString(), combined);
-        qDebug() << "[ANOMALY DETECT] 불량 이미지 저장:" << filePath;
-    }
+    // 불량 이미지 저장 비활성화 (성능 최적화)
     
     // 결과 저장
     result.insScores[pattern.id] = score;

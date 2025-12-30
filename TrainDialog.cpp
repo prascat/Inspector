@@ -103,15 +103,15 @@ void TrainDialog::setupUI()
     // Coreset Ratio
     coresetRatioSpinBox = new QDoubleSpinBox(this);
     coresetRatioSpinBox->setRange(0.0, 1.0);
-    coresetRatioSpinBox->setSingleStep(0.001);
-    coresetRatioSpinBox->setDecimals(3);
-    coresetRatioSpinBox->setValue(0.001);  // 기본값: 0.001
+    coresetRatioSpinBox->setSingleStep(0.01);
+    coresetRatioSpinBox->setDecimals(2);
+    coresetRatioSpinBox->setValue(0.01);  // 기본값: 0.01
     optionsLayout->addRow("Coreset Ratio:", coresetRatioSpinBox);
     
     // Num Neighbors
     numNeighborsSpinBox = new QSpinBox(this);
     numNeighborsSpinBox->setRange(1, 50);
-    numNeighborsSpinBox->setValue(5);  // 기본값: 5
+    numNeighborsSpinBox->setValue(9);  // 기본값: 9
     optionsLayout->addRow("Num Neighbors:", numNeighborsSpinBox);
     
     // ReBuild Docker 버튼
@@ -350,7 +350,7 @@ void TrainDialog::setAnomalyPatterns(const QVector<PatternInfo*>& patterns)
             patternCheckBoxes[pattern->name] = checkBox;
             
             // 체크박스 변경 시 자동 학습 버튼 활성화 상태 업데이트
-            connect(checkBox, &QCheckBox::checkStateChanged, [this](Qt::CheckState) {
+            connect(checkBox, &QCheckBox::stateChanged, [this](int) {
                 bool anyChecked = false;
                 for (auto checkbox : patternCheckBoxes) {
                     if (checkbox->isChecked()) {
@@ -1335,7 +1335,7 @@ void TrainDialog::trainPattern(const QString& patternName)
     // PatchCore 옵션 추가
     if (backboneComboBox && coresetRatioSpinBox && numNeighborsSpinBox) {
         args << "--backbone" << backboneComboBox->currentText();
-        args << "--coreset-ratio" << QString::number(coresetRatioSpinBox->value(), 'f', 3);
+        args << "--coreset-ratio" << QString::number(coresetRatioSpinBox->value(), 'g');
         args << "--num-neighbors" << QString::number(numNeighborsSpinBox->value());
     }
     

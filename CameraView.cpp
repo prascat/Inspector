@@ -1825,6 +1825,10 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
     }
 
     // 매칭 결과에서 업데이트된 각도 정보를 패턴에 반영
+    // 단, 검사 모드(isInspectionMode)에서는 패턴 좌표를 직접 업데이트하지 않음
+    // (검사 모드에서는 결과만 표시하고 티칭 패턴 위치는 유지)
+    if (!isInspectionMode)
+    {
     for (auto it = result.angles.begin(); it != result.angles.end(); ++it)
     {
         QUuid patternId = it.key();
@@ -1915,6 +1919,7 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
             }
         }
     }
+    } // isInspectionMode 체크 끝
 
     // 프레임별 검사 결과 저장 (frameIndex가 유효하면 저장)
     if (targetFrameIndex >= 0 && targetFrameIndex < 4)
@@ -3997,22 +4002,33 @@ void CameraView::drawINSAnomalyVisualization(QPainter &painter, const Inspection
     bool hasDefectContours = result.anomalyDefectContours.contains(patternId) && 
                              !result.anomalyDefectContours[patternId].empty();
     
-    if (hasDefectContours) {
+    if (hasDefectContours && result.anomalyHeatmap.contains(patternId)) {
         const auto& contours = result.anomalyDefectContours[patternId];
+        const cv::Mat& heatmap = result.anomalyHeatmap[patternId];
         
-        painter.setPen(QPen(QColor(255, 0, 0), 2));  // 빨간색 외곽선
-        painter.setBrush(Qt::NoBrush);  // 채우기 없음
-        
-        for (const auto& contour : contours) {
-            if (contour.size() < 3) continue;
+        if (!heatmap.empty()) {
+            double mapWidth = heatmap.cols;
+            double mapHeight = heatmap.rows;
             
-            QPolygonF polygon;
-            for (const auto& pt : contour) {
-                // 절대좌표 → Viewport
-                QPointF viewportPoint = sceneToViewport(painter, QPointF(pt.x, pt.y));
-                polygon << viewportPoint;
+            painter.setPen(QPen(QColor(255, 0, 0), 2));  // 빨간색 외곽선
+            painter.setBrush(Qt::NoBrush);  // 채우기 없음
+            
+            for (const auto& contour : contours) {
+                if (contour.size() < 3) continue;
+                
+                QPolygonF polygon;
+                for (const auto& pt : contour) {
+                    // 상대좌표(anomaly map 픽셀) → 정규화(0~1) → 조정된 INS 패턴 영역 기준 절대좌표
+                    double relX = (pt.x / mapWidth) * inspRectScene.width();
+                    double relY = (pt.y / mapHeight) * inspRectScene.height();
+                    QPointF absPoint(inspRectScene.x() + relX, inspRectScene.y() + relY);
+                    
+                    // 절대좌표 → Viewport
+                    QPointF viewportPoint = sceneToViewport(painter, absPoint);
+                    polygon << viewportPoint;
+                }
+                painter.drawPolygon(polygon);
             }
-            painter.drawPolygon(polygon);
         }
     }
     
@@ -6339,22 +6355,13 @@ void CameraView::updateAnomalyHeatmap(const QUuid &patternId, double passThresho
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(binaryMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
     
-    // ROI 오프셋 가져오기 (절대좌표 변환용)
-    QRectF rectF = pattern->rect;
-    int roiOffsetX = static_cast<int>(rectF.x());
-    int roiOffsetY = static_cast<int>(rectF.y());
-    
-    // anomalyMinBlobSize 이상의 불량 contour만 저장 (ROI 상대좌표 → 절대좌표)
+    // anomalyMinBlobSize 이상의 불량 contour만 저장 (상대좌표 그대로 유지)
     std::vector<std::vector<cv::Point>> defectContours;
     for (const auto& contour : contours) {
         int blobSize = static_cast<int>(cv::contourArea(contour));
         if (blobSize >= pattern->anomalyMinBlobSize) {
-            // ROI 상대좌표를 절대좌표로 변환
-            std::vector<cv::Point> absoluteContour;
-            for (const auto& pt : contour) {
-                absoluteContour.push_back(cv::Point(pt.x + roiOffsetX, pt.y + roiOffsetY));
-            }
-            defectContours.push_back(absoluteContour);
+            // 상대좌표 그대로 저장 (그릴 때 조정된 위치 기준으로 변환)
+            defectContours.push_back(contour);
         }
     }
     

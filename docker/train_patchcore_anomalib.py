@@ -282,6 +282,8 @@ def train_patchcore(data_dir: Path, output_dir: Path, config: dict):
     print(f"   Layers: {config['layers']}")
     print(f"   Image size: {config['image_size']}")
     print(f"   Coreset ratio: {config['coreset_sampling_ratio']}")
+    print(f"   Num neighbors: {config['num_neighbors']}")
+    print(f"   Batch size: {config['batch_size']}")
     
     # FAISS 사용 설정
     if config.get('use_faiss', False):
@@ -307,6 +309,10 @@ def train_patchcore(data_dir: Path, output_dir: Path, config: dict):
     )
     
     # Initialize model
+    print(f"\n📊 Creating PatchCore model:")
+    print(f"   - backbone: {config['backbone']}")
+    print(f"   - coreset_sampling_ratio: {config['coreset_sampling_ratio']}")
+    print(f"   - num_neighbors: {config['num_neighbors']}")
     model = Patchcore(
         backbone=config['backbone'],
         layers=config['layers'],
@@ -314,6 +320,11 @@ def train_patchcore(data_dir: Path, output_dir: Path, config: dict):
         coreset_sampling_ratio=config['coreset_sampling_ratio'],
         num_neighbors=config['num_neighbors'],
     )
+    
+    # 생성된 모델의 파라미터 확인 (config 값으로 확인)
+    print(f"\n✅ Model created successfully with config:")
+    print(f"   - coreset_sampling_ratio: {config['coreset_sampling_ratio']}")
+    print(f"   - num_neighbors: {config['num_neighbors']}")
     
     # Setup output directory
     output_dir = Path(output_dir)
@@ -349,9 +360,16 @@ def train_patchcore(data_dir: Path, output_dir: Path, config: dict):
         'backbone': config['backbone'],
         'layers': config['layers'],
         'image_size': config['image_size'],
+        'coreset_sampling_ratio': config['coreset_sampling_ratio'],
+        'num_neighbors': config['num_neighbors'],
         'norm_stats': norm_stats,  # 정규화 기준값 포함
     }, torch_path)
     print(f"   ✅ Torch model: {torch_path}")
+    print(f"   📊 Model config:")
+    print(f"      - backbone: {config['backbone']}")
+    print(f"      - coreset_sampling_ratio: {config['coreset_sampling_ratio']}")
+    print(f"      - num_neighbors: {config['num_neighbors']}")
+    print(f"      - memory_bank_size: {model.model.memory_bank.shape}")
     
     # 정규화 기준값을 별도 파일로도 저장 (C++ 사용용)
     norm_stats_path = output_dir / "norm_stats.txt"
@@ -414,9 +432,9 @@ def parse_args():
                         help='Layers to extract features from')
     parser.add_argument('--image-size', type=int, nargs=2, default=[224, 224],
                         help='Input image size')
-    parser.add_argument('--coreset-ratio', type=float, default=0.001,
-                        help='Coreset sampling ratio (0.0-1.0)')
-    parser.add_argument('--num-neighbors', type=int, default=5,
+    parser.add_argument('--coreset-ratio', type=float, default=0.01,
+                        help='Coreset subsampling ratio')
+    parser.add_argument('--num-neighbors', type=int, default=9,
                         help='Number of nearest neighbors')
     parser.add_argument('--batch-size', type=int, default=32,
                         help='Batch size')
@@ -433,6 +451,20 @@ def parse_args():
 
 def main():
     args = parse_args()
+    
+    # 받은 인자 출력 (디버깅용)
+    print("\n" + "="*60)
+    print("📋 Training Arguments:")
+    print(f"   data_dir: {args.data_dir}")
+    print(f"   output: {args.output}")
+    print(f"   pattern_name: {args.pattern_name}")
+    print(f"   backbone: {args.backbone}")
+    print(f"   coreset_ratio: {args.coreset_ratio}")
+    print(f"   num_neighbors: {args.num_neighbors}")
+    print(f"   batch_size: {args.batch_size}")
+    print(f"   image_size: {args.image_size}")
+    print(f"   use_faiss: {args.use_faiss}")
+    print("="*60 + "\n")
     
     data_dir = Path(args.data_dir)
     output_dir = Path(args.output)

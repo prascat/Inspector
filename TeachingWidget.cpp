@@ -1936,14 +1936,16 @@ void TeachingWidget::setupPreviewOverlay()
         previewOverlayLabels[i]->setFixedSize(previewWidth, previewHeight);
         previewOverlayLabels[i]->setAlignment(Qt::AlignTop | Qt::AlignLeft);  // 왼쪽 상단 정렬
         previewOverlayLabels[i]->setText("  " + labels[i]);  // 초기 텍스트 설정 (여백 추가)
+        // rgba 대신 rgb 사용 (파싱 오류 방지)
         previewOverlayLabels[i]->setStyleSheet(
             "QLabel {"
-            "  background-color: rgba(0, 0, 0, 200);"
+            "  background-color: rgb(0, 0, 0);"
             "  color: white;"
             "  border: 2px solid #555;"
             "  font-size: 14px;"
             "  font-weight: bold;"
             "}");
+        previewOverlayLabels[i]->setWindowOpacity(0.8);
         previewOverlayLabels[i]->setCursor(Qt::PointingHandCursor);
         previewOverlayLabels[i]->move(previewX, previewY);  // 초기 위치 설정
         previewOverlayLabels[i]->raise();
@@ -2412,6 +2414,11 @@ void TeachingWidget::connectEvents()
     // 패턴 각도 변경 시 프로퍼티 패널 실시간 업데이트
     connect(cameraView, &CameraView::patternAngleChanged, this, [this](const QUuid &id, double angle)
             {
+        // 검사 모드에서는 템플릿 업데이트하지 않음 (티칭 패턴 보존)
+        if (cameraView->getInspectionMode()) {
+            return;
+        }
+        
         // 각도를 -180° ~ +180° 범위로 정규화
         angle = normalizeAngle(angle);
         
@@ -8797,6 +8804,16 @@ void TeachingWidget::detectCameras()
                 // Spinnaker 카메라를 연결했으면 OpenCV 카메라 검색 건너뛰기
                 if (connectedCameras > 0)
                 {
+                    // ★ 레시피 자동 로드 추가 (CAM ON 시)
+                    QString lastRecipePath = ConfigManager::instance()->getLastRecipePath();
+                    if (!lastRecipePath.isEmpty())
+                    {
+                        qDebug() << "[detectCameras] 카메라 연결 후 레시피 자동 로드:" << lastRecipePath;
+                        QTimer::singleShot(100, this, [this, lastRecipePath]() {
+                            onRecipeSelected(lastRecipePath);
+                        });
+                    }
+                    
                     progressDialog->setValue(100);
                     progressDialog->deleteLater();
                     return;
@@ -8915,8 +8932,9 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat &frame, int camIdx, int f
         frameUpdatedFlags.resize(MAX_CAMERAS, false);  // 플래그도 같이 초기화
     }
 
-    // TEACH OFF 상태에서만 cameraFrames 갱신 (TEACH ON 시 영상 정지)
-    if (!teachingEnabled)
+    // 트리거 모드에서는 TEACH 상태 관계없이 프레임 저장 (forceFrameIndex가 지정된 경우)
+    // TEACH OFF 상태에서만 일반 프레임 갱신 (TEACH ON 시 영상 정지)
+    if (!teachingEnabled || forceFrameIndex >= 0)
     {
         int frameIndex = forceFrameIndex;
         
@@ -8927,9 +8945,15 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat &frame, int camIdx, int f
             
             frameUpdatedFlags[frameIndex] = true;
             
-            // 해당 미리보기 즉시 업데이트 (메인 스레드에서 실행)
-            QMetaObject::invokeMethod(this, [this, frameIndex]() {
-                updateSinglePreview(frameIndex);
+            qDebug() << QString("[processGrabbedFrame] Frame[%1] 저장 완료 (size: %2x%3, teachingEnabled:%4)")
+                        .arg(frameIndex).arg(frame.cols).arg(frame.rows).arg(teachingEnabled);
+            
+            // 해당 미리보기 즉시 업데이트 (메인 스레드에서 안전하게 실행)
+            QPointer<TeachingWidget> safeThis = this;
+            QMetaObject::invokeMethod(this, [safeThis, frameIndex]() {
+                if (safeThis && safeThis->previewOverlayLabels[frameIndex]) {
+                    safeThis->updateSinglePreview(frameIndex);
+                }
             }, Qt::QueuedConnection);
         }
     }
@@ -8939,7 +8963,8 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat &frame, int camIdx, int f
     {
         try
         {
-            if (cameraView && !teachingEnabled)
+            // ★ TEACH ON/OFF 관계없이 필터 적용 (필터 프리뷰를 위해)
+            if (cameraView)
             {
                 // 필터 적용
                 cv::Mat filteredFrame = frame.clone();
@@ -8948,11 +8973,17 @@ void TeachingWidget::processGrabbedFrame(const cv::Mat &frame, int camIdx, int f
                 // RGB 변환
                 cv::Mat displayFrame;
                 cv::cvtColor(filteredFrame, displayFrame, cv::COLOR_BGR2RGB);
+                
+                // 메모리 안정성 보장
+                if (!displayFrame.isContinuous()) {
+                    displayFrame = displayFrame.clone();
+                }
 
-                // QImage로 변환
+                // QImage로 변환 - deep copy로 메모리 안전성 보장
                 QImage image(displayFrame.data, displayFrame.cols, displayFrame.rows,
-                             displayFrame.step, QImage::Format_RGB888);
-                QPixmap pixmap = QPixmap::fromImage(image.copy());
+                             static_cast<int>(displayFrame.step), QImage::Format_RGB888);
+                QImage safeCopy = image.copy();
+                QPixmap pixmap = QPixmap::fromImage(safeCopy);
 
                 // UI 업데이트 - 메인 스레드에서 안전하게 실행
                 QPointer<CameraView> safeView = cameraView;
@@ -9336,9 +9367,16 @@ void TeachingWidget::updatePreviewFrames()
             {
                 cv::Mat previewFrame = cameraFrames[i].clone();
                 cv::cvtColor(previewFrame, previewFrame, cv::COLOR_BGR2RGB);
+                
+                // 메모리 안정성을 위해 연속 메모리 보장
+                if (!previewFrame.isContinuous()) {
+                    previewFrame = previewFrame.clone();
+                }
+                
                 QImage image(previewFrame.data, previewFrame.cols, previewFrame.rows,
-                             previewFrame.step, QImage::Format_RGB888);
-                pixmap = QPixmap::fromImage(image.copy());
+                             static_cast<int>(previewFrame.step), QImage::Format_RGB888);
+                QImage safeCopy = image.copy();
+                pixmap = QPixmap::fromImage(safeCopy);
             }
             else
             {
@@ -9390,12 +9428,14 @@ void TeachingWidget::updatePreviewFrames()
             
             previewOverlayLabels[i]->setPixmap(scaledPixmap);
             previewOverlayLabels[i]->setScaledContents(false);
+            // rgba 대신 rgb 사용 (파싱 오류 방지)
             previewOverlayLabels[i]->setStyleSheet(
                 "QLabel {"
-                "  background-color: rgba(0, 0, 0, 200);"
+                "  background-color: rgb(0, 0, 0);"
                 "  border: 2px solid #555;"
                 "  border-radius: 5px;"
                 "}");
+            previewOverlayLabels[i]->setWindowOpacity(0.8);
             }
         }
         catch (const std::exception &e)
@@ -9414,7 +9454,12 @@ void TeachingWidget::updatePreviewFrames()
 
 void TeachingWidget::updateSinglePreview(int frameIndex)
 {
-    if (frameIndex < 0 || frameIndex >= 4 || !previewOverlayLabels[frameIndex])
+    if (frameIndex < 0 || frameIndex >= 4)
+        return;
+    
+    // QPointer로 레이블 안전성 체크
+    QPointer<QLabel> safeLabel = previewOverlayLabels[frameIndex];
+    if (!safeLabel)
         return;
     
     if (frameIndex >= static_cast<int>(cameraFrames.size()))
@@ -9430,7 +9475,7 @@ void TeachingWidget::updateSinglePreview(int frameIndex)
     
     try
     {
-        // 프레임 변환
+        // 프레임 변환 - 메모리 안전성을 위해 연속 메모리 보장
         cv::Mat rgbFrame;
         cv::cvtColor(previewFrame, rgbFrame, cv::COLOR_BGR2RGB);
         
@@ -9439,10 +9484,12 @@ void TeachingWidget::updateSinglePreview(int frameIndex)
             rgbFrame = rgbFrame.clone();
         }
 
-        // QPixmap 변환
+        // QImage로 변환 - deep copy로 메모리 안전성 보장
         QImage image(rgbFrame.data, rgbFrame.cols, rgbFrame.rows,
-                     rgbFrame.step, QImage::Format_RGB888);
-        QPixmap pixmap = QPixmap::fromImage(image.copy());
+                     static_cast<int>(rgbFrame.step), QImage::Format_RGB888);
+        // 즉시 deep copy 수행하여 rgbFrame의 수명 문제 회피
+        QImage safeCopy = image.copy();
+        QPixmap pixmap = QPixmap::fromImage(safeCopy);
 
         // 레이블 크기에 맞춰 스케일링
         QSize labelSize = previewOverlayLabels[frameIndex]->size();
@@ -9485,20 +9532,30 @@ void TeachingWidget::updateSinglePreview(int frameIndex)
             painter.setPen(textColor);
             painter.drawText(textRect, Qt::AlignCenter, text);
             
-            previewOverlayLabels[frameIndex]->setPixmap(scaledPixmap);
-            previewOverlayLabels[frameIndex]->setScaledContents(false);
-            previewOverlayLabels[frameIndex]->setStyleSheet(
+            // 재확인 - 레이블이 여전히 유효한지
+            QPointer<QLabel> safeLabel = previewOverlayLabels[frameIndex];
+            if (!safeLabel)
+                return;
+            
+            safeLabel->setPixmap(scaledPixmap);
+            safeLabel->setScaledContents(false);
+            // rgba 대신 rgb + opacity 사용 (파싱 오류 방지)
+            safeLabel->setStyleSheet(
                 "QLabel {"
-                "  background-color: rgba(0, 0, 0, 200);"
+                "  background-color: rgb(0, 0, 0);"
                 "  border: 2px solid #555;"
                 "  border-radius: 5px;"
                 "}");
+            safeLabel->setWindowOpacity(0.8);
         }
     }
     catch (const std::exception &e)
     {
-        previewOverlayLabels[frameIndex]->clear();
-        previewOverlayLabels[frameIndex]->setText(labels[frameIndex] + "\n" + TR("PROCESSING_ERROR"));
+        QPointer<QLabel> safeLabel = previewOverlayLabels[frameIndex];
+        if (safeLabel) {
+            safeLabel->clear();
+            safeLabel->setText(labels[frameIndex] + "\n" + TR("PROCESSING_ERROR"));
+        }
     }
 }
 
@@ -9507,14 +9564,26 @@ void TeachingWidget::onFrameIndexReceived(int frameIndex)
     // TEACH ON/OFF 상태 관계없이 서버 트리거는 처리
     
     if (frameIndex >= 0 && frameIndex <= 3) {
-        // 프레임 인덱스(0~3)로부터 카메라 번호 계산 (0,1→cam0 / 2,3→cam1)
-        int targetCameraIndex = frameIndex / 2;
-        if (targetCameraIndex < static_cast<int>(nextInspectionFrameIndex.size())) {
-            nextInspectionFrameIndex[targetCameraIndex].push(frameIndex);
+        // 프레임 인덱스(0~3)로부터 카메라 번호 계산
+        // 카메라가 1대만 있으면 모든 프레임을 카메라0에 할당
+        // 카메라가 2대 이상이면: 0,1→cam0 / 2,3→cam1
+        int targetCameraIndex;
+        if (nextInspectionFrameIndex.size() <= 1) {
+            // 카메라 1대: 모든 프레임 인덱스를 카메라0에 할당
+            targetCameraIndex = 0;
+        } else {
+            // 카메라 2대 이상: 기존 로직
+            targetCameraIndex = frameIndex / 2;
         }
         
-        qDebug() << QString("[서버 메시지] 프레임[%1] 검사 설정 (카메라%2)")
-                    .arg(frameIndex).arg(targetCameraIndex);
+        if (targetCameraIndex < static_cast<int>(nextInspectionFrameIndex.size())) {
+            nextInspectionFrameIndex[targetCameraIndex].push(frameIndex);
+            qDebug() << QString("[서버 메시지] 프레임[%1] 검사 설정 (카메라%2, 큐 크기:%3)")
+                        .arg(frameIndex).arg(targetCameraIndex).arg(nextInspectionFrameIndex[targetCameraIndex].size());
+        } else {
+            qWarning() << QString("[서버 메시지] 유효하지 않은 카메라 인덱스: %1 (프레임:%2)")
+                        .arg(targetCameraIndex).arg(frameIndex);
+        }
     } else {
         qWarning() << QString("[서버 메시지] 유효하지 않은 프레임 인덱스: %1").arg(frameIndex);
     }
@@ -10415,17 +10484,6 @@ void TeachingWidget::showModelManagement()
         if (pattern && pattern->inspectionMethod == InspectionMethod::ANOMALY) {
             anomalyPatterns.append(pattern);
         }
-    }
-    
-    // ANOMALY 패턴이 없으면 경고
-    if (anomalyPatterns.isEmpty()) {
-        CustomMessageBox msgBox(this);
-        msgBox.setIcon(CustomMessageBox::Information);
-        msgBox.setTitle("알림");
-        msgBox.setMessage("ANOMALY 검사방법 패턴이 없습니다.\n먼저 ANOMALY 패턴을 추가하세요.");
-        msgBox.setButtons(QMessageBox::Ok);
-        msgBox.exec();
-        return;
     }
     
     // TrainDialog가 없으면 생성
@@ -14139,6 +14197,15 @@ void TeachingWidget::addPattern()
             return;
         }
 
+        // ★★★ framePatternLists에도 패턴 추가 (검사 시 사용) ★★★
+        int frameIdx = addedPattern->frameIndex;
+        if (frameIdx >= 0 && frameIdx < 4)
+        {
+            framePatternLists[frameIdx].append(*addedPattern);
+            qDebug() << QString("[addPattern] Frame[%1]에 패턴 추가 - 총 패턴 수: %2")
+                        .arg(frameIdx).arg(framePatternLists[frameIdx].size());
+        }
+
         // INS 패턴인 경우 템플릿 이미지를 필터가 적용된 상태로 업데이트
         if (currentPatternType == PatternType::INS)
         {
@@ -15452,6 +15519,9 @@ void TeachingWidget::loadTeachingImage()
 
     // 화면에 표시
     cameraView->setBackgroundImage(pixmap);
+    
+    // 이미지가 바뀌었으므로 검사 결과 초기화
+    cameraView->clearInspectionResult();
 
     // 변경사항 플래그 설정
     hasUnsavedChanges = true;

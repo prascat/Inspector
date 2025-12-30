@@ -266,6 +266,14 @@ public:
         }
     }
     
+    // 검사 결과 초기화 (이미지 변경 시)
+    void clearInspectionResult()
+    {
+        hasInspectionResult = false;
+        clearModeResults();
+        viewport()->update();
+    }
+    
     // 검사 횟수 카운트 관리
     void incrementInspectionCount(int frameIndex) {
         if (frameIndex >= 0 && frameIndex < 4) {
