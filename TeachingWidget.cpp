@@ -12287,8 +12287,18 @@ bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex, b
         }
     }
 
-    QList<PatternInfo> allPatterns = framePatternLists[resultFrameIndex];  // 프레임별로 미리 분리된 패턴 사용
+    QList<PatternInfo> allPatterns = cameraView->getPatterns();  // 실시간으로 최신 패턴 가져오기
     QList<PatternInfo> cameraPatterns;
+
+    // 현재 프레임의 패턴만 필터링
+    QList<PatternInfo> framePatterns;
+    for (const PatternInfo &pattern : allPatterns)
+    {
+        if (pattern.frameIndex == resultFrameIndex)
+        {
+            framePatterns.append(pattern);
+        }
+    }
 
     // 현재 카메라 UUID와 시리얼 넘버 구하기 (camOn/camOff 동일 처리)
     QString targetUuid;
@@ -12307,9 +12317,9 @@ bool TeachingWidget::runInspect(const cv::Mat &frame, int specificCameraIndex, b
     }
     // 시뮬레이션 모드(camOff)면 targetUuid가 비어있어도 계속 진행
 
-    for (const PatternInfo &pattern : allPatterns)
+    for (const PatternInfo &pattern : framePatterns)
     {
-        // framePatternLists에서 가져온 패턴은 이미 해당 프레임만 포함하므로 frameIndex 체크 불필요
+        // 이미 frameIndex로 필터링되었으므로 추가 체크 불필요
         
         // 시뮬레이션 모드이거나, UUID가 일치하거나, 시리얼 번호가 일치하는 경우
         bool isMatch = false;

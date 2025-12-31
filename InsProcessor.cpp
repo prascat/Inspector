@@ -67,7 +67,10 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     for (const PatternInfo &pattern : patterns)
     {
         if (!pattern.enabled)
+        {
+            logDebug(QString("패턴 '%1' 비활성화됨 - 검사 건너뜀").arg(pattern.name));
             continue;
+        }
 
         switch (pattern.type)
         {
@@ -540,9 +543,10 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                                 fidLoc.x - originalFidCenter.x(),
                                 fidLoc.y - originalFidCenter.y());
 
-                            // **중요**: FID 그룹으로 회전하는 경우 FID 검출 각도를 그대로 사용
-                            // INS 개별 각도는 무시하고 FID 매칭 각도로 덩어리째 회전
-                            parentAngle = fidAngle;
+                            // **중요**: INS 패턴의 회전 각도는 티칭 각도 + FID 회전 차이
+                            // FID 티칭 각도와 검출 각도의 차이를 INS 패턴에 적용
+                            double fidAngleDiff = fidAngle - parentFidTeachingAngle;
+                            parentAngle = pattern.angle + fidAngleDiff;
                             hasParentInfo = true;
 
                             // ===== 패턴 매칭 (Fine Alignment) 디버그 =====

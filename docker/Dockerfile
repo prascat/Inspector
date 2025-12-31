@@ -23,6 +23,9 @@ RUN pip install torch torchvision torchaudio --index-url https://download.pytorc
 COPY requirements.txt /workspace/requirements.txt
 RUN pip install -r requirements.txt
 
+# Pre-download pretrained models to avoid network issues during training
+RUN python3 -c "import timm; timm.create_model('wide_resnet50_2', pretrained=True); timm.create_model('resnet18', pretrained=True); timm.create_model('resnet50', pretrained=True); print('✅ Pretrained models cached')"
+
 # Copy the training scripts to /workspace
 COPY train_patchcore_anomalib.py /workspace/train_patchcore_anomalib.py
 COPY run_train.sh /workspace/run_train.sh

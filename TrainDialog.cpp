@@ -359,14 +359,8 @@ void TrainDialog::setAnomalyPatterns(const QVector<PatternInfo*>& patterns)
                     }
                 }
                 
-                // 체크된 패턴 중 이미지가 있는지 확인
-                bool hasImages = false;
-                for (auto it = patternImages.begin(); it != patternImages.end(); ++it) {
-                    if (!it.value().isEmpty()) {
-                        hasImages = true;
-                        break;
-                    }
-                }
+                // 공용 이미지가 있는지 확인
+                bool hasImages = !commonImages.isEmpty();
                 
                 autoTrainButton->setEnabled(anyChecked && hasImages);
             });
@@ -389,19 +383,13 @@ void TrainDialog::setAllPatterns(const QVector<PatternInfo*>& patterns)
 
 void TrainDialog::addCapturedImage(const cv::Mat& image, int stripCrimpMode)
 {
-    // 현재 선택된 패턴에 이미지 추가
-    if (currentSelectedPattern.isEmpty()) {
-        qWarning() << "[TRAIN] 패턴이 선택되지 않아 이미지 추가 실패";
-        return;
-    }
-    
-    patternImages[currentSelectedPattern].append(image.clone());
+    // 공용 이미지 리스트에 추가
+    commonImages.append(image.clone());
     
     // UI 업데이트
     updateImageGrid();
     
-    QVector<cv::Mat>& currentImages = patternImages[currentSelectedPattern];
-    imageCountLabel->setText(QString("이미지 개수: %1").arg(currentImages.size()));
+    imageCountLabel->setText(QString("이미지 개수: %1").arg(commonImages.size()));
     
     bool anyChecked = false;
     for (auto checkbox : patternCheckBoxes) {
@@ -411,14 +399,8 @@ void TrainDialog::addCapturedImage(const cv::Mat& image, int stripCrimpMode)
         }
     }
     
-    // 체크된 패턴 중 이미지가 있는지 확인
-    bool hasImages = false;
-    for (auto it = patternImages.begin(); it != patternImages.end(); ++it) {
-        if (!it.value().isEmpty()) {
-            hasImages = true;
-            break;
-        }
-    }
+    // 공용 이미지가 있으면 학습 가능
+    bool hasImages = !commonImages.isEmpty();
     
     autoTrainButton->setEnabled(anyChecked && hasImages);
 }
@@ -430,15 +412,9 @@ void TrainDialog::updateImageGrid(bool scrollToEnd)
     
     imageListWidget->clear();
     
-    // 현재 선택된 패턴의 이미지만 표시
-    if (currentSelectedPattern.isEmpty()) {
-        return;
-    }
-    
-    QVector<cv::Mat>& currentImages = patternImages[currentSelectedPattern];
-    
-    for (int i = 0; i < currentImages.size(); ++i) {
-        const cv::Mat& img = currentImages[i];
+    // 공용 이미지 리스트 표시
+    for (int i = 0; i < commonImages.size(); ++i) {
+        const cv::Mat& img = commonImages[i];
         
         // OpenCV Mat을 QImage로 변환
         cv::Mat rgb;
@@ -479,48 +455,29 @@ void TrainDialog::onModeChanged(int id)
     // 패턴 목록 갱신
     setAnomalyPatterns(anomalyPatterns);
     
-    // 현재 선택된 패턴의 이미지로 UI 업데이트
+    // 공용 이미지로 UI 업데이트
     updateImageGrid();
-    if (!currentSelectedPattern.isEmpty()) {
-        int imageCount = patternImages.value(currentSelectedPattern).size();
-        imageCountLabel->setText(QString("이미지 개수: %1").arg(imageCount));
-    } else {
-        imageCountLabel->setText("이미지 개수: 0");
-    }
+    imageCountLabel->setText(QString("이미지 개수: %1").arg(commonImages.size()));
     previewImageLabel->setText("이미지를 클릭하세요");
 }
 
 void TrainDialog::onClearImagesClicked()
 {
-    if (currentSelectedPattern.isEmpty()) {
-        CustomMessageBox msgBox(this, CustomMessageBox::Warning, "경고",
-                                "패턴을 먼저 선택하세요.");
-        msgBox.exec();
-        return;
-    }
-    
-    QVector<cv::Mat>& currentImages = patternImages[currentSelectedPattern];
-    if (currentImages.isEmpty()) {
+    if (commonImages.isEmpty()) {
         return;
     }
     
     CustomMessageBox msgBox(this, CustomMessageBox::Question, "확인",
-        QString("패턴 [%1]의 이미지 %2개를 모두 삭제하시겠습니까?").arg(currentSelectedPattern).arg(currentImages.size()),
+        QString("공용 이미지 %1개를 모두 삭제하시겠습니까?").arg(commonImages.size()),
         QMessageBox::Yes | QMessageBox::No);
     
     if (msgBox.exec() == QMessageBox::Yes) {
-        currentImages.clear();
+        commonImages.clear();
         updateImageGrid();
         imageCountLabel->setText("이미지 개수: 0");
         
-        // 체크된 패턴 중 이미지가 있는지 확인
+        // 공용 이미지가 없으면 학습 불가
         bool hasImages = false;
-        for (auto it = patternImages.begin(); it != patternImages.end(); ++it) {
-            if (!it.value().isEmpty()) {
-                hasImages = true;
-                break;
-            }
-        }
         
         bool anyChecked = false;
         for (auto checkbox : patternCheckBoxes) {
@@ -541,19 +498,14 @@ void TrainDialog::onPatternSelectionChanged()
     if (!item) {
         teachingImageLabel->setText("패턴을 선택하세요");
         currentSelectedPattern.clear();
-        updateImageGrid();
         return;
     }
     
     QString patternName = item->data(Qt::UserRole).toString();
     currentSelectedPattern = patternName;
     
-    // 선택된 패턴의 이미지 리스트 업데이트
-    updateImageGrid();
-    
-    // 이미지 개수 업데이트
-    int imageCount = patternImages.value(patternName).size();
-    imageCountLabel->setText(QString("이미지 개수: %1").arg(imageCount));
+    // 공용 이미지 개수 업데이트 (모든 패턴이 동일한 이미지 사용)
+    imageCountLabel->setText(QString("이미지 개수: %1").arg(commonImages.size()));
     
     // 티칭 이미지 업데이트
     updateTeachingImagePreview();
@@ -620,18 +572,10 @@ void TrainDialog::onStartAutoTrainClicked()
         return;
     }
     
-    // 체크된 패턴 중 이미지가 있는지 확인
-    bool hasAnyImages = false;
-    for (const QString& patternName : checkedPatterns) {
-        if (!patternImages.value(patternName).isEmpty()) {
-            hasAnyImages = true;
-            break;
-        }
-    }
-    
-    if (!hasAnyImages) {
+    // 공용 이미지가 있는지 확인
+    if (commonImages.isEmpty()) {
         CustomMessageBox msgBox(this, CustomMessageBox::Warning, "경고",
-            "체크된 패턴에 학습 이미지가 없습니다.");
+            "학습 이미지가 없습니다.");
         msgBox.exec();
         return;
     }
@@ -741,20 +685,11 @@ void TrainDialog::onImageItemClicked(QListWidgetItem* item)
         return;
     }
     
-    if (currentSelectedPattern.isEmpty()) {
-        if (previewImageLabel) {
-            previewImageLabel->clear();
-            previewImageLabel->setText("패턴을 선택하세요");
-        }
-        return;
-    }
-    
     if (deleteSelectedImageButton) deleteSelectedImageButton->setEnabled(true);
     
     int index = item->data(Qt::UserRole).toInt();
-    QVector<cv::Mat>& currentImages = patternImages[currentSelectedPattern];
     
-    if (index < 0 || index >= currentImages.size()) {
+    if (index < 0 || index >= commonImages.size()) {
         if (previewImageLabel) {
             previewImageLabel->clear();
             previewImageLabel->setText("이미지 로드 실패");
@@ -762,7 +697,7 @@ void TrainDialog::onImageItemClicked(QListWidgetItem* item)
         return;
     }
     
-    const cv::Mat& img = currentImages[index];
+    const cv::Mat& img = commonImages[index];
     
     if (img.empty()) {
         if (previewImageLabel) {
@@ -805,23 +740,18 @@ void TrainDialog::onDeleteSelectedImageClicked()
         return;
     }
     
-    if (currentSelectedPattern.isEmpty()) {
-        return;
-    }
-    
     int index = item->data(Qt::UserRole).toInt();
-    QVector<cv::Mat>& currentImages = patternImages[currentSelectedPattern];
     
-    if (index < 0 || index >= currentImages.size()) {
+    if (index < 0 || index >= commonImages.size()) {
         return;
     }
     
-    // 이미지 삭제
-    currentImages.removeAt(index);
+    // 공용 이미지 삭제
+    commonImages.removeAt(index);
     
     // UI 업데이트 (스크롤 위치 유지)
     updateImageGrid(false);
-    imageCountLabel->setText(QString("이미지 개수: %1").arg(currentImages.size()));
+    imageCountLabel->setText(QString("이미지 개수: %1").arg(commonImages.size()));
     
     // 미리보기 초기화
     previewImageLabel->clear();
@@ -830,14 +760,8 @@ void TrainDialog::onDeleteSelectedImageClicked()
     // 삭제 버튼 비활성화
     deleteSelectedImageButton->setEnabled(false);
     
-    // 체크된 패턴 중 이미지가 있는지 확인
-    bool hasImages = false;
-    for (auto it = patternImages.begin(); it != patternImages.end(); ++it) {
-        if (!it.value().isEmpty()) {
-            hasImages = true;
-            break;
-        }
-    }
+    // 공용 이미지가 있는지 확인
+    bool hasImages = !commonImages.isEmpty();
     
     bool anyChecked = false;
     for (auto checkbox : patternCheckBoxes) {
@@ -900,28 +824,20 @@ void TrainDialog::onAddImagesClicked()
         return;
     }
     
-    // 현재 선택된 패턴 확인
-    if (currentSelectedPattern.isEmpty()) {
-        CustomMessageBox msgBox(this, CustomMessageBox::Warning, "경고",
-                                "패턴을 먼저 선택하세요.");
-        msgBox.exec();
-        return;
-    }
-    
+    // 공용 이미지 리스트에 추가
     int addedCount = 0;
-    QVector<cv::Mat>& currentImages = patternImages[currentSelectedPattern];
     
     for (const QString& fileName : imagePaths) {
         cv::Mat img = cv::imread(fileName.toStdString());
         if (!img.empty()) {
-            currentImages.append(img);
+            commonImages.append(img);
             addedCount++;
         }
     }
     
     if (addedCount > 0) {
         updateImageGrid();
-        imageCountLabel->setText(QString("이미지 개수: %1").arg(currentImages.size()));
+        imageCountLabel->setText(QString("이미지 개수: %1").arg(commonImages.size()));
         
         bool anyChecked = false;
         for (auto checkbox : patternCheckBoxes) {
@@ -931,14 +847,8 @@ void TrainDialog::onAddImagesClicked()
             }
         }
         
-        // 체크된 패턴 중 하나라도 이미지가 있으면 활성화
-        bool hasImages = false;
-        for (auto it = patternImages.begin(); it != patternImages.end(); ++it) {
-            if (!it.value().isEmpty()) {
-                hasImages = true;
-                break;
-            }
-        }
+        // 공용 이미지가 있으면 활성화
+        bool hasImages = !commonImages.isEmpty();
         autoTrainButton->setEnabled(anyChecked && hasImages);
         
         qDebug() << "[TrainDialog] 추가된 이미지 수:" << addedCount;
@@ -1158,15 +1068,14 @@ void TrainDialog::trainPattern(const QString& patternName)
         return;
     }
     
-    // 해당 패턴의 이미지 가져오기
-    QVector<cv::Mat>& currentImages = patternImages[patternName];
-    if (currentImages.isEmpty()) {
-        qWarning() << "[TRAIN] 패턴" << patternName << "에 학습할 이미지가 없음";
+    // 공용 이미지 가져오기
+    if (commonImages.isEmpty()) {
+        qWarning() << "[TRAIN] 공용 학습 이미지가 없음";
         trainNextPattern();
         return;
     }
     
-    qDebug() << "[TRAIN] 패턴" << patternName << "이미지 개수:" << currentImages.size();
+    qDebug() << "[TRAIN] 패턴" << patternName << "공용 이미지 개수:" << commonImages.size();
     
     // 임시 폴더 생성
     tempTrainingDir = QCoreApplication::applicationDirPath() + QString("/../deploy/data/train/temp_%1_%2")
@@ -1232,20 +1141,20 @@ void TrainDialog::trainPattern(const QString& patternName)
     trainingTimer->start();
     
     updateTrainingProgress(QString("%1 Extracting ROI '%2'... (0/%3)%4")
-        .arg(getPatternProgressString()).arg(patternName).arg(currentImages.size()).arg(getTotalTimeString()));
+        .arg(getPatternProgressString()).arg(patternName).arg(commonImages.size()).arg(getTotalTimeString()));
     
     int croppedCount = 0;
     int fidMatchFailCount = 0;
     
-    for (int i = 0; i < currentImages.size(); ++i) {
+    for (int i = 0; i < commonImages.size(); ++i) {
         // 진행률 업데이트 (5개마다 또는 마지막)
-        if (i % 5 == 0 || i == currentImages.size() - 1) {
+        if (i % 5 == 0 || i == commonImages.size() - 1) {
             updateTrainingProgress(QString("%1 Extracting ROI '%2'... (%3/%4)%5")
-                .arg(getPatternProgressString()).arg(patternName).arg(i + 1).arg(currentImages.size()).arg(getTotalTimeString()));
+                .arg(getPatternProgressString()).arg(patternName).arg(i + 1).arg(commonImages.size()).arg(getTotalTimeString()));
             QApplication::processEvents();
         }
         
-        cv::Mat image = currentImages[i];
+        cv::Mat image = commonImages[i];
         if (image.empty()) continue;
         
         int finalRoiX = roiX, finalRoiY = roiY;

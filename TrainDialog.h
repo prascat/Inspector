@@ -106,8 +106,8 @@ private:
     QVector<PatternInfo*> anomalyPatterns;
     QVector<PatternInfo*> allPatterns;  // 모든 패턴 (FID 찾기용)
     
-    // 패턴별 캡처된 이미지 저장 (패턴 이름 -> 이미지 리스트)
-    QMap<QString, QVector<cv::Mat>> patternImages;
+    // 공용 캡처된 이미지 저장 (모든 패턴이 공유)
+    QVector<cv::Mat> commonImages;
     
     // 현재 선택된 패턴 이름
     QString currentSelectedPattern;

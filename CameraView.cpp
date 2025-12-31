@@ -2261,6 +2261,10 @@ void CameraView::drawFIDPatterns(QPainter &painter, const InspectionResult &resu
         if (!patternVisible)
             continue;
 
+        // 비활성화된 패턴은 건너뜀
+        if (!patternInfo->enabled)
+            continue;
+
         // FID 박스 그리기 (검출된 위치 기준)
         int width = patternInfo->rect.width();
         int height = patternInfo->rect.height();
@@ -2406,6 +2410,10 @@ void CameraView::drawINSPatterns(QPainter &painter, const InspectionResult &resu
 
         bool patternVisible = (patternInfo->cameraUuid.isEmpty() || patternInfo->cameraUuid == currentCameraUuid || currentCameraUuid.isEmpty());
         if (!patternVisible)
+            continue;
+
+        // 비활성화된 패턴은 건너뜀
+        if (!patternInfo->enabled)
             continue;
 
         // 선택된 패턴이 있으면 그 패턴만 그리기 (INS 박스)
@@ -4018,13 +4026,13 @@ void CameraView::drawINSAnomalyVisualization(QPainter &painter, const Inspection
                 
                 QPolygonF polygon;
                 for (const auto& pt : contour) {
-                    // 상대좌표(anomaly map 픽셀) → 정규화(0~1) → 조정된 INS 패턴 영역 기준 절대좌표
-                    double relX = (pt.x / mapWidth) * inspRectScene.width();
-                    double relY = (pt.y / mapHeight) * inspRectScene.height();
-                    QPointF absPoint(inspRectScene.x() + relX, inspRectScene.y() + relY);
-                    
-                    // 절대좌표 → Viewport
-                    QPointF viewportPoint = sceneToViewport(painter, absPoint);
+                    // 상대좌표(anomaly map 픽셀) → 정규화(0~1) → targetRect 기준 viewport 좌표
+                    double normX = pt.x / mapWidth;
+                    double normY = pt.y / mapHeight;
+                    QPointF viewportPoint(
+                        targetRect.x() + normX * targetRect.width(),
+                        targetRect.y() + normY * targetRect.height()
+                    );
                     polygon << viewportPoint;
                 }
                 painter.drawPolygon(polygon);
