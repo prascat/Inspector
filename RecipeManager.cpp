@@ -2368,25 +2368,14 @@ bool RecipeManager::deleteRecipe(const QString& recipeName) {
         return false;
     }
     
-    // 레시피 로드하여 INS(ANOMALY) 패턴들의 가중치 폴더 삭제
-    QVector<PatternInfo> patterns;
-    if (loadRecipeByName(recipeName, patterns)) {
-        for (const PatternInfo& pattern : patterns) {
-            if (pattern.type == PatternType::INS && 
-                pattern.inspectionMethod == InspectionMethod::ANOMALY) {
-                AnomalyWeightUtils::removeWeightFolder(pattern.name);
-                qDebug() << "[RecipeManager] 레시피 삭제 시 가중치 폴더 삭제:" << pattern.name;
-            }
-        }
-    }
-    
-    // 전체 폴더 삭제 (XML 파일과 teach 폴더 포함)
+    // 전체 폴더 삭제 (XML 파일, teach 폴더, weights 폴더 포함)
     QDir dir(recipeDir);
     if (!dir.removeRecursively()) {
         setError(QString("레시피 폴더를 삭제할 수 없습니다: %1").arg(recipeDir));
         return false;
     }
     
+    qDebug() << "[RecipeManager] 레시피 폴더 삭제됨:" << recipeName;
     return true;
 }
 

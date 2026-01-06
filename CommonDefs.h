@@ -803,7 +803,7 @@ struct StripDrawContext {
 namespace AnomalyWeightUtils {
     // 패턴 가중치 파일 존재 여부 확인 (bin, xml 파일 모두 있어야 Trained)
     inline bool hasTrainedWeight(const QString& patternName) {
-        QString basePath = QCoreApplication::applicationDirPath() + QString("/../deploy/weights/%1/%1").arg(patternName);
+        QString basePath = QCoreApplication::applicationDirPath() + QString("/weights/%1/%1").arg(patternName);
         QString xmlPath = basePath + ".xml";
         QString binPath = basePath + ".bin";
         return QFile::exists(xmlPath) && QFile::exists(binPath);
@@ -811,7 +811,7 @@ namespace AnomalyWeightUtils {
     
     // 패턴 가중치 폴더 삭제
     inline bool removeWeightFolder(const QString& patternName) {
-        QString weightDir = QCoreApplication::applicationDirPath() + QString("/../deploy/weights/%1").arg(patternName);
+        QString weightDir = QCoreApplication::applicationDirPath() + QString("/weights/%1").arg(patternName);
         QDir dir(weightDir);
         if (dir.exists()) {
             qDebug() << "[AnomalyWeightUtils] 가중치 폴더 삭제:" << weightDir;

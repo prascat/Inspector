@@ -15,12 +15,13 @@
 #include <QJsonObject>
 #include "CustomFileDialog.h"
 #include "CustomMessageBox.h"
+#include "ImageProcessor.h"
 
 TrainDialog::TrainDialog(QWidget *parent)
     : QWidget(parent)
     , m_dragging(false)
     , m_firstShow(true)
-    , dockerTrainProcess(nullptr)
+    , trainProcess(nullptr)
     , trainingTimer(nullptr)
     , totalTrainingTimer(nullptr)
     , progressUpdateTimer(nullptr)
@@ -30,6 +31,7 @@ TrainDialog::TrainDialog(QWidget *parent)
     , trainingStatusLabel(nullptr)
     , totalPatternCount(0)
     , completedPatternCount(0)
+    , selectAllCheckBox(nullptr)
 {
     setupUI();
     applyBlackTheme();
@@ -44,18 +46,18 @@ TrainDialog::TrainDialog(QWidget *parent)
     
     // 화면 밖으로도 이동 가능하도록 설정 (윈도우 매니저 우회)
     setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::X11BypassWindowManagerHint);
-    resize(1400, 900);
+    resize(1000, 700);
 }
 
 TrainDialog::~TrainDialog()
 {
-    if (dockerTrainProcess) {
-        if (dockerTrainProcess->state() == QProcess::Running) {
-            dockerTrainProcess->kill();
-            dockerTrainProcess->waitForFinished(3000);
+    if (trainProcess) {
+        if (trainProcess->state() == QProcess::Running) {
+            trainProcess->kill();
+            trainProcess->waitForFinished(3000);
         }
-        delete dockerTrainProcess;
-        dockerTrainProcess = nullptr;
+        delete trainProcess;
+        trainProcess = nullptr;
     }
     
     if (trainingTimer) {
@@ -114,26 +116,6 @@ void TrainDialog::setupUI()
     numNeighborsSpinBox->setValue(9);  // 기본값: 9
     optionsLayout->addRow("Num Neighbors:", numNeighborsSpinBox);
     
-    // ReBuild Docker 버튼
-    rebuildDockerButton = new QPushButton("🔄 Docker 이미지 재빌드", this);
-    rebuildDockerButton->setMinimumHeight(35);
-    rebuildDockerButton->setStyleSheet(
-        "QPushButton { background-color: #f57c00; color: #ffffff; border: 1px solid #e65100; }"
-        "QPushButton:hover { background-color: #fb8c00; }"
-        "QPushButton:pressed { background-color: #e65100; }"
-    );
-    optionsLayout->addRow(rebuildDockerButton);
-    
-    // Docker 이미지 정보 표시 라벨
-    dockerImageInfoLabel = new QLabel("Docker 이미지 확인 중...", this);
-    dockerImageInfoLabel->setWordWrap(true);
-    dockerImageInfoLabel->setStyleSheet(
-        "QLabel { color: #aaaaaa; font-size: 11px; padding: 5px; "
-        "background-color: #2a2a2a; border: 1px solid #3d3d3d; border-radius: 3px; }"
-    );
-    dockerImageInfoLabel->setMinimumHeight(60);
-    optionsLayout->addRow(dockerImageInfoLabel);
-    
     leftLayout->addWidget(optionsGroupBox);
     
     // 버튼들 (맨 위에 배치)
@@ -170,19 +152,56 @@ void TrainDialog::setupUI()
     );
     leftLayout->addWidget(closeButton);
     
-    // 패턴 목록
-    patternListWidget = new QListWidget(this);
-    leftLayout->addWidget(patternListWidget);
+    // 패턴 테이블 (체크박스, 패턴명, 학습여부)
+    patternTableWidget = new QTableWidget(this);
+    patternTableWidget->setColumnCount(3);
+    patternTableWidget->setHorizontalHeaderLabels({"", "패턴명", "학습여부"});
+    patternTableWidget->horizontalHeader()->setStretchLastSection(false);
+    patternTableWidget->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
+    patternTableWidget->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    patternTableWidget->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
+    patternTableWidget->setColumnWidth(0, 50);
+    patternTableWidget->setColumnWidth(2, 80);
+    patternTableWidget->verticalHeader()->setVisible(false);
+    patternTableWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
+    patternTableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
+    patternTableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
     
-    // 티칭 이미지
-    teachingImageLabel = new QLabel(this);
-    teachingImageLabel->setAlignment(Qt::AlignCenter);
-    teachingImageLabel->setMinimumSize(280, 280);
-    teachingImageLabel->setStyleSheet("QLabel { border: 1px solid #3d3d3d; background-color: #252525; }");
-    teachingImageLabel->setText("패턴을 선택하세요");
-    leftLayout->addWidget(teachingImageLabel);
+    // 헤더에 전체 선택 체크박스 추가
+    selectAllCheckBox = new QCheckBox(this);
+    selectAllCheckBox->setTristate(true);
     
-    leftWidget->setMaximumWidth(350);
+    // 체크박스를 헤더의 0번 컬럼에 배치
+    QWidget *headerWidget = new QWidget();
+    QHBoxLayout *headerLayout = new QHBoxLayout(headerWidget);
+    headerLayout->addWidget(selectAllCheckBox);
+    headerLayout->setAlignment(Qt::AlignCenter);
+    headerLayout->setContentsMargins(0, 0, 0, 0);
+    headerWidget->setLayout(headerLayout);
+    
+    // 체크박스를 헤더 위에 오버레이로 배치
+    QHeaderView *header = patternTableWidget->horizontalHeader();
+    header->setMinimumSectionSize(50);
+    
+    // selectAllCheckBox를 테이블 위에 배치하고 위치 조정
+    selectAllCheckBox->setParent(patternTableWidget);
+    selectAllCheckBox->move(15, 5);
+    selectAllCheckBox->raise();
+    
+    // 전체 선택 체크박스 연결
+    connect(selectAllCheckBox, &QCheckBox::stateChanged, this, [this](int state) {
+        if (state == Qt::PartiallyChecked) {
+            return; // 부분 선택 상태에서는 아무 것도 하지 않음
+        }
+        bool checked = (state == Qt::Checked);
+        for (auto checkbox : patternCheckBoxes) {
+            checkbox->setChecked(checked);
+        }
+    });
+    
+    leftLayout->addWidget(patternTableWidget);
+    
+    leftWidget->setMaximumWidth(280);
     mainLayout->addWidget(leftWidget);
 
     // ===== 우측: 상단 썸네일 + 중앙 큰 이미지 =====
@@ -207,21 +226,21 @@ void TrainDialog::setupUI()
     
     imageListWidget = new QListWidget(this);
     imageListWidget->setViewMode(QListWidget::IconMode);
-    imageListWidget->setIconSize(QSize(120, 120));
+    imageListWidget->setIconSize(QSize(80, 80));
     imageListWidget->setResizeMode(QListWidget::Adjust);
     imageListWidget->setMovement(QListWidget::Static);
     imageListWidget->setFlow(QListWidget::LeftToRight);
     imageListWidget->setWrapping(false);
-    imageListWidget->setFixedHeight(150);
+    imageListWidget->setFixedHeight(110);
     imageWidgetLayout->addWidget(imageListWidget);
     
-    imageWidget->setMaximumHeight(190);
+    imageWidget->setMaximumHeight(150);
     rightLayout->addWidget(imageWidget);
     
-    // 중앙: 선택된 이미지 크게 표시
+    // 중앙: 선택된 이미지 표시
     previewImageLabel = new QLabel(this);
     previewImageLabel->setAlignment(Qt::AlignCenter);
-    previewImageLabel->setMinimumSize(600, 400);
+    previewImageLabel->setMinimumSize(400, 300);
     previewImageLabel->setStyleSheet("QLabel { border: 1px solid #3d3d3d; background-color: #252525; }");
     previewImageLabel->setText("이미지를 클릭하세요");
     rightLayout->addWidget(previewImageLabel);
@@ -234,9 +253,8 @@ void TrainDialog::setupUI()
     if (clearImagesButton) connect(clearImagesButton, &QPushButton::clicked, this, &TrainDialog::onClearImagesClicked);
     if (addImagesButton) connect(addImagesButton, &QPushButton::clicked, this, &TrainDialog::onAddImagesClicked);
     if (deleteSelectedImageButton) connect(deleteSelectedImageButton, &QPushButton::clicked, this, &TrainDialog::onDeleteSelectedImageClicked);
-    if (patternListWidget) connect(patternListWidget, &QListWidget::itemSelectionChanged, this, &TrainDialog::onPatternSelectionChanged);
+    if (patternTableWidget) connect(patternTableWidget, &QTableWidget::itemSelectionChanged, this, &TrainDialog::onPatternSelectionChanged);
     if (imageListWidget) connect(imageListWidget, &QListWidget::itemClicked, this, &TrainDialog::onImageItemClicked);
-    if (rebuildDockerButton) connect(rebuildDockerButton, &QPushButton::clicked, this, &TrainDialog::onRebuildDockerClicked);
 }
 
 void TrainDialog::applyBlackTheme()
@@ -266,97 +284,79 @@ void TrainDialog::setAnomalyPatterns(const QVector<PatternInfo*>& patterns)
 {
     anomalyPatterns = patterns;
     
-    // 리스트 초기화
-    patternListWidget->clear();
+    // 테이블 초기화
+    patternTableWidget->setRowCount(0);
     patternCheckBoxes.clear();
     
     // ANOMALY 검사방법 패턴만 추가
+    int row = 0;
     for (PatternInfo* pattern : patterns) {
         if (pattern && pattern->type == PatternType::INS &&
             pattern->inspectionMethod == InspectionMethod::ANOMALY) {
             
-            // 커스텀 위젯 생성 (체크박스 + 패턴 정보)
-            QWidget *itemWidget = new QWidget();
-            itemWidget->setStyleSheet("background-color: transparent;");
-            QHBoxLayout *itemLayout = new QHBoxLayout(itemWidget);
-            itemLayout->setContentsMargins(5, 2, 5, 2);
-            itemLayout->setSpacing(8);
+            patternTableWidget->insertRow(row);
             
+            // 체크박스 (0번 컬럼)
             QCheckBox *checkBox = new QCheckBox();
-            checkBox->setStyleSheet(
-                "QCheckBox::indicator { width: 18px; height: 18px; border: 2px solid #888; background-color: #222; border-radius: 3px; }"
-                "QCheckBox::indicator:checked { background-color: #4CAF50; border-color: #4CAF50; }"
-                "QCheckBox::indicator:hover { border-color: #aaa; }"
-            );
+            QWidget *checkWidget = new QWidget();
+            QHBoxLayout *checkLayout = new QHBoxLayout(checkWidget);
+            checkLayout->addWidget(checkBox);
+            checkLayout->setAlignment(Qt::AlignCenter);
+            checkLayout->setContentsMargins(0, 0, 0, 0);
+            patternTableWidget->setCellWidget(row, 0, checkWidget);
             
-            // 학습 가중치 파일 확인
-            bool isTrained = AnomalyWeightUtils::hasTrainedWeight(pattern->name);
+            // 패턴명 (1번 컬럼)
+            QTableWidgetItem *nameItem = new QTableWidgetItem(pattern->name);
+            nameItem->setData(Qt::UserRole, pattern->name);
+            nameItem->setTextAlignment(Qt::AlignCenter);
+            patternTableWidget->setItem(row, 1, nameItem);
             
-            QString labelText = QString("%1 (ROI: %2x%3)")
-                .arg(pattern->name)
-                .arg(static_cast<int>(pattern->rect.width()))
-                .arg(static_cast<int>(pattern->rect.height()));
+            // 학습여부 확인 (실제 모델 파일 존재 여부 체크)
+            QString recipesDir = QCoreApplication::applicationDirPath() + "/recipes";
+            QString recipeDir = currentRecipeName.isEmpty() ? "default" : currentRecipeName;
+            QString weightsPath = recipesDir + "/" + recipeDir + "/weights/" + pattern->name;
             
+            // TensorRT 모델 파일 확인
+            QString modelFile = weightsPath + "/" + pattern->name + ".trt";
+            bool isTrained = QFile::exists(modelFile);
+            
+            // 학습여부 (2번 컬럼)
+            QTableWidgetItem *trainedItem = new QTableWidgetItem(isTrained ? "✓ 학습됨" : "미학습");
+            trainedItem->setTextAlignment(Qt::AlignCenter);
             if (isTrained) {
-                // 메타데이터에서 모델 옵션 읽기
-                QString metadataPath = QCoreApplication::applicationDirPath() + 
-                                      QString("/../deploy/weights/%1/metadata.json").arg(pattern->name);
-                QFile metaFile(metadataPath);
-                QString modelInfo;
-                
-                if (metaFile.exists() && metaFile.open(QIODevice::ReadOnly)) {
-                    QByteArray data = metaFile.readAll();
-                    metaFile.close();
-                    
-                    QJsonDocument doc = QJsonDocument::fromJson(data);
-                    if (!doc.isNull() && doc.isObject()) {
-                        QJsonObject obj = doc.object();
-                        QString backbone = obj.value("backbone").toString("unknown");
-                        double coresetRatio = obj.value("coreset_ratio").toDouble(-1.0);
-                        int numNeighbors = obj.value("num_neighbors").toInt(-1);
-                        
-                        modelInfo = QString(" [%1, CR:% 2, NN:%3]")
-                            .arg(backbone)
-                            .arg(coresetRatio, 0, 'f', 3)
-                            .arg(numNeighbors);
-                    } else {
-                        modelInfo = " [Trained]";
-                    }
-                } else {
-                    modelInfo = " [Trained]";
-                }
-                
-                labelText += modelInfo;
+                trainedItem->setForeground(QBrush(QColor("#4CAF50")));
+                trainedItem->setFont(QFont("", -1, QFont::Bold));
+            } else {
+                trainedItem->setForeground(QBrush(QColor("#999999")));
             }
-            
-            QLabel *label = new QLabel(labelText);
-            label->setStyleSheet(isTrained ? 
-                "color: #f44336; background: transparent; font-weight: bold;" :
-                "color: #ffffff; background: transparent;");
-            
-            itemLayout->addWidget(checkBox);
-            itemLayout->addWidget(label, 1);  // stretch factor 1로 남은 공간 차지
-            
-            // 리스트 아이템 생성 (텍스트 비우고 위젯만 사용)
-            QListWidgetItem *item = new QListWidgetItem();
-            item->setSizeHint(QSize(0, 35));  // 높이 지정
-            item->setData(Qt::UserRole, pattern->name);
-            item->setData(Qt::UserRole + 1, isTrained);  // 학습 여부 저장
-            
-            patternListWidget->addItem(item);
-            patternListWidget->setItemWidget(item, itemWidget);
+            patternTableWidget->setItem(row, 2, trainedItem);
             
             // 체크박스 저장
             patternCheckBoxes[pattern->name] = checkBox;
             
-            // 체크박스 변경 시 자동 학습 버튼 활성화 상태 업데이트
+            // 체크박스 변경 시 자동 학습 버튼 활성화 상태 업데이트 및 전체 선택 체크박스 동기화
             connect(checkBox, &QCheckBox::stateChanged, [this](int) {
                 bool anyChecked = false;
+                bool allChecked = true;
                 for (auto checkbox : patternCheckBoxes) {
                     if (checkbox->isChecked()) {
                         anyChecked = true;
-                        break;
+                    } else {
+                        allChecked = false;
                     }
+                }
+                
+                // 전체 선택 체크박스 상태 업데이트 (시그널 블록)
+                if (selectAllCheckBox) {
+                    selectAllCheckBox->blockSignals(true);
+                    if (allChecked && !patternCheckBoxes.isEmpty()) {
+                        selectAllCheckBox->setCheckState(Qt::Checked);
+                    } else if (!anyChecked) {
+                        selectAllCheckBox->setCheckState(Qt::Unchecked);
+                    } else {
+                        selectAllCheckBox->setCheckState(Qt::PartiallyChecked);
+                    }
+                    selectAllCheckBox->blockSignals(false);
                 }
                 
                 // 공용 이미지가 있는지 확인
@@ -364,13 +364,16 @@ void TrainDialog::setAnomalyPatterns(const QVector<PatternInfo*>& patterns)
                 
                 autoTrainButton->setEnabled(anyChecked && hasImages);
             });
+            
+            row++;
         }
     }
     
-    if (patternListWidget->count() == 0) {
-        QListWidgetItem *emptyItem = new QListWidgetItem("ANOMALY 검사방법 패턴이 없습니다.");
-        emptyItem->setFlags(Qt::NoItemFlags);
-        patternListWidget->addItem(emptyItem);
+    // 행 높이 자동 조정
+    patternTableWidget->resizeRowsToContents();
+    
+    if (patternTableWidget->rowCount() == 0) {
+        // 빈 테이블일 경우 자동 학습 버튼 비활성화
         autoTrainButton->setEnabled(false);
     }
 }
@@ -379,6 +382,11 @@ void TrainDialog::setAllPatterns(const QVector<PatternInfo*>& patterns)
 {
     allPatterns = patterns;
     // 전체 패턴 설정 (로그 제거)
+}
+
+void TrainDialog::setCurrentRecipeName(const QString& recipeName)
+{
+    currentRecipeName = recipeName;
 }
 
 void TrainDialog::addCapturedImage(const cv::Mat& image, int stripCrimpMode)
@@ -494,34 +502,45 @@ void TrainDialog::onClearImagesClicked()
 
 void TrainDialog::onPatternSelectionChanged()
 {
-    QListWidgetItem *item = patternListWidget->currentItem();
-    if (!item) {
-        teachingImageLabel->setText("패턴을 선택하세요");
+    int currentRow = patternTableWidget->currentRow();
+    if (currentRow < 0) {
         currentSelectedPattern.clear();
         return;
     }
     
-    QString patternName = item->data(Qt::UserRole).toString();
+    QTableWidgetItem *nameItem = patternTableWidget->item(currentRow, 1);
+    if (!nameItem) {
+        currentSelectedPattern.clear();
+        return;
+    }
+    
+    QString patternName = nameItem->data(Qt::UserRole).toString();
     currentSelectedPattern = patternName;
     
     // 공용 이미지 개수 업데이트 (모든 패턴이 동일한 이미지 사용)
     imageCountLabel->setText(QString("이미지 개수: %1").arg(commonImages.size()));
     
-    // 티칭 이미지 업데이트
+    // 패턴 이미지를 메인 이미지창에 표시
     updateTeachingImagePreview();
 }
 
 void TrainDialog::updateTeachingImagePreview()
 {
-    QListWidgetItem *item = patternListWidget->currentItem();
-    if (!item) {
-        teachingImageLabel->setText("패턴을 선택하세요");
+    int currentRow = patternTableWidget->currentRow();
+    if (currentRow < 0) {
+        previewImageLabel->setText("패턴을 선택하세요");
         return;
     }
     
-    QString patternName = item->data(Qt::UserRole).toString();
+    QTableWidgetItem *nameItem = patternTableWidget->item(currentRow, 1);
+    if (!nameItem) {
+        previewImageLabel->setText("패턴을 선택하세요");
+        return;
+    }
+    
+    QString patternName = nameItem->data(Qt::UserRole).toString();
     if (patternName.isEmpty()) {
-        teachingImageLabel->setText("유효하지 않은 패턴");
+        previewImageLabel->setText("유효하지 않은 패턴");
         return;
     }
     
@@ -535,7 +554,7 @@ void TrainDialog::updateTeachingImagePreview()
     }
     
     if (!selectedPattern) {
-        teachingImageLabel->setText("패턴을 찾을 수 없음");
+        previewImageLabel->setText("패턴을 찾을 수 없음");
         return;
     }
     
@@ -543,7 +562,7 @@ void TrainDialog::updateTeachingImagePreview()
     QImage templateImage = selectedPattern->templateImage;
     
     if (templateImage.isNull()) {
-        teachingImageLabel->setText("티칭 이미지 없음");
+        previewImageLabel->setText("티칭 이미지 없음");
         qDebug() << "[updateTeachingImagePreview] 템플릿 이미지 없음 - 패턴:" << patternName 
                  << "frameIndex:" << selectedPattern->frameIndex;
         return;
@@ -551,8 +570,8 @@ void TrainDialog::updateTeachingImagePreview()
     
     // 레이블 크기에 맞게 이미지 스케일링
     QPixmap pixmap = QPixmap::fromImage(templateImage);
-    QPixmap scaled = pixmap.scaled(teachingImageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    teachingImageLabel->setPixmap(scaled);
+    QPixmap scaled = pixmap.scaled(previewImageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    previewImageLabel->setPixmap(scaled);
 }
 
 void TrainDialog::onStartAutoTrainClicked()
@@ -633,9 +652,9 @@ void TrainDialog::onStartAutoTrainClicked()
             "QPushButton:hover { background-color: #f44336; }"
         );
         connect(cancelButton, &QPushButton::clicked, [this]() {
-            if (dockerTrainProcess && dockerTrainProcess->state() == QProcess::Running) {
-                dockerTrainProcess->kill();
-                dockerTrainProcess->waitForFinished(3000);
+            if (trainProcess && trainProcess->state() == QProcess::Running) {
+                trainProcess->kill();
+                trainProcess->waitForFinished(3000);
             }
             pendingPatterns.clear();
             isTraining = false;
@@ -909,80 +928,8 @@ void TrainDialog::showEvent(QShowEvent *event)
         }
     }
     
-    // Docker 이미지 상태 확인 및 정리
-    checkAndCleanDockerImages();
-}
-
-void TrainDialog::checkAndCleanDockerImages()
-{
-    // Docker 이미지 확인
-    QProcess checkProcess;
-    checkProcess.start("docker", QStringList() << "images" << "--format" << "{{.Repository}}:{{.Tag}}");
-    checkProcess.waitForFinished(3000);
-    
-    if (checkProcess.exitCode() != 0) {
-        qWarning() << "[Docker] Docker 이미지 확인 실패";
-        if (dockerImageInfoLabel) {
-            dockerImageInfoLabel->setText("❌ Docker 이미지 확인 실패\nDocker가 실행 중인지 확인하세요.");
-            dockerImageInfoLabel->setStyleSheet(
-                "QLabel { color: #ff5555; font-size: 11px; padding: 5px; "
-                "background-color: #2a2a2a; border: 1px solid #ff5555; border-radius: 3px; }"
-            );
-        }
-        return;
-    }
-    
-    QString output = checkProcess.readAllStandardOutput();
-    QStringList images = output.split('\n', Qt::SkipEmptyParts);
-    
-    bool hasPatchcoreTrainer = false;
-    for (const QString& image : images) {
-        if (image.contains("patchcore-trainer:latest")) {
-            hasPatchcoreTrainer = true;
-            break;
-        }
-    }
-    
-    // patchcore-trainer 이미지가 없으면 경고
-    if (!hasPatchcoreTrainer) {
-        qWarning() << "[Docker] patchcore-trainer:latest 이미지가 없습니다.";
-        
-        if (dockerImageInfoLabel) {
-            dockerImageInfoLabel->setText(
-                "⚠️ Docker 이미지 없음\n\n"
-                "'Docker 이미지 재빌드' 버튼을 눌러\n"
-                "이미지를 생성하세요."
-            );
-            dockerImageInfoLabel->setStyleSheet(
-                "QLabel { color: #ffaa00; font-size: 11px; padding: 5px; "
-                "background-color: #2a2a2a; border: 1px solid #ffaa00; border-radius: 3px; }"
-            );
-        }
-        
-        QTimer::singleShot(100, this, [this]() {
-            CustomMessageBox msgBox(this);
-            msgBox.setIcon(CustomMessageBox::Warning);
-            msgBox.setTitle("Docker 이미지 없음");
-            msgBox.setMessage("patchcore-trainer:latest Docker 이미지가 없습니다.\n\n"
-                            "'Docker 이미지 재빌드' 버튼을 눌러 이미지를 생성하세요.");
-            msgBox.setButtons(QMessageBox::Ok);
-            msgBox.exec();
-        });
-    } else {
-        // Docker 이미지 있음
-        if (dockerImageInfoLabel) {
-            dockerImageInfoLabel->setText("✅ Docker 이미지 있음");
-            dockerImageInfoLabel->setStyleSheet(
-                "QLabel { color: #55ff55; font-size: 11px; padding: 5px; "
-                "background-color: #2a2a2a; border: 1px solid #55ff55; border-radius: 3px; }"
-            );
-        }
-        qDebug() << "[Docker] patchcore-trainer:latest 이미지 있음";
-    }
-    
-    // 댕글링 이미지 정리 (백그라운드)
-    QProcess::startDetached("docker", QStringList() << "image" << "prune" << "-f");
-    qDebug() << "[Docker] 댕글링 이미지 자동 정리 실행";
+    // 다이얼로그를 열 때마다 학습 여부 갱신
+    updateTrainingStatus();
 }
 
 void TrainDialog::resizeEvent(QResizeEvent *event)
@@ -1017,18 +964,30 @@ void TrainDialog::trainNextPattern()
             totalTimeStr = QString("%1분 %2초").arg(minutes).arg(seconds);
         }
         
-        // 패턴 목록 갱신 ([Trained] 표시 업데이트)
-        for (int i = 0; i < patternListWidget->count(); ++i) {
-            QListWidgetItem* item = patternListWidget->item(i);
-            QString patternName = item->data(Qt::UserRole).toString();
-            bool wasTrained = AnomalyWeightUtils::hasTrainedWeight(patternName);
-            item->setData(Qt::UserRole + 1, wasTrained);
+        // 패턴 목록의 학습 상태 갱신
+        for (int row = 0; row < patternTableWidget->rowCount(); ++row) {
+            QTableWidgetItem* nameItem = patternTableWidget->item(row, 1);
+            if (!nameItem) continue;
             
-            QString displayText = patternName;
-            if (wasTrained) {
-                displayText += " [Trained]";
+            QString patternName = nameItem->data(Qt::UserRole).toString();
+            
+            // 학습여부 확인 (현재 레시피의 weights 폴더 체크)
+            QString recipesDir = QCoreApplication::applicationDirPath() + "/recipes";
+            QString recipeDir = currentRecipeName.isEmpty() ? "default" : currentRecipeName;
+            QString weightsPath = recipesDir + "/" + recipeDir + "/weights/" + patternName;
+            bool isTrained = QDir(weightsPath).exists();
+            
+            // 학습여부 셀 업데이트
+            QTableWidgetItem* statusItem = patternTableWidget->item(row, 2);
+            if (statusItem) {
+                statusItem->setText(isTrained ? "✓ 학습됨" : "미학습");
+                if (isTrained) {
+                    statusItem->setForeground(QBrush(QColor("#4CAF50")));
+                    statusItem->setFont(QFont("", -1, QFont::Bold));
+                } else {
+                    statusItem->setForeground(QBrush(QColor("#999999")));
+                }
             }
-            item->setText(displayText);
         }
         
         CustomMessageBox msgBox(this, CustomMessageBox::Information, "완료",
@@ -1049,6 +1008,12 @@ void TrainDialog::trainPattern(const QString& patternName)
     qDebug() << "[TRAIN] 학습 시작:" << patternName;
     
     updateTrainingProgress(QString("Preparing '%1'...").arg(patternName));
+    
+    // JETSON GPU 메모리 정리 (학습 전 필수)
+#ifdef USE_TENSORRT
+    qDebug() << "[TRAIN] GPU 메모리 정리 중...";
+    ImageProcessor::releasePatchCoreTensorRT();
+#endif
     
     // 기존 weights 폴더 삭제
     AnomalyWeightUtils::removeWeightFolder(patternName);
@@ -1078,7 +1043,7 @@ void TrainDialog::trainPattern(const QString& patternName)
     qDebug() << "[TRAIN] 패턴" << patternName << "공용 이미지 개수:" << commonImages.size();
     
     // 임시 폴더 생성
-    tempTrainingDir = QCoreApplication::applicationDirPath() + QString("/../deploy/data/train/temp_%1_%2")
+    tempTrainingDir = QCoreApplication::applicationDirPath() + QString("/data/train/temp_%1_%2")
         .arg(patternName)
         .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss"));
     QString goodDir = tempTrainingDir + "/good";
@@ -1232,14 +1197,33 @@ void TrainDialog::trainPattern(const QString& patternName)
         return;
     }
     
-    // Docker 학습 실행
-    QString weightsBaseDir = QCoreApplication::applicationDirPath() + "/../deploy/weights";
+    // 학습 실행 - 레시피별 weights 폴더
+    QString recipesDir = QCoreApplication::applicationDirPath() + "/recipes";
+    QString recipeDir = currentRecipeName.isEmpty() ? "default" : currentRecipeName;
+    QString weightsBaseDir = recipesDir + "/" + recipeDir + "/weights";
     QString outputDir = weightsBaseDir + "/" + patternName;
     QDir().mkpath(outputDir);
     
-    QString dockerScript = QCoreApplication::applicationDirPath() + "/../docker/docker_run_with_data.sh";
+    // 로컬 Python 직접 실행 (JETSON 및 x86 공통)
+    // python3 절대 경로 찾기
+    QProcess whichProcess;
+    whichProcess.start("which", QStringList() << "python3");
+    whichProcess.waitForFinished();
+    QString trainScript = QString(whichProcess.readAllStandardOutput()).trimmed();
+    
+    if (trainScript.isEmpty()) {
+        trainScript = "/usr/bin/python3";  // fallback
+    }
+    
     QStringList args;
-    args << tempTrainingDir << outputDir << patternName;
+    
+    QString scriptPath = QCoreApplication::applicationDirPath() + "/train_patchcore_anomalib.py";
+    args << "-u";  // unbuffered output
+    args << "-W" << "ignore";  // Python 워닝 메시지 숨기기
+    args << scriptPath;
+    args << "--data-dir" << tempTrainingDir;
+    args << "--output" << outputDir;
+    args << "--pattern-name" << patternName;
     
     // PatchCore 옵션 추가
     if (backboneComboBox && coresetRatioSpinBox && numNeighborsSpinBox) {
@@ -1248,28 +1232,75 @@ void TrainDialog::trainPattern(const QString& patternName)
         args << "--num-neighbors" << QString::number(numNeighborsSpinBox->value());
     }
     
-    qDebug() << "[TRAIN] Docker 학습 시작:" << dockerScript << args;
+    qDebug() << "[TRAIN] 로컬 학습 시작:" << trainScript << args;
+    
     updateTrainingProgress(QString("%1 Training model '%2'...%3")
         .arg(getPatternProgressString()).arg(patternName).arg(getTotalTimeString()));
     
     // 기존 프로세스 정리
-    if (dockerTrainProcess) {
-        if (dockerTrainProcess->state() == QProcess::Running) {
-            dockerTrainProcess->kill();
-            dockerTrainProcess->waitForFinished(3000);
+    if (trainProcess) {
+        if (trainProcess->state() == QProcess::Running) {
+            trainProcess->kill();
+            trainProcess->waitForFinished(3000);
         }
-        delete dockerTrainProcess;
+        delete trainProcess;
     }
     
-    dockerTrainProcess = new QProcess(this);
-    dockerTrainProcess->setWorkingDirectory(QCoreApplication::applicationDirPath() + "/..");
-    dockerTrainProcess->setProcessChannelMode(QProcess::MergedChannels);
+    trainProcess = new QProcess(this);
     
-    connect(dockerTrainProcess, &QProcess::readyReadStandardOutput, this, &TrainDialog::onDockerOutputReady);
-    connect(dockerTrainProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
-            this, &TrainDialog::onDockerFinished);
+    // 작업 디렉토리 설정 (절대 경로 사용)
+    QString workingDir = QCoreApplication::applicationDirPath();
+    trainProcess->setWorkingDirectory(workingDir);
     
-    dockerTrainProcess->start(dockerScript, args);
+    // Python 환경 변수 설정
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    
+    // HOME 디렉토리가 없으면 설정 (일부 시스템 서비스에서 필요)
+    if (!env.contains("HOME")) {
+        env.insert("HOME", QDir::homePath());
+    }
+    
+    // PYTHONUNBUFFERED 설정으로 출력 버퍼링 방지
+    env.insert("PYTHONUNBUFFERED", "1");
+    
+    // PYTHONPATH에 현재 디렉토리 추가
+    QString pythonPath = workingDir;
+    if (env.contains("PYTHONPATH")) {
+        pythonPath += ":" + env.value("PYTHONPATH");
+    }
+    env.insert("PYTHONPATH", pythonPath);
+    
+    trainProcess->setProcessEnvironment(env);
+    
+    // 표준 출력과 에러를 분리해서 캡처
+    trainProcess->setProcessChannelMode(QProcess::SeparateChannels);
+    
+    connect(trainProcess, &QProcess::readyReadStandardOutput, this, &TrainDialog::onTrainOutputReady);
+    connect(trainProcess, &QProcess::readyReadStandardError, this, [this]() {
+        if (trainProcess) {
+            QString errorOutput = trainProcess->readAllStandardError();
+            if (!errorOutput.trimmed().isEmpty()) {
+                qWarning() << "[TRAIN ERROR]" << errorOutput;
+            }
+        }
+    });
+    connect(trainProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
+            this, &TrainDialog::onTrainFinished);
+    
+    trainProcess->start(trainScript, args);
+    
+    // 프로세스 시작 실패 확인
+    if (!trainProcess->waitForStarted(5000)) {
+        QString errorMsg = QString("Failed to start Python process: %1\nError: %2")
+            .arg(trainScript).arg(trainProcess->errorString());
+        qCritical() << "[TRAIN]" << errorMsg;
+        
+        CustomMessageBox msgBox(this, CustomMessageBox::Critical, "학습 시작 실패", errorMsg);
+        msgBox.exec();
+        
+        trainNextPattern();
+        return;
+    }
 }
 
 QString TrainDialog::getTotalTimeString() const
@@ -1290,12 +1321,41 @@ QString TrainDialog::getPatternProgressString() const
     return QString(" [%1/%2]").arg(currentPatternIndex).arg(totalPatternCount);
 }
 
-void TrainDialog::onDockerOutputReady()
+void TrainDialog::onTrainOutputReady()
 {
-    if (!dockerTrainProcess) return;
+    if (!trainProcess) return;
     
-    QString output = dockerTrainProcess->readAllStandardOutput();
-    qDebug() << "[DOCKER]" << output;
+    QString output = trainProcess->readAllStandardOutput();
+    
+    // 출력 문자열 정리
+    output = output.trimmed();
+    
+    // 빈 줄이면 무시
+    if (output.isEmpty()) {
+        return;
+    }
+    
+    // 단순 줄바꿈만 있는 경우 무시
+    if (output == "\n" || output == "\r\n" || output == "\r") {
+        return;
+    }
+    
+    // Traceback 필터링 - 에러만 간단하게 표시
+    if (output.contains("Traceback (most recent call last):")) {
+        // 실제 에러 메시지만 추출 (Error:, Exception: 등으로 시작하는 줄)
+        QStringList lines = output.split('\n');
+        for (const QString& line : lines) {
+            QString trimmed = line.trimmed();
+            if (trimmed.contains("Error:") || trimmed.contains("Exception:")) {
+                qDebug() << "[TRAIN]" << trimmed;
+                return;
+            }
+        }
+        // 에러 타입을 못 찾으면 아무것도 출력 안 함
+        return;
+    }
+    
+    // Python 스크립트 출력은 진행바로만 표시 (디버그 로그 제거)
     
     QString totalElapsedStr = getTotalTimeString();
     
@@ -1312,10 +1372,25 @@ void TrainDialog::onDockerOutputReady()
         return;
     }
     
-    // OpenVINO 변환 진행률 파싱
-    if (output.contains("Converting") || output.contains("Exporting") || output.contains("OpenVINO")) {
-        updateTrainingProgress(QString("%1 Training '%2'... Converting to OpenVINO%3")
+    // ONNX 변환 진행률 파싱
+    if (output.contains("Exporting to ONNX")) {
+        updateTrainingProgress(QString("%1 Training '%2'... ONNX%3")
             .arg(patternProgress).arg(currentTrainingPattern).arg(totalElapsedStr));
+        return;
+    }
+    if (output.contains("ONNX exported")) {
+        // ONNX 완료 시 로그 생략, TensorRT 변환 대기
+        return;
+    }
+    
+    // TensorRT 변환 진행률 파싱
+    if (output.contains("Converting to TensorRT")) {
+        updateTrainingProgress(QString("%1 Training '%2'... TensorRT%3")
+            .arg(patternProgress).arg(currentTrainingPattern).arg(totalElapsedStr));
+        return;
+    }
+    if (output.contains("TensorRT engine created")) {
+        // TensorRT 완료 시 로그 생략
         return;
     }
     
@@ -1340,9 +1415,22 @@ void TrainDialog::onDockerOutputReady()
     }
 }
 
-void TrainDialog::onDockerFinished(int exitCode, QProcess::ExitStatus exitStatus)
+void TrainDialog::onTrainFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
-    qDebug() << "[TRAIN] Docker 종료: exitCode=" << exitCode << ", status=" << exitStatus;
+    qDebug() << "[TRAIN] 학습 프로세스 종료: exitCode=" << exitCode << ", status=" << exitStatus;
+    
+    // 프로세스 명시적 종료 및 메모리 해제
+    if (trainProcess) {
+        if (trainProcess->state() == QProcess::Running) {
+            qDebug() << "[TRAIN] 프로세스가 아직 실행 중, 강제 종료...";
+            trainProcess->kill();
+            trainProcess->waitForFinished(3000);
+        }
+        
+        // 프로세스 객체 삭제로 리소스 해제
+        trainProcess->deleteLater();
+        trainProcess = nullptr;
+    }
     
     // 소요 시간 계산 (개별 패턴)
     QString elapsedStr = "";
@@ -1360,9 +1448,11 @@ void TrainDialog::onDockerFinished(int exitCode, QProcess::ExitStatus exitStatus
         tempTrainingDir.clear();
     }
     
-    // weights 출력 폴더 정리 (bin, xml, norm_stats.txt만 남기고 삭제)
+    // weights 출력 폴더 정리 (bin, xml, 패턴명(정규화통계)만 남기고 삭제)
     if (exitCode == 0 && exitStatus == QProcess::NormalExit) {
-        QString weightsDir = QCoreApplication::applicationDirPath() + "/../deploy/weights/" + currentTrainingPattern;
+        QString recipesDir = QCoreApplication::applicationDirPath() + "/recipes";
+        QString recipeDir = currentRecipeName.isEmpty() ? "default" : currentRecipeName;
+        QString weightsDir = recipesDir + "/" + recipeDir + "/weights/" + currentTrainingPattern;
         QDir outputDir(weightsDir);
         if (outputDir.exists()) {
             // 삭제할 파일/폴더: patchcore_model.pt, Patchcore/, temp_dataset/
@@ -1404,259 +1494,6 @@ void TrainDialog::onDockerFinished(int exitCode, QProcess::ExitStatus exitStatus
     }
 }
 
-void TrainDialog::onRebuildDockerClicked()
-{
-    // 학습 중이면 무시
-    if (isTraining) {
-        QMessageBox::warning(this, "경고", "학습 중에는 Docker 이미지를 재빌드할 수 없습니다.");
-        return;
-    }
-    
-    // CustomMessageBox로 질문
-    CustomMessageBox msgBox(this, CustomMessageBox::Question, "Docker 이미지 재빌드",
-                            "Docker 이미지를 재빌드하시겠습니까?\n기존 이미지가 삭제되고 새로 빌드됩니다.",
-                            QMessageBox::Yes | QMessageBox::No);
-    msgBox.setButtonText(QMessageBox::Yes, "예");
-    msgBox.setButtonText(QMessageBox::No, "아니오");
-    
-    if (msgBox.exec() != QMessageBox::Yes) {
-        return;
-    }
-    
-    rebuildDockerButton->setEnabled(false);
-    rebuildDockerButton->setText("재빌드 중...");
-    
-    // 버튼 진행률 표시 함수
-    auto updateButtonProgress = [this](int progress) {
-        QString style;
-        if (progress >= 100) {
-            // 100%일 때는 전체 녹색
-            style = "QPushButton { "
-                    "  background-color: #4caf50; "
-                    "  color: white; "
-                    "  padding: 10px 20px; "
-                    "  border-radius: 5px; "
-                    "  font-weight: bold; "
-                    "}";
-        } else {
-            // 진행 중일 때는 그라디언트
-            style = QString(
-                "QPushButton { "
-                "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-                "    stop:0 #4caf50, stop:%1 #4caf50, stop:%1 #555555, stop:1 #555555); "
-                "  color: white; "
-                "  padding: 10px 20px; "
-                "  border-radius: 5px; "
-                "  font-weight: bold; "
-                "}"
-            ).arg(progress / 100.0, 0, 'f', 2);
-        }
-        rebuildDockerButton->setStyleSheet(style);
-    };
-    
-    // 초기 진행률 0%
-    updateButtonProgress(0);
-    QApplication::processEvents();
-    
-    // docker 폴더 경로 찾기
-    QString appPath = QCoreApplication::applicationDirPath();
-    QString dockerDir = QDir(appPath).filePath("../docker");
-    QDir dir(dockerDir);
-    if (!dir.exists()) {
-        dockerDir = QDir(appPath).filePath("../../docker");  // macOS 앱 번들
-        dir.setPath(dockerDir);
-    }
-    
-    if (!dir.exists()) {
-        if (trainingOverlay) trainingOverlay->hide();
-        
-        CustomMessageBox msgBox(this, CustomMessageBox::Critical, "오류",
-                                "Docker 폴더를 찾을 수 없습니다: " + dockerDir);
-        msgBox.exec();
-        
-        rebuildDockerButton->setEnabled(true);
-        rebuildDockerButton->setText("🔄 Docker 이미지 재빌드");
-        return;
-    }
-    
-    dockerDir = dir.absolutePath();
-    QString imageName = "patchcore-trainer";
-    
-    // 1단계: Docker 설치 확인 (0-10%)
-    rebuildDockerButton->setText("🔄 Docker 설치 확인 중... (0%)");
-    updateButtonProgress(5);
-    QApplication::processEvents();
-    
-    QProcess checkDocker;
-    checkDocker.start("docker", QStringList() << "--version");
-    checkDocker.waitForFinished(5000);
-    
-    if (checkDocker.exitCode() != 0) {
-        if (trainingOverlay) trainingOverlay->hide();
-        
-        CustomMessageBox msgBox(this, CustomMessageBox::Critical, "오류",
-                                "Docker가 설치되지 않았거나 실행할 수 없습니다.\nDocker Desktop을 설치하고 실행해주세요.");
-        msgBox.exec();
-        
-        rebuildDockerButton->setEnabled(true);
-        rebuildDockerButton->setText("🔄 Docker 이미지 재빌드");
-        return;
-    }
-    
-    qDebug() << "[Docker] Version:" << checkDocker.readAllStandardOutput();
-    
-    rebuildDockerButton->setText("🔄 Docker 설치 확인 완료 (10%)");
-    updateButtonProgress(10);
-    QApplication::processEvents();
-    
-    // 2단계: 기존 이미지 삭제 (10-20%)
-    rebuildDockerButton->setText("🗑️ 기존 이미지 삭제 중... (10%)");
-    QApplication::processEvents();
-    
-    QProcess removeProcess;
-    removeProcess.start("docker", QStringList() << "rmi" << "-f" << imageName);
-    removeProcess.waitForFinished(30000);  // 30초 대기
-    
-    QString removeOutput = removeProcess.readAllStandardOutput();
-    QString removeError = removeProcess.readAllStandardError();
-    qDebug() << "[Docker Remove] Output:" << removeOutput;
-    qDebug() << "[Docker Remove] Error:" << removeError;
-    
-    // 이미지가 없어도 에러를 무시하고 계속 진행 (이미지가 없으면 새로 빌드하면 됨)
-    if (removeError.contains("No such image", Qt::CaseInsensitive)) {
-        qDebug() << "[Docker Remove] 이미지가 없음. 새로 빌드 진행.";
-    }
-    
-    rebuildDockerButton->setText("✅ 이미지 삭제 완료 (20%)");
-    updateButtonProgress(20);
-    QApplication::processEvents();
-    
-    // 3단계: 새 이미지 빌드 (20-100%)
-    rebuildDockerButton->setText("🔨 Docker 이미지 빌드 시작... (20%)");
-    QApplication::processEvents();
-    
-    QProcess buildProcess;
-    buildProcess.setProcessChannelMode(QProcess::MergedChannels);  // stdout과 stderr 합치기
-    buildProcess.setWorkingDirectory(dockerDir);
-    buildProcess.start("docker", QStringList() << "build" << "-t" << imageName << ".");
-    
-    qDebug() << "[Docker Build] Working directory:" << dockerDir;
-    qDebug() << "[Docker Build] Command: docker build -t" << imageName << ".";
-    
-    if (!buildProcess.waitForStarted(10000)) {
-        qDebug() << "[Docker Build] Failed to start:" << buildProcess.errorString();
-        rebuildDockerButton->setEnabled(true);
-        rebuildDockerButton->setText("❌ Docker 시작 실패");
-        CustomMessageBox msgBox(this, CustomMessageBox::Critical, "오류", 
-                                "Docker 프로세스를 시작할 수 없습니다.\nDocker가 설치되어 있고 실행 중인지 확인하세요.");
-        msgBox.exec();
-        return;
-    }
-    
-    qDebug() << "[Docker Build] Process started successfully";
-    
-    // 빌드 진행 상황 표시 및 로그 수집
-    int stepCount = 0;
-    int totalSteps = 15;  // Dockerfile의 대략적인 단계 수 (추정)
-    QString allOutput;
-    QString allError;
-    
-    while (buildProcess.state() == QProcess::Running) {
-        buildProcess.waitForReadyRead(500);
-        QString output = buildProcess.readAllStandardOutput();
-        
-        if (!output.isEmpty()) {
-            allOutput += output;
-            qDebug() << "[Docker Build Output]" << output.trimmed();
-            
-            // "Step X/Y" 패턴 찾기
-            if (output.contains("Step ", Qt::CaseInsensitive)) {
-                QRegularExpression re("Step (\\d+)/(\\d+)", QRegularExpression::CaseInsensitiveOption);
-                QRegularExpressionMatch match = re.match(output);
-                if (match.hasMatch()) {
-                    int currentStep = match.captured(1).toInt();
-                    totalSteps = match.captured(2).toInt();
-                    stepCount = currentStep;
-                    
-                    // 20% ~ 100% 사이로 매핑
-                    int progress = 20 + (stepCount * 80 / totalSteps);
-                    
-                    rebuildDockerButton->setText(QString("🔨 빌드 중... Step %1/%2 (%3%)").arg(stepCount).arg(totalSteps).arg(progress));
-                    updateButtonProgress(progress);
-                    
-                    qDebug() << "[Docker Build Progress]" << progress << "% - Step" << stepCount << "/" << totalSteps;
-                }
-            }
-            QApplication::processEvents();
-        } else {
-            // 출력이 없으면 잠시 대기
-            QThread::msleep(100);
-        }
-    }
-    
-    buildProcess.waitForFinished(-1);
-    int exitCode = buildProcess.exitCode();
-    
-    // 남은 출력 읽기
-    QString remainingOutput = buildProcess.readAllStandardOutput();
-    if (!remainingOutput.isEmpty()) {
-        allOutput += remainingOutput;
-        qDebug() << "[Docker Build Remaining]" << remainingOutput.trimmed();
-    }
-    
-    qDebug() << "[Docker Build] Exit code:" << exitCode;
-    qDebug() << "[Docker Build] Final output length:" << allOutput.length();
-    
-    // 빌드 완료 시 진행률 100%로
-    rebuildDockerButton->setText("✅ 빌드 완료! (100%)");
-    updateButtonProgress(100);
-    QApplication::processEvents();
-    
-    // 1.5초 후 원래 스타일로 복구
-    QTimer::singleShot(1500, [this]() {
-        rebuildDockerButton->setEnabled(true);
-        rebuildDockerButton->setText("🔄 Docker 이미지 재빌드");
-        rebuildDockerButton->setStyleSheet("");  // 원래 스타일로
-    });
-    
-    if (exitCode == 0) {
-        CustomMessageBox msgBox(this, CustomMessageBox::Information, "완료",
-                                "Docker 이미지가 성공적으로 재빌드되었습니다.");
-        msgBox.exec();
-    } else {
-        rebuildDockerButton->setEnabled(true);
-        rebuildDockerButton->setText("❌ 재빌드 실패");
-        rebuildDockerButton->setStyleSheet("QPushButton { background-color: #d32f2f; color: white; padding: 10px 20px; border-radius: 5px; font-weight: bold; }");
-        
-        // 3초 후 원래 스타일로 복구
-        QTimer::singleShot(3000, [this]() {
-            rebuildDockerButton->setText("🔄 Docker 이미지 재빌드");
-            rebuildDockerButton->setStyleSheet("");
-        });
-        
-        // 상세 에러 메시지 구성
-        QString msg = QString("Docker 이미지 빌드 실패 (Exit code: %1)\n\n").arg(exitCode);
-        
-        // 출력의 마지막 30줄 표시
-        QStringList outputLines = allOutput.split('\n', Qt::SkipEmptyParts);
-        
-        if (!outputLines.isEmpty()) {
-            msg += "=== 빌드 출력 (마지막 30줄) ===\n";
-            int startIdx = qMax(0, outputLines.size() - 30);
-            for (int i = startIdx; i < outputLines.size(); i++) {
-                msg += outputLines[i] + "\n";
-            }
-        } else {
-            msg += "출력 없음. Docker가 실행 중인지 확인하세요.";
-        }
-        
-        qDebug() << "[Docker Build Failed] Full output:" << allOutput;
-        
-        CustomMessageBox msgBox(this, CustomMessageBox::Critical, "오류", msg);
-        msgBox.exec();
-    }
-}
-
 void TrainDialog::updateTrainingProgress(const QString& message)
 {
     // 시간 부분 제외한 메시지 저장 (타이머가 갱신할 때 사용)
@@ -1675,4 +1512,41 @@ void TrainDialog::updateTrainingProgress(const QString& message)
     
     // UI 블로킹 방지 - 이벤트 루프 처리
     QApplication::processEvents();
+}
+
+void TrainDialog::updateTrainingStatus()
+{
+    // 레시피가 없으면 갱신하지 않음
+    if (currentRecipeName.isEmpty()) {
+        return;
+    }
+    
+    QString recipesDir = QCoreApplication::applicationDirPath() + "/recipes";
+    QString recipeDir = currentRecipeName;
+    
+    // 테이블의 각 행을 순회하며 학습 여부 갱신
+    for (int row = 0; row < patternTableWidget->rowCount(); ++row) {
+        QTableWidgetItem *nameItem = patternTableWidget->item(row, 1);
+        if (!nameItem) continue;
+        
+        QString patternName = nameItem->data(Qt::UserRole).toString();
+        QString weightsPath = recipesDir + "/" + recipeDir + "/weights/" + patternName;
+        QString modelFile = weightsPath + "/" + patternName + ".trt";
+        
+        bool isTrained = QFile::exists(modelFile);
+        
+        // 학습여부 컬럼 업데이트
+        QTableWidgetItem *trainedItem = patternTableWidget->item(row, 2);
+        if (trainedItem) {
+            trainedItem->setText(isTrained ? "✓ 학습됨" : "미학습");
+            
+            if (isTrained) {
+                trainedItem->setForeground(QBrush(QColor("#4CAF50")));
+                trainedItem->setFont(QFont("", -1, QFont::Bold));
+            } else {
+                trainedItem->setForeground(QBrush(QColor("#999999")));
+                trainedItem->setFont(QFont());
+            }
+        }
+    }
 }

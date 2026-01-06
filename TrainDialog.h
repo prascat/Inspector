@@ -3,6 +3,8 @@
 
 #include <QWidget>
 #include <QListWidget>
+#include <QTableWidget>
+#include <QHeaderView>
 #include <QPushButton>
 #include <QLabel>
 #include <QVBoxLayout>
@@ -37,6 +39,9 @@ public:
     void setAnomalyPatterns(const QVector<PatternInfo*>& patterns);
     void setAllPatterns(const QVector<PatternInfo*>& patterns);
     
+    // 현재 레시피명 설정
+    void setCurrentRecipeName(const QString& recipeName);
+    
     // 캡처된 이미지 추가
     void addCapturedImage(const cv::Mat& image, int cameraIndex);
 
@@ -53,9 +58,8 @@ private slots:
     void onPatternSelectionChanged();
     void onStartAutoTrainClicked();
     void onImageItemClicked(QListWidgetItem* item);
-    void onDockerOutputReady();
-    void onDockerFinished(int exitCode, QProcess::ExitStatus exitStatus);
-    void onRebuildDockerClicked();
+    void onTrainOutputReady();
+    void onTrainFinished(int exitCode, QProcess::ExitStatus exitStatus);
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -74,25 +78,22 @@ private:
     void trainNextPattern();
     void updateTrainingProgress(const QString& message);
     void startDockerTraining(const QString& patternName, const QString& tempDir, const QString& outputDir);
-    void checkAndCleanDockerImages();  // Docker 이미지 확인 및 정리
+    void updateTrainingStatus();  // weights 폴더 체크하여 학습 여부 갱신
     QString getTotalTimeString() const;  // 총 경과 시간 문자열 반환
     QString getPatternProgressString() const;  // 패턴 진행률 문자열 반환 [1/3]
 
-    QListWidget *patternListWidget;
+    QTableWidget *patternTableWidget;
     QPushButton *closeButton;
     QPushButton *clearImagesButton;
     QPushButton *addImagesButton;
     QPushButton *deleteSelectedImageButton;
     QPushButton *autoTrainButton;
     QLabel *imageCountLabel;
-    QLabel *teachingImageLabel;
     
     // PatchCore 옵션 UI
     QComboBox *backboneComboBox;
     QDoubleSpinBox *coresetRatioSpinBox;
     QSpinBox *numNeighborsSpinBox;
-    QPushButton *rebuildDockerButton;
-    QLabel *dockerImageInfoLabel;  // Docker 이미지 빌드 옵션 표시
     
     // 이미지 미리보기 리스트
     QListWidget *imageListWidget;
@@ -114,6 +115,7 @@ private:
     
     // 체크박스와 패턴 매핑
     QMap<QString, QCheckBox*> patternCheckBoxes;
+    QCheckBox *selectAllCheckBox;  // 전체 선택/해제 체크박스
     
     // 마우스 드래그 관련
     bool m_dragging;
@@ -121,7 +123,7 @@ private:
     bool m_firstShow;
     
     // 학습 관련
-    QProcess *dockerTrainProcess;
+    QProcess *trainProcess;
     QElapsedTimer *trainingTimer;      // 개별 패턴 학습 시간
     QElapsedTimer *totalTrainingTimer; // 전체 학습 시간
     QTimer *progressUpdateTimer;       // 진행률 시간 갱신 타이머
@@ -132,6 +134,8 @@ private:
     bool isTraining;
     int totalPatternCount;             // 전체 학습할 패턴 수
     int completedPatternCount;         // 완료된 패턴 수
+    
+    QString currentRecipeName;         // 현재 레시피명
 };
 
 #endif // TRAINDIALOG_H

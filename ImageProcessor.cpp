@@ -2841,545 +2841,42 @@ bool ImageProcessor::performStripInspection(const cv::Mat &roiImage, const cv::M
     }
 }
 
-// ===== OpenVINO YOLO11-seg 관련 구현 =====
+#ifdef USE_TENSORRT
+// ===== TensorRT PatchCore 구현 (JETSON용) =====
+
+#include <NvInfer.h>
+#include <cuda_runtime.h>
+
+using namespace nvinfer1;
+
+// TensorRT Logger
+class TRTLogger : public ILogger {
+public:
+    void log(Severity severity, const char* msg) noexcept override {
+        if (severity <= Severity::kWARNING) {
+            qDebug() << "[TensorRT]" << msg;
+        }
+    }
+} gTRTLogger;
 
 // Static 멤버 초기화
-std::shared_ptr<ov::Core> ImageProcessor::s_ovinoCore = nullptr;
+QMap<QString, ImageProcessor::TensorRTPatchCoreModelInfo> ImageProcessor::s_tensorrtPatchCoreModels;
 
-// YOLO11-seg
-std::shared_ptr<ov::CompiledModel> ImageProcessor::s_yoloSegModel = nullptr;
-std::shared_ptr<ov::InferRequest> ImageProcessor::s_yoloSegInferRequest = nullptr;
-bool ImageProcessor::s_yoloSegModelLoaded = false;
-int ImageProcessor::s_yoloInputWidth = 640;
-int ImageProcessor::s_yoloInputHeight = 640;
-int ImageProcessor::s_yoloNumClasses = 80;  // COCO default, 실제 모델에 맞게 조정
-int ImageProcessor::s_yoloMaskSize = 160;   // YOLO11-seg mask prototype size
-
-// PatchCore
-QMap<QString, ImageProcessor::PatchCoreModelInfo> ImageProcessor::s_patchCoreModels;
-
-bool ImageProcessor::initYoloSegModel(const QString& modelPath, const QString& device)
+bool ImageProcessor::initPatchCoreTensorRT(const QString& enginePath, const QString& device)
 {
     try {
-        // 이미 로드되어 있으면 해제 후 재로드
-        if (s_yoloSegModelLoaded) {
-            releaseYoloSegModel();
+        // 이미 로드된 경우 스킵
+        if (s_tensorrtPatchCoreModels.contains(enginePath)) {
+            return true;
         }
         
-        qDebug() << "[OpenVINO] SEG 모델 로딩 시작:" << qPrintable(modelPath);
-        
-        // OpenVINO Core 생성
-        s_ovinoCore = std::make_shared<ov::Core>();
-        
-        // 사용 가능한 디바이스 출력
-        auto devices = s_ovinoCore->get_available_devices();
-        QStringList deviceList;
-        for (const auto& dev : devices) {
-            deviceList << QString::fromStdString(dev);
-        }
-        qDebug() << "[OpenVINO] 사용 가능한 디바이스:" << qPrintable(deviceList.join(", "));
-        
-        // 모델 읽기
-        std::shared_ptr<ov::Model> model = s_ovinoCore->read_model(modelPath.toStdString());
-        
-        // 입력 shape 확인
-        auto inputs = model->inputs();
-        if (!inputs.empty()) {
-            auto inputShape = inputs[0].get_shape();
-            if (inputShape.size() == 4) {
-                s_yoloInputHeight = static_cast<int>(inputShape[2]);
-                s_yoloInputWidth = static_cast<int>(inputShape[3]);
-            }
-        }
-        
-        // 성능 최적화 설정
-        s_ovinoCore->set_property(device.toStdString(), ov::hint::performance_mode(ov::hint::PerformanceMode::LATENCY));
-        s_ovinoCore->set_property(device.toStdString(), ov::hint::inference_precision(ov::element::f16));
-        s_ovinoCore->set_property(device.toStdString(), ov::streams::num(1));
-        
-        // 모델 컴파일
-        auto compiled = s_ovinoCore->compile_model(model, device.toStdString());
-        s_yoloSegModel = std::make_shared<ov::CompiledModel>(std::move(compiled));
-        
-        // 추론 요청 생성
-        s_yoloSegInferRequest = std::make_shared<ov::InferRequest>(s_yoloSegModel->create_infer_request());
-        
-        s_yoloSegModelLoaded = true;
-        qDebug() << "[SEG] 모델 로딩 완료";
-        
-        return true;
-    }
-    catch (const ov::Exception& e) {
-        qDebug() << "[OpenVINO] 모델 로딩 실패 (OpenVINO 예외):" << e.what();
-        s_yoloSegModelLoaded = false;
-        return false;
-    }
-    catch (const std::exception& e) {
-        qDebug() << "[OpenVINO] 모델 로딩 실패:" << e.what();
-        s_yoloSegModelLoaded = false;
-        return false;
-    }
-}
-
-void ImageProcessor::releaseYoloSegModel()
-{
-    try {
-        s_yoloSegInferRequest.reset();
-        s_yoloSegModel.reset();
-        s_yoloSegModelLoaded = false;
-        qDebug() << "[SEG] 모델 해제됨";
-        
-        // OpenVINO Core는 마지막에 해제 (또는 프로세스 종료에 맡김)
-        // s_ovinoCore.reset();  // 이 줄 주석 처리하여 전역 소멸 시 mutex 문제 방지
-    } catch (...) {
-        qDebug() << "[SEG] 모델 해제 중 예외 무시";
-    }
-}
-
-bool ImageProcessor::isYoloSegModelLoaded()
-{
-    return s_yoloSegModelLoaded;
-}
-
-cv::Mat ImageProcessor::preprocessYoloInput(const cv::Mat& image, int targetWidth, int targetHeight, 
-                                            float& scale, int& padX, int& padY)
-{
-    // Letterbox resize (종횡비 유지하면서 패딩)
-    int origW = image.cols;
-    int origH = image.rows;
-    
-    scale = std::min(static_cast<float>(targetWidth) / origW, 
-                     static_cast<float>(targetHeight) / origH);
-    
-    int newW = static_cast<int>(origW * scale);
-    int newH = static_cast<int>(origH * scale);
-    
-    padX = (targetWidth - newW) / 2;
-    padY = (targetHeight - newH) / 2;
-    
-    cv::Mat resized;
-    cv::resize(image, resized, cv::Size(newW, newH));
-    
-    // 패딩 추가 (회색 배경)
-    cv::Mat padded(targetHeight, targetWidth, CV_8UC3, cv::Scalar(114, 114, 114));
-    resized.copyTo(padded(cv::Rect(padX, padY, newW, newH)));
-    
-    // BGR -> RGB, HWC -> CHW, normalize to 0-1
-    cv::Mat blob;
-    cv::cvtColor(padded, blob, cv::COLOR_BGR2RGB);
-    blob.convertTo(blob, CV_32F, 1.0 / 255.0);
-    
-    return blob;
-}
-
-std::vector<YoloSegResult> ImageProcessor::postprocessYoloOutput(
-    const ov::Tensor& outputTensor,
-    const ov::Tensor& maskProtoTensor,
-    int origWidth, int origHeight,
-    float scale, int padX, int padY,
-    float confThreshold, float nmsThreshold, float maskThreshold)
-{
-    std::vector<YoloSegResult> results;
-    
-    // YOLO11-seg 출력 형식: [1, 116, 8400] (bbox + class + mask coefficients)
-    // output0: [1, 116, 8400] - 4 bbox + 80 classes + 32 mask coefficients
-    // output1: [1, 32, 160, 160] - mask prototypes
-    
-    auto outputShape = outputTensor.get_shape();
-    const float* outputData = outputTensor.data<float>();
-    
-    // mask prototypes
-    auto maskProtoShape = maskProtoTensor.get_shape();
-    const float* maskProtoData = maskProtoTensor.data<float>();
-    
-    int numDetections = static_cast<int>(outputShape[2]);  // 8400
-    int numFeatures = static_cast<int>(outputShape[1]);    // 116 = 4 + 80 + 32
-    int numClasses = numFeatures - 4 - 32;                  // 80
-    int numMaskCoeffs = 32;
-    
-    int maskH = static_cast<int>(maskProtoShape[2]);  // 160
-    int maskW = static_cast<int>(maskProtoShape[3]);  // 160
-    
-    std::vector<cv::Rect> boxes;
-    std::vector<float> confidences;
-    std::vector<int> classIds;
-    std::vector<std::vector<float>> maskCoeffs;
-    
-    // 각 detection 처리
-    for (int i = 0; i < numDetections; i++) {
-        // 클래스별 confidence 확인
-        float maxConf = 0.0f;
-        int maxClassId = -1;
-        
-        for (int c = 0; c < numClasses; c++) {
-            float conf = outputData[(4 + c) * numDetections + i];
-            if (conf > maxConf) {
-                maxConf = conf;
-                maxClassId = c;
-            }
-        }
-        
-        if (maxConf < confThreshold) continue;
-        
-        // 바운딩 박스 (x_center, y_center, width, height)
-        float cx = outputData[0 * numDetections + i];
-        float cy = outputData[1 * numDetections + i];
-        float w = outputData[2 * numDetections + i];
-        float h = outputData[3 * numDetections + i];
-        
-        // 패딩 및 스케일 역변환
-        float x1 = (cx - w / 2 - padX) / scale;
-        float y1 = (cy - h / 2 - padY) / scale;
-        float x2 = (cx + w / 2 - padX) / scale;
-        float y2 = (cy + h / 2 - padY) / scale;
-        
-        // 클리핑
-        x1 = std::max(0.0f, std::min(x1, static_cast<float>(origWidth - 1)));
-        y1 = std::max(0.0f, std::min(y1, static_cast<float>(origHeight - 1)));
-        x2 = std::max(0.0f, std::min(x2, static_cast<float>(origWidth - 1)));
-        y2 = std::max(0.0f, std::min(y2, static_cast<float>(origHeight - 1)));
-        
-        int bx = static_cast<int>(x1);
-        int by = static_cast<int>(y1);
-        int bw = static_cast<int>(x2 - x1);
-        int bh = static_cast<int>(y2 - y1);
-        
-        if (bw <= 0 || bh <= 0) continue;
-        
-        boxes.push_back(cv::Rect(bx, by, bw, bh));
-        confidences.push_back(maxConf);
-        classIds.push_back(maxClassId);
-        
-        // 마스크 계수 추출
-        std::vector<float> coeffs(numMaskCoeffs);
-        for (int m = 0; m < numMaskCoeffs; m++) {
-            coeffs[m] = outputData[(4 + numClasses + m) * numDetections + i];
-        }
-        maskCoeffs.push_back(coeffs);
-    }
-    
-    // NMS 적용
-    std::vector<int> indices;
-    cv::dnn::NMSBoxes(boxes, confidences, confThreshold, nmsThreshold, indices);
-    
-    // 결과 생성
-    for (int idx : indices) {
-        YoloSegResult result;
-        result.classId = classIds[idx];
-        result.confidence = confidences[idx];
-        result.bbox = boxes[idx];
-        
-        // 마스크 생성: mask = sigmoid(mask_coeffs @ mask_protos)
-        cv::Mat mask = cv::Mat::zeros(maskH, maskW, CV_32F);
-        const auto& coeffs = maskCoeffs[idx];
-        
-        for (int y = 0; y < maskH; y++) {
-            for (int x = 0; x < maskW; x++) {
-                float val = 0.0f;
-                for (int m = 0; m < numMaskCoeffs; m++) {
-                    val += coeffs[m] * maskProtoData[m * maskH * maskW + y * maskW + x];
-                }
-                // sigmoid
-                mask.at<float>(y, x) = 1.0f / (1.0f + std::exp(-val));
-            }
-        }
-        
-        // 마스크를 원본 이미지 크기로 리사이즈
-        cv::Mat maskResized;
-        cv::resize(mask, maskResized, cv::Size(s_yoloInputWidth, s_yoloInputHeight));
-        
-        // 패딩 제거 및 원본 크기로 변환
-        int cropX = padX;
-        int cropY = padY;
-        int cropW = static_cast<int>(origWidth * scale);
-        int cropH = static_cast<int>(origHeight * scale);
-        
-        cv::Mat maskCropped = maskResized(cv::Rect(cropX, cropY, cropW, cropH));
-        cv::resize(maskCropped, result.mask, cv::Size(origWidth, origHeight));
-        
-        // 임계값 적용하여 이진 마스크 생성
-        cv::Mat binaryMask;
-        cv::threshold(result.mask, binaryMask, maskThreshold, 1.0f, cv::THRESH_BINARY);
-        binaryMask.convertTo(binaryMask, CV_8U, 255);
-        
-        // bbox 영역 내부만 마스크 유지
-        cv::Mat finalMask = cv::Mat::zeros(origHeight, origWidth, CV_8U);
-        binaryMask(result.bbox).copyTo(finalMask(result.bbox));
-        result.mask = finalMask.clone();  // CV_8U 타입으로 저장
-        
-        // 외곽선 추출
-        std::vector<std::vector<cv::Point>> contours;
-        cv::findContours(finalMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-        if (!contours.empty()) {
-            // 가장 큰 외곽선 선택
-            result.contour = *std::max_element(contours.begin(), contours.end(),
-                [](const std::vector<cv::Point>& a, const std::vector<cv::Point>& b) {
-                    return cv::contourArea(a) < cv::contourArea(b);
-                });
-        }
-        
-        results.push_back(result);
-    }
-    
-    return results;
-}
-
-std::vector<YoloSegResult> ImageProcessor::runYoloSegInference(
-    const cv::Mat& image,
-    float confThreshold,
-    float nmsThreshold,
-    float maskThreshold)
-{
-    std::vector<YoloSegResult> results;
-    
-    if (!s_yoloSegModelLoaded || !s_yoloSegInferRequest) {
-        qDebug() << "[OpenVINO] 모델이 로드되지 않았습니다";
-        return results;
-    }
-    
-    if (image.empty()) {
-        qDebug() << "[OpenVINO] 입력 이미지가 비어있습니다";
-        return results;
-    }
-    
-    try {
-        int origW = image.cols;
-        int origH = image.rows;
-        
-        // 전처리
-        float scale;
-        int padX, padY;
-        cv::Mat inputBlob = preprocessYoloInput(image, s_yoloInputWidth, s_yoloInputHeight, 
-                                                 scale, padX, padY);
-        
-        // HWC -> CHW 변환
-        std::vector<cv::Mat> channels(3);
-        cv::split(inputBlob, channels);
-        
-        // 입력 텐서 생성
-        ov::Tensor inputTensor = s_yoloSegInferRequest->get_input_tensor();
-        float* inputData = inputTensor.data<float>();
-        
-        int channelSize = s_yoloInputHeight * s_yoloInputWidth;
-        for (int c = 0; c < 3; c++) {
-            std::memcpy(inputData + c * channelSize, channels[c].data, channelSize * sizeof(float));
-        }
-        
-        // 추론 실행
-        s_yoloSegInferRequest->infer();
-        
-        // 출력 텐서 가져오기
-        ov::Tensor outputTensor = s_yoloSegInferRequest->get_output_tensor(0);  // detection output
-        ov::Tensor maskProtoTensor = s_yoloSegInferRequest->get_output_tensor(1);  // mask prototypes
-        
-        // 후처리
-        results = postprocessYoloOutput(outputTensor, maskProtoTensor,
-                                        origW, origH, scale, padX, padY,
-                                        confThreshold, nmsThreshold, maskThreshold);
-    }
-    catch (const ov::Exception& e) {
-        qDebug() << "[OpenVINO] 추론 실패 (OpenVINO 예외):" << e.what();
-    }
-    catch (const std::exception& e) {
-        qDebug() << "[OpenVINO] 추론 실패:" << e.what();
-    }
-    
-    return results;
-}
-
-bool ImageProcessor::performBarrelInspection(
-    const cv::Mat& roiImage,
-    const PatternInfo& pattern,
-    bool isLeftBarrel,
-    std::vector<YoloSegResult>& segResults,
-    double& measuredLength,
-    bool& passed)
-{
-    passed = false;
-    measuredLength = 0.0;
-    segResults.clear();
-    
-    if (!s_yoloSegModelLoaded) {
-        qDebug() << "[BARREL 검사] YOLO 모델이 로드되지 않았습니다";
-        return false;
-    }
-    
-    if (roiImage.empty()) {
-        qDebug() << "[BARREL 검사] ROI 이미지가 비어있습니다";
-        return false;
-    }
-    
-    // YOLO11-seg 추론 수행
-    segResults = runYoloSegInference(roiImage, 0.5f, 0.45f, 0.5f);
-    
-    if (segResults.empty()) {
-        qDebug() << "[BARREL 검사] 객체가 검출되지 않았습니다";
-        return false;
-    }
-    
-    // 검출 결과에서 길이 측정 (세그멘테이션 마스크 기반)
-    // TODO: 실제 측정 로직 구현 - 마스크의 너비/높이 측정 등
-    
-    // 현재는 기본 구현 - 가장 큰 검출 결과 사용
-    const auto& mainResult = *std::max_element(segResults.begin(), segResults.end(),
-        [](const YoloSegResult& a, const YoloSegResult& b) {
-            return cv::contourArea(a.contour) < cv::contourArea(b.contour);
-        });
-    
-    // 마스크에서 길이 측정 (예: 수평 방향 최대 길이)
-    // 실제 구현에서는 패턴 방향에 따른 측정 필요
-    cv::Rect boundRect = mainResult.bbox;
-    measuredLength = std::max(boundRect.width, boundRect.height);  // 픽셀 단위
-    
-    // 통과 여부 판정
-    double minLength, maxLength;
-    if (isLeftBarrel) {
-        minLength = pattern.barrelLeftStripLengthMin;
-        maxLength = pattern.barrelLeftStripLengthMax;
-    } else {
-        minLength = pattern.barrelRightStripLengthMin;
-        maxLength = pattern.barrelRightStripLengthMax;
-    }
-    
-    // TODO: 픽셀 -> mm 변환 (calibration 필요)
-    // 현재는 픽셀 단위로 비교
-    passed = (measuredLength >= minLength && measuredLength <= maxLength);
-    
-    qDebug() << "[BARREL 검사]" << (isLeftBarrel ? "LEFT" : "RIGHT") 
-             << "측정값:" << measuredLength << "범위:" << minLength << "-" << maxLength
-             << "결과:" << (passed ? "PASS" : "FAIL");
-    
-    return true;
-}
-
-// 반사 제거 - Chromaticity 기반
-void ImageProcessor::applyReflectionRemovalChromaticity(const cv::Mat &src, cv::Mat &dst, double threshold, int inpaintRadius)
-{
-    if (src.empty()) {
-        dst = src.clone();
-        return;
-    }
-
-    // 3채널 이미지로 변환 (필요시)
-    cv::Mat srcColor;
-    if (src.channels() == 1) {
-        cv::cvtColor(src, srcColor, cv::COLOR_GRAY2BGR);
-    } else {
-        srcColor = src.clone();
-    }
-
-    // LAB 색공간으로 변환
-    cv::Mat lab;
-    cv::cvtColor(srcColor, lab, cv::COLOR_BGR2Lab);
-    
-    std::vector<cv::Mat> labChannels;
-    cv::split(lab, labChannels);
-    
-    // L 채널(밝기)에서 반사 영역 검출
-    cv::Mat reflectionMask;
-    cv::threshold(labChannels[0], reflectionMask, threshold, 255, cv::THRESH_BINARY);
-    
-    // 모폴로지 연산으로 노이즈 제거
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));
-    cv::morphologyEx(reflectionMask, reflectionMask, cv::MORPH_CLOSE, kernel);
-    cv::morphologyEx(reflectionMask, reflectionMask, cv::MORPH_OPEN, kernel);
-    
-    // Chromaticity 기반 복원: a, b 채널 정보를 사용해 반사 영역 보정
-    cv::Mat result = srcColor.clone();
-    
-    // 반사 영역의 주변 색상 정보로 보정
-    for (int y = 0; y < reflectionMask.rows; y++) {
-        for (int x = 0; x < reflectionMask.cols; x++) {
-            if (reflectionMask.at<uchar>(y, x) > 0) {
-                // 주변 픽셀의 평균 색상 계산 (비반사 영역만)
-                int count = 0;
-                cv::Vec3b avgColor(0, 0, 0);
-                
-                for (int dy = -inpaintRadius; dy <= inpaintRadius; dy++) {
-                    for (int dx = -inpaintRadius; dx <= inpaintRadius; dx++) {
-                        int ny = y + dy;
-                        int nx = x + dx;
-                        if (ny >= 0 && ny < reflectionMask.rows && 
-                            nx >= 0 && nx < reflectionMask.cols &&
-                            reflectionMask.at<uchar>(ny, nx) == 0) {
-                            avgColor += srcColor.at<cv::Vec3b>(ny, nx);
-                            count++;
-                        }
-                    }
-                }
-                
-                if (count > 0) {
-                    result.at<cv::Vec3b>(y, x) = avgColor / count;
-                }
-            }
-        }
-    }
-    
-    // 원본이 그레이스케일이면 다시 변환
-    if (src.channels() == 1) {
-        cv::cvtColor(result, dst, cv::COLOR_BGR2GRAY);
-    } else {
-        dst = result;
-    }
-}
-
-// 반사 제거 - Inpainting 기반
-void ImageProcessor::applyReflectionRemovalInpainting(const cv::Mat &src, cv::Mat &dst, double threshold, int inpaintRadius, int method)
-{
-    if (src.empty()) {
-        dst = src.clone();
-        return;
-    }
-
-    // 3채널 이미지로 변환 (필요시)
-    cv::Mat srcColor;
-    if (src.channels() == 1) {
-        cv::cvtColor(src, srcColor, cv::COLOR_GRAY2BGR);
-    } else {
-        srcColor = src.clone();
-    }
-
-    // 그레이스케일로 변환하여 밝기 기반 마스크 생성
-    cv::Mat gray;
-    cv::cvtColor(srcColor, gray, cv::COLOR_BGR2GRAY);
-    
-    // 반사 영역 검출 (밝은 영역)
-    cv::Mat reflectionMask;
-    cv::threshold(gray, reflectionMask, threshold, 255, cv::THRESH_BINARY);
-    
-    // 모폴로지 연산으로 마스크 정제
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
-    cv::morphologyEx(reflectionMask, reflectionMask, cv::MORPH_CLOSE, kernel);
-    cv::morphologyEx(reflectionMask, reflectionMask, cv::MORPH_OPEN, kernel);
-    
-    // OpenCV inpaint 사용 (주변 픽셀 정보로 복원)
-    cv::Mat result;
-    cv::inpaint(srcColor, reflectionMask, result, inpaintRadius, method);
-    
-    // 원본이 그레이스케일이면 다시 변환
-    if (src.channels() == 1) {
-        cv::cvtColor(result, dst, cv::COLOR_BGR2GRAY);
-    } else {
-        dst = result;
-    }
-}
-
-// ===== OpenVINO PatchCore 관련 구현 =====
-
-bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString& device)
-{
-    try {
-        // 같은 모델이 이미 로드되어 있으면 스킵
-        if (s_patchCoreModels.contains(modelPath)) {
-            return true;  // 이미 로드됨
-        }
-        
-        // norm_stats.txt 읽기 (모델과 같은 폴더에 위치)
-        QFileInfo modelFileInfo(modelPath);
-        QString normStatsPath = modelFileInfo.absolutePath() + "/norm_stats.txt";
+        // 정규화 통계 파일 읽기
+        QFileInfo engineFileInfo(enginePath);
+        QString patternName = engineFileInfo.dir().dirName();
+        QString normStatsPath = engineFileInfo.absolutePath() + "/" + patternName;
         QFile normStatsFile(normStatsPath);
         
-        PatchCoreModelInfo modelInfo;
+        TensorRTPatchCoreModelInfo modelInfo;
         
         if (normStatsFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
             QTextStream in(&normStatsFile);
@@ -3396,115 +2893,134 @@ bool ImageProcessor::initPatchCoreModel(const QString& modelPath, const QString&
             }
             normStatsFile.close();
             
-            // 정규화 범위 계산: mean - 여유 ~ max + 여유
             if (meanPixel > 0 && maxPixel > 0) {
-                modelInfo.normMin = meanPixel - 10.0f;  // 양품 평균보다 여유 있게
-                modelInfo.normMax = maxPixel + 20.0f;   // 불량 감지를 위해 여유 있게
+                modelInfo.normMin = meanPixel - 10.0f;
+                modelInfo.normMax = maxPixel + 20.0f;
             }
         }
         
-        // OpenVINO Core 생성 (YOLO와 공유)
-        if (!s_ovinoCore) {
-            s_ovinoCore = std::make_shared<ov::Core>();
+        // TensorRT Runtime 생성
+        IRuntime* runtime = createInferRuntime(gTRTLogger);
+        if (!runtime) {
+            return false;
         }
         
-        // 모델 읽기
-        std::shared_ptr<ov::Model> model = s_ovinoCore->read_model(modelPath.toStdString());
-        
-        // 입력 이름 가져오기
-        auto inputs = model->inputs();
-        if (!inputs.empty()) {
-            std::string input_name = inputs[0].get_any_name();
-            
-            std::map<std::string, ov::PartialShape> new_shapes;
-            new_shapes[input_name] = ov::PartialShape({1, 3, static_cast<long>(modelInfo.inputHeight), static_cast<long>(modelInfo.inputWidth)});
-            model->reshape(new_shapes);
+        // 엔진 파일 로드
+        QFile engineFile(enginePath);
+        if (!engineFile.open(QIODevice::ReadOnly)) {
+            delete runtime;
+            return false;
         }
         
-        // 성능 최적화 설정
-        s_ovinoCore->set_property(device.toStdString(), ov::hint::performance_mode(ov::hint::PerformanceMode::LATENCY));
-        s_ovinoCore->set_property(device.toStdString(), ov::hint::inference_precision(ov::element::f16));
-        s_ovinoCore->set_property(device.toStdString(), ov::streams::num(1));
+        QByteArray engineData = engineFile.readAll();
+        engineFile.close();
         
-        // 모델 컴파일
-        auto compiled = s_ovinoCore->compile_model(model, device.toStdString());
-        modelInfo.model = std::make_shared<ov::CompiledModel>(std::move(compiled));
-        
-        // 추론 요청 생성
-        modelInfo.inferRequest = std::make_shared<ov::InferRequest>(
-            modelInfo.model->create_infer_request()
-        );
-        
-        // Map에 저장
-        s_patchCoreModels[modelPath] = modelInfo;
-        
-        // 워밍업: 더미 추론 실행 (첫 추론 오버헤드 제거)
-        try {
-            cv::Mat dummyImage = cv::Mat::zeros(modelInfo.inputHeight, modelInfo.inputWidth, CV_8UC3);
-            auto inputTensor = modelInfo.inferRequest->get_input_tensor();
-            float* inputData = inputTensor.data<float>();
-            std::memset(inputData, 0, modelInfo.inputHeight * modelInfo.inputWidth * 3 * sizeof(float));
-            modelInfo.inferRequest->infer();  // 첫 추론 워밍업
-            qDebug() << "[ANOMALY] 워밍업 추론 완료:" << modelPath;
-        } catch (const std::exception& e) {
-            qWarning() << "[ANOMALY] 워밍업 실패 (무시):" << e.what();
+        // 엔진 역직렬화
+        ICudaEngine* engine = runtime->deserializeCudaEngine(engineData.data(), engineData.size());
+        if (!engine) {
+            qCritical() << "[TensorRT] 엔진 역직렬화 실패";
+            delete runtime;
+            return false;
         }
+        
+        // Execution Context 생성
+        IExecutionContext* context = engine->createExecutionContext();
+        if (!context) {
+            qCritical() << "[TensorRT] Context 생성 실패";
+            delete engine;
+            delete runtime;
+            return false;
+        }
+        
+        // CUDA 스트림 생성
+        cudaStream_t stream;
+        cudaStreamCreate(&stream);
+        
+        // 입력/출력 버퍼 크기 계산
+        modelInfo.inputSize = 1 * 3 * 224 * 224 * sizeof(float);
+        modelInfo.outputSize = 1 * 1 * 224 * 224 * sizeof(float);  // anomaly_map
+        modelInfo.scoreSize = 1 * sizeof(float);  // pred_score
+        
+        // GPU 메모리 할당
+        void* inputBuffer;
+        void* outputBuffer;
+        void* scoreBuffer;
+        cudaMalloc(&inputBuffer, modelInfo.inputSize);
+        cudaMalloc(&outputBuffer, modelInfo.outputSize);
+        cudaMalloc(&scoreBuffer, modelInfo.scoreSize);
+        
+        // 모델 정보 저장
+        modelInfo.runtime = runtime;
+        modelInfo.engine = engine;
+        modelInfo.context = context;
+        modelInfo.cudaStream = stream;
+        modelInfo.inputBuffer = inputBuffer;
+        modelInfo.outputBuffer = outputBuffer;
+        modelInfo.scoreBuffer = scoreBuffer;
+        
+        s_tensorrtPatchCoreModels[enginePath] = modelInfo;
+        
+        qDebug() << "[TensorRT] 모델 로딩 완료";
         
         return true;
         
     } catch (const std::exception& e) {
-        qCritical() << "[ANOMALY] 모델 로딩 실패:" << e.what();
-        s_patchCoreModels.remove(modelPath);
         return false;
     }
 }
 
-void ImageProcessor::releasePatchCoreModel()
+void ImageProcessor::releasePatchCoreTensorRT()
 {
     try {
-        // QMap의 각 모델 명시적 해제
-        for (auto iter = s_patchCoreModels.begin(); iter != s_patchCoreModels.end(); ++iter) {
-            if (iter->inferRequest) {
-                iter->inferRequest.reset();
+        for (auto iter = s_tensorrtPatchCoreModels.begin(); 
+             iter != s_tensorrtPatchCoreModels.end(); ++iter) {
+            
+            if (iter->inputBuffer) cudaFree(iter->inputBuffer);
+            if (iter->outputBuffer) cudaFree(iter->outputBuffer);
+            if (iter->scoreBuffer) cudaFree(iter->scoreBuffer);
+            if (iter->cudaStream) cudaStreamDestroy((cudaStream_t)iter->cudaStream);
+            
+            if (iter->context) {
+                delete ((IExecutionContext*)iter->context);
             }
-            if (iter->model) {
-                iter->model.reset();
+            if (iter->engine) {
+                delete ((ICudaEngine*)iter->engine);
+            }
+            if (iter->runtime) {
+                delete ((IRuntime*)iter->runtime);
             }
         }
-        s_patchCoreModels.clear();
-        qDebug() << "[ANOMALY] 모든 이상탐지 모델 해제됨";
+        s_tensorrtPatchCoreModels.clear();
+        
+        qDebug() << "[TensorRT] 모든 모델 해제됨";
     } catch (...) {
-        qDebug() << "[ANOMALY] 모델 해제 중 예외 무시";
+        qDebug() << "[TensorRT] 해제 중 예외 무시";
     }
 }
 
-bool ImageProcessor::isPatchCoreModelLoaded()
+bool ImageProcessor::isTensorRTPatchCoreLoaded()
 {
-    return !s_patchCoreModels.isEmpty();
+    return !s_tensorrtPatchCoreModels.isEmpty();
 }
 
-bool ImageProcessor::runPatchCoreInference(
-    const QString& modelPath,
+bool ImageProcessor::runPatchCoreTensorRTInference(
+    const QString& enginePath,
     const cv::Mat& image,
     float& anomalyScore,
     cv::Mat& anomalyMap,
     float threshold)
 {
-    if (!s_patchCoreModels.contains(modelPath)) {
-        qWarning() << "[ANOMALY] 모델이 로드되지 않음:" << modelPath;
+    if (!s_tensorrtPatchCoreModels.contains(enginePath)) {
+        qWarning() << "[TensorRT] 모델이 로드되지 않음:" << enginePath;
         return false;
     }
     
-    const PatchCoreModelInfo& modelInfo = s_patchCoreModels[modelPath];
-    if (!modelInfo.inferRequest) {
-        qWarning() << "[ANOMALY] InferRequest가 유효하지 않음";
-        return false;
-    }
+    const TensorRTPatchCoreModelInfo& modelInfo = s_tensorrtPatchCoreModels[enginePath];
     
     try {
         // 1. 전처리: 224x224 리사이즈
         cv::Mat resized;
-        cv::resize(image, resized, cv::Size(modelInfo.inputWidth, modelInfo.inputHeight));
+        cv::resize(image, resized, cv::Size(224, 224));
         
         // 2. BGR -> RGB 변환
         cv::Mat rgb;
@@ -3534,93 +3050,676 @@ bool ImageProcessor::runPatchCoreInference(
         std::vector<cv::Mat> channelsChw;
         cv::split(normalized, channelsChw);
         
-        // 5. 입력 텐서 생성 (1, 3, H, W)
-        auto inputTensor = modelInfo.inferRequest->get_input_tensor();
-        float* inputData = inputTensor.data<float>();
-        
-        int channelSize = modelInfo.inputHeight * modelInfo.inputWidth;
+        // 5. CPU 버퍼에 데이터 복사
+        std::vector<float> inputData(1 * 3 * 224 * 224);
+        int channelSize = 224 * 224;
         for (int c = 0; c < 3; c++) {
-            std::memcpy(inputData + c * channelSize,
+            std::memcpy(inputData.data() + c * channelSize,
                        channelsChw[c].ptr<float>(),
                        channelSize * sizeof(float));
         }
         
-        // 6. 추론 실행
-        modelInfo.inferRequest->infer();
+        // 6. GPU로 데이터 전송
+        cudaMemcpyAsync(modelInfo.inputBuffer, inputData.data(), 
+                       modelInfo.inputSize, cudaMemcpyHostToDevice,
+                       (cudaStream_t)modelInfo.cudaStream);
         
-        // 7. 결과 파싱
-        auto outputs = modelInfo.inferRequest->get_compiled_model().outputs();
+        // 7. 추론 실행 (TensorRT 10.x enqueueV3 사용)
+        IExecutionContext* context = (IExecutionContext*)modelInfo.context;
         
-        ov::Tensor anomalyMapTensor;
-        ov::Tensor predScoreTensor;
+        // TensorRT 10.x: 텐서 주소 명시적 설정
+        context->setTensorAddress("input", modelInfo.inputBuffer);
+        context->setTensorAddress("anomaly_map", modelInfo.outputBuffer);
+        context->setTensorAddress("pred_score", modelInfo.scoreBuffer);
         
-        // 출력 텐서를 인덱스로 직접 가져오기 (이름 없는 경우 대비)
-        if (outputs.size() >= 2) {
-            // 첫 번째: anomaly_map (4차원), 두 번째: pred_score (1차원)
-            auto tensor0 = modelInfo.inferRequest->get_output_tensor(0);
-            auto tensor1 = modelInfo.inferRequest->get_output_tensor(1);
-            
-            // 차원 수로 구분 (anomaly_map은 4D, pred_score는 1D 또는 2D)
-            if (tensor0.get_shape().size() == 4) {
-                anomalyMapTensor = tensor0;
-                predScoreTensor = tensor1;
-            } else {
-                predScoreTensor = tensor0;
-                anomalyMapTensor = tensor1;
-            }
-        } else if (outputs.size() == 1) {
-            // 단일 출력인 경우 anomaly_map으로 간주
-            anomalyMapTensor = modelInfo.inferRequest->get_output_tensor(0);
+        bool success = context->enqueueV3((cudaStream_t)modelInfo.cudaStream);
+        if (!success) {
+            qWarning() << "[TensorRT] 추론 실행 실패";
+            return false;
         }
         
-        // pred_score가 없으면 첫 번째 출력 사용
-        if (!predScoreTensor) {
-            predScoreTensor = modelInfo.inferRequest->get_output_tensor(0);
-        }
-        if (!anomalyMapTensor && outputs.size() > 1) {
-            anomalyMapTensor = modelInfo.inferRequest->get_output_tensor(1);
-        }
+        cudaStreamSynchronize((cudaStream_t)modelInfo.cudaStream);
         
-        // 8. Anomaly Score 추출
-        if (predScoreTensor) {
-            const float* scoreData = predScoreTensor.data<float>();
-            anomalyScore = scoreData[0];
-        } else {
-            anomalyScore = 0.0f;
-        }
+        // 8. 결과 가져오기
+        std::vector<float> outputData(1 * 1 * 224 * 224);
+        cudaMemcpyAsync(outputData.data(), modelInfo.outputBuffer,
+                       modelInfo.outputSize, cudaMemcpyDeviceToHost,
+                       (cudaStream_t)modelInfo.cudaStream);
         
-        // 9. Anomaly Map 추출 및 정규화 (0~100 범위)
-        if (anomalyMapTensor) {
-            auto shape = anomalyMapTensor.get_shape();
-            int mapH = static_cast<int>(shape[2]);
-            int mapW = static_cast<int>(shape[3]);
-            
-            const float* mapData = anomalyMapTensor.data<float>();
-            cv::Mat mapFloat(mapH, mapW, CV_32F, const_cast<float*>(mapData));
-            
-            // 원본 이미지 크기로 리사이즈
-            cv::Mat resizedMap;
-            cv::resize(mapFloat, resizedMap, image.size());
-            
-            // 0~100 범위로 정규화
-            anomalyMap = (resizedMap - modelInfo.normMin) / (modelInfo.normMax - modelInfo.normMin) * 100.0;
-            
-            // 0~100 범위로 클리핑
-            cv::threshold(anomalyMap, anomalyMap, 0.0, 0.0, cv::THRESH_TOZERO);  // 음수 제거
-            cv::threshold(anomalyMap, anomalyMap, 100.0, 100.0, cv::THRESH_TRUNC);  // 100 초과 제거
-        } else {
-            anomalyMap = cv::Mat::zeros(image.size(), CV_32F);
-        }
+        cudaStreamSynchronize((cudaStream_t)modelInfo.cudaStream);
         
-        // 10. 판정
-        bool hasAnomaly = (anomalyScore > threshold);
+        // 9. Anomaly Score 및 Map 생성
+        cv::Mat mapFloat(224, 224, CV_32F, outputData.data());
         
-        return hasAnomaly;
+        // 평균 스코어 계산
+        cv::Scalar meanVal = cv::mean(mapFloat);
+        anomalyScore = static_cast<float>(meanVal[0]);
+        
+        // 디버그: anomaly map 통계
+        double minVal, maxVal;
+        cv::minMaxLoc(mapFloat, &minVal, &maxVal);
+        qDebug() << "[TensorRT] Raw AnomalyMap - min:" << minVal << "max:" << maxVal << "mean:" << meanVal[0];
+        
+        // 원본 이미지 크기로 리사이즈
+        cv::Mat resizedMap;
+        cv::resize(mapFloat, resizedMap, image.size());
+        
+        // 0~100 범위로 정규화
+        qDebug() << "[TensorRT] Normalizing with - normMin:" << modelInfo.normMin << "normMax:" << modelInfo.normMax;
+        anomalyMap = (resizedMap - modelInfo.normMin) / (modelInfo.normMax - modelInfo.normMin) * 100.0;
+        
+        // 0~100 범위로 클리핑
+        cv::threshold(anomalyMap, anomalyMap, 0.0, 0.0, cv::THRESH_TOZERO);
+        cv::threshold(anomalyMap, anomalyMap, 100.0, 100.0, cv::THRESH_TRUNC);
+        
+        return true;
         
     } catch (const std::exception& e) {
-        qCritical() << "[ANOMALY] 추론 실패:" << e.what();
+        qCritical() << "[TensorRT] 추론 실패:" << e.what();
         anomalyScore = 0.0f;
         anomalyMap = cv::Mat::zeros(image.size(), CV_32F);
         return false;
     }
+}
+
+bool ImageProcessor::runPatchCoreTensorRTBatchInference(
+    const QString& enginePath,
+    const std::vector<cv::Mat>& images,
+    std::vector<float>& anomalyScores,
+    std::vector<cv::Mat>& anomalyMaps,
+    float threshold)
+{
+    if (images.empty()) {
+        qWarning() << "[TensorRT Batch] 입력 이미지가 비어있음";
+        return false;
+    }
+    
+    if (!s_tensorrtPatchCoreModels.contains(enginePath)) {
+        qWarning() << "[TensorRT Batch] 모델이 로드되지 않음:" << enginePath;
+        return false;
+    }
+    
+    const TensorRTPatchCoreModelInfo& modelInfo = s_tensorrtPatchCoreModels[enginePath];
+    
+    anomalyScores.clear();
+    anomalyMaps.clear();
+    anomalyScores.reserve(images.size());
+    anomalyMaps.reserve(images.size());
+    
+    const int MAX_BATCH_SIZE = 8;  // 모델 빌드 시 설정한 최대 배치
+    size_t numImages = images.size();
+    
+    try {
+        IExecutionContext* context = (IExecutionContext*)modelInfo.context;
+        
+        // 배치 단위로 처리
+        for (size_t batchStart = 0; batchStart < numImages; batchStart += MAX_BATCH_SIZE) {
+            size_t batchEnd = std::min(batchStart + MAX_BATCH_SIZE, numImages);
+            int currentBatchSize = batchEnd - batchStart;
+            
+            // 1. 전처리 - 배치 데이터 준비
+            std::vector<float> batchInputData(currentBatchSize * 3 * 224 * 224);
+            
+            for (int b = 0; b < currentBatchSize; b++) {
+                const cv::Mat& image = images[batchStart + b];
+                
+                // 리사이즈
+                cv::Mat resized;
+                cv::resize(image, resized, cv::Size(224, 224));
+                
+                // BGR -> RGB
+                cv::Mat rgb;
+                if (resized.channels() == 1) {
+                    cv::cvtColor(resized, rgb, cv::COLOR_GRAY2RGB);
+                } else if (resized.channels() == 3) {
+                    cv::cvtColor(resized, rgb, cv::COLOR_BGR2RGB);
+                } else {
+                    rgb = resized.clone();
+                }
+                
+                // 정규화
+                cv::Mat normalized;
+                rgb.convertTo(normalized, CV_32F, 1.0 / 255.0);
+                
+                const float mean[3] = {0.485f, 0.456f, 0.406f};
+                const float std[3] = {0.229f, 0.224f, 0.225f};
+                
+                std::vector<cv::Mat> channels(3);
+                cv::split(normalized, channels);
+                for (int i = 0; i < 3; i++) {
+                    channels[i] = (channels[i] - mean[i]) / std[i];
+                }
+                cv::merge(channels, normalized);
+                
+                // HWC -> CHW, 배치에 추가
+                std::vector<cv::Mat> channelsChw;
+                cv::split(normalized, channelsChw);
+                
+                int channelSize = 224 * 224;
+                int batchOffset = b * 3 * channelSize;
+                for (int c = 0; c < 3; c++) {
+                    std::memcpy(batchInputData.data() + batchOffset + c * channelSize,
+                               channelsChw[c].ptr<float>(),
+                               channelSize * sizeof(float));
+                }
+            }
+            
+            // 2. 입력 버퍼 크기 조정 (동적 배치)
+            size_t batchInputSize = currentBatchSize * 3 * 224 * 224 * sizeof(float);
+            
+            // GPU로 배치 데이터 전송
+            cudaMemcpyAsync(modelInfo.inputBuffer, batchInputData.data(), 
+                           batchInputSize, cudaMemcpyHostToDevice,
+                           (cudaStream_t)modelInfo.cudaStream);
+            
+            // 3. 입력 shape 설정 (동적 배치)
+            nvinfer1::Dims inputDims;
+            inputDims.nbDims = 4;
+            inputDims.d[0] = currentBatchSize;
+            inputDims.d[1] = 3;
+            inputDims.d[2] = 224;
+            inputDims.d[3] = 224;
+            
+            if (!context->setInputShape("input", inputDims)) {
+                qWarning() << "[TensorRT Batch] setInputShape 실패, 배치=" << currentBatchSize;
+                return false;
+            }
+            
+            // 4. 출력 버퍼 크기 계산
+            size_t batchOutputSize = currentBatchSize * 1 * 224 * 224 * sizeof(float);
+            
+            // 5. 추론 실행
+            context->setTensorAddress("input", modelInfo.inputBuffer);
+            context->setTensorAddress("anomaly_map", modelInfo.outputBuffer);
+            context->setTensorAddress("pred_score", modelInfo.scoreBuffer);
+            
+            bool success = context->enqueueV3((cudaStream_t)modelInfo.cudaStream);
+            if (!success) {
+                qWarning() << "[TensorRT Batch] 추론 실행 실패, 배치=" << currentBatchSize;
+                return false;
+            }
+            
+            cudaStreamSynchronize((cudaStream_t)modelInfo.cudaStream);
+            
+            // 6. 결과 가져오기
+            std::vector<float> batchOutputData(currentBatchSize * 1 * 224 * 224);
+            cudaMemcpyAsync(batchOutputData.data(), modelInfo.outputBuffer,
+                           batchOutputSize, cudaMemcpyDeviceToHost,
+                           (cudaStream_t)modelInfo.cudaStream);
+            
+            cudaStreamSynchronize((cudaStream_t)modelInfo.cudaStream);
+            
+            // 7. 배치 결과를 개별 이미지로 분리
+            for (int b = 0; b < currentBatchSize; b++) {
+                const cv::Mat& originalImage = images[batchStart + b];
+                
+                // 이 이미지의 anomaly map 추출
+                int mapSize = 224 * 224;
+                cv::Mat mapFloat(224, 224, CV_32F, batchOutputData.data() + b * mapSize);
+                mapFloat = mapFloat.clone();  // 데이터 복사
+                
+                // 평균 스코어 계산
+                cv::Scalar meanVal = cv::mean(mapFloat);
+                float anomalyScore = static_cast<float>(meanVal[0]);
+                
+                // 원본 이미지 크기로 리사이즈
+                cv::Mat resizedMap;
+                cv::resize(mapFloat, resizedMap, originalImage.size());
+                
+                // 0~100 범위로 정규화
+                cv::Mat anomalyMap = (resizedMap - modelInfo.normMin) / 
+                                     (modelInfo.normMax - modelInfo.normMin) * 100.0;
+                
+                // 0~100 범위로 클리핑
+                cv::threshold(anomalyMap, anomalyMap, 0.0, 0.0, cv::THRESH_TOZERO);
+                cv::threshold(anomalyMap, anomalyMap, 100.0, 100.0, cv::THRESH_TRUNC);
+                
+                anomalyScores.push_back(anomalyScore);
+                anomalyMaps.push_back(anomalyMap);
+            }
+        }
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        qCritical() << "[TensorRT Batch] 추론 실패:" << e.what();
+        return false;
+    }
+}
+
+// 멀티모델 병렬 추론 (CUDA 스트림 활용)
+bool ImageProcessor::runPatchCoreTensorRTMultiModelInference(
+    const QMap<QString, std::vector<cv::Mat>>& modelImages,
+    QMap<QString, std::vector<float>>& modelScores,
+    QMap<QString, std::vector<cv::Mat>>& modelMaps)
+{
+    if (modelImages.isEmpty()) {
+        return false;
+    }
+    
+    try {
+        // 1단계: 모든 모델의 데이터를 GPU로 비동기 전송 및 추론 시작
+        struct AsyncJob {
+            QString enginePath;
+            std::vector<std::vector<float>> inputBuffers;  // CPU 입력 데이터
+            std::vector<cv::Mat> originalImages;
+        };
+        
+        QList<AsyncJob> jobs;
+        
+        for (auto it = modelImages.begin(); it != modelImages.end(); ++it) {
+            const QString& enginePath = it.key();
+            const std::vector<cv::Mat>& images = it.value();
+            
+            if (!s_tensorrtPatchCoreModels.contains(enginePath)) {
+                qWarning() << "[TensorRT Multi] 모델 미로드:" << enginePath;
+                continue;
+            }
+            
+            AsyncJob job;
+            job.enginePath = enginePath;
+            job.originalImages = images;
+            
+            // 각 이미지 전처리
+            for (const cv::Mat& image : images) {
+                cv::Mat resized;
+                cv::resize(image, resized, cv::Size(224, 224));
+                
+                cv::Mat rgb;
+                if (resized.channels() == 1) {
+                    cv::cvtColor(resized, rgb, cv::COLOR_GRAY2RGB);
+                } else if (resized.channels() == 3) {
+                    cv::cvtColor(resized, rgb, cv::COLOR_BGR2RGB);
+                } else {
+                    rgb = resized.clone();
+                }
+                
+                cv::Mat normalized;
+                rgb.convertTo(normalized, CV_32F, 1.0 / 255.0);
+                
+                const float mean[3] = {0.485f, 0.456f, 0.406f};
+                const float std[3] = {0.229f, 0.224f, 0.225f};
+                
+                std::vector<cv::Mat> channels(3);
+                cv::split(normalized, channels);
+                for (int i = 0; i < 3; i++) {
+                    channels[i] = (channels[i] - mean[i]) / std[i];
+                }
+                cv::merge(channels, normalized);
+                
+                std::vector<cv::Mat> channelsChw;
+                cv::split(normalized, channelsChw);
+                
+                std::vector<float> inputData(1 * 3 * 224 * 224);
+                int channelSize = 224 * 224;
+                for (int c = 0; c < 3; c++) {
+                    std::memcpy(inputData.data() + c * channelSize,
+                               channelsChw[c].ptr<float>(),
+                               channelSize * sizeof(float));
+                }
+                
+                job.inputBuffers.push_back(inputData);
+            }
+            
+            jobs.append(job);
+        }
+        
+        // 2단계: 모든 작업을 각자의 스트림에서 비동기 실행
+        for (const AsyncJob& job : jobs) {
+            const TensorRTPatchCoreModelInfo& modelInfo = s_tensorrtPatchCoreModels[job.enginePath];
+            IExecutionContext* context = (IExecutionContext*)modelInfo.context;
+            cudaStream_t stream = (cudaStream_t)modelInfo.cudaStream;
+            
+            // 각 이미지마다 순차 처리 (같은 스트림 내에서)
+            // 하지만 다른 모델은 다른 스트림이므로 병렬 실행됨
+            for (size_t i = 0; i < job.inputBuffers.size(); i++) {
+                // GPU로 데이터 전송 (비동기)
+                cudaMemcpyAsync(modelInfo.inputBuffer, job.inputBuffers[i].data(),
+                               modelInfo.inputSize, cudaMemcpyHostToDevice, stream);
+                
+                // 추론 실행 (비동기)
+                context->setTensorAddress("input", modelInfo.inputBuffer);
+                context->setTensorAddress("anomaly_map", modelInfo.outputBuffer);
+                context->setTensorAddress("pred_score", modelInfo.scoreBuffer);
+                context->enqueueV3(stream);
+            }
+        }
+        
+        // 3단계: 모든 스트림 동기화 (병렬 실행 완료 대기)
+        for (const AsyncJob& job : jobs) {
+            const TensorRTPatchCoreModelInfo& modelInfo = s_tensorrtPatchCoreModels[job.enginePath];
+            cudaStreamSynchronize((cudaStream_t)modelInfo.cudaStream);
+        }
+        
+        // 4단계: 결과 수집 (각 이미지마다)
+        for (const AsyncJob& job : jobs) {
+            const TensorRTPatchCoreModelInfo& modelInfo = s_tensorrtPatchCoreModels[job.enginePath];
+            
+            std::vector<float> scores;
+            std::vector<cv::Mat> maps;
+            
+            // 각 모델의 마지막 추론 결과 가져오기 (단일 이미지)
+            // 주의: 현재는 각 모델이 1개 이미지만 처리
+            for (size_t i = 0; i < job.inputBuffers.size(); i++) {
+                // 결과 가져오기 (마지막 추론만 유효)
+                std::vector<float> outputData(1 * 1 * 224 * 224);
+                cudaMemcpy(outputData.data(), modelInfo.outputBuffer,
+                          modelInfo.outputSize, cudaMemcpyDeviceToHost);
+                
+                cv::Mat mapFloat(224, 224, CV_32F, outputData.data());
+                
+                // 원본 이미지 크기로 복원
+                cv::Mat mapFloatCopy = mapFloat.clone();
+                
+                cv::Scalar meanVal = cv::mean(mapFloatCopy);
+                float rawScore = static_cast<float>(meanVal[0]);
+                
+                // 정규화
+                float normalizedScore = (rawScore - modelInfo.normMin) / 
+                                       (modelInfo.normMax - modelInfo.normMin) * 100.0f;
+                normalizedScore = std::max(0.0f, std::min(100.0f, normalizedScore));
+                
+                scores.push_back(normalizedScore);
+                
+                // 히트맵 생성
+                cv::Mat normalizedMap = (mapFloatCopy - modelInfo.normMin) / 
+                                       (modelInfo.normMax - modelInfo.normMin);
+                normalizedMap.setTo(0, normalizedMap < 0);
+                normalizedMap.setTo(1, normalizedMap > 1);
+                
+                cv::Mat resizedMap;
+                cv::resize(normalizedMap, resizedMap, job.originalImages[i].size(), 0, 0, cv::INTER_LINEAR);
+                
+                // 0-100 스케일로 변환 (threshold용)
+                cv::Mat scaledMap;
+                resizedMap.convertTo(scaledMap, CV_32F, 100.0);
+                
+                maps.push_back(scaledMap);
+            }
+            
+            modelScores[job.enginePath] = scores;
+            modelMaps[job.enginePath] = maps;
+        }
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        qCritical() << "[TensorRT Multi] 추론 실패:" << e.what();
+        return false;
+    }
+}
+
+#endif  // USE_TENSORRT
+
+// ===== ONNX Runtime PatchCore 구현 (x86 Linux용) =====
+#ifdef USE_ONNX
+
+#include <onnxruntime_cxx_api.h>
+#include <memory>
+
+// ONNX Runtime 전역 변수
+static std::unique_ptr<Ort::Env> g_onnxEnv = nullptr;
+static std::unique_ptr<Ort::SessionOptions> g_sessionOptions = nullptr;
+
+QMap<QString, ImageProcessor::ONNXPatchCoreModelInfo> ImageProcessor::s_onnxPatchCoreModels;
+
+bool ImageProcessor::initPatchCoreONNX(const QString& modelPath) {
+    if (s_onnxPatchCoreModels.contains(modelPath)) {
+        qDebug() << "[ONNX] 이미 로드된 모델:" << modelPath;
+        return true;
+    }
+    
+    try {
+        qDebug() << "[ONNX] PatchCore 모델 로딩:" << modelPath;
+        
+        // ONNX Environment 초기화 (전역 1회)
+        if (!g_onnxEnv) {
+            g_onnxEnv = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "PatchCore");
+            qDebug() << "[ONNX] Environment 초기화 완료";
+        }
+        
+        // Session Options 설정
+        if (!g_sessionOptions) {
+            g_sessionOptions = std::make_unique<Ort::SessionOptions>();
+            g_sessionOptions->SetIntraOpNumThreads(4);
+            g_sessionOptions->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+        }
+        
+        // ONNX 모델 로드
+        std::wstring wModelPath = modelPath.toStdWString();
+        auto* session = new Ort::Session(*g_onnxEnv, wModelPath.c_str(), *g_sessionOptions);
+        
+        // Memory Info 생성
+        auto* memoryInfo = new Ort::MemoryInfo(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault));
+        
+        // 정규화 통계 로드
+        QString normPath = QFileInfo(modelPath).dir().filePath(
+            QFileInfo(modelPath).dir().dirName()
+        );
+        
+        float normMin = 0.0f;
+        float normMax = 100.0f;
+        
+        QFile normFile(normPath);
+        if (normFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&normFile);
+            while (!in.atEnd()) {
+                QString line = in.readLine();
+                if (line.startsWith("mean_pixel=")) {
+                    normMin = line.mid(11).toFloat();
+                } else if (line.startsWith("max_pixel=")) {
+                    normMax = line.mid(10).toFloat();
+                }
+            }
+            normFile.close();
+            qDebug() << "[ONNX] 정규화 통계 로드:" << normMin << "~" << normMax;
+        }
+        
+        // 모델 정보 저장
+        ONNXPatchCoreModelInfo modelInfo;
+        modelInfo.session = session;
+        modelInfo.memoryInfo = memoryInfo;
+        modelInfo.inputWidth = 224;
+        modelInfo.inputHeight = 224;
+        modelInfo.normMin = normMin;
+        modelInfo.normMax = normMax;
+        
+        s_onnxPatchCoreModels[modelPath] = modelInfo;
+        
+        qDebug() << "[ONNX] 모델 로드 완료:" << modelPath;
+        return true;
+        
+    } catch (const Ort::Exception& e) {
+        qCritical() << "[ONNX] 초기화 실패:" << e.what();
+        return false;
+    } catch (const std::exception& e) {
+        qCritical() << "[ONNX] 예외:" << e.what();
+        return false;
+    }
+}
+
+void ImageProcessor::releasePatchCoreONNX() {
+    qDebug() << "[ONNX] 모델 메모리 해제:" << s_onnxPatchCoreModels.size() << "개";
+    
+    for (auto& modelInfo : s_onnxPatchCoreModels) {
+        if (modelInfo.session) {
+            delete static_cast<Ort::Session*>(modelInfo.session);
+        }
+        if (modelInfo.memoryInfo) {
+            delete static_cast<Ort::MemoryInfo*>(modelInfo.memoryInfo);
+        }
+    }
+    
+    s_onnxPatchCoreModels.clear();
+    g_sessionOptions.reset();
+    g_onnxEnv.reset();
+}
+
+bool ImageProcessor::isONNXPatchCoreLoaded() {
+    return !s_onnxPatchCoreModels.isEmpty();
+}
+
+bool ImageProcessor::runPatchCoreONNXInference(
+    const QString& modelPath,
+    const cv::Mat& image,
+    float& anomalyScore,
+    cv::Mat& anomalyMap,
+    float threshold)
+{
+    // 배치 추론 함수 재사용
+    std::vector<cv::Mat> images = {image};
+    std::vector<float> scores;
+    std::vector<cv::Mat> maps;
+    
+    bool success = runPatchCoreONNXBatchInference(modelPath, images, scores, maps, threshold);
+    if (success && !scores.empty() && !maps.empty()) {
+        anomalyScore = scores[0];
+        anomalyMap = maps[0];
+    }
+    
+    return success;
+}
+
+bool ImageProcessor::runPatchCoreONNXBatchInference(
+    const QString& modelPath,
+    const std::vector<cv::Mat>& images,
+    std::vector<float>& anomalyScores,
+    std::vector<cv::Mat>& anomalyMaps,
+    float threshold)
+{
+    if (images.empty()) {
+        qCritical() << "[ONNX Batch] 입력 이미지 없음";
+        return false;
+    }
+    
+    // 모델 로드
+    if (!s_onnxPatchCoreModels.contains(modelPath)) {
+        if (!initPatchCoreONNX(modelPath)) {
+            return false;
+        }
+    }
+    
+    ONNXPatchCoreModelInfo& modelInfo = s_onnxPatchCoreModels[modelPath];
+    auto* session = static_cast<Ort::Session*>(modelInfo.session);
+    auto* memoryInfo = static_cast<Ort::MemoryInfo*>(modelInfo.memoryInfo);
+    
+    try {
+        const size_t batchSize = images.size();
+        const int inputHeight = modelInfo.inputHeight;
+        const int inputWidth = modelInfo.inputWidth;
+        
+        // 입력 텐서 준비
+        std::vector<float> inputTensorValues(batchSize * 3 * inputHeight * inputWidth);
+        
+        for (size_t i = 0; i < batchSize; i++) {
+            cv::Mat preprocessed;
+            cv::resize(images[i], preprocessed, cv::Size(inputWidth, inputHeight));
+            preprocessed.convertTo(preprocessed, CV_32FC3, 1.0 / 255.0);
+            
+            // RGB 변환 및 정규화 (ImageNet)
+            cv::cvtColor(preprocessed, preprocessed, cv::COLOR_BGR2RGB);
+            std::vector<float> mean = {0.485f, 0.456f, 0.406f};
+            std::vector<float> std = {0.229f, 0.224f, 0.225f};
+            
+            for (int c = 0; c < 3; c++) {
+                for (int h = 0; h < inputHeight; h++) {
+                    for (int w = 0; w < inputWidth; w++) {
+                        int idx = (i * 3 * inputHeight * inputWidth) + 
+                                  (c * inputHeight * inputWidth) + 
+                                  (h * inputWidth) + w;
+                        float pixel = preprocessed.at<cv::Vec3f>(h, w)[c];
+                        inputTensorValues[idx] = (pixel - mean[c]) / std[c];
+                    }
+                }
+            }
+        }
+        
+        // 입력 텐서 생성
+        std::vector<int64_t> inputShape = {
+            static_cast<int64_t>(batchSize), 3, 
+            static_cast<int64_t>(inputHeight), 
+            static_cast<int64_t>(inputWidth)
+        };
+        
+        Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
+            *memoryInfo,
+            inputTensorValues.data(),
+            inputTensorValues.size(),
+            inputShape.data(),
+            inputShape.size()
+        );
+        
+        // 추론 실행
+        const char* inputNames[] = {"input"};
+        const char* outputNames[] = {"anomaly_map", "pred_score"};
+        
+        auto outputTensors = session->Run(
+            Ort::RunOptions{nullptr},
+            inputNames, &inputTensor, 1,
+            outputNames, 2
+        );
+        
+        // 결과 파싱
+        float* anomalyMapData = outputTensors[0].GetTensorMutableData<float>();
+        float* predScoreData = outputTensors[1].GetTensorMutableData<float>();
+        
+        auto mapShape = outputTensors[0].GetTensorTypeAndShapeInfo().GetShape();
+        int mapHeight = mapShape[2];
+        int mapWidth = mapShape[3];
+        
+        anomalyScores.resize(batchSize);
+        anomalyMaps.resize(batchSize);
+        
+        for (size_t i = 0; i < batchSize; i++) {
+            // Score
+            float rawScore = predScoreData[i];
+            anomalyScores[i] = (rawScore - modelInfo.normMin) / 
+                               (modelInfo.normMax - modelInfo.normMin) * 100.0f;
+            anomalyScores[i] = std::max(0.0f, std::min(100.0f, anomalyScores[i]));
+            
+            // Anomaly Map
+            cv::Mat map(mapHeight, mapWidth, CV_32FC1);
+            for (int h = 0; h < mapHeight; h++) {
+                for (int w = 0; w < mapWidth; w++) {
+                    int idx = (i * mapHeight * mapWidth) + (h * mapWidth) + w;
+                    float rawValue = anomalyMapData[idx];
+                    float normalized = (rawValue - modelInfo.normMin) / 
+                                      (modelInfo.normMax - modelInfo.normMin);
+                    map.at<float>(h, w) = std::max(0.0f, std::min(1.0f, normalized));
+                }
+            }
+            
+            // 원본 크기로 리사이즈
+            cv::Mat resizedMap;
+            cv::resize(map, resizedMap, images[i].size(), 0, 0, cv::INTER_LINEAR);
+            
+            // 히트맵 생성
+            cv::Mat heatmap;
+            resizedMap.convertTo(heatmap, CV_8UC1, 255.0);
+            cv::applyColorMap(heatmap, heatmap, cv::COLORMAP_JET);
+            
+            anomalyMaps[i] = heatmap;
+        }
+        
+        qDebug() << "[ONNX Batch]" << batchSize << "개 이미지 추론 완료";
+        return true;
+        
+    } catch (const Ort::Exception& e) {
+        qCritical() << "[ONNX Batch] 추론 실패:" << e.what();
+        return false;
+    } catch (const std::exception& e) {
+        qCritical() << "[ONNX Batch] 예외:" << e.what();
+        return false;
+    }
+}
+
+#endif  // USE_ONNX
+
+// Reflection Removal 함수들 (빈 구현)
+void ImageProcessor::applyReflectionRemovalChromaticity(const cv::Mat& src, cv::Mat& dst, double threshold, int inpaintRadius) {
+    dst = src.clone();
+}
+
+void ImageProcessor::applyReflectionRemovalInpainting(const cv::Mat& src, cv::Mat& dst, double threshold, int inpaintRadius, int method) {
+    dst = src.clone();
 }

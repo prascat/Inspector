@@ -52,6 +52,37 @@ elseif(UNIX AND NOT APPLE)
     endif()
     # OpenCV 라이브러리 경로 추가
     link_directories(/usr/local/lib)
+    
+    # JETSON 감지 (aarch64 + CUDA)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+        if(EXISTS "/usr/local/cuda")
+            message(STATUS "JETSON Platform Detected - Enabling TensorRT")
+            set(USE_TENSORRT ON)
+            add_definitions(-DUSE_TENSORRT)
+            
+            # TensorRT 경로 (JETSON JetPack)
+            set(TensorRT_DIR "/usr/lib/aarch64-linux-gnu")
+            include_directories(/usr/include/aarch64-linux-gnu)
+            link_directories(${TensorRT_DIR})
+            
+            # CUDA 경로
+            include_directories(/usr/local/cuda/include)
+            link_directories(/usr/local/cuda/lib64)
+            
+            message(STATUS "  TensorRT: ${TensorRT_DIR}")
+            message(STATUS "  CUDA: /usr/local/cuda")
+        else()
+            # JETSON이 아닌 Linux - ONNX Runtime 사용
+            message(STATUS "Linux x86 Platform Detected - Enabling ONNX Runtime")
+            set(USE_ONNX ON)
+            add_definitions(-DUSE_ONNX)
+        endif()
+    else()
+        # x86_64 Linux - ONNX Runtime 사용
+        message(STATUS "Linux x86_64 Platform Detected - Enabling ONNX Runtime")
+        set(USE_ONNX ON)
+        add_definitions(-DUSE_ONNX)
+    endif()
 endif()
 
 # Qt6 Widgets 패키지 찾기
@@ -60,11 +91,30 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Xml Network SerialPort)
 # OpenCV 패키지 찾기
 find_package(OpenCV REQUIRED)
 
-# OpenVINO 패키지 찾기 (옵셔널)
-find_package(OpenVINO COMPONENTS Runtime)
-if(OpenVINO_FOUND)
-    message(STATUS "Found OpenVINO: ${OpenVINO_VERSION}")
-    message(STATUS "  Include: ${OpenVINO_INCLUDE_DIRS}")
+# OpenVINO 패키지 찾기 (Python 설치 경로 사용)
+set(OPENVINO_BASE_DIR "/home/km/.local/lib/python3.10/site-packages/openvino")
+set(OpenVINO_DIR "${OPENVINO_BASE_DIR}/cmake")
+
+if(EXISTS "${OpenVINO_DIR}")
+    find_package(OpenVINO QUIET COMPONENTS Runtime)
+    if(OpenVINO_FOUND)
+        message(STATUS "Found OpenVINO: ${OpenVINO_VERSION}")
+        message(STATUS "  CMake Dir: ${OpenVINO_DIR}")
+        message(STATUS "  Include: ${OPENVINO_BASE_DIR}/include")
+        message(STATUS "  Libs: ${OPENVINO_BASE_DIR}/libs")
+        
+        # 헤더 및 라이브러리 경로 추가
+        include_directories(${OPENVINO_BASE_DIR}/include)
+        link_directories(${OPENVINO_BASE_DIR}/libs)
+        
+        # 런타임 경로 설정
+        set(CMAKE_INSTALL_RPATH "${OPENVINO_BASE_DIR}/libs")
+        set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+        
+        add_definitions(-DUSE_OPENVINO)
+    else()
+        message(WARNING "OpenVINO CMake config found but package import failed.")
+    endif()
 else()
     message(WARNING "OpenVINO not found. YOLO segmentation will be disabled.")
 endif()
@@ -215,8 +265,53 @@ target_link_libraries(Inspector
     Qt6::SerialPort
     ${OpenCV_LIBS}
     ${EXTRA_LIBS}
-    openvino::runtime
 )
+
+# OpenVINO 링크 (조건부)
+if(OpenVINO_FOUND)
+    target_link_libraries(Inspector PRIVATE openvino::runtime)
+endif()
+
+# TensorRT 링크 (JETSON 전용)
+if(USE_TENSORRT)
+    target_link_libraries(Inspector PRIVATE
+        nvinfer
+        nvonnxparser
+        cudart
+    )
+    message(STATUS "TensorRT libraries linked for JETSON")
+endif()
+
+# ONNX Runtime 링크 (x86 Linux)
+if(USE_ONNX)
+    # ONNX Runtime 경로 찾기
+    find_path(ONNXRUNTIME_INCLUDE_DIRS 
+        NAMES onnxruntime_cxx_api.h
+        PATHS 
+            /usr/include/onnxruntime
+            /usr/local/include/onnxruntime
+            /opt/onnxruntime/include
+    )
+    
+    find_library(ONNXRUNTIME_LIB
+        NAMES onnxruntime
+        PATHS
+            /usr/lib
+            /usr/local/lib
+            /opt/onnxruntime/lib
+    )
+    
+    if(ONNXRUNTIME_INCLUDE_DIRS AND ONNXRUNTIME_LIB)
+        message(STATUS "ONNX Runtime found:")
+        message(STATUS "  Include: ${ONNXRUNTIME_INCLUDE_DIRS}")
+        message(STATUS "  Library: ${ONNXRUNTIME_LIB}")
+        
+        include_directories(${ONNXRUNTIME_INCLUDE_DIRS})
+        target_link_libraries(Inspector PRIVATE ${ONNXRUNTIME_LIB})
+    else()
+        message(WARNING "ONNX Runtime not found. Please install: apt install libonnxruntime-dev")
+    endif()
+endif()
 
 # 실행 파일 배포 디렉토리 설정
 set(DEPLOY_DIR "${CMAKE_SOURCE_DIR}/deploy")
@@ -249,6 +344,15 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/deploy/config.xml")
         COMMAND ${CMAKE_COMMAND} -E copy_if_different 
             ${CMAKE_SOURCE_DIR}/deploy/config.xml ${DEPLOY_DIR}/
         COMMENT "Copying config.xml"
+    )
+endif()
+
+# train_patchcore_anomalib.py 스크립트 복사
+if(EXISTS "${CMAKE_SOURCE_DIR}/train_patchcore_anomalib.py")
+    add_custom_command(TARGET deploy POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+            ${CMAKE_SOURCE_DIR}/train_patchcore_anomalib.py ${DEPLOY_DIR}/
+        COMMENT "Copying training script"
     )
 endif()
 

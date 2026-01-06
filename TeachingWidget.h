@@ -780,9 +780,6 @@ private:
     // 레시피 메뉴
     QMenu* recipeMenu = nullptr;
     
-    // Docker 학습 프로세스 (종료 시 정리용)
-    QProcess* dockerTrainProcess = nullptr;
-    
     // TrainDialog 인스턴스 (학습 이미지 수집용)
     TrainDialog* activeTrainDialog = nullptr;
 

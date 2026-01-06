@@ -6,7 +6,6 @@
 #include <QMap>
 #include <QList>
 #include <memory>
-#include <openvino/openvino.hpp>
 #include "CommonDefs.h"  // 공통 정의 포함
 
 // YOLO11-seg 세그멘테이션 결과 구조체
@@ -107,90 +106,94 @@ public:
     
     // CRIMP 검사 관련 함수는 현재 비활성화됨 (향후 구현 예정)
     
-    // ===== OpenVINO YOLO11-seg 관련 함수들 =====
+    // ===== TensorRT PatchCore 관련 (JETSON용) =====
+#ifdef USE_TENSORRT
+    struct TensorRTPatchCoreModelInfo {
+        void* runtime = nullptr;          // nvinfer1::IRuntime*
+        void* engine = nullptr;           // nvinfer1::ICudaEngine*
+        void* context = nullptr;          // nvinfer1::IExecutionContext*
+        void* cudaStream = nullptr;       // cudaStream_t
+        void* inputBuffer = nullptr;      // GPU 메모리
+        void* outputBuffer = nullptr;     // GPU 메모리 (anomaly_map)
+        void* scoreBuffer = nullptr;      // GPU 메모리 (pred_score)
+        size_t inputSize = 0;
+        size_t outputSize = 0;
+        size_t scoreSize = 0;
+        int inputWidth = 224;
+        int inputHeight = 224;
+        float normMin = 0.0f;
+        float normMax = 100.0f;
+    };
     
-    // 모델 초기화 (한 번만 호출)
-    static bool initYoloSegModel(const QString& modelPath, const QString& device = "CPU");
+    static QMap<QString, TensorRTPatchCoreModelInfo> s_tensorrtPatchCoreModels;
     
-    // 모델 해제
-    static void releaseYoloSegModel();
+    // TensorRT PatchCore 초기화/해제
+    static bool initPatchCoreTensorRT(const QString& enginePath, const QString& device = "GPU");
+    static void releasePatchCoreTensorRT();
+    static bool isTensorRTPatchCoreLoaded();
     
-    // 모델 로드 상태 확인
-    static bool isYoloSegModelLoaded();
-    
-    // YOLO11-seg 추론 수행
-    static std::vector<YoloSegResult> runYoloSegInference(
+    // TensorRT 추론
+    static bool runPatchCoreTensorRTInference(
+        const QString& enginePath,
         const cv::Mat& image,
-        float confThreshold = 0.5f,
-        float nmsThreshold = 0.45f,
-        float maskThreshold = 0.5f
+        float& anomalyScore,
+        cv::Mat& anomalyMap,
+        float threshold = 0.0f
     );
     
-    // BARREL 영역 검사 (LEFT/RIGHT)
-    static bool performBarrelInspection(
-        const cv::Mat& roiImage,
-        const PatternInfo& pattern,
-        bool isLeftBarrel,  // true: LEFT, false: RIGHT
-        std::vector<YoloSegResult>& segResults,
-        double& measuredLength,
-        bool& passed
+    // TensorRT 배치 추론
+    static bool runPatchCoreTensorRTBatchInference(
+        const QString& enginePath,
+        const std::vector<cv::Mat>& images,
+        std::vector<float>& anomalyScores,
+        std::vector<cv::Mat>& anomalyMaps,
+        float threshold = 0.0f
     );
-
-    // ===== OpenVINO PatchCore 관련 함수들 =====
     
-    // PatchCore 모델 초기화
-    static bool initPatchCoreModel(const QString& modelPath, const QString& device = "CPU");
+    // TensorRT 멀티모델 병렬 추론 (CUDA 스트림 활용)
+    static bool runPatchCoreTensorRTMultiModelInference(
+        const QMap<QString, std::vector<cv::Mat>>& modelImages,  // key: enginePath, value: images
+        QMap<QString, std::vector<float>>& modelScores,
+        QMap<QString, std::vector<cv::Mat>>& modelMaps
+    );
+#endif  // USE_TENSORRT
     
-    // PatchCore 모델 해제
-    static void releasePatchCoreModel();
+    // ===== ONNX Runtime PatchCore 관련 (x86 Linux용) =====
+#ifdef USE_ONNX
+    struct ONNXPatchCoreModelInfo {
+        void* session = nullptr;          // Ort::Session*
+        void* memoryInfo = nullptr;       // Ort::MemoryInfo*
+        int inputWidth = 224;
+        int inputHeight = 224;
+        float normMin = 0.0f;
+        float normMax = 100.0f;
+    };
     
-    // PatchCore 모델 로드 상태 확인
-    static bool isPatchCoreModelLoaded();
+    static QMap<QString, ONNXPatchCoreModelInfo> s_onnxPatchCoreModels;
     
-    // PatchCore 추론 수행
-    static bool runPatchCoreInference(
+    // ONNX PatchCore 초기화/해제
+    static bool initPatchCoreONNX(const QString& modelPath);
+    static void releasePatchCoreONNX();
+    static bool isONNXPatchCoreLoaded();
+    
+    // ONNX 추론
+    static bool runPatchCoreONNXInference(
         const QString& modelPath,
         const cv::Mat& image,
         float& anomalyScore,
         cv::Mat& anomalyMap,
-        float threshold = 0.5f
+        float threshold = 0.0f
     );
-
-private:
-    // PatchCore 모델 정보 구조체
-    struct PatchCoreModelInfo {
-        std::shared_ptr<ov::CompiledModel> model;
-        std::shared_ptr<ov::InferRequest> inferRequest;
-        int inputWidth = 224;
-        int inputHeight = 224;
-        float normMin = 17.0f;
-        float normMax = 50.0f;
-    };
     
-    // OpenVINO 관련 static 멤버
-    static std::shared_ptr<ov::Core> s_ovinoCore;
-    
-    // YOLO11-seg 모델
-    static std::shared_ptr<ov::CompiledModel> s_yoloSegModel;
-    static std::shared_ptr<ov::InferRequest> s_yoloSegInferRequest;
-    static bool s_yoloSegModelLoaded;
-    static int s_yoloInputWidth;
-    static int s_yoloInputHeight;
-    static int s_yoloNumClasses;
-    static int s_yoloMaskSize;
-    
-    // PatchCore 모델 (패턴별로 여러 모델 지원)
-    static QMap<QString, PatchCoreModelInfo> s_patchCoreModels;  // key: 모델 경로
-    
-    // 전처리/후처리 헬퍼 함수
-    static cv::Mat preprocessYoloInput(const cv::Mat& image, int targetWidth, int targetHeight, float& scale, int& padX, int& padY);
-    static std::vector<YoloSegResult> postprocessYoloOutput(
-        const ov::Tensor& outputTensor,
-        const ov::Tensor& maskProtoTensor,
-        int origWidth, int origHeight,
-        float scale, int padX, int padY,
-        float confThreshold, float nmsThreshold, float maskThreshold
+    // ONNX 배치 추론
+    static bool runPatchCoreONNXBatchInference(
+        const QString& modelPath,
+        const std::vector<cv::Mat>& images,
+        std::vector<float>& anomalyScores,
+        std::vector<cv::Mat>& anomalyMaps,
+        float threshold = 0.0f
     );
+#endif  // USE_ONNX
 };
 
 #endif // IMAGEPROCESSOR_H

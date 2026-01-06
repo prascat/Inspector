@@ -2438,7 +2438,13 @@ void CameraView::drawINSPatterns(QPainter &painter, const InspectionResult &resu
         QRectF inspRect = sceneToViewport(painter, inspRectScene);
         QPointF centerViewport = inspRect.center();
 
-        double insAngle = result.parentAngles.value(patternId, 0.0);
+        // ANOMALY 패턴은 자체 각도 사용, 그 외는 부모 각도 사용
+        double insAngle = 0.0;
+        if (patternInfo->inspectionMethod == InspectionMethod::ANOMALY) {
+            insAngle = patternInfo->angle;  // ANOMALY 패턴 자체 각도 사용
+        } else {
+            insAngle = result.parentAngles.value(patternId, 0.0);
+        }
         double score = result.insScores.value(patternId, 0.0);
 
         QColor borderColor = passed ? UIColors::INSPECTION_COLOR : QColor(200, 0, 0);

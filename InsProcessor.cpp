@@ -1,5 +1,6 @@
 #include "InsProcessor.h"
 #include "ImageProcessor.h"
+#include "ConfigManager.h"
 #include <QDebug>
 #include <QDateTime>
 #include <QDir>
@@ -13,6 +14,61 @@
 #include <chrono>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
+
+// ===== 플랫폼별 PatchCore 인터페이스 래퍼 =====
+namespace {
+    bool initPatchCoreModel(const QString& modelPath) {
+#ifdef USE_TENSORRT
+        return ImageProcessor::initPatchCoreTensorRT(modelPath);
+#elif defined(USE_ONNX)
+        // ONNX는 .onnx 확장자 사용
+        QString onnxPath = modelPath;
+        onnxPath.replace(".trt", ".onnx");
+        return ImageProcessor::initPatchCoreONNX(onnxPath);
+#else
+        qCritical() << "PatchCore: TensorRT 또는 ONNX Runtime이 필요합니다";
+        return false;
+#endif
+    }
+    
+    bool runPatchCoreBatchInference(
+        const QString& modelPath,
+        const std::vector<cv::Mat>& images,
+        std::vector<float>& scores,
+        std::vector<cv::Mat>& maps,
+        float threshold)
+    {
+#ifdef USE_TENSORRT
+        return ImageProcessor::runPatchCoreTensorRTBatchInference(modelPath, images, scores, maps, threshold);
+#elif defined(USE_ONNX)
+        QString onnxPath = modelPath;
+        onnxPath.replace(".trt", ".onnx");
+        return ImageProcessor::runPatchCoreONNXBatchInference(onnxPath, images, scores, maps, threshold);
+#else
+        qCritical() << "PatchCore: TensorRT 또는 ONNX Runtime이 필요합니다";
+        return false;
+#endif
+    }
+    
+    bool runPatchCoreInference(
+        const QString& modelPath,
+        const cv::Mat& image,
+        float& score,
+        cv::Mat& map,
+        float threshold)
+    {
+#ifdef USE_TENSORRT
+        return ImageProcessor::runPatchCoreTensorRTInference(modelPath, image, score, map, threshold);
+#elif defined(USE_ONNX)
+        QString onnxPath = modelPath;
+        onnxPath.replace(".trt", ".onnx");
+        return ImageProcessor::runPatchCoreONNXInference(onnxPath, image, score, map, threshold);
+#else
+        qCritical() << "PatchCore: TensorRT 또는 ONNX Runtime이 필요합니다";
+        return false;
+#endif
+    }
+}
 
 InsProcessor::InsProcessor(QObject *parent) : QObject(parent)
 {
@@ -244,10 +300,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 double oldAngle = pattern.angle;
                 const_cast<PatternInfo &>(pattern).angle = matchAngle;
                 result.angles[pattern.id] = matchAngle;
-
-                // 주의: 자식 INS의 티칭 각도는 변경하지 않습니다.
-                // INS들은 검사 시점에 FID의 검출 각도 차이(fidAngle - fidTeach)를
-                // 티칭 각도에 더해 최종 각도를 계산하도록 처리됩니다.
             }
             else
             {
@@ -267,29 +319,608 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             // 결과 기록
             result.fidResults[pattern.id] = fidMatched;
             result.matchScores[pattern.id] = matchScore;
-            result.locations[pattern.id] = matchLoc;
-            // angles는 위에서 이미 설정됨
-
-            // FID 검사 결과 로그 (개별 출력) - 주석 처리
-            // FID는 패턴 매칭 실패 시 FAIL (템플릿을 찾지 못함)
-            // QString fidResult = fidMatched ? "PASS" : "FAIL";
-            // logDebug(QString("%1: %2 [%3/%4]")
-            //         .arg(pattern.name)
-            //         .arg(fidResult)
-            //         .arg(QString::number(matchScore, 'f', 2))
-            //         .arg(QString::number(pattern.matchThreshold, 'f', 2)));
-
-            // 전체 결과 갱신
+            result.locations[pattern.id] = matchLoc;    
             result.isPassed = result.isPassed && fidMatched;
-            // qDebug() << "[FID 검사]" << pattern.name << "결과:" << fidMatched << "→ 전체 result.isPassed =" << result.isPassed;
         }
     }
 
     // 6. INS 패턴 검사 수행 (그룹 ROI 제한 적용)
     if (!insPatterns.isEmpty())
     {
+        // ===== ANOMALY 패턴 배치 처리 =====
+        // 같은 모델을 사용하는 ANOMALY 패턴들을 그룹화
+        QMap<QString, QList<PatternInfo>> anomalyGroups; // key: 모델 경로
+        QMap<QUuid, int> anomalyPatternIndexMap; // 패턴 ID -> 배치 내 인덱스
+        
+        int totalAnomalyCount = 0;
         for (const PatternInfo &pattern : insPatterns)
         {
+            if (pattern.inspectionMethod == InspectionMethod::ANOMALY)
+            {
+                totalAnomalyCount++;
+                // 현재 레시피명 가져오기
+                QString recipeName = ConfigManager::instance()->getLastRecipePath();
+                if (recipeName.isEmpty()) {
+                    recipeName = "default";
+                }
+                
+                // TensorRT 엔진 파일 경로 (레시피별)
+                QString modelPath = QCoreApplication::applicationDirPath() + 
+                    QString("/recipes/%1/weights/%2/%2.trt").arg(recipeName).arg(pattern.name);
+                anomalyGroups[modelPath].append(pattern);
+            }
+        }
+        
+        // ANOMALY 전체 처리 시작
+        auto anomalyBatchStart = std::chrono::high_resolution_clock::now();
+        int anomalyGroupCount = anomalyGroups.size();
+        
+#ifdef USE_TENSORRT
+        // ===== TensorRT 멀티모델 병렬 처리 =====
+        if (anomalyGroupCount > 1) {
+            // 모든 모델 로드
+            QMap<QString, std::vector<cv::Mat>> modelImages;
+            QMap<QString, QList<PatternInfo>> modelValidPatterns;
+            
+            for (auto groupIt = anomalyGroups.begin(); groupIt != anomalyGroups.end(); ++groupIt) {
+                const QString& modelPath = groupIt.key();
+                const QList<PatternInfo>& group = groupIt.value();
+                
+                if (group.isEmpty()) continue;
+                
+                // 모델 로드
+                if (!initPatchCoreModel(modelPath)) {
+                    logDebug(QString("ANOMALY: 모델 로드 실패 - %1").arg(modelPath));
+                    for (const PatternInfo& pattern : group) {
+                        result.insResults[pattern.id] = false;
+                        result.insScores[pattern.id] = 0.0;
+                        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                        result.isPassed = false;
+                    }
+                    continue;
+                }
+                
+                std::vector<cv::Mat> roiImages;
+                QList<PatternInfo> validPatterns;
+                
+                // ROI 추출 (기존 로직과 동일)
+                for (const PatternInfo &pattern : group) {
+                    QRect adjustedRect = QRect(
+                        static_cast<int>(pattern.rect.x()),
+                        static_cast<int>(pattern.rect.y()),
+                        static_cast<int>(pattern.rect.width()),
+                        static_cast<int>(pattern.rect.height()));
+                    
+                    // 부모 FID 정보 확인 및 위치 조정
+                    if (!pattern.parentId.isNull())
+                    {
+                        if (result.fidResults.contains(pattern.parentId))
+                        {
+                            if (!result.fidResults[pattern.parentId])
+                            {
+                                // 부모 FID 매칭 실패
+                                result.insResults[pattern.id] = false;
+                                result.insScores[pattern.id] = 0.0;
+                                result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                                result.isPassed = false;
+                                continue;
+                            }
+                            
+                            // FID 기반 위치 조정
+                            double fidScore = result.matchScores.value(pattern.parentId, 0.0);
+                            if (fidScore < 0.999 && result.locations.contains(pattern.parentId))
+                            {
+                                cv::Point fidLoc = result.locations[pattern.parentId];
+                                double fidAngle = result.angles[pattern.parentId];
+                                
+                                // FID 원래 정보 찾기
+                                QPoint originalFidCenter;
+                                for (const PatternInfo &fid : fidPatterns)
+                                {
+                                    if (fid.id == pattern.parentId)
+                                    {
+                                        originalFidCenter = QPoint(
+                                            static_cast<int>(fid.rect.center().x()),
+                                            static_cast<int>(fid.rect.center().y()));
+                                        break;
+                                    }
+                                }
+                                
+                                // 위치 오프셋 계산
+                                cv::Point parentOffset(
+                                    fidLoc.x - originalFidCenter.x(),
+                                    fidLoc.y - originalFidCenter.y());
+                                
+                                // 회전 각도 차이 계산
+                                double parentFidTeachingAngle = 0.0;
+                                for (const PatternInfo &p : patterns)
+                                {
+                                    if (p.id == pattern.parentId)
+                                    {
+                                        parentFidTeachingAngle = p.angle;
+                                        break;
+                                    }
+                                }
+                                double fidAngleDiff = fidAngle - parentFidTeachingAngle;
+                                
+                                // INS 패턴 중심점 계산
+                                QPointF insOriginalCenter = pattern.rect.center();
+                                QPointF relativePos(
+                                    insOriginalCenter.x() - originalFidCenter.x(),
+                                    insOriginalCenter.y() - originalFidCenter.y());
+                                
+                                // 회전 적용
+                                double rad = fidAngleDiff * M_PI / 180.0;
+                                double rotatedX = relativePos.x() * cos(rad) - relativePos.y() * sin(rad);
+                                double rotatedY = relativePos.x() * sin(rad) + relativePos.y() * cos(rad);
+                                
+                                // 새로운 중심점 계산
+                                int newCenterX = static_cast<int>(std::lround(fidLoc.x + rotatedX));
+                                int newCenterY = static_cast<int>(std::lround(fidLoc.y + rotatedY));
+                                
+                                adjustedRect = QRect(
+                                    newCenterX - pattern.rect.width() / 2,
+                                    newCenterY - pattern.rect.height() / 2,
+                                    pattern.rect.width(),
+                                    pattern.rect.height());
+                            }
+                        }
+                    }
+                    
+                    // ROI 유효성 검사
+                    QPoint adjustedCenter = adjustedRect.center();
+                    if (!isInGroupROI(pattern.id, adjustedCenter) || !isInROI(adjustedCenter)) {
+                        result.insResults[pattern.id] = false;
+                        result.insScores[pattern.id] = 0.0;
+                        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                        result.isPassed = false;
+                        continue;
+                    }
+                    
+                    // 경계 조정
+                    if (adjustedRect.x() < 0 || adjustedRect.y() < 0 ||
+                        adjustedRect.x() + adjustedRect.width() > image.cols ||
+                        adjustedRect.y() + adjustedRect.height() > image.rows) {
+                        int x = std::max(0, adjustedRect.x());
+                        int y = std::max(0, adjustedRect.y());
+                        int width = std::min(image.cols - x, adjustedRect.width());
+                        int height = std::min(image.rows - y, adjustedRect.height());
+                        if (width < 10 || height < 10) {
+                            result.insResults[pattern.id] = false;
+                            result.insScores[pattern.id] = 0.0;
+                            result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                            result.isPassed = false;
+                            continue;
+                        }
+                        adjustedRect = QRect(x, y, width, height);
+                    }
+                    
+                    cv::Rect roiRect(adjustedRect.x(), adjustedRect.y(), adjustedRect.width(), adjustedRect.height());
+                    cv::Mat roiImage = image(roiRect).clone();
+                    
+                    roiImages.push_back(roiImage);
+                    validPatterns.append(pattern);
+                    result.adjustedRects[pattern.id] = adjustedRect;
+                }
+                
+                if (!roiImages.empty()) {
+                    modelImages[modelPath] = roiImages;
+                    modelValidPatterns[modelPath] = validPatterns;
+                }
+            }
+            
+            // 멀티모델 병렬 추론 실행
+            QMap<QString, std::vector<float>> modelScores;
+            QMap<QString, std::vector<cv::Mat>> modelMaps;
+            
+            auto inferenceStart = std::chrono::high_resolution_clock::now();
+            bool multiSuccess = ImageProcessor::runPatchCoreTensorRTMultiModelInference(
+                modelImages, modelScores, modelMaps);
+            auto inferenceEnd = std::chrono::high_resolution_clock::now();
+            auto inferenceDuration = std::chrono::duration_cast<std::chrono::microseconds>(inferenceEnd - inferenceStart).count() / 1000.0;
+            
+            if (multiSuccess) {
+                // 결과 처리 (기존 로직과 동일)
+                for (auto it = modelValidPatterns.begin(); it != modelValidPatterns.end(); ++it) {
+                    const QString& modelPath = it.key();
+                    const QList<PatternInfo>& validPatterns = it.value();
+                    
+                    if (!modelScores.contains(modelPath) || !modelMaps.contains(modelPath)) {
+                        continue;
+                    }
+                    
+                    const std::vector<float>& anomalyScores = modelScores[modelPath];
+                    const std::vector<cv::Mat>& anomalyMaps = modelMaps[modelPath];
+                    
+                    for (int i = 0; i < validPatterns.size(); i++) {
+                        const PatternInfo& pattern = validPatterns[i];
+                        
+                        if (i >= anomalyScores.size() || i >= anomalyMaps.size()) {
+                            break;
+                        }
+                        
+                        float roiAnomalyScore = anomalyScores[i];
+                        cv::Mat anomalyMap = anomalyMaps[i];
+                        roiAnomalyScore = std::max(0.0f, std::min(100.0f, roiAnomalyScore));
+                        
+                        // Threshold 처리 (기존 로직과 동일)
+                        cv::Mat binaryMask;
+                        cv::threshold(anomalyMap, binaryMask, pattern.passThreshold, 255, cv::THRESH_BINARY);
+                        binaryMask.convertTo(binaryMask, CV_8U);
+                        
+                        std::vector<std::vector<cv::Point>> contours;
+                        cv::findContours(binaryMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+                        
+                        bool hasDefect = false;
+                        std::vector<std::vector<cv::Point>> defectContours;
+                        QRectF adjustedRectF = result.adjustedRects[pattern.id];
+                        int adjustedX = static_cast<int>(adjustedRectF.x());
+                        int adjustedY = static_cast<int>(adjustedRectF.y());
+                        
+                        for (const auto& contour : contours) {
+                            int blobSize = static_cast<int>(cv::contourArea(contour));
+                            cv::Rect bbox = cv::boundingRect(contour);
+                            
+                            bool sizeCheck = (blobSize >= pattern.anomalyMinBlobSize);
+                            bool widthCheck = (bbox.width >= pattern.anomalyMinDefectWidth);
+                            bool heightCheck = (bbox.height >= pattern.anomalyMinDefectHeight);
+                            
+                            if (sizeCheck || (widthCheck && heightCheck)) {
+                                hasDefect = true;
+                                std::vector<cv::Point> absoluteContour;
+                                for (const auto& pt : contour) {
+                                    absoluteContour.push_back(cv::Point(pt.x + adjustedX, pt.y + adjustedY));
+                                }
+                                defectContours.push_back(absoluteContour);
+                            }
+                        }
+                        
+                        result.insScores[pattern.id] = static_cast<double>(roiAnomalyScore);
+                        result.insResults[pattern.id] = !hasDefect;
+                        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                        result.anomalyDefectContours[pattern.id] = defectContours;
+                        result.anomalyRawMap[pattern.id] = anomalyMap.clone();
+                        
+                        // 히트맵 생성
+                        cv::Mat normalized;
+                        anomalyMap.convertTo(normalized, CV_8U, 255.0 / 100.0);
+                        cv::Mat colorHeatmap;
+                        cv::applyColorMap(normalized, colorHeatmap, cv::COLORMAP_JET);
+                        result.anomalyHeatmap[pattern.id] = colorHeatmap.clone();
+                        result.anomalyHeatmapRect[pattern.id] = pattern.rect;
+                        
+                        result.isPassed = result.isPassed && !hasDefect;
+                        
+                        QString insResultText = !hasDefect ? "PASS" : "NG";
+                        QString resultColor = !hasDefect ? "<font color='#00FF00'>" : "<font color='#FF0000'>";
+                        int defectCount = defectContours.size();
+                        
+                        if (defectCount > 0)
+                        {
+                            int maxW = 0, maxH = 0;
+                            for (const auto& contour : defectContours)
+                            {
+                                cv::Rect bbox = cv::boundingRect(contour);
+                                if (bbox.width > maxW) maxW = bbox.width;
+                                if (bbox.height > maxH) maxH = bbox.height;
+                            }
+                            logDebug(QString("  └─ <font color='#8BCB8B'>%1(ANOMALY)</font>: W:%2 H:%3 Detects:%4")
+                                .arg(pattern.name).arg(maxW).arg(maxH).arg(defectCount));
+                        }
+                        else
+                        {
+                            logDebug(QString("  └─ <font color='#8BCB8B'>%1(ANOMALY)</font>: %2%3</font>")
+                                .arg(pattern.name).arg(resultColor).arg(insResultText));
+                        }
+                    }
+                }
+            } else {
+                logDebug("[ANOMALY] 멀티모델 병렬 추론 실패");
+            }
+        } else
+#endif
+        {
+        // 단일 모델이거나 ONNX인 경우 기존 방식 사용
+        // 배치로 ANOMALY 검사 수행
+        for (auto groupIt = anomalyGroups.begin(); groupIt != anomalyGroups.end(); ++groupIt)
+        {
+            const QString& modelPath = groupIt.key();
+            const QList<PatternInfo>& group = groupIt.value();
+            
+            if (group.isEmpty()) continue;
+            
+            // PatchCore 모델 로드 (TensorRT 또는 ONNX)
+            if (!initPatchCoreModel(modelPath))
+            {
+                logDebug("ANOMALY 배치 검사 실패: 모델 로드 실패");
+                for (const PatternInfo& pattern : group)
+                {
+                    result.insResults[pattern.id] = false;
+                    result.insScores[pattern.id] = 0.0;
+                    result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                    result.isPassed = false;
+                }
+                continue;
+            }
+            
+            // ROI 이미지 추출
+            std::vector<cv::Mat> roiImages;
+            QList<PatternInfo> validPatterns; // 유효한 패턴만 저장
+            
+            for (const PatternInfo &pattern : group)
+            {
+                // FID 기반 위치 조정 (기존 로직과 동일)
+                QRect adjustedRect = QRect(
+                    static_cast<int>(pattern.rect.x()),
+                    static_cast<int>(pattern.rect.y()),
+                    static_cast<int>(pattern.rect.width()),
+                    static_cast<int>(pattern.rect.height()));
+                
+                // 부모 FID 정보 확인 및 위치 조정
+                if (!pattern.parentId.isNull())
+                {
+                    if (result.fidResults.contains(pattern.parentId))
+                    {
+                        if (!result.fidResults[pattern.parentId])
+                        {
+                            // 부모 FID 매칭 실패
+                            result.insResults[pattern.id] = false;
+                            result.insScores[pattern.id] = 0.0;
+                            result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                            result.isPassed = false;
+                            continue;
+                        }
+                        
+                        // FID 기반 위치 조정
+                        double fidScore = result.matchScores.value(pattern.parentId, 0.0);
+                        if (fidScore < 0.999 && result.locations.contains(pattern.parentId))
+                        {
+                            cv::Point fidLoc = result.locations[pattern.parentId];
+                            double fidAngle = result.angles[pattern.parentId];
+                            
+                            // FID 원래 정보 찾기
+                            QPoint originalFidCenter;
+                            for (const PatternInfo &fid : fidPatterns)
+                            {
+                                if (fid.id == pattern.parentId)
+                                {
+                                    originalFidCenter = QPoint(
+                                        static_cast<int>(fid.rect.center().x()),
+                                        static_cast<int>(fid.rect.center().y()));
+                                    break;
+                                }
+                            }
+                            
+                            // 위치 오프셋 계산
+                            cv::Point parentOffset(
+                                fidLoc.x - originalFidCenter.x(),
+                                fidLoc.y - originalFidCenter.y());
+                            
+                            // 회전 각도 차이 계산
+                            double parentFidTeachingAngle = 0.0;
+                            for (const PatternInfo &p : patterns)
+                            {
+                                if (p.id == pattern.parentId)
+                                {
+                                    parentFidTeachingAngle = p.angle;
+                                    break;
+                                }
+                            }
+                            double fidAngleDiff = fidAngle - parentFidTeachingAngle;
+                            
+                            // INS 패턴 중심점 계산
+                            QPointF insOriginalCenter = pattern.rect.center();
+                            QPointF relativePos(
+                                insOriginalCenter.x() - originalFidCenter.x(),
+                                insOriginalCenter.y() - originalFidCenter.y());
+                            
+                            // 회전 적용
+                            double rad = fidAngleDiff * M_PI / 180.0;
+                            double rotatedX = relativePos.x() * cos(rad) - relativePos.y() * sin(rad);
+                            double rotatedY = relativePos.x() * sin(rad) + relativePos.y() * cos(rad);
+                            
+                            // 새로운 중심점 계산
+                            int newCenterX = static_cast<int>(std::lround(fidLoc.x + rotatedX));
+                            int newCenterY = static_cast<int>(std::lround(fidLoc.y + rotatedY));
+                            
+                            adjustedRect = QRect(
+                                newCenterX - pattern.rect.width() / 2,
+                                newCenterY - pattern.rect.height() / 2,
+                                pattern.rect.width(),
+                                pattern.rect.height());
+                        }
+                    }
+                }
+                
+                // 그룹 ROI 및 경계 체크
+                QPoint adjustedCenter = adjustedRect.center();
+                if (!isInGroupROI(pattern.id, adjustedCenter) || !isInROI(adjustedCenter))
+                {
+                    logDebug(QString("ANOMALY 패턴 '%1': 조정된 위치가 ROI 영역 외부").arg(pattern.name));
+                    result.insResults[pattern.id] = false;
+                    result.insScores[pattern.id] = 0.0;
+                    result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                    result.isPassed = false;
+                    continue;
+                }
+                
+                // 경계 체크 및 조정
+                if (adjustedRect.x() < 0 || adjustedRect.y() < 0 ||
+                    adjustedRect.x() + adjustedRect.width() > image.cols ||
+                    adjustedRect.y() + adjustedRect.height() > image.rows)
+                {
+                    int x = std::max(0, adjustedRect.x());
+                    int y = std::max(0, adjustedRect.y());
+                    int width = std::min(image.cols - x, adjustedRect.width());
+                    int height = std::min(image.rows - y, adjustedRect.height());
+                    
+                    if (width < 10 || height < 10)
+                    {
+                        logDebug(QString("ANOMALY 패턴 '%1': 조정된 영역이 너무 작음").arg(pattern.name));
+                        result.insResults[pattern.id] = false;
+                        result.insScores[pattern.id] = 0.0;
+                        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                        result.isPassed = false;
+                        continue;
+                    }
+                    adjustedRect = QRect(x, y, width, height);
+                }
+                
+                // ROI 영역 추출
+                cv::Rect roiRect(adjustedRect.x(), adjustedRect.y(), adjustedRect.width(), adjustedRect.height());
+                cv::Mat roiImage = image(roiRect).clone();
+                
+                roiImages.push_back(roiImage);
+                validPatterns.append(pattern);
+                result.adjustedRects[pattern.id] = adjustedRect;
+            }
+            
+            // 배치 추론 실행
+            if (!roiImages.empty())
+            {
+                auto batchStart = std::chrono::high_resolution_clock::now();
+                
+                std::vector<float> anomalyScores;
+                std::vector<cv::Mat> anomalyMaps;
+                
+                // PatchCore 배치 추론 (TensorRT 또는 ONNX)
+                bool batchSuccess = runPatchCoreBatchInference(
+                    modelPath, roiImages, anomalyScores, anomalyMaps, 0.0f);
+                
+                auto batchEnd = std::chrono::high_resolution_clock::now();
+                auto batchDuration = std::chrono::duration_cast<std::chrono::milliseconds>(batchEnd - batchStart).count();
+                
+                // 개별 배치 로그는 생략 (전체 요약만 표시)
+                
+                if (batchSuccess && anomalyScores.size() == validPatterns.size())
+                {
+                    // 각 패턴별로 결과 처리
+                    for (int i = 0; i < validPatterns.size(); i++)
+                    {
+                        const PatternInfo& pattern = validPatterns[i];
+                        float roiAnomalyScore = anomalyScores[i];
+                        cv::Mat& anomalyMap = anomalyMaps[i];
+                        
+                        // Score 클리핑
+                        roiAnomalyScore = std::max(0.0f, std::min(100.0f, roiAnomalyScore));
+                        
+                        // Threshold 이상인 픽셀로 마스크 생성
+                        cv::Mat binaryMask;
+                        cv::threshold(anomalyMap, binaryMask, pattern.passThreshold, 255, cv::THRESH_BINARY);
+                        binaryMask.convertTo(binaryMask, CV_8U);
+                        
+                        // Contour로 덩어리 검출
+                        std::vector<std::vector<cv::Point>> contours;
+                        cv::findContours(binaryMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+                        
+                        bool hasDefect = false;
+                        std::vector<std::vector<cv::Point>> defectContours;
+                        QRectF adjustedRectF = result.adjustedRects[pattern.id];
+                        int adjustedX = static_cast<int>(adjustedRectF.x());
+                        int adjustedY = static_cast<int>(adjustedRectF.y());
+                        
+                        for (const auto& contour : contours)
+                        {
+                            int blobSize = static_cast<int>(cv::contourArea(contour));
+                            cv::Rect bbox = cv::boundingRect(contour);
+                            
+                            bool sizeCheck = (blobSize >= pattern.anomalyMinBlobSize);
+                            bool widthCheck = (bbox.width >= pattern.anomalyMinDefectWidth);
+                            bool heightCheck = (bbox.height >= pattern.anomalyMinDefectHeight);
+                            
+                            if (sizeCheck || (widthCheck && heightCheck))
+                            {
+                                hasDefect = true;
+                                
+                                // ROI 상대좌표를 절대좌표로 변환
+                                std::vector<cv::Point> absoluteContour;
+                                for (const auto& pt : contour)
+                                {
+                                    absoluteContour.push_back(cv::Point(
+                                        pt.x + adjustedX,
+                                        pt.y + adjustedY));
+                                }
+                                defectContours.push_back(absoluteContour);
+                            }
+                        }
+                        
+                        // 결과 저장
+                        result.insScores[pattern.id] = static_cast<double>(roiAnomalyScore);
+                        result.insResults[pattern.id] = !hasDefect;
+                        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                        result.anomalyDefectContours[pattern.id] = defectContours;
+                        result.anomalyRawMap[pattern.id] = anomalyMap.clone();
+                        
+                        // 히트맵 생성
+                        cv::Mat normalized;
+                        anomalyMap.convertTo(normalized, CV_8U, 255.0 / 100.0);
+                        cv::Mat colorHeatmap;
+                        cv::applyColorMap(normalized, colorHeatmap, cv::COLORMAP_JET);
+                        result.anomalyHeatmap[pattern.id] = colorHeatmap.clone();
+                        result.anomalyHeatmapRect[pattern.id] = pattern.rect;
+                        
+                        // 전체 결과 갱신
+                        result.isPassed = result.isPassed && !hasDefect;
+                        
+                        // 로그 출력
+                        QString insResultText = !hasDefect ? "PASS" : "NG";
+                        QString resultColor = !hasDefect ? "<font color='#00FF00'>" : "<font color='#FF0000'>";
+                        int defectCount = defectContours.size();
+                        
+                        if (defectCount > 0)
+                        {
+                            int maxW = 0, maxH = 0;
+                            for (const auto& contour : defectContours)
+                            {
+                                cv::Rect bbox = cv::boundingRect(contour);
+                                if (bbox.width > maxW) maxW = bbox.width;
+                                if (bbox.height > maxH) maxH = bbox.height;
+                            }
+                            logDebug(QString("  └─ <font color='#8BCB8B'>%1(ANOMALY)</font>: W:%2 H:%3 Detects:%4")
+                                .arg(pattern.name).arg(maxW).arg(maxH).arg(defectCount));
+                        }
+                        else
+                        {
+                            logDebug(QString("  └─ <font color='#8BCB8B'>%1(ANOMALY)</font>: %2%3</font>")
+                                .arg(pattern.name).arg(resultColor).arg(insResultText));
+                        }
+                    }
+                }
+                else
+                {
+                    // 배치 추론 실패
+                    logDebug(QString("[ANOMALY Batch] 추론 실패"));
+                    for (const PatternInfo& pattern : validPatterns)
+                    {
+                        result.insResults[pattern.id] = false;
+                        result.insScores[pattern.id] = 0.0;
+                        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                        result.isPassed = false;
+                    }
+                }
+            }
+        }
+        } // TensorRT 멀티모델 병렬 처리 else 끝
+        
+        // ANOMALY 전체 처리 완료 요약
+        if (totalAnomalyCount > 0) {
+            auto anomalyBatchEnd = std::chrono::high_resolution_clock::now();
+            auto anomalyTotalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(anomalyBatchEnd - anomalyBatchStart).count();
+            logDebug(QString("[ANOMALY 완료] %1개 패턴 검사 완료 (%2ms, 평균 %3ms/패턴)")
+                .arg(totalAnomalyCount)
+                .arg(anomalyTotalDuration)
+                .arg(totalAnomalyCount > 0 ? anomalyTotalDuration / totalAnomalyCount : 0));
+        }
+        
+        // ===== 일반 INS 패턴 처리 (ANOMALY 제외) =====
+        for (const PatternInfo &pattern : insPatterns)
+        {
+            // ANOMALY는 이미 배치로 처리됨
+            if (pattern.inspectionMethod == InspectionMethod::ANOMALY)
+            {
+                continue;
+            }
+            
             // 마스크 필터가 활성화되어 있으면 검사 PASS 처리
             bool hasMaskFilter = false;
             for (const FilterInfo &filter : pattern.filters)
@@ -826,9 +1457,25 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
 
             case InspectionMethod::ANOMALY:
             {
-                inspPassed = checkAnomaly(image, adjustedPattern, inspScore, result);
-                // ANOMALY 검사 수행
-                break;
+                // ANOMALY는 배치로 이미 처리됨 - 로그만 출력하고 continue
+                // 결과는 배치 처리 단계에서 이미 result에 저장됨
+                inspPassed = result.insResults.value(pattern.id, false);
+                inspScore = result.insScores.value(pattern.id, 0.0);
+                
+                // 검사 시간은 0으로 설정 (배치 처리에서 전체 시간 측정됨)
+                auto insEnd = std::chrono::high_resolution_clock::now();
+                auto insDuration = 0; // 배치 처리에서 이미 측정
+                
+                // 결과 로그 출력
+                QString insResultText = inspPassed ? "PASS" : "NG";
+                QString resultColor = inspPassed ? "<font color='#00FF00'>" : "<font color='#FF0000'>";
+                QString colorGreen = "<font color='#8BCB8B'>";
+                QString colorEnd = "</font>";
+                
+                // 이미 배치 처리에서 로그 출력했으므로 여기서는 건너뜀
+                // (중복 로그 방지)
+                
+                continue; // 다음 패턴으로
             }
 
             default:
@@ -2306,7 +2953,7 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     }
     
     // 모델 로드 (이미 로드된 경우 내부에서 자동 스킵)
-    if (!ImageProcessor::initPatchCoreModel(fullModelPath)) {
+    if (!initPatchCoreModel(fullModelPath)) {
         logDebug(QString("ANOMALY 검사 실패: 모델 로드 실패 - 패턴 '%1'").arg(pattern.name));
         score = 0.0;
         result.insScores[pattern.id] = score;
@@ -2342,7 +2989,7 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     float anomalyScore = 0.0f;
     
     auto anomalyStart = std::chrono::high_resolution_clock::now();
-    bool inferenceSuccess = ImageProcessor::runPatchCoreInference(fullModelPath, roiImage, anomalyScore, anomalyMap, 0.0f);
+    bool inferenceSuccess = runPatchCoreInference(fullModelPath, roiImage, anomalyScore, anomalyMap, 0.0f);
     auto anomalyEnd = std::chrono::high_resolution_clock::now();
     auto anomalyDuration = std::chrono::duration_cast<std::chrono::milliseconds>(anomalyEnd - anomalyStart).count();
     
@@ -4022,191 +4669,10 @@ bool InsProcessor::checkStrip(const cv::Mat &image, const PatternInfo &pattern, 
 bool InsProcessor::checkCrimp(const cv::Mat &image, const PatternInfo &pattern, double &score, InspectionResult &result, const QList<PatternInfo>& patterns)
 {
     result.insMethodTypes[pattern.id] = InspectionMethod::CRIMP;
-    score = 1.0;  // 기본 점수 (0-1 범위)
+    score = 0.0;  // 기본 점수 (0-1 범위)
     
-    // YOLO 모델이 로드되어 있는지 확인
-    if (!ImageProcessor::isYoloSegModelLoaded()) {
-        qDebug() << "[CRIMP] YOLO 모델이 로드되지 않음 - 검사 건너뛰";
-        return false;
-    }
-    
-    // ROI 패턴 찾기 (부모 관계 상관없이)
-    PatternInfo roiPattern;
-    bool foundRoi = false;
-    
-    for (const PatternInfo& p : patterns) {
-        if (p.type == PatternType::ROI) {
-            roiPattern = p;
-            foundRoi = true;
-            break;
-        }
-    }
-    
-    if (!foundRoi) {
-        qDebug() << "[CRIMP]" << pattern.name << "CRIMP 모드 ROI 패턴을 찾을 수 없음";
-        return false;
-    }
-    
-    // ROI 패턴 영역으로 ROI 계산
-    int roiX = static_cast<int>(roiPattern.rect.x());
-    int roiY = static_cast<int>(roiPattern.rect.y());
-    int roiW = static_cast<int>(roiPattern.rect.width());
-    int roiH = static_cast<int>(roiPattern.rect.height());
-    
-    // 이미지 범위 확인 및 클리핑
-    roiX = std::max(0, roiX);
-    roiY = std::max(0, roiY);
-    if (roiX + roiW > image.cols) roiW = image.cols - roiX;
-    if (roiY + roiH > image.rows) roiH = image.rows - roiY;
-    
-    if (roiW <= 0 || roiH <= 0) {
-        qDebug() << "[CRIMP] ROI 패턴 영역이 유효하지 않음";
-        return false;
-    }
-    
-    // ROI 패턴 영역 추출
-    cv::Mat roiImage = image(cv::Rect(roiX, roiY, roiW, roiH));
-    
-    // YOLO11-seg 추론 수행 (ROI 패턴 영역으로)
-    std::vector<YoloSegResult> segResults = ImageProcessor::runYoloSegInference(roiImage, 0.25f, 0.45f, 0.5f);
-    
-    // LEFT/RIGHT 박스 영역 계산 (INS 패턴 기준으로 계산)
-    // INS 패턴의 barrelLeftStripBox, barrelRightStripBox 사용
-    QRectF insRect = pattern.rect;
-    double patternCenterX = insRect.center().x();
-    double patternCenterY = insRect.center().y();
-    
-    // LEFT 박스 (INS 패턴 내 30% 왼쪽 위치)
-    double leftBoxCenterX = patternCenterX - insRect.width() * 0.3;
-    double leftBoxCenterY = patternCenterY;
-    double leftBoxW = pattern.barrelLeftStripBoxWidth > 0 ? pattern.barrelLeftStripBoxWidth : 50;
-    double leftBoxH = pattern.barrelLeftStripBoxHeight > 0 ? pattern.barrelLeftStripBoxHeight : 100;
-    QRectF leftBoxRect(leftBoxCenterX - leftBoxW/2, leftBoxCenterY - leftBoxH/2, leftBoxW, leftBoxH);
-    
-    // RIGHT 박스 (INS 패턴 내 30% 오른쪽 위치)
-    double rightBoxCenterX = patternCenterX + insRect.width() * 0.3;
-    double rightBoxCenterY = patternCenterY;
-    double rightBoxW = pattern.barrelRightStripBoxWidth > 0 ? pattern.barrelRightStripBoxWidth : 50;
-    double rightBoxH = pattern.barrelRightStripBoxHeight > 0 ? pattern.barrelRightStripBoxHeight : 100;
-    QRectF rightBoxRect(rightBoxCenterX - rightBoxW/2, rightBoxCenterY - rightBoxH/2, rightBoxW, rightBoxH);
-    
-    // 박스 영역 저장
-    result.barrelLeftBoxRect[pattern.id] = leftBoxRect;
-    result.barrelRightBoxRect[pattern.id] = rightBoxRect;
-    
-    if (segResults.empty()) {
-        qDebug() << "[CRIMP] 객체가 검출되지 않았습니다";
-        result.barrelLeftResults[pattern.id] = false;
-        result.barrelRightResults[pattern.id] = false;
-        score = 0.0;
-        return false;
-    }
-    
-    // 검출 결과를 x좌표 기준으로 정렬 (왼쪽부터)
-    std::vector<YoloSegResult> sortedResults = segResults;
-    std::sort(sortedResults.begin(), sortedResults.end(), 
-        [](const YoloSegResult& a, const YoloSegResult& b) {
-            return a.bbox.x < b.bbox.x;
-        });
-    
-    // 초기화
-    result.barrelLeftResults[pattern.id] = false;
-    result.barrelRightResults[pattern.id] = false;
-    
-    // 검출 결과 로그 및 컨투어 좌표를 절대좌표로 변환하여 저장
-    for (size_t i = 0; i < sortedResults.size(); i++) {
-        const auto& seg = sortedResults[i];
-        
-        // 컨투어를 절대좌표로 변환 (ROI 오프셋 적용)
-        std::vector<cv::Point> absoluteContour;
-        for (const auto& pt : seg.contour) {
-            absoluteContour.push_back(cv::Point(pt.x + roiX, pt.y + roiY));
-        }
-        
-        // 컨투어의 바운딩 박스 계산 (너비/높이 측정)
-        cv::Rect contourBbox = cv::boundingRect(absoluteContour);
-        int contourWidth = contourBbox.width;
-        int contourHeight = contourBbox.height;
-        
-        // bbox 중심점 계산 (절대좌표)
-        double bboxCenterX = roiX + seg.bbox.x + seg.bbox.width / 2.0;
-        double bboxCenterY = roiY + seg.bbox.y + seg.bbox.height / 2.0;
-        
-        // 컨투어 중심이 어느 박스에 속하는지 확인
-        bool isInLeftBox = leftBoxRect.contains(QPointF(bboxCenterX, bboxCenterY));
-        bool isInRightBox = rightBoxRect.contains(QPointF(bboxCenterX, bboxCenterY));
-        
-        if (isInLeftBox && !result.barrelLeftResults[pattern.id]) {
-            // LEFT 박스 내부에 있는 첫 번째 검출
-            result.barrelLeftContour[pattern.id] = absoluteContour;
-            result.barrelLeftContourWidth[pattern.id] = contourWidth;
-            result.barrelLeftContourHeight[pattern.id] = contourHeight;
-            result.barrelLeftResults[pattern.id] = true;
-        } else if (isInRightBox && !result.barrelRightResults[pattern.id]) {
-            // RIGHT 박스 내부에 있는 첫 번째 검출
-            result.barrelRightContour[pattern.id] = absoluteContour;
-            result.barrelRightContourWidth[pattern.id] = contourWidth;
-            result.barrelRightContourHeight[pattern.id] = contourHeight;
-            result.barrelRightResults[pattern.id] = true;
-        }
-    }
-    
-    // 최종 결과 판정: LEFT와 RIGHT 모두 검출되어야 PASS
-    bool leftPass = result.barrelLeftResults.value(pattern.id, false);
-    bool rightPass = result.barrelRightResults.value(pattern.id, false);
-    bool overallPass = leftPass && rightPass;
-    
-    qDebug() << "[CRIMP] L:" << (leftPass ? "PASS" : "FAIL") 
-             << "R:" << (rightPass ? "PASS" : "FAIL")
-             << "전체:" << (overallPass ? "PASS" : "FAIL");
-    
-    score = overallPass ? 1.0 : 0.0;  // 0-1 범위
-    return overallPass;
+    // CRIMP 검사는 현재 비활성화 (YOLO 모델 제거됨)
+    qDebug() << "[CRIMP] CRIMP 검사는 현재 지원되지 않습니다 (YOLO 모델 제거됨)";
+    return false;
 }
-
-// INS 패턴 내부 좌표점들을 역회전시켜 고정 위치로 변환하는 유틸리티 함수
-QList<QPoint> InsProcessor::transformPatternPoints(const std::vector<cv::Point> &roiPoints,
-                                                   const cv::Size &roiSize,
-                                                   double patternAngle,
-                                                   const cv::Point2f &offset)
-{
-    QList<QPoint> transformedPoints;
-
-    if (roiPoints.empty())
-    {
-        return transformedPoints;
-    }
-
-    // ROI 중심점
-    cv::Point2f roiCenter(roiSize.width / 2.0f, roiSize.height / 2.0f);
-
-    // 회전각 (라디안) - 양수로 적용 (역회전이 아님)
-    double rotationAngle = patternAngle * CV_PI / 180.0;
-
-    // 회전 변환 함수
-    auto rotatePoint = [&](cv::Point p) -> cv::Point
-    {
-        cv::Point2f pt(p.x - roiCenter.x, p.y - roiCenter.y); // 중심 기준으로 이동
-        float cos_a = cos(rotationAngle);
-        float sin_a = sin(rotationAngle);
-        cv::Point2f rotated;
-        rotated.x = pt.x * cos_a - pt.y * sin_a;
-        rotated.y = pt.x * sin_a + pt.y * cos_a;
-        return cv::Point(rotated.x + roiCenter.x, rotated.y + roiCenter.y); // 원점 복원
-    };
-
-    // 각 점을 역회전시키고 절대좌표로 변환
-    for (const cv::Point &roiPoint : roiPoints)
-    {
-        // 역회전 적용
-        cv::Point fixedPoint = rotatePoint(roiPoint);
-
-        // 절대좌표로 변환
-        QPoint absPoint(fixedPoint.x + static_cast<int>(offset.x),
-                        fixedPoint.y + static_cast<int>(offset.y));
-
-        transformedPoints.append(absPoint);
-    }
-
-    return transformedPoints;
-}
+//     

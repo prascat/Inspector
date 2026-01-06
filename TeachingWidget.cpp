@@ -472,7 +472,7 @@ private:
 };
 
 TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWidget *parent)
-    : QWidget(parent), cameraIndex(cameraIndex), cameraStatus(cameraStatus), dockerTrainProcess(nullptr)
+    : QWidget(parent), cameraIndex(cameraIndex), cameraStatus(cameraStatus)
 #ifdef USE_SPINNAKER
       ,
       m_useSpinnaker(false)
@@ -950,16 +950,8 @@ void TeachingWidget::initYoloModel()
         return;
     }
     
-    qDebug() << "[SEG] 모델 로딩 시작:" << modelPath;
-    
-    // OpenVINO로 모델 로드 (CPU 사용)
-    bool success = ImageProcessor::initYoloSegModel(modelPath, "CPU");
-    
-    if (success) {
-        qDebug() << "[SEG] 모델 로딩 성공 - CRIMP BARREL 검사 준비 완료";
-    } else {
-        qDebug() << "[SEG] 모델 로딩 실패 - CRIMP BARREL 검사가 비활성화됩니다.";
-    }
+    qDebug() << "[SEG] YOLO 모델 비활성화됨 (OpenVINO 제거)";
+    // CRIMP BARREL 검사는 더 이상 지원되지 않음
 }
 
 QVBoxLayout *TeachingWidget::createMainLayout()
@@ -4954,10 +4946,21 @@ void TeachingWidget::createPropertyPanels()
         activeTrainDialog = trainDialog;  // 활성 다이얼로그 저장
         trainDialog->setAllPatterns(allPatternsVec);  // 모든 패턴 설정 (FID 찾기용)
         trainDialog->setAnomalyPatterns(anomalyPatterns);
+        trainDialog->setCurrentRecipeName(currentRecipeName);  // 현재 레시피명 전달
         
         // Train 요청 시그널 연결
         connect(trainDialog, &TrainDialog::trainRequested, this, [this](const QString& patternName) {
             trainAnomalyPattern(patternName);
+        });
+        
+        // 학습 완료 시그널 연결 - 모델 리로딩
+        connect(trainDialog, &TrainDialog::trainingFinished, this, [this](bool success) {
+            if (success) {
+                qDebug() << "[TRAIN] 학습 완료됨. 모델 리로딩 시작...";
+                // 기존 모델 해제
+                ImageProcessor::releasePatchCoreTensorRT();
+                qDebug() << "[TRAIN] 모델 리로딩 완료. 새로 학습된 모델을 사용할 수 있습니다.";
+            }
         });
         
         // 다이얼로그 닫힐 때 activeTrainDialog 초기화
@@ -10449,17 +10452,6 @@ void TeachingWidget::showSerialSettings()
 
 void TeachingWidget::showModelManagement()
 {
-    // 카메라 영상이 없으면 경고
-    if (cameraFrames.empty() || cameraFrames[0].empty()) {
-        CustomMessageBox msgBox(this);
-        msgBox.setIcon(CustomMessageBox::Warning);
-        msgBox.setTitle("경고");
-        msgBox.setMessage("카메라 영상이 없습니다.\n먼저 카메라를 연결하세요.");
-        msgBox.setButtons(QMessageBox::Ok);
-        msgBox.exec();
-        return;
-    }
-    
     // 레시피가 로드되지 않았으면 경고
     if (currentRecipeName.isEmpty()) {
         CustomMessageBox msgBox(this);
@@ -10496,12 +10488,23 @@ void TeachingWidget::showModelManagement()
             qDebug() << "[TeachingWidget] 학습 요청:" << patternName;
             // 여기서 실제 학습 로직 호출 가능
         });
+        
+        // 학습 완료 시그널 연결 - 모델 리로딩
+        connect(activeTrainDialog, &TrainDialog::trainingFinished, this, [this](bool success) {
+            if (success) {
+                qDebug() << "[TRAIN] 학습 완료됨. 모델 리로딩 시작...";
+                // 기존 모델 해제
+                ImageProcessor::releasePatchCoreTensorRT();
+                qDebug() << "[TRAIN] 모델 리로딩 완료. 새로 학습된 모델을 사용할 수 있습니다.";
+            }
+        });
     }
     
     // 현재 모드 전달 (0: STRIP, 1: CRIMP)
     int currentMode = 0; // 기본값
     activeTrainDialog->setAllPatterns(allPatternsVec);  // 모든 패턴 설정 (FID 찾기용)
     activeTrainDialog->setAnomalyPatterns(anomalyPatterns);
+    activeTrainDialog->setCurrentRecipeName(currentRecipeName);  // 현재 레시피명 전달
     
     // 다이얼로그 표시
     activeTrainDialog->show();
@@ -13852,19 +13855,6 @@ TeachingWidget::~TeachingWidget()
     qDebug() << "[~TeachingWidget] 카메라 정보 정리 시작";
     cameraInfos.clear();
     qDebug() << "[~TeachingWidget] 카메라 정보 정리 완료";
-    
-    // 4. Docker 학습 프로세스 종료
-    if (dockerTrainProcess && dockerTrainProcess->state() == QProcess::Running) {
-        qDebug() << "[~TeachingWidget] Docker 학습 프로세스 종료 중...";
-        dockerTrainProcess->disconnect();  // 모든 시그널 연결 해제
-        dockerTrainProcess->kill();
-        dockerTrainProcess->waitForFinished(3000);
-        qDebug() << "[~TeachingWidget] Docker 학습 프로세스 종료 완료";
-    }
-    if (dockerTrainProcess) {
-        delete dockerTrainProcess;
-        dockerTrainProcess = nullptr;
-    }
 
 #ifdef USE_SPINNAKER
     // 5. Spinnaker SDK 정리 (완전히 생략 - mutex 크래시 방지)
@@ -13914,17 +13904,13 @@ TeachingWidget::~TeachingWidget()
     }
     qDebug() << "[~TeachingWidget] TestDialog 정리 완료";
 
-    // 10. SEG 모델 해제
-    qDebug() << "[~TeachingWidget] SEG 모델 해제 시작";
-    if (ImageProcessor::isYoloSegModelLoaded()) {
-        ImageProcessor::releaseYoloSegModel();
-    }
-    qDebug() << "[~TeachingWidget] SEG 모델 해제 완료";
+    // 10. SEG 모델 해제 (YOLO 제거됨)
+    qDebug() << "[~TeachingWidget] SEG 모델 제거됨 (YOLO 비활성화)";
 
     // 11. ANOMALY 모델 해제
     qDebug() << "[~TeachingWidget] ANOMALY 모델 해제 시작";
-    if (ImageProcessor::isPatchCoreModelLoaded()) {
-        ImageProcessor::releasePatchCoreModel();
+    if (ImageProcessor::isTensorRTPatchCoreLoaded()) {
+        ImageProcessor::releasePatchCoreTensorRT();
     }
     qDebug() << "[~TeachingWidget] ANOMALY 모델 해제 완료";
     
@@ -16023,6 +16009,31 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         // 최근 사용한 레시피를 ConfigManager에 저장
         ConfigManager::instance()->setLastRecipePath(recipeName);
         ConfigManager::instance()->saveConfig();
+        
+        // weights 동기화: 레시피에 없는 패턴의 weights 폴더 삭제
+        QString weightsDir = QCoreApplication::applicationDirPath() + "/recipes/" + recipeName + "/weights";
+        QDir weightsDirObj(weightsDir);
+        if (weightsDirObj.exists()) {
+            // 현재 레시피의 ANOMALY 패턴 이름 목록
+            QSet<QString> anomalyPatternNames;
+            for (const PatternInfo& pattern : cameraView->getPatterns()) {
+                if (pattern.type == PatternType::INS && 
+                    pattern.inspectionMethod == InspectionMethod::ANOMALY) {
+                    anomalyPatternNames.insert(pattern.name);
+                }
+            }
+            
+            // weights 폴더 내 서브폴더 검사
+            QStringList weightsFolders = weightsDirObj.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+            for (const QString& folderName : weightsFolders) {
+                if (!anomalyPatternNames.contains(folderName)) {
+                    // 레시피에 없는 패턴의 weights 폴더 삭제
+                    QString folderPath = weightsDir + "/" + folderName;
+                    QDir(folderPath).removeRecursively();
+                    qDebug() << "[RECIPE] 사용되지 않는 weights 삭제됨:" << folderName;
+                }
+            }
+        }
 
         // **STRIP/CRIMP 이미지는 이미 loadRecipe에서 로드되었으므로 추가 로드 불필요**
         // loadMainCameraImage는 첫 번째 TeachingImage만 읽어서 현재 모드를 무시하므로 제거
@@ -16187,7 +16198,7 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
                     
                     if (QFile::exists(fullModelPath))
                     {
-                        ImageProcessor::initPatchCoreModel(fullModelPath, "CPU");
+                        ImageProcessor::initPatchCoreTensorRT(fullModelPath, "CPU");
                         // break 제거 - 모든 ANOMALY 패턴의 모델을 로드
                     }
                 }
@@ -16658,16 +16669,14 @@ void TeachingWidget::trainAnomalyPattern(const QString& patternName)
     qDebug() << "[ANOMALY TRAIN] ROI 크롭 완료:" << croppedCount << "개"
              << "(FID 매칭 실패:" << fidMatchFailCount << "개)";
     
-    // Docker 학습 실행 - 절대 경로로 weights 폴더 지정
-    QString weightsBaseDir = QCoreApplication::applicationDirPath() + "/../deploy/weights";
+    // 학습 실행 - 레시피별 weights 폴더
+    QString recipesDir = QCoreApplication::applicationDirPath() + "/recipes";
+    QString recipeDir = currentRecipeName.isEmpty() ? "default" : currentRecipeName;
+    QString weightsBaseDir = recipesDir + "/" + recipeDir + "/weights";
     QString outputDir = weightsBaseDir + "/" + pattern.name;
     QDir().mkpath(outputDir);
     
-    QString dockerScript = QCoreApplication::applicationDirPath() + "/../docker/docker_run_with_data.sh";
-    QStringList args;
-    args << tempDir << outputDir << pattern.name;
-    
-    qDebug() << "[ANOMALY TRAIN] Docker 학습 시작:" << dockerScript << args;
+    qDebug() << "[ANOMALY TRAIN] 학습 시작:";
     
     // 학습 진행 다이얼로그
     QProgressDialog *trainProgress = new QProgressDialog("Training model...", "Cancel", 0, 0, this);
@@ -16687,15 +16696,8 @@ void TeachingWidget::trainAnomalyPattern(const QString& patternName)
     trainProgress->setAutoClose(false);
     trainProgress->setAutoReset(false);
     
-    // 기존 Docker 프로세스가 실행 중이면 종료
-    if (dockerTrainProcess && dockerTrainProcess->state() == QProcess::Running) {
-        dockerTrainProcess->kill();
-        dockerTrainProcess->waitForFinished(3000);
-    }
-    
     // 새 프로세스 생성
-    dockerTrainProcess = new QProcess(this);
-    QProcess *process = dockerTrainProcess;  // 람다 캡처용 로컬 변수
+    QProcess *process = new QProcess(this);
     process->setWorkingDirectory(QCoreApplication::applicationDirPath() + "/..");
     process->setProcessChannelMode(QProcess::MergedChannels);  // stdout + stderr 합침
     
@@ -16789,14 +16791,14 @@ void TeachingWidget::trainAnomalyPattern(const QString& patternName)
         
         if (exitStatus == QProcess::NormalExit && exitCode == 0) {
             // 기존 모델 해제 (새로 학습된 모델 강제 재로드를 위해)
-            ImageProcessor::releasePatchCoreModel();
+            ImageProcessor::releasePatchCoreTensorRT();
             
-            // 학습된 모델을 즉시 메모리에 적재 (norm_stats.txt도 자동 로드됨)
+            // 학습된 모델을 즉시 메모리에 적재 (정규화 통계도 자동 로드됨)
             QString fullModelPath = QCoreApplication::applicationDirPath() + QString("/weights/%1/%1.xml").arg(pattern.name);
             
             qDebug() << "[ANOMALY TRAIN] Training completed in" << totalTimeStr << "- Loading model:" << fullModelPath;
             
-            if (ImageProcessor::initPatchCoreModel(fullModelPath)) {
+            if (ImageProcessor::initPatchCoreTensorRT(fullModelPath)) {
                 qDebug() << "[ANOMALY TRAIN] Model loaded successfully!";
                 CustomMessageBox msgBox(this, CustomMessageBox::Information, "Training Complete",
                     QString("Model training completed and loaded.\nPattern: %1\nPath: %2\nTime: %3")
@@ -16843,9 +16845,6 @@ void TeachingWidget::trainAnomalyPattern(const QString& patternName)
         }
         
         // 프로세스 정리 (모든 시그널 연결 해제 후 삭제)
-        if (dockerTrainProcess == process) {
-            dockerTrainProcess = nullptr;
-        }
         process->disconnect();
         process->deleteLater();
     });
@@ -16861,7 +16860,15 @@ void TeachingWidget::trainAnomalyPattern(const QString& patternName)
         }
     });
     
-    process->start(dockerScript, args);
+    // TODO: 학습 스크립트 실행 로직 추가 필요
+    // process->start(scriptPath, args);
+    QMessageBox::warning(this, "미구현", "이 기능은 아직 구현되지 않았습니다.");
+    trainProgress->close();
+    trainProgress->deleteLater();
+    delete trainingTimer;
+    QDir(tempDir).removeRecursively();
+    return;
+    
     trainProgress->show();
     
     if (!process->waitForStarted()) {
@@ -16874,13 +16881,10 @@ void TeachingWidget::trainAnomalyPattern(const QString& patternName)
             trainProgress->deleteLater();
         }
         
-        QMessageBox::critical(this, "오류", QString("Docker 스크립트 실행 실패\n%1").arg(errorMsg));
+        QMessageBox::critical(this, "오류", QString("학습 스크립트 실행 실패\n%1").arg(errorMsg));
         QDir(tempDir).removeRecursively();
         
         // 프로세스 정리
-        if (dockerTrainProcess == process) {
-            dockerTrainProcess = nullptr;
-        }
         process->disconnect();
         process->deleteLater();
         delete trainingTimer;
