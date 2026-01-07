@@ -2853,7 +2853,7 @@ using namespace nvinfer1;
 class TRTLogger : public ILogger {
 public:
     void log(Severity severity, const char* msg) noexcept override {
-        if (severity <= Severity::kWARNING) {
+        if (severity <= Severity::kERROR) {
             qDebug() << "[TensorRT]" << msg;
         }
     }
@@ -2960,7 +2960,7 @@ bool ImageProcessor::initPatchCoreTensorRT(const QString& enginePath, const QStr
         
         s_tensorrtPatchCoreModels[enginePath] = modelInfo;
         
-        qDebug() << "[TensorRT] 모델 로딩 완료";
+        // 개별 로딩 로그 제거 (전체 로딩 완료 시 한번만 출력)
         
         return true;
         
@@ -2975,19 +2975,38 @@ void ImageProcessor::releasePatchCoreTensorRT()
         for (auto iter = s_tensorrtPatchCoreModels.begin(); 
              iter != s_tensorrtPatchCoreModels.end(); ++iter) {
             
-            if (iter->inputBuffer) cudaFree(iter->inputBuffer);
-            if (iter->outputBuffer) cudaFree(iter->outputBuffer);
-            if (iter->scoreBuffer) cudaFree(iter->scoreBuffer);
-            if (iter->cudaStream) cudaStreamDestroy((cudaStream_t)iter->cudaStream);
-            
+            // TensorRT 객체를 먼저 삭제 (역순)
             if (iter->context) {
                 delete ((IExecutionContext*)iter->context);
+                iter->context = nullptr;
             }
             if (iter->engine) {
                 delete ((ICudaEngine*)iter->engine);
+                iter->engine = nullptr;
             }
             if (iter->runtime) {
                 delete ((IRuntime*)iter->runtime);
+                iter->runtime = nullptr;
+            }
+            
+            // CUDA 스트림 해제
+            if (iter->cudaStream) {
+                cudaStreamDestroy((cudaStream_t)iter->cudaStream);
+                iter->cudaStream = nullptr;
+            }
+            
+            // CUDA 메모리 해제
+            if (iter->inputBuffer) {
+                cudaFree(iter->inputBuffer);
+                iter->inputBuffer = nullptr;
+            }
+            if (iter->outputBuffer) {
+                cudaFree(iter->outputBuffer);
+                iter->outputBuffer = nullptr;
+            }
+            if (iter->scoreBuffer) {
+                cudaFree(iter->scoreBuffer);
+                iter->scoreBuffer = nullptr;
             }
         }
         s_tensorrtPatchCoreModels.clear();
@@ -3398,20 +3417,23 @@ bool ImageProcessor::runPatchCoreTensorRTMultiModelInference(
             std::vector<float> scores;
             std::vector<cv::Mat> maps;
             
-            // 각 모델의 마지막 추론 결과 가져오기 (단일 이미지)
-            // 주의: 현재는 각 모델이 1개 이미지만 처리
+            // 각 이미지마다 결과 가져오기
             for (size_t i = 0; i < job.inputBuffers.size(); i++) {
-                // 결과 가져오기 (마지막 추론만 유효)
+                // GPU에서 결과 가져오기 - 매번 새로운 버퍼에 복사
                 std::vector<float> outputData(1 * 1 * 224 * 224);
-                cudaMemcpy(outputData.data(), modelInfo.outputBuffer,
+                cudaError_t err = cudaMemcpy(outputData.data(), modelInfo.outputBuffer,
                           modelInfo.outputSize, cudaMemcpyDeviceToHost);
                 
-                cv::Mat mapFloat(224, 224, CV_32F, outputData.data());
+                if (err != cudaSuccess) {
+                    qCritical() << "[TensorRT Multi] cudaMemcpy 실패:" << cudaGetErrorString(err);
+                    continue;
+                }
                 
-                // 원본 이미지 크기로 복원
-                cv::Mat mapFloatCopy = mapFloat.clone();
+                // cv::Mat 생성 시 데이터 복사하여 소유권 확보
+                cv::Mat mapFloat(224, 224, CV_32F);
+                std::memcpy(mapFloat.data, outputData.data(), outputData.size() * sizeof(float));
                 
-                cv::Scalar meanVal = cv::mean(mapFloatCopy);
+                cv::Scalar meanVal = cv::mean(mapFloat);
                 float rawScore = static_cast<float>(meanVal[0]);
                 
                 // 정규화
@@ -3422,7 +3444,7 @@ bool ImageProcessor::runPatchCoreTensorRTMultiModelInference(
                 scores.push_back(normalizedScore);
                 
                 // 히트맵 생성
-                cv::Mat normalizedMap = (mapFloatCopy - modelInfo.normMin) / 
+                cv::Mat normalizedMap = (mapFloat - modelInfo.normMin) / 
                                        (modelInfo.normMax - modelInfo.normMin);
                 normalizedMap.setTo(0, normalizedMap < 0);
                 normalizedMap.setTo(1, normalizedMap > 1);

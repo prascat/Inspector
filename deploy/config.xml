@@ -2,7 +2,6 @@
 <Config>
     <Language>ko</Language>
     <AutoSave>true</AutoSave>
-    <LastRecipePath>20260105_131531_270</LastRecipePath>
     <SerialPort>사용 가능한 포트 없음</SerialPort>
     <SerialBaudRate>115200</SerialBaudRate>
     <ServerIp>192.168.5.2</ServerIp>
@@ -10,6 +9,6 @@
     <AutoConnect>true</AutoConnect>
     <ReconnectInterval>3</ReconnectInterval>
     <CameraAutoConnect>false</CameraAutoConnect>
-    <PropertyPanel x="1310" y="129" width="489" height="687" collapsed="true" expandedHeight="687"/>
-    <LogPanel x="-75" y="74" width="800" height="500" collapsed="true"/>
+    <PropertyPanel x="29" y="648" width="489" height="40" collapsed="true" expandedHeight="687"/>
+    <LogPanel x="762" y="705" width="800" height="288" collapsed="true"/>
 </Config>

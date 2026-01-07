@@ -65,7 +65,7 @@ public:
     bool getTeachOff() const { return isTeachOff; }
     
     // 4분할 뷰용 프레임 데이터 설정
-    void setQuadFrames(const std::vector<cv::Mat>& frames)
+    void setQuadFrames(const std::array<cv::Mat, 4>& frames)
     {
         quadFrames = frames;
         if (isQuadViewMode)
@@ -432,8 +432,8 @@ private:
     std::array<int, 4> frameInspectionCount = {0, 0, 0, 0};  // 각 프레임별 검사 횟수 카운트
     QUuid selectedInspectionPatternId; // 선택된 검사 결과 패턴 필터링
     
-    // 4분할 뷰용 프레임 데이터
-    std::vector<cv::Mat> quadFrames;
+    // 4분할 뷰용 프레임 데이터 (고정 배열)
+    std::array<cv::Mat, 4> quadFrames;
 
     // 거리 측정 관련 변수
     bool isMeasuring = false;

@@ -52,6 +52,7 @@
 #include "TrainDialog.h"
 #include <QDir>
 #include <queue>
+#include <array>
 #include <opencv2/opencv.hpp>
 
 #include "CommonDefs.h"
@@ -146,12 +147,19 @@ class TeachingWidget : public QWidget {
 
 public:
     // RecipeManager에서 접근 가능하도록 public으로 선언
-    std::vector<cv::Mat> cameraFrames;
-    std::vector<bool> frameUpdatedFlags;  // 각 프레임의 업데이트 플래그 (트리거로 새 데이터 수신됨)
+    std::array<cv::Mat, 4> cameraFrames;  // 고정 크기 4 배열 (CAM0_STRIP, CAM0_CRIMP, CAM1_STRIP, CAM1_CRIMP)
+    std::array<bool, 4> frameUpdatedFlags;  // 각 프레임의 업데이트 플래그 (트리거로 새 데이터 수신됨)
     bool camOff = true;
     int cameraIndex;
     int currentDisplayFrameIndex = 0;  // 현재 메인 뷰에 표시된 프레임 인덱스 (0~3)
-    std::vector<std::queue<int>> nextInspectionFrameIndex;  // 각 카메라별 프레임 인덱스 큐 [cam0, cam1]
+    
+    // ★ 카메라별 다음 검사할 프레임 인덱스 (서버가 지정)
+    std::atomic<int> nextFrameIndex[2] = {-1, -1};  // 카메라0, 카메라1 각각
+    std::atomic<int> totalTriggersReceived{0};  // 총 서버 메시지 수신 횟수
+    std::atomic<int> totalInspectionsExecuted{0};  // 총 검사 실행 횟수
+    
+    int lastUsedFrameIndex = -1;  // 마지막으로 사용한 프레임 인덱스 (자동 순환용)
+    std::atomic<bool> frameProcessing[4] = {false, false, false, false};  // 각 프레임 처리 중 플래그
     
     // 스레드 안전 cameraInfos 접근 함수들
     QVector<CameraInfo> getCameraInfos() const;
@@ -171,6 +179,7 @@ public:
     void startCamera();
     void stopCamera();
     CameraView* getCameraView() const { return cameraView; }
+    int getSelectedFilterIndex() const { return selectedFilterIndex; }
     void updateCameraButtonState(bool isStarted);
     // 시리얼 통신 설정
     void setSerialCommunication(SerialCommunication* serialComm);
@@ -275,7 +284,6 @@ private slots:
     void loadTeachingImage();
     void processGrabbedFrame(const cv::Mat& frame, int camIdx);
     void processGrabbedFrame(const cv::Mat& frame, int camIdx, int forceFrameIndex);  // 프레임 인덱스 강제 지정
-    void processNextInspection(int frameIdx);  // 큐에서 다음 검사 처리
     void updateUIElements();
     void addPattern();
     void removePattern();
@@ -300,6 +308,7 @@ private:
     void updateMainCameraUI(const InspectionResult& result, const cv::Mat& frameForInspection);
     void updatePreviewFrames();
     void updateSinglePreview(int frameIndex);
+    void updateSinglePreviewWithFrame(int frameIndex, const cv::Mat& frame);  // cameraFrames 접근 없이 프레임 직접 사용
     void initializeLanguageSystem();
     void saveImageAsync(const cv::Mat& frame);
     PatternInfo* findPatternById(const QUuid& patternId);
@@ -324,6 +333,7 @@ private:
     
     // 스레드 안전성을 위한 뮤텍스
     mutable QMutex cameraInfosMutex;
+    mutable QMutex cameraFramesMutex;  // cameraFrames 전체 보호용
     
     // 필터 설정 중 프로퍼티 패널 업데이트 방지 플래그
     bool isFilterAdjusting = false;
@@ -747,10 +757,6 @@ private:
     // 프레임별 검사 중 플래그 (비동기 검사용)
     std::array<std::atomic<bool>, 4> frameInspecting = {false, false, false, false};
     std::array<QMutex, 4> frameMutexes;
-    
-    // 프레임별 검사 큐 (트리거 순차 처리)
-    std::array<QQueue<cv::Mat>, 4> inspectionQueues;
-    std::array<QMutex, 4> queueMutexes;
     
     // 프레임별 패턴 리스트 (레시피 로드 시 미리 분리해서 저장)
     std::array<QList<PatternInfo>, 4> framePatternLists;

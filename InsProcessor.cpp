@@ -362,6 +362,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             QMap<QString, std::vector<cv::Mat>> modelImages;
             QMap<QString, QList<PatternInfo>> modelValidPatterns;
             
+            int loadedModelCount = 0;
             for (auto groupIt = anomalyGroups.begin(); groupIt != anomalyGroups.end(); ++groupIt) {
                 const QString& modelPath = groupIt.key();
                 const QList<PatternInfo>& group = groupIt.value();
@@ -379,6 +380,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                     }
                     continue;
                 }
+                loadedModelCount++;
                 
                 std::vector<cv::Mat> roiImages;
                 QList<PatternInfo> validPatterns;

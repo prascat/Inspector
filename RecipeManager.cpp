@@ -576,7 +576,6 @@ bool RecipeManager::loadRecipe(const QString& fileName,
         
         // ★ cameraFrames를 크기 2로 초기화 (STRIP=0, CRIMP=1)
         if (teachingWidget->cameraFrames.size() < 2) {
-            teachingWidget->cameraFrames.resize(2);
         }
         
         // Strip/Crimp 이미지 분리 제거됨
@@ -1128,7 +1127,6 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                 if (cameraIdx >= 0) {
                     // cameraFrames에 직접 설정
                     if (cameraIdx >= static_cast<int>(teachingWidget->cameraFrames.size())) {
-                        teachingWidget->cameraFrames.resize(cameraIdx + 1);
                     }
                     teachingWidget->cameraFrames[cameraIdx] = teachingImage.clone();
                     
@@ -1168,7 +1166,6 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                         if (imageIndex >= 0 && imageIndex < 4) {
                             // cameraFrames 크기 확장
                             if (imageIndex >= static_cast<int>(teachingWidget->cameraFrames.size())) {
-                                teachingWidget->cameraFrames.resize(imageIndex + 1);
                             }
                             teachingWidget->cameraFrames[imageIndex] = teachingImage.clone();
                             // cameraFrames 저장 완료 (로그 제거)
