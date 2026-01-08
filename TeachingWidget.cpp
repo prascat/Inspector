@@ -316,9 +316,22 @@ void CameraGrabberThread::run()
                                                     // **트리거 신호 수신 - 검사 자동 시작**
                                                     if (!frame.empty())
                                                     {
-                                                        qDebug().noquote() << QString("[카메라 HW 트리거] 카메라%1 (SN:%2) 하드웨어 트리거 신호 수신")
-                                                                    .arg(m_cameraIndex)
-                                                                    .arg(QString::fromStdString(spinCamera->DeviceSerialNumber.GetValue().c_str()));
+                                                        int hwTotal = ++parent->totalHardwareTriggersReceived;
+                                                        int hwCam = ++parent->hardwareTriggersPerCamera[m_cameraIndex];
+                                                        int serverCount = parent->totalTriggersReceived.load();
+                                                        int hwCam0 = parent->hardwareTriggersPerCamera[0].load();
+                                                        int hwCam1 = parent->hardwareTriggersPerCamera[1].load();
+                                                        int f0 = parent->serverFrameCount[0].load();
+                                                        int f1 = parent->serverFrameCount[1].load();
+                                                        int f2 = parent->serverFrameCount[2].load();
+                                                        int f3 = parent->serverFrameCount[3].load();
+                                                        
+                                                        qDebug().noquote() << QString("[카메라 HW 트리거] 서버:%1(0:%2, 1:%3, 2:%4, 3:%5) | HW전체:%6 (CAM0:%7 CAM1:%8)")
+                                                                    .arg(serverCount)
+                                                                    .arg(f0).arg(f1).arg(f2).arg(f3)
+                                                                    .arg(hwTotal)
+                                                                    .arg(hwCam0)
+                                                                    .arg(hwCam1);
                                                         emit triggerSignalReceived(frame, m_cameraIndex);
                                                     }
                                                 }
@@ -1619,7 +1632,6 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
             // TEACH 모드에서만 편집 버튼들 활성화
             if (this->saveRecipeButton) this->saveRecipeButton->setEnabled(true);
             if (this->addFilterButton) this->addFilterButton->setEnabled(true); 
-            if (this->removeButton) this->removeButton->setEnabled(true);
         } else {
             // 카메라 중지 (CAM OFF) 
             stopCamera();
@@ -1627,7 +1639,6 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
             // 편집 버튼들 비활성화
             if (this->saveRecipeButton) this->saveRecipeButton->setEnabled(false);
             if (this->addFilterButton) this->addFilterButton->setEnabled(false);
-            if (this->removeButton) this->removeButton->setEnabled(false);
         } });
 
     // 패턴 타입 버튼 그룹 이벤트
@@ -8059,25 +8070,13 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
 
         if (patternCameraValue)
         {
-            // 카메라 시리얼 번호 표시
-            QString cameraSerial = "알 수 없음";
-            if (pattern->cameraUuid.isEmpty())
+            // 카메라 번호 표시 (무조건 0, 1, 2, 3으로 표시)
+            QString cameraNumber = "알 수 없음";
+            if (pattern->frameIndex >= 0 && pattern->frameIndex < 4)
             {
-                cameraSerial = "모든 카메라";
+                cameraNumber = QString::number(pattern->frameIndex);
             }
-            else
-            {
-                // cameraInfos에서 카메라 시리얼 번호 찾기
-                for (const CameraInfo &info : getCameraInfos())
-                {
-                    if (info.uniqueId == pattern->cameraUuid)
-                    {
-                        cameraSerial = info.serialNumber;
-                        break;
-                    }
-                }
-            }
-            patternCameraValue->setText(cameraSerial);
+            patternCameraValue->setText(cameraNumber);
         }
 
         if (patternTypeValue)
@@ -9685,6 +9684,10 @@ void TeachingWidget::updatePreviewFrames()
                     }
                 }
                 
+                // 카메라별 획득 수 표시
+                int frameCount = serverFrameCount[i].load();
+                text += QString(" [%1]").arg(frameCount);
+                
                 // 반투명 검은 배경 사각형
                 int baseline = 0;
                 cv::Size textSize = cv::getTextSize(text.toStdString(), cv::FONT_HERSHEY_SIMPLEX, 0.8, 2, &baseline);
@@ -9754,27 +9757,18 @@ void TeachingWidget::updatePreviewFrames()
 // cameraFrames에 접근하지 않고 프레임 데이터를 직접 받아서 처리 (스레드 안전)
 void TeachingWidget::updateSinglePreviewWithFrame(int frameIndex, const cv::Mat& previewFrame)
 {
-    qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] 시작").arg(frameIndex);
-    
     if (frameIndex < 0 || frameIndex >= 4) {
-        qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] 인덱스 범위 오류").arg(frameIndex);
         return;
     }
     
     // QPointer로 레이블 안전성 체크
     QPointer<QLabel> safeLabel = previewOverlayLabels[frameIndex];
-    if (!safeLabel) {
-        qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] safeLabel is NULL").arg(frameIndex);
+    if (!safeLabel || previewFrame.empty()) {
         return;
     }
     
-    if (previewFrame.empty()) {
-        qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] previewFrame is empty").arg(frameIndex);
-        return;
-    }
-    
-    qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] 프레임 크기: %2x%3")
-                .arg(frameIndex).arg(previewFrame.cols).arg(previewFrame.rows);
+    // ★ 프레임 갱신 카운트 증가
+    frameUpdateCount[frameIndex]++;
     
     const QStringList labels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
     
@@ -9782,12 +9776,13 @@ void TeachingWidget::updateSinglePreviewWithFrame(int frameIndex, const cv::Mat&
     {
         // ★ BGR 프레임에 직접 텍스트 오버레이 그리기 (RGB 변환 전)
         QString text = labels[frameIndex];
-        cv::Scalar textColor(100, 255, 100); // BGR - 초록색
+        cv::Scalar textColor(255, 255, 255); // BGR - 흰색
         
-        qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] 검사 결과 확인").arg(frameIndex);
+        // 패턴(레시피)이 있는지 확인
+        bool hasRecipe = cameraView && !cameraView->getPatterns().isEmpty();
         
-        // 검사 결과가 있으면 추가 표시
-        if (cameraView && cameraView->hasModeResult(frameIndex))
+        // 검사 결과가 있고 레시피가 있으면 추가 표시
+        if (hasRecipe && cameraView && cameraView->hasModeResult(frameIndex))
         {
             const InspectionResult& result = cameraView->getFrameResult(frameIndex);
             if (result.isPassed) {
@@ -9802,73 +9797,70 @@ void TeachingWidget::updateSinglePreviewWithFrame(int frameIndex, const cv::Mat&
         // 반투명 검은 배경 사각형
         int baseline = 0;
         cv::Size textSize = cv::getTextSize(text.toStdString(), cv::FONT_HERSHEY_SIMPLEX, 0.8, 2, &baseline);
+        
+        // 왼쪽 상단 배경 (STAGE 텍스트)
         cv::Rect bgRect(5, 5, textSize.width + 10, textSize.height + baseline + 10);
         
+        // 작업용 프레임 생성 (const 문제 해결)
+        cv::Mat workFrame = previewFrame.clone();
+        
+        // ★ 카운트 텍스트 추가 (오른쪽 상단)
+        int currentCount = frameUpdateCount[frameIndex].load();
+        QString countText = QString::number(currentCount);
+        cv::Size countTextSize = cv::getTextSize(countText.toStdString(), cv::FONT_HERSHEY_SIMPLEX, 0.8, 2, &baseline);
+        
         // 배경 그리기 (검은색, 투명도 70%)
-        cv::Mat overlay = previewFrame.clone();
+        cv::Mat overlay = workFrame.clone();
         cv::rectangle(overlay, bgRect, cv::Scalar(0, 0, 0), -1);
-        cv::addWeighted(overlay, 0.7, previewFrame, 0.3, 0, previewFrame);
+        
+        // 오른쪽 상단 배경 (카운트)
+        cv::Rect countBgRect(workFrame.cols - countTextSize.width - 15, 5, 
+                            countTextSize.width + 10, countTextSize.height + baseline + 10);
+        cv::rectangle(overlay, countBgRect, cv::Scalar(0, 0, 0), -1);
+        
+        cv::addWeighted(overlay, 0.7, workFrame, 0.3, 0, workFrame);
         
         // 텍스트 그리기
-        cv::putText(previewFrame, text.toStdString(), 
+        cv::putText(workFrame, text.toStdString(), 
                    cv::Point(10, 10 + textSize.height), 
                    cv::FONT_HERSHEY_SIMPLEX, 0.8, textColor, 2);
         
-        qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] 텍스트 오버레이 완료").arg(frameIndex);
-        
-        qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] cvtColor 시작").arg(frameIndex);
+        // 카운트 텍스트 그리기 (오른쪽 상단)
+        cv::putText(workFrame, countText.toStdString(), 
+                   cv::Point(workFrame.cols - countTextSize.width - 10, 10 + countTextSize.height), 
+                   cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 255, 255), 2);
         
         // 프레임 변환 - 메모리 안전성을 위해 연속 메모리 보장
         cv::Mat rgbFrame;
-        cv::cvtColor(previewFrame, rgbFrame, cv::COLOR_BGR2RGB);
-        
-        qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] cvtColor 완료").arg(frameIndex);
+        cv::cvtColor(workFrame, rgbFrame, cv::COLOR_BGR2RGB);
         
         // 메모리 정렬 보장을 위해 연속적인 메모리로 복사
         if (!rgbFrame.isContinuous()) {
-            qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] 비연속 메모리 - clone 수행").arg(frameIndex);
             rgbFrame = rgbFrame.clone();
         }
 
-        qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] QImage 생성 시작").arg(frameIndex);
-        
         // QImage로 변환 - deep copy로 메모리 안전성 보장
         QImage image(rgbFrame.data, rgbFrame.cols, rgbFrame.rows,
                      static_cast<int>(rgbFrame.step), QImage::Format_RGB888);
         // 즉시 deep copy 수행하여 rgbFrame의 수명 문제 회피
         QImage safeCopy = image.copy();
         QPixmap pixmap = QPixmap::fromImage(safeCopy);
-
-        qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] QPixmap 생성 완료").arg(frameIndex);
         
         // 레이블 크기에 맞춰 스케일링
-        qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] 레이블 크기 확인").arg(frameIndex);
-        
         QSize labelSize = safeLabel->size();
-        qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] 레이블 크기: %2x%3")
-                    .arg(frameIndex).arg(labelSize.width()).arg(labelSize.height());
         
         if (labelSize.width() > 0 && labelSize.height() > 0)
         {
-            qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] 스케일링 시작").arg(frameIndex);
-            
             QPixmap scaledPixmap = pixmap.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            
-            qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] 스케일링 완료").arg(frameIndex);
             
             // 재확인 - 레이블이 여전히 유효한지
             safeLabel = previewOverlayLabels[frameIndex];
             if (!safeLabel) {
-                qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] 재확인 시 safeLabel NULL").arg(frameIndex);
                 return;
             }
             
-            qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] setPixmap 시작").arg(frameIndex);
-            
             safeLabel->setPixmap(scaledPixmap);
             safeLabel->setScaledContents(false);
-            
-            qDebug() << QString("[updateSinglePreviewWithFrame] Frame[%1] 완료").arg(frameIndex);
         }
     }
     catch (const std::exception &e)
@@ -9926,6 +9918,7 @@ void TeachingWidget::onFrameIndexReceived(int frameIndex)
     int targetCameraIndex = (frameIndex <= 1) ? 0 : 1;
     
     totalTriggersReceived++;  // 총 서버 메시지 카운트
+    serverFrameCount[frameIndex]++;  // 프레임별 카운트 증가
     
     // ★ "다음 트리거는 이 프레임으로 검사해라" 설정 (덮어쓰기)
     int prevIndex = nextFrameIndex[targetCameraIndex].exchange(frameIndex);
@@ -9935,11 +9928,8 @@ void TeachingWidget::onFrameIndexReceived(int frameIndex)
                       .arg(targetCameraIndex).arg(prevIndex).arg(frameIndex);
     }
     
-    qDebug().noquote() << QString("[서버 메시지] 프레임[%1] 검사 설정 → 카메라%2 (총메시지:%3)")
-                .arg(frameIndex)
-                .arg(targetCameraIndex)
-                .arg(totalTriggersReceived.load());
 }
+
 
 void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int triggerCameraIndex)
 {
@@ -9961,11 +9951,12 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int triggerCa
     
     if (frameIdx < 0 || frameIdx >= 4) {
         // 서버가 프레임 인덱스를 지정하지 않은 경우 - 검사 스킵
-        qWarning() << QString("[Trigger] 서버 프레임 인덱스 없음 - 검사 스킵 (카메라%1) | CAM0:%2 CAM1:%3 | 통계 %4회메시지/%5회실행")
+        qWarning() << QString("[Trigger] 서버 프레임 인덱스 없음 - 검사 스킵 (카메라%1) | CAM0:%2 CAM1:%3 | 통계 서버:%4 HW:%5 실행:%6")
                       .arg(triggerCameraIndex)
                       .arg(nextFrameIndex[0].load())
                       .arg(nextFrameIndex[1].load())
                       .arg(totalTriggersReceived.load())
+                      .arg(totalHardwareTriggersReceived.load())
                       .arg(totalInspectionsExecuted.load());
         return;
     }
@@ -9975,11 +9966,35 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int triggerCa
     // ★ 트리거 사용 후 즉시 초기화 (같은 메시지로 중복 검사 방지)
     nextFrameIndex[triggerCameraIndex] = -1;
     
-    qDebug().noquote() << QString("[Trigger] 서버 지정 프레임 인덱스 사용: %1 (카메라%2, 실행:%3/%4)")
-                .arg(frameIdx)
-                .arg(triggerCameraIndex)
-                .arg(totalInspectionsExecuted.load())
-                .arg(totalTriggersReceived.load());
+    // ★★ 서버 트리거 수와 하드웨어 트리거 수 일치 여부 체크
+    int serverCount = totalTriggersReceived.load();
+    int hwCount = totalHardwareTriggersReceived.load();
+    int execCount = totalInspectionsExecuted.load();
+    int hwCam0 = hardwareTriggersPerCamera[0].load();
+    int hwCam1 = hardwareTriggersPerCamera[1].load();
+    
+    // 불일치 경고
+    if (hwCount != serverCount) {
+        qWarning().noquote() << QString("[Trigger 불일치] 서버:%1 ≠ HW:%2 (차이:%3) | 실행:%4 | CAM0:%5 CAM1:%6")
+                    .arg(serverCount)
+                    .arg(hwCount)
+                    .arg(serverCount - hwCount)
+                    .arg(execCount)
+                    .arg(hwCam0)
+                    .arg(hwCam1);
+    }
+    
+    // 10회마다 상세 통계 출력
+    if (execCount % 10 == 0) {
+        qInfo().noquote() << QString("[Trigger 통계 #%1] 서버:%2 HW:%3 실행:%4 | CAM0:%5 CAM1:%6 | 불일치:%7")
+                    .arg(execCount)
+                    .arg(serverCount)
+                    .arg(hwCount)
+                    .arg(execCount)
+                    .arg(hwCam0)
+                    .arg(hwCam1)
+                    .arg(hwCount - serverCount);
+    }
     
     // ★★★ 같은 프레임이 이미 처리 중이면 무시 (동시 접근 차단)
     bool expected = false;
@@ -9995,11 +10010,7 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int triggerCa
     // ★★★ 완전 독립 메모리 사용 - cameraFrames 접근 안 함
     cv::Mat frameForInspection = frame.clone();
     
-    // **통합 로그 출력**
-    QString camSerial = (triggerCameraIndex >= 0 && triggerCameraIndex < cameraInfos.size()) ? cameraInfos[triggerCameraIndex].serialNumber : "Unknown";
-    // frameIdx에서 실제 모드 추출 (0,2=STRIP / 1,3=CRIMP)
-    QString modeStr = (frameIdx % 2 == 0) ? "STRIP" : "CRIMP";
-    qDebug().noquote() << QString("[Trigger] Cam:%1 SN:%2 Mode:%3 Frame[%4]").arg(triggerCameraIndex).arg(camSerial).arg(modeStr).arg(frameIdx);
+    // **통합 로그 출력** - 제거됨
 
     // **4분할 화면 갱신은 검사 완료 후에만 수행 (processNextInspection 내부에서)**
 
@@ -10044,18 +10055,14 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int triggerCa
     // ★★★ TEACH ON 상태일 때 해당 프레임의 미리보기 무조건 업데이트 (레시피 유무와 무관)
     if (teachingEnabled && frameIdx >= 0 && frameIdx < 4 && previewOverlayLabels[frameIdx])
     {
-        qDebug() << QString("[Trigger] TEACH ON - Frame[%1] 프리뷰 업데이트").arg(frameIdx);
         updateSinglePreviewWithFrame(frameIdx, frameForInspection);
     }
     
     // 해당 프레임의 패턴 리스트 사용 (미리 분리된 리스트)
     const QList<PatternInfo>& framePatterns = framePatternLists[frameIdx];
     
-    qDebug().noquote() << QString("[Trigger] Frame[%1] - 매칭된 패턴 수: %2").arg(frameIdx).arg(framePatterns.size());
-    
     if (framePatterns.isEmpty())
     {
-        qDebug() << QString("[Trigger] Frame[%1] 레시피 없음 - 이미지만 표시").arg(frameIdx);
         
         // ★ 프레임 처리 완료 플래그 해제
         frameProcessing[frameIdx] = false;
@@ -10184,16 +10191,8 @@ void TeachingWidget::startCamera()
     if (cameraView)
     {
         cameraView->setCurrentCameraUuid(cameraInfos[cameraIndex].uniqueId);
-        // 카메라 이름 내부적으로 설정 (화면에는 표시 안 함)
-        QString cameraName;
-        if (cameraInfos[cameraIndex].uniqueId.startsWith("SPINNAKER_"))
-        {
-            cameraName = QString("Spinnaker Camera %1").arg(cameraIndex + 1);
-        }
-        else
-        {
-            cameraName = QString("Camera %1").arg(cameraIndex + 1);
-        }
+        // 카메라 이름을 숫자로만 설정 (0, 1, 2, 3)
+        QString cameraName = QString::number(cameraIndex);
         cameraView->setCurrentCameraName(cameraName);
     }
 
@@ -11655,16 +11654,16 @@ QTreeWidgetItem *TeachingWidget::createPatternTreeItem(const PatternInfo &patter
         name = QString("%1_%2").arg(typePrefix).arg(pattern.id.toString().left(8));
     }
 
-    // 패턴이 속한 카메라의 시리얼 번호 추가
-    QString cameraSerial;
+    // 패턴이 속한 카메라 번호 추가 (0,1,2,3)
+    QString cameraNumber;
     for (const CameraInfo& camInfo : cameraInfos) {
         if (camInfo.uniqueId == pattern.cameraUuid) {
-            cameraSerial = camInfo.serialNumber;
+            cameraNumber = camInfo.name;  // 카메라 이름 사용 (0, 1, 2, 3)
             break;
         }
     }
-    if (!cameraSerial.isEmpty()) {
-        name = QString("%1 (%2)").arg(name).arg(cameraSerial);
+    if (!cameraNumber.isEmpty()) {
+        name = QString("%1 (%2)").arg(name).arg(cameraNumber);
     }
 
     item->setText(0, name);
@@ -14519,8 +14518,15 @@ void TeachingWidget::addPattern()
         int viewFrameIndex = cameraView ? cameraView->getCurrentFrameIndex() : currentDisplayFrameIndex;
         pattern.frameIndex = viewFrameIndex;
         
-        // 카메라 UUID는 프레임 인덱스 기반으로 단순 설정
-        pattern.cameraUuid = QString("FRAME_%1").arg(viewFrameIndex);
+        // 카메라 UUID는 cameraInfos에서 프레임 순서대로 가져오기
+        if (viewFrameIndex >= 0 && viewFrameIndex < cameraInfos.size())
+        {
+            pattern.cameraUuid = cameraInfos[viewFrameIndex].uniqueId;
+        }
+        else
+        {
+            pattern.cameraUuid = QString("FRAME_%1").arg(viewFrameIndex);
+        }
         
         qDebug() << "[TeachingWidget::addPattern] frameIndex:" << pattern.frameIndex;
 
@@ -16745,6 +16751,9 @@ void TeachingWidget::onTeachModeToggled(bool checked)
         if (roiButton) roiButton->show();
         if (fidButton) fidButton->show();
         if (insButton) insButton->show();
+        
+        // TEACH ON 전환 시 미리보기 4개 갱신
+        updatePreviewFrames();
     }
     else
     {
@@ -16781,6 +16790,9 @@ void TeachingWidget::onTeachModeToggled(bool checked)
         if (roiButton) roiButton->hide();
         if (fidButton) fidButton->hide();
         if (insButton) insButton->hide();
+        
+        // TEACH OFF 전환 시 미리보기 4개 갱신 (카메라별 획득 수 표시)
+        updatePreviewFrames();
     }
 
     // 티칭 관련 버튼들 활성화/비활성화

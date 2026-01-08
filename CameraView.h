@@ -67,6 +67,12 @@ public:
     // 4분할 뷰용 프레임 데이터 설정
     void setQuadFrames(const std::array<cv::Mat, 4>& frames)
     {
+        // 프레임이 변경된 경우에만 카운트 증가
+        for (int i = 0; i < 4; i++) {
+            if (!frames[i].empty() && (quadFrames[i].empty() || frames[i].data != quadFrames[i].data)) {
+                frameInspectionCount[i]++;
+            }
+        }
         quadFrames = frames;
         if (isQuadViewMode)
             viewport()->update();

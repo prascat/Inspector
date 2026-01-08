@@ -336,9 +336,6 @@ void ClientDialog::onDataReceived()
 {
     QByteArray data = testSocket->readAll();
     
-    qDebug() << QString("[소켓통신 READ] 수신 데이터: %1 | 크기: %2 bytes")
-                .arg(QString(data.toHex(' '))).arg(data.size());
-    
     // 바이너리 바이트 값(0x00, 0x01, 0x02, 0x03)을 정수로 변환 → 프레임 트리거로 사용
     // 여러 바이트를 동시에 받은 경우 모두 처리
     for (int i = 0; i < data.size(); ++i) {
@@ -346,7 +343,6 @@ void ClientDialog::onDataReceived()
         int frameIndex = static_cast<int>(byte);
         
         if (frameIndex >= 0 && frameIndex <= 3) {
-            qDebug() << QString("[소켓통신 READ] 프레임 %1 트리거 수신").arg(frameIndex);
             emit frameIndexReceived(frameIndex);
         } else {
             qWarning() << QString("[소켓통신 READ] 유효하지 않은 데이터: %1").arg(frameIndex);

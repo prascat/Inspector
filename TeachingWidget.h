@@ -156,7 +156,11 @@ public:
     // ★ 카메라별 다음 검사할 프레임 인덱스 (서버가 지정)
     std::atomic<int> nextFrameIndex[2] = {-1, -1};  // 카메라0, 카메라1 각각
     std::atomic<int> totalTriggersReceived{0};  // 총 서버 메시지 수신 횟수
+    std::atomic<int> serverFrameCount[4] = {0, 0, 0, 0};  // 서버가 요청한 프레임별 카운트 (0,1,2,3)
+    std::atomic<int> totalHardwareTriggersReceived{0};  // 총 하드웨어 트리거 수신 횟수
+    std::atomic<int> hardwareTriggersPerCamera[2] = {0, 0};  // 카메라별 하드웨어 트리거 수신 횟수
     std::atomic<int> totalInspectionsExecuted{0};  // 총 검사 실행 횟수
+    std::atomic<int> frameUpdateCount[4] = {0, 0, 0, 0};  // 각 프레임 갱신 횟수
     
     int lastUsedFrameIndex = -1;  // 마지막으로 사용한 프레임 인덱스 (자동 순환용)
     std::atomic<bool> frameProcessing[4] = {false, false, false, false};  // 각 프레임 처리 중 플래그
@@ -222,6 +226,13 @@ public:
     
     // 필터 미리보기를 위한 선택 상태 설정
     void selectFilterForPreview(const QUuid& patternId, int filterIndex);
+    QUuid getSelectedPatternId() const { return selectedPatternId; }
+    
+    // 필터 다이얼로그를 위한 getter 메서드들
+    bool getCamOff() const { return camOff; }
+    int getCurrentDisplayFrameIndex() const { return currentDisplayFrameIndex; }
+    int getCameraIndex() const { return cameraIndex; }
+    const std::array<cv::Mat, 4>& getCameraFrames() const { return cameraFrames; }
     
     // 패턴 업데이트 중 UI 업데이트 방지
     void setUpdatingPattern(bool updating) { isUpdatingPattern = updating; }

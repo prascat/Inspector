@@ -6,12 +6,116 @@
 #include <QVector>
 #include <QScreen>
 #include <unistd.h>  // _exit()
+#include <signal.h>  // 시그널 핸들러
+#include <csignal>
 #include "TeachingWidget.h"
 #include "CustomMessageBox.h"
+#include "Spinnaker.h"
 
 // 전역 메시지 핸들러 (qDebug를 오버레이 로그로 리다이렉트)
 TeachingWidget* g_teachingWidget = nullptr;
 QVector<QString> g_pendingLogMessages;  // 초기 로그 버퍼
+
+// Spinnaker System 정리 함수
+void cleanupSpinnaker() {
+    static bool cleaned = false;
+    if (cleaned) return;
+    cleaned = true;
+    
+    qWarning() << "[Cleanup] Spinnaker System 정리 시작";
+    try {
+        // System 인스턴스 획득 시도 - 이미 정리되었을 수 있음
+        Spinnaker::SystemPtr system = nullptr;
+        try {
+            system = Spinnaker::System::GetInstance();
+        } catch (const Spinnaker::Exception& e) {
+            // System 인스턴스를 가져올 수 없으면 이미 정리된 것
+            qWarning() << "[Cleanup] Spinnaker System 이미 정리됨 또는 초기화 안됨";
+            return;
+        }
+        
+        if (system) {
+            try {
+                Spinnaker::CameraList camList = system->GetCameras();
+                if (camList.GetSize() > 0) {
+                    for (unsigned int i = 0; i < camList.GetSize(); i++) {
+                        try {
+                            Spinnaker::CameraPtr cam = camList.GetByIndex(i);
+                            if (cam && cam->IsInitialized()) {
+                                if (cam->IsStreaming()) {
+                                    cam->EndAcquisition();
+                                }
+                                cam->DeInit();
+                            }
+                        } catch (...) {
+                            // 개별 카메라 정리 실패는 무시
+                        }
+                    }
+                    camList.Clear();
+                }
+            } catch (const Spinnaker::Exception& e) {
+                qWarning() << "[Cleanup] 카메라 목록 처리 중 예외:" << e.what();
+            }
+            
+            // System 인스턴스 해제
+            try {
+                system->ReleaseInstance();
+                qWarning() << "[Cleanup] Spinnaker System 정리 완료";
+            } catch (const Spinnaker::Exception& e) {
+                qWarning() << "[Cleanup] System ReleaseInstance 실패:" << e.what();
+            }
+        }
+    } catch (const Spinnaker::Exception& e) {
+        qWarning() << "[Cleanup] Spinnaker 정리 중 예외:" << e.what();
+    } catch (const std::exception& e) {
+        qWarning() << "[Cleanup] 표준 예외:" << e.what();
+    } catch (...) {
+        qWarning() << "[Cleanup] Spinnaker 정리 중 알 수 없는 예외";
+    }
+}
+
+// 시그널 핸들러 (비정상 종료 시 정리)
+void signalHandler(int sig) {
+    static volatile sig_atomic_t handling = 0;
+    if (handling) {
+        _exit(128 + sig);  // 재진입 방지
+    }
+    handling = 1;
+    
+    const char* signalName = "UNKNOWN";
+    switch (sig) {
+        case SIGINT:  signalName = "SIGINT"; break;
+        case SIGTERM: signalName = "SIGTERM"; break;
+        case SIGSEGV: signalName = "SIGSEGV"; break;
+        case SIGABRT: signalName = "SIGABRT"; break;
+    }
+    
+    fprintf(stderr, "\n[SignalHandler] 시그널 수신: %s (%d)\n", signalName, sig);
+    fprintf(stderr, "[SignalHandler] 정리 작업 시작...\n");
+    
+    // Spinnaker 정리
+    cleanupSpinnaker();
+    
+    // 설정 저장
+    if (ConfigManager::instance()) {
+        ConfigManager::instance()->saveConfig();
+    }
+    
+    fprintf(stderr, "[SignalHandler] 정리 완료. 종료합니다.\n");
+    fflush(stderr);
+    
+    // 원래 시그널 동작 복원 후 재발생
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+// 시그널 핸들러 등록
+void setupSignalHandlers() {
+    signal(SIGINT, signalHandler);   // Ctrl+C
+    signal(SIGTERM, signalHandler);  // kill
+    signal(SIGSEGV, signalHandler);  // Segmentation Fault
+    signal(SIGABRT, signalHandler);  // abort()
+}
 
 void customMessageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg) {
     // 타임스탬프 추가
@@ -57,6 +161,9 @@ void flushPendingLogs() {
 }
 
 int main(int argc, char *argv[]) {
+    // 시그널 핸들러 등록 (가장 먼저)
+    setupSignalHandlers();
+    
     // OS별 Qt 플랫폼 플러그인 설정
 #ifdef Q_OS_LINUX
     // Linux(Ubuntu)에서는 X11 사용
@@ -119,6 +226,9 @@ int main(int argc, char *argv[]) {
     
     // app.exec() 종료 후 빠른 정리
     qDebug() << "[main] 애플리케이션 종료 시작";
+    
+    // Spinnaker 정리
+    cleanupSpinnaker();
     
     // 설정 저장 (명시적으로)
     ConfigManager::instance()->saveConfig();

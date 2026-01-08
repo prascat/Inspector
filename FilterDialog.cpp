@@ -205,12 +205,16 @@ void FilterDialog::onFilterCheckStateChanged(int state) {
     
     qDebug() << "[onFilterCheckStateChanged] existingFilterIndex:" << existingFilterIndex;
     
+    // 실제 사용할 필터 인덱스 (새로 추가되거나 기존 인덱스)
+    int actualFilterIndex = existingFilterIndex;
+    
     if (checked) {
         // 체크 시 필터 추가 또는 활성화
         if (existingFilterIndex >= 0) {
             // 기존 필터 활성화
             cameraView->setPatternFilterEnabled(patternId, existingFilterIndex, true);
             qDebug() << "[onFilterCheckStateChanged] 기존 필터 활성화:" << existingFilterIndex;
+            actualFilterIndex = existingFilterIndex;
             
             // 실시간 미리보기를 위해 필터 선택 상태 설정
             if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
@@ -221,6 +225,7 @@ void FilterDialog::onFilterCheckStateChanged(int state) {
             cameraView->addPatternFilter(patternId, filterType);
             int newFilterIndex = cameraView->getPatternFilters(patternId).size() - 1;
             qDebug() << "[onFilterCheckStateChanged] 새 필터 추가:" << newFilterIndex;
+            actualFilterIndex = newFilterIndex;
             
             // 현재 UI의 파라미터 값으로 설정
             QMap<QString, int> params = filterWidgets[filterType]->getParams();
@@ -313,10 +318,134 @@ void FilterDialog::onFilterCheckStateChanged(int state) {
         cameraView->setPatternContours(patternId, QList<QVector<QPoint>>());
     }
 
-    // 화면 갱신만 수행 (템플릿 이미지는 원본 그대로 유지)
+    // ★ 패턴 목록에서 필터 클릭할 때와 정확히 동일한 로직 사용
     if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
         parentWidget->setFilterAdjusting(true);
-        parentWidget->updateCameraFrame();
+        
+        if (checked && actualFilterIndex >= 0) {
+            // 체크한 필터를 미리보기 선택 상태로 설정
+            parentWidget->selectFilterForPreview(patternId, actualFilterIndex);
+            
+            // 패턴 정보 가져오기
+            PatternInfo *pattern = cameraView->getPatternById(patternId);
+            if (pattern && actualFilterIndex < pattern->filters.size())
+            {
+                const FilterInfo &filter = pattern->filters[actualFilterIndex];
+                
+                // cameraView의 패턴 오버레이 그리기 비활성화
+                if (cameraView)
+                {
+                    cameraView->clearSelectedInspectionPattern();
+                    cameraView->setSelectedPatternId(QUuid());
+                }
+                
+                int frameIndex = parentWidget->getCamOff() ? parentWidget->getCurrentDisplayFrameIndex() : parentWidget->getCameraIndex();
+                const std::array<cv::Mat, 4>& frames = parentWidget->getCameraFrames();
+                
+                if (frameIndex >= 0 && frameIndex < 4 && !frames[frameIndex].empty())
+                {
+                    cv::Mat sourceFrame = frames[frameIndex].clone();
+                    
+                    // 회전이 있는 경우: 회전된 사각형 영역에만 필터 적용
+                    if (std::abs(pattern->angle) > 0.1)
+                    {
+                        cv::Point2f center(pattern->rect.x() + pattern->rect.width() / 2.0f,
+                                          pattern->rect.y() + pattern->rect.height() / 2.0f);
+
+                        // 1. 회전된 사각형 마스크 생성
+                        cv::Mat mask = cv::Mat::zeros(sourceFrame.size(), CV_8UC1);
+                        cv::Size2f patternSize(pattern->rect.width(), pattern->rect.height());
+
+                        cv::Point2f vertices[4];
+                        cv::RotatedRect rotatedRect(center, patternSize, pattern->angle);
+                        rotatedRect.points(vertices);
+
+                        std::vector<cv::Point> points;
+                        for (int i = 0; i < 4; i++)
+                        {
+                            points.push_back(cv::Point(static_cast<int>(std::round(vertices[i].x)),
+                                                      static_cast<int>(std::round(vertices[i].y))));
+                        }
+                        cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{points}, cv::Scalar(255));
+
+                        // 2. 마스크 영역만 복사
+                        cv::Mat maskedImage = cv::Mat::zeros(sourceFrame.size(), sourceFrame.type());
+                        sourceFrame.copyTo(maskedImage, mask);
+
+                        // 3. 확장된 ROI 계산
+                        double width = pattern->rect.width();
+                        double height = pattern->rect.height();
+
+                        int rotatedWidth, rotatedHeight;
+                        TeachingWidget::calculateRotatedBoundingBox(width, height, pattern->angle, rotatedWidth, rotatedHeight);
+
+                        int maxSize = std::max(rotatedWidth, rotatedHeight);
+                        int halfSize = maxSize / 2;
+
+                        cv::Rect expandedRoi(
+                            qBound(0, static_cast<int>(center.x) - halfSize, sourceFrame.cols - 1),
+                            qBound(0, static_cast<int>(center.y) - halfSize, sourceFrame.rows - 1),
+                            qBound(1, maxSize, sourceFrame.cols - (static_cast<int>(center.x) - halfSize)),
+                            qBound(1, maxSize, sourceFrame.rows - (static_cast<int>(center.y) - halfSize)));
+
+                        // 4. 확장된 영역에 필터 적용
+                        if (expandedRoi.width > 0 && expandedRoi.height > 0 &&
+                            expandedRoi.x + expandedRoi.width <= maskedImage.cols &&
+                            expandedRoi.y + expandedRoi.height <= maskedImage.rows)
+                        {
+                            cv::Mat roiMat = maskedImage(expandedRoi);
+                            ImageProcessor processor;
+                            cv::Mat filteredRoi;
+                            processor.applyFilter(roiMat, filteredRoi, filter);
+                            if (!filteredRoi.empty())
+                            {
+                                filteredRoi.copyTo(roiMat);
+                            }
+                        }
+
+                        // 5. 마스크 영역만 필터 적용된 결과로 교체 (나머지는 원본 유지)
+                        maskedImage.copyTo(sourceFrame, mask);
+                    }
+                    else
+                    {
+                        // 회전 없는 경우: rect 영역만 필터 적용
+                        cv::Rect roi(
+                            qBound(0, static_cast<int>(pattern->rect.x()), sourceFrame.cols - 1),
+                            qBound(0, static_cast<int>(pattern->rect.y()), sourceFrame.rows - 1),
+                            qBound(1, static_cast<int>(pattern->rect.width()), sourceFrame.cols - static_cast<int>(pattern->rect.x())),
+                            qBound(1, static_cast<int>(pattern->rect.height()), sourceFrame.rows - static_cast<int>(pattern->rect.y())));
+
+                        if (roi.width > 0 && roi.height > 0)
+                        {
+                            cv::Mat roiMat = sourceFrame(roi);
+                            ImageProcessor processor;
+                            cv::Mat filteredRoi;
+                            processor.applyFilter(roiMat, filteredRoi, filter);
+                            if (!filteredRoi.empty())
+                            {
+                                filteredRoi.copyTo(roiMat);
+                            }
+                        }
+                    }
+                    
+                    // RGB 변환 및 UI 업데이트
+                    cv::Mat rgbFrame;
+                    cv::cvtColor(sourceFrame, rgbFrame, cv::COLOR_BGR2RGB);
+                    QImage image(rgbFrame.data, rgbFrame.cols, rgbFrame.rows,
+                                rgbFrame.step, QImage::Format_RGB888);
+                    QPixmap pixmap = QPixmap::fromImage(image.copy());
+                    
+                    cameraView->setBackgroundPixmap(pixmap);
+                    cameraView->viewport()->update();
+                }
+            }
+        }
+        else
+        {
+            // 체크 해제 시 원본 화면으로 복원
+            parentWidget->updateCameraFrame();
+        }
+        
         parentWidget->setFilterAdjusting(false);
     }
 }

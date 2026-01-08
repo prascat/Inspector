@@ -4138,15 +4138,18 @@ void CameraView::paintEvent(QPaintEvent *event)
                 }
             }
             
-            // PASS/NG 텍스트 오버레이 (상단 중앙)
+            // 스테이지 텍스트 오버레이 (상단 중앙)
             // 프레임별 레이블 (CommonDefs.h의 FRAME_LABELS 사용)
             QString stageLabel = (i >= 0 && i < FRAME_LABELS.size()) ? FRAME_LABELS[i] : "";
             QString resultText;
             QColor textColor;
             
-            if (hasFrameResult[i])
+            // 패턴(레시피)이 있는지 확인
+            bool hasRecipe = !patterns.isEmpty();
+            
+            if (hasFrameResult[i] && hasRecipe)
             {
-                // 검사 결과가 있는 경우
+                // 검사 결과가 있고 레시피가 있는 경우
                 const InspectionResult &result = frameResults[i];
                 textColor = result.isPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
                 
@@ -4165,7 +4168,7 @@ void CameraView::paintEvent(QPaintEvent *event)
             }
             else
             {
-                // 검사 결과가 없는 경우 - 흰색으로 STAGE 레이블만 표시
+                // 검사 결과가 없거나 레시피가 없는 경우 - 흰색으로 STAGE 레이블만 표시
                 resultText = stageLabel;
                 textColor = Qt::white;
             }
@@ -6313,7 +6316,11 @@ void CameraView::saveCurrentResultForMode(int frameIndex, const QPixmap &frame)
         }
         framePatterns[frameIndex] = frameSpecificPatterns;
         hasFrameResult[frameIndex] = true;
-        // 검사 결과 저장 완료 (로그 제거)
+        frameInspectionCount[frameIndex]++;  // 검사 횟수 증가
+        qDebug() << "[CameraView] 프레임" << frameIndex << "검사 결과 저장 (saveCurrentResultForMode) - 검사 횟수:" << frameInspectionCount[frameIndex];
+        
+        // 4분할 화면 업데이트하여 카운트 표시
+        viewport()->update();
     }
 }
 
