@@ -2874,6 +2874,7 @@ bool ImageProcessor::initPatchCoreTensorRT(const QString& enginePath, const QStr
         QFileInfo engineFileInfo(enginePath);
         QString patternName = engineFileInfo.dir().dirName();
         QString normStatsPath = engineFileInfo.absolutePath() + "/" + patternName;
+        
         QFile normStatsFile(normStatsPath);
         
         TensorRTPatchCoreModelInfo modelInfo;
@@ -2893,10 +2894,16 @@ bool ImageProcessor::initPatchCoreTensorRT(const QString& enginePath, const QStr
             }
             normStatsFile.close();
             
-            if (meanPixel > 0 && maxPixel > 0) {
-                modelInfo.normMin = meanPixel - 10.0f;
-                modelInfo.normMax = maxPixel + 20.0f;
+            if (maxPixel > 0) {
+                // normMin은 양품 평균 점수 (mean_pixel) 사용
+                modelInfo.normMin = meanPixel;
+                // normMax는 불량 판정 기준 (max_pixel) 사용
+                modelInfo.normMax = maxPixel;
+            } else {
+                qWarning() << "[initPatchCoreModel] 유효하지 않은 통계 값 - meanPixel:" << meanPixel << "maxPixel:" << maxPixel;
             }
+        } else {
+            qWarning() << "[initPatchCoreModel] 통계 파일 열기 실패:" << normStatsPath;
         }
         
         // TensorRT Runtime 생성
@@ -2936,18 +2943,107 @@ bool ImageProcessor::initPatchCoreTensorRT(const QString& enginePath, const QStr
         cudaStream_t stream;
         cudaStreamCreate(&stream);
         
-        // 입력/출력 버퍼 크기 계산
-        modelInfo.inputSize = 1 * 3 * 224 * 224 * sizeof(float);
-        modelInfo.outputSize = 1 * 1 * 224 * 224 * sizeof(float);  // anomaly_map
-        modelInfo.scoreSize = 1 * sizeof(float);  // pred_score
+        // TensorRT 엔진의 실제 텐서 순서 확인 및 버퍼 할당
+        int32_t nbIOTensors = engine->getNbIOTensors();
         
-        // GPU 메모리 할당
-        void* inputBuffer;
-        void* outputBuffer;
-        void* scoreBuffer;
-        cudaMalloc(&inputBuffer, modelInfo.inputSize);
-        cudaMalloc(&outputBuffer, modelInfo.outputSize);
-        cudaMalloc(&scoreBuffer, modelInfo.scoreSize);
+        void* inputBuffer = nullptr;
+        void* outputBuffer = nullptr;  // anomaly_map
+        void* scoreBuffer = nullptr;   // pred_score
+        void* labelBuffer = nullptr;   // pred_label
+        void* maskBuffer = nullptr;    // pred_mask
+        
+        modelInfo.inputSize = 0;
+        modelInfo.outputSize = 0;
+        modelInfo.scoreSize = 0;
+        modelInfo.labelSize = 0;
+        modelInfo.maskSize = 0;
+        
+        for (int32_t i = 0; i < nbIOTensors; i++) {
+            const char* tensorName = engine->getIOTensorName(i);
+            auto dims = engine->getTensorShape(tensorName);
+            bool isInput = engine->getTensorIOMode(tensorName) == nvinfer1::TensorIOMode::kINPUT;
+            
+            // 텐서 크기 계산
+            int64_t volume = 1;
+            for (int j = 0; j < dims.nbDims; j++) {
+                volume *= dims.d[j];
+            }
+            size_t bufferSize = volume * sizeof(float);
+            
+            // 버퍼 크기 검증
+            if (bufferSize == 0) {
+                qCritical() << "[TensorRT] 텐서" << tensorName << "의 버퍼 크기가 0입니다";
+                delete context;
+                delete engine;
+                delete runtime;
+                return false;
+            }
+            
+            cudaError_t err;
+            if (isInput) {
+                modelInfo.inputSize = bufferSize;
+                err = cudaMalloc(&inputBuffer, bufferSize);
+                if (err != cudaSuccess) {
+                    qCritical() << "[TensorRT] cudaMalloc 실패 (input):" << cudaGetErrorString(err);
+                    delete context;
+                    delete engine;
+                    delete runtime;
+                    return false;
+                }
+            } else {
+                if (std::strcmp(tensorName, "anomaly_map") == 0) {
+                    modelInfo.outputSize = bufferSize;
+                    err = cudaMalloc(&outputBuffer, bufferSize);
+                    if (err != cudaSuccess) {
+                        qCritical() << "[TensorRT] cudaMalloc 실패 (anomaly_map):" << cudaGetErrorString(err);
+                        if (inputBuffer) cudaFree(inputBuffer);
+                        delete context;
+                        delete engine;
+                        delete runtime;
+                        return false;
+                    }
+                } else if (std::strcmp(tensorName, "pred_score") == 0) {
+                    modelInfo.scoreSize = bufferSize;
+                    err = cudaMalloc(&scoreBuffer, bufferSize);
+                    if (err != cudaSuccess) {
+                        qCritical() << "[TensorRT] cudaMalloc 실패 (pred_score):" << cudaGetErrorString(err);
+                        if (inputBuffer) cudaFree(inputBuffer);
+                        if (outputBuffer) cudaFree(outputBuffer);
+                        delete context;
+                        delete engine;
+                        delete runtime;
+                        return false;
+                    }
+                } else if (std::strcmp(tensorName, "pred_label") == 0) {
+                    modelInfo.labelSize = bufferSize;
+                    err = cudaMalloc(&labelBuffer, bufferSize);
+                    if (err != cudaSuccess) {
+                        qCritical() << "[TensorRT] cudaMalloc 실패 (pred_label):" << cudaGetErrorString(err);
+                        if (inputBuffer) cudaFree(inputBuffer);
+                        if (outputBuffer) cudaFree(outputBuffer);
+                        if (scoreBuffer) cudaFree(scoreBuffer);
+                        delete context;
+                        delete engine;
+                        delete runtime;
+                        return false;
+                    }
+                } else if (std::strcmp(tensorName, "pred_mask") == 0) {
+                    modelInfo.maskSize = bufferSize;
+                    err = cudaMalloc(&maskBuffer, bufferSize);
+                    if (err != cudaSuccess) {
+                        qCritical() << "[TensorRT] cudaMalloc 실패 (pred_mask):" << cudaGetErrorString(err);
+                        if (inputBuffer) cudaFree(inputBuffer);
+                        if (outputBuffer) cudaFree(outputBuffer);
+                        if (scoreBuffer) cudaFree(scoreBuffer);
+                        if (labelBuffer) cudaFree(labelBuffer);
+                        delete context;
+                        delete engine;
+                        delete runtime;
+                        return false;
+                    }
+                }
+            }
+        }
         
         // 모델 정보 저장
         modelInfo.runtime = runtime;
@@ -2957,6 +3053,8 @@ bool ImageProcessor::initPatchCoreTensorRT(const QString& enginePath, const QStr
         modelInfo.inputBuffer = inputBuffer;
         modelInfo.outputBuffer = outputBuffer;
         modelInfo.scoreBuffer = scoreBuffer;
+        modelInfo.labelBuffer = labelBuffer;
+        modelInfo.maskBuffer = maskBuffer;
         
         s_tensorrtPatchCoreModels[enginePath] = modelInfo;
         
@@ -3008,6 +3106,14 @@ void ImageProcessor::releasePatchCoreTensorRT()
                 cudaFree(iter->scoreBuffer);
                 iter->scoreBuffer = nullptr;
             }
+            if (iter->labelBuffer) {
+                cudaFree(iter->labelBuffer);
+                iter->labelBuffer = nullptr;
+            }
+            if (iter->maskBuffer) {
+                cudaFree(iter->maskBuffer);
+                iter->maskBuffer = nullptr;
+            }
         }
         s_tensorrtPatchCoreModels.clear();
         
@@ -3020,290 +3126,6 @@ void ImageProcessor::releasePatchCoreTensorRT()
 bool ImageProcessor::isTensorRTPatchCoreLoaded()
 {
     return !s_tensorrtPatchCoreModels.isEmpty();
-}
-
-bool ImageProcessor::runPatchCoreTensorRTInference(
-    const QString& enginePath,
-    const cv::Mat& image,
-    float& anomalyScore,
-    cv::Mat& anomalyMap,
-    float threshold)
-{
-    if (!s_tensorrtPatchCoreModels.contains(enginePath)) {
-        qWarning() << "[TensorRT] 모델이 로드되지 않음:" << enginePath;
-        return false;
-    }
-    
-    const TensorRTPatchCoreModelInfo& modelInfo = s_tensorrtPatchCoreModels[enginePath];
-    
-    try {
-        // 1. 전처리: 224x224 리사이즈
-        cv::Mat resized;
-        cv::resize(image, resized, cv::Size(224, 224));
-        
-        // 2. BGR -> RGB 변환
-        cv::Mat rgb;
-        if (resized.channels() == 1) {
-            cv::cvtColor(resized, rgb, cv::COLOR_GRAY2RGB);
-        } else if (resized.channels() == 3) {
-            cv::cvtColor(resized, rgb, cv::COLOR_BGR2RGB);
-        } else {
-            rgb = resized.clone();
-        }
-        
-        // 3. 정규화 (ImageNet mean/std)
-        cv::Mat normalized;
-        rgb.convertTo(normalized, CV_32F, 1.0 / 255.0);
-        
-        const float mean[3] = {0.485f, 0.456f, 0.406f};
-        const float std[3] = {0.229f, 0.224f, 0.225f};
-        
-        std::vector<cv::Mat> channels(3);
-        cv::split(normalized, channels);
-        for (int i = 0; i < 3; i++) {
-            channels[i] = (channels[i] - mean[i]) / std[i];
-        }
-        cv::merge(channels, normalized);
-        
-        // 4. HWC -> CHW 변환
-        std::vector<cv::Mat> channelsChw;
-        cv::split(normalized, channelsChw);
-        
-        // 5. CPU 버퍼에 데이터 복사
-        std::vector<float> inputData(1 * 3 * 224 * 224);
-        int channelSize = 224 * 224;
-        for (int c = 0; c < 3; c++) {
-            std::memcpy(inputData.data() + c * channelSize,
-                       channelsChw[c].ptr<float>(),
-                       channelSize * sizeof(float));
-        }
-        
-        // 6. GPU로 데이터 전송
-        cudaMemcpyAsync(modelInfo.inputBuffer, inputData.data(), 
-                       modelInfo.inputSize, cudaMemcpyHostToDevice,
-                       (cudaStream_t)modelInfo.cudaStream);
-        
-        // 7. 추론 실행 (TensorRT 10.x enqueueV3 사용)
-        IExecutionContext* context = (IExecutionContext*)modelInfo.context;
-        
-        // TensorRT 10.x: 텐서 주소 명시적 설정
-        context->setTensorAddress("input", modelInfo.inputBuffer);
-        context->setTensorAddress("anomaly_map", modelInfo.outputBuffer);
-        context->setTensorAddress("pred_score", modelInfo.scoreBuffer);
-        
-        bool success = context->enqueueV3((cudaStream_t)modelInfo.cudaStream);
-        if (!success) {
-            qWarning() << "[TensorRT] 추론 실행 실패";
-            return false;
-        }
-        
-        cudaStreamSynchronize((cudaStream_t)modelInfo.cudaStream);
-        
-        // 8. 결과 가져오기
-        std::vector<float> outputData(1 * 1 * 224 * 224);
-        cudaMemcpyAsync(outputData.data(), modelInfo.outputBuffer,
-                       modelInfo.outputSize, cudaMemcpyDeviceToHost,
-                       (cudaStream_t)modelInfo.cudaStream);
-        
-        cudaStreamSynchronize((cudaStream_t)modelInfo.cudaStream);
-        
-        // 9. Anomaly Score 및 Map 생성
-        cv::Mat mapFloat(224, 224, CV_32F, outputData.data());
-        
-        // 평균 스코어 계산
-        cv::Scalar meanVal = cv::mean(mapFloat);
-        anomalyScore = static_cast<float>(meanVal[0]);
-        
-        // 디버그: anomaly map 통계
-        double minVal, maxVal;
-        cv::minMaxLoc(mapFloat, &minVal, &maxVal);
-        qDebug() << "[TensorRT] Raw AnomalyMap - min:" << minVal << "max:" << maxVal << "mean:" << meanVal[0];
-        
-        // 원본 이미지 크기로 리사이즈
-        cv::Mat resizedMap;
-        cv::resize(mapFloat, resizedMap, image.size());
-        
-        // 0~100 범위로 정규화
-        qDebug() << "[TensorRT] Normalizing with - normMin:" << modelInfo.normMin << "normMax:" << modelInfo.normMax;
-        anomalyMap = (resizedMap - modelInfo.normMin) / (modelInfo.normMax - modelInfo.normMin) * 100.0;
-        
-        // 0~100 범위로 클리핑
-        cv::threshold(anomalyMap, anomalyMap, 0.0, 0.0, cv::THRESH_TOZERO);
-        cv::threshold(anomalyMap, anomalyMap, 100.0, 100.0, cv::THRESH_TRUNC);
-        
-        return true;
-        
-    } catch (const std::exception& e) {
-        qCritical() << "[TensorRT] 추론 실패:" << e.what();
-        anomalyScore = 0.0f;
-        anomalyMap = cv::Mat::zeros(image.size(), CV_32F);
-        return false;
-    }
-}
-
-bool ImageProcessor::runPatchCoreTensorRTBatchInference(
-    const QString& enginePath,
-    const std::vector<cv::Mat>& images,
-    std::vector<float>& anomalyScores,
-    std::vector<cv::Mat>& anomalyMaps,
-    float threshold)
-{
-    if (images.empty()) {
-        qWarning() << "[TensorRT Batch] 입력 이미지가 비어있음";
-        return false;
-    }
-    
-    if (!s_tensorrtPatchCoreModels.contains(enginePath)) {
-        qWarning() << "[TensorRT Batch] 모델이 로드되지 않음:" << enginePath;
-        return false;
-    }
-    
-    const TensorRTPatchCoreModelInfo& modelInfo = s_tensorrtPatchCoreModels[enginePath];
-    
-    anomalyScores.clear();
-    anomalyMaps.clear();
-    anomalyScores.reserve(images.size());
-    anomalyMaps.reserve(images.size());
-    
-    const int MAX_BATCH_SIZE = 8;  // 모델 빌드 시 설정한 최대 배치
-    size_t numImages = images.size();
-    
-    try {
-        IExecutionContext* context = (IExecutionContext*)modelInfo.context;
-        
-        // 배치 단위로 처리
-        for (size_t batchStart = 0; batchStart < numImages; batchStart += MAX_BATCH_SIZE) {
-            size_t batchEnd = std::min(batchStart + MAX_BATCH_SIZE, numImages);
-            int currentBatchSize = batchEnd - batchStart;
-            
-            // 1. 전처리 - 배치 데이터 준비
-            std::vector<float> batchInputData(currentBatchSize * 3 * 224 * 224);
-            
-            for (int b = 0; b < currentBatchSize; b++) {
-                const cv::Mat& image = images[batchStart + b];
-                
-                // 리사이즈
-                cv::Mat resized;
-                cv::resize(image, resized, cv::Size(224, 224));
-                
-                // BGR -> RGB
-                cv::Mat rgb;
-                if (resized.channels() == 1) {
-                    cv::cvtColor(resized, rgb, cv::COLOR_GRAY2RGB);
-                } else if (resized.channels() == 3) {
-                    cv::cvtColor(resized, rgb, cv::COLOR_BGR2RGB);
-                } else {
-                    rgb = resized.clone();
-                }
-                
-                // 정규화
-                cv::Mat normalized;
-                rgb.convertTo(normalized, CV_32F, 1.0 / 255.0);
-                
-                const float mean[3] = {0.485f, 0.456f, 0.406f};
-                const float std[3] = {0.229f, 0.224f, 0.225f};
-                
-                std::vector<cv::Mat> channels(3);
-                cv::split(normalized, channels);
-                for (int i = 0; i < 3; i++) {
-                    channels[i] = (channels[i] - mean[i]) / std[i];
-                }
-                cv::merge(channels, normalized);
-                
-                // HWC -> CHW, 배치에 추가
-                std::vector<cv::Mat> channelsChw;
-                cv::split(normalized, channelsChw);
-                
-                int channelSize = 224 * 224;
-                int batchOffset = b * 3 * channelSize;
-                for (int c = 0; c < 3; c++) {
-                    std::memcpy(batchInputData.data() + batchOffset + c * channelSize,
-                               channelsChw[c].ptr<float>(),
-                               channelSize * sizeof(float));
-                }
-            }
-            
-            // 2. 입력 버퍼 크기 조정 (동적 배치)
-            size_t batchInputSize = currentBatchSize * 3 * 224 * 224 * sizeof(float);
-            
-            // GPU로 배치 데이터 전송
-            cudaMemcpyAsync(modelInfo.inputBuffer, batchInputData.data(), 
-                           batchInputSize, cudaMemcpyHostToDevice,
-                           (cudaStream_t)modelInfo.cudaStream);
-            
-            // 3. 입력 shape 설정 (동적 배치)
-            nvinfer1::Dims inputDims;
-            inputDims.nbDims = 4;
-            inputDims.d[0] = currentBatchSize;
-            inputDims.d[1] = 3;
-            inputDims.d[2] = 224;
-            inputDims.d[3] = 224;
-            
-            if (!context->setInputShape("input", inputDims)) {
-                qWarning() << "[TensorRT Batch] setInputShape 실패, 배치=" << currentBatchSize;
-                return false;
-            }
-            
-            // 4. 출력 버퍼 크기 계산
-            size_t batchOutputSize = currentBatchSize * 1 * 224 * 224 * sizeof(float);
-            
-            // 5. 추론 실행
-            context->setTensorAddress("input", modelInfo.inputBuffer);
-            context->setTensorAddress("anomaly_map", modelInfo.outputBuffer);
-            context->setTensorAddress("pred_score", modelInfo.scoreBuffer);
-            
-            bool success = context->enqueueV3((cudaStream_t)modelInfo.cudaStream);
-            if (!success) {
-                qWarning() << "[TensorRT Batch] 추론 실행 실패, 배치=" << currentBatchSize;
-                return false;
-            }
-            
-            cudaStreamSynchronize((cudaStream_t)modelInfo.cudaStream);
-            
-            // 6. 결과 가져오기
-            std::vector<float> batchOutputData(currentBatchSize * 1 * 224 * 224);
-            cudaMemcpyAsync(batchOutputData.data(), modelInfo.outputBuffer,
-                           batchOutputSize, cudaMemcpyDeviceToHost,
-                           (cudaStream_t)modelInfo.cudaStream);
-            
-            cudaStreamSynchronize((cudaStream_t)modelInfo.cudaStream);
-            
-            // 7. 배치 결과를 개별 이미지로 분리
-            for (int b = 0; b < currentBatchSize; b++) {
-                const cv::Mat& originalImage = images[batchStart + b];
-                
-                // 이 이미지의 anomaly map 추출
-                int mapSize = 224 * 224;
-                cv::Mat mapFloat(224, 224, CV_32F, batchOutputData.data() + b * mapSize);
-                mapFloat = mapFloat.clone();  // 데이터 복사
-                
-                // 평균 스코어 계산
-                cv::Scalar meanVal = cv::mean(mapFloat);
-                float anomalyScore = static_cast<float>(meanVal[0]);
-                
-                // 원본 이미지 크기로 리사이즈
-                cv::Mat resizedMap;
-                cv::resize(mapFloat, resizedMap, originalImage.size());
-                
-                // 0~100 범위로 정규화
-                cv::Mat anomalyMap = (resizedMap - modelInfo.normMin) / 
-                                     (modelInfo.normMax - modelInfo.normMin) * 100.0;
-                
-                // 0~100 범위로 클리핑
-                cv::threshold(anomalyMap, anomalyMap, 0.0, 0.0, cv::THRESH_TOZERO);
-                cv::threshold(anomalyMap, anomalyMap, 100.0, 100.0, cv::THRESH_TRUNC);
-                
-                anomalyScores.push_back(anomalyScore);
-                anomalyMaps.push_back(anomalyMap);
-            }
-        }
-        
-        return true;
-        
-    } catch (const std::exception& e) {
-        qCritical() << "[TensorRT Batch] 추론 실패:" << e.what();
-        return false;
-    }
 }
 
 // 멀티모델 병렬 추론 (CUDA 스트림 활용)
@@ -3400,6 +3222,15 @@ bool ImageProcessor::runPatchCoreTensorRTMultiModelInference(
                 context->setTensorAddress("input", modelInfo.inputBuffer);
                 context->setTensorAddress("anomaly_map", modelInfo.outputBuffer);
                 context->setTensorAddress("pred_score", modelInfo.scoreBuffer);
+                
+                // pred_label과 pred_mask는 새 모델에만 있음 (optional)
+                if (modelInfo.labelBuffer) {
+                    context->setTensorAddress("pred_label", modelInfo.labelBuffer);
+                }
+                if (modelInfo.maskBuffer) {
+                    context->setTensorAddress("pred_mask", modelInfo.maskBuffer);
+                }
+                
                 context->enqueueV3(stream);
             }
         }
@@ -3419,44 +3250,93 @@ bool ImageProcessor::runPatchCoreTensorRTMultiModelInference(
             
             // 각 이미지마다 결과 가져오기
             for (size_t i = 0; i < job.inputBuffers.size(); i++) {
-                // GPU에서 결과 가져오기 - 매번 새로운 버퍼에 복사
-                std::vector<float> outputData(1 * 1 * 224 * 224);
+                // GPU에서 anomaly_map 결과 가져오기
+                size_t anomalyMapFloats = modelInfo.outputSize / sizeof(float);
+                std::vector<float> outputData(anomalyMapFloats);
                 cudaError_t err = cudaMemcpy(outputData.data(), modelInfo.outputBuffer,
                           modelInfo.outputSize, cudaMemcpyDeviceToHost);
                 
                 if (err != cudaSuccess) {
-                    qCritical() << "[TensorRT Multi] cudaMemcpy 실패:" << cudaGetErrorString(err);
+                    qCritical() << "[TensorRT Multi] anomaly_map cudaMemcpy 실패:" << cudaGetErrorString(err);
                     continue;
                 }
                 
-                // cv::Mat 생성 시 데이터 복사하여 소유권 확보
-                cv::Mat mapFloat(224, 224, CV_32F);
-                std::memcpy(mapFloat.data, outputData.data(), outputData.size() * sizeof(float));
+                // GPU에서 pred_score 결과 가져오기
+                size_t scoreFloats = modelInfo.scoreSize / sizeof(float);
+                std::vector<float> scoreData(scoreFloats);
+                err = cudaMemcpy(scoreData.data(), modelInfo.scoreBuffer,
+                          modelInfo.scoreSize, cudaMemcpyDeviceToHost);
                 
-                cv::Scalar meanVal = cv::mean(mapFloat);
-                float rawScore = static_cast<float>(meanVal[0]);
+                if (err != cudaSuccess) {
+                    qCritical() << "[TensorRT Multi] pred_score cudaMemcpy 실패:" << cudaGetErrorString(err);
+                    continue;
+                }
                 
-                // 정규화
-                float normalizedScore = (rawScore - modelInfo.normMin) / 
-                                       (modelInfo.normMax - modelInfo.normMin) * 100.0f;
-                normalizedScore = std::max(0.0f, std::min(100.0f, normalizedScore));
+                // anomaly_map과 pred_score의 실제 크기에 따라 처리
+                // 일반적으로: anomaly_map = [1, 1, H, W], pred_score = [1]
+                // 하지만 모델에 따라 다를 수 있음
+                cv::Mat mapFloat;
+                float rawScore;
+                
+                if (anomalyMapFloats == 1 && scoreFloats > 1) {
+                    // 텐서 이름이 바뀐 경우: anomaly_map이 스칼라, pred_score가 맵
+                    rawScore = outputData[0];
+                    int mapSize = std::sqrt(scoreFloats);
+                    mapFloat = cv::Mat(mapSize, mapSize, CV_32F);
+                    std::memcpy(mapFloat.data, scoreData.data(), scoreData.size() * sizeof(float));
+                    qWarning() << "[TensorRT Multi] 텐서 스왑 감지 - anomaly_map은 스칼라, pred_score는 맵";
+                } else {
+                    // 정상 경우: anomaly_map이 맵, pred_score가 스칼라
+                    rawScore = scoreData[0];
+                    int mapSize = std::sqrt(anomalyMapFloats);
+                    mapFloat = cv::Mat(mapSize, mapSize, CV_32F);
+                    std::memcpy(mapFloat.data, outputData.data(), outputData.size() * sizeof(float));
+                }
+                
+                // TensorRT 출력 정규화 (0~255 범위 → 0~100, 반전)
+                float normalizedScore;
+                if (rawScore <= 1.0f) {
+                    normalizedScore = rawScore * 100.0f;
+                } else {
+                    normalizedScore = (rawScore / 255.0f) * 100.0f;
+                }
+                
+                // Pred Score 반전 (높은 값 = 불량)
+                normalizedScore = 100.0f - normalizedScore;
+                
+                // 0-100 범위로 클리핑
+                if (normalizedScore < 0) normalizedScore = 0;
+                if (normalizedScore > 100) normalizedScore = 100;
                 
                 scores.push_back(normalizedScore);
                 
                 // 히트맵 생성
-                cv::Mat normalizedMap = (mapFloat - modelInfo.normMin) / 
-                                       (modelInfo.normMax - modelInfo.normMin);
-                normalizedMap.setTo(0, normalizedMap < 0);
-                normalizedMap.setTo(1, normalizedMap > 1);
-                
+                // INTER_CUBIC 사용하여 부드러운 보간
                 cv::Mat resizedMap;
-                cv::resize(normalizedMap, resizedMap, job.originalImages[i].size(), 0, 0, cv::INTER_LINEAR);
+                cv::resize(mapFloat, resizedMap, job.originalImages[i].size(), 0, 0, cv::INTER_CUBIC);
                 
-                // 0-100 스케일로 변환 (threshold용)
-                cv::Mat scaledMap;
-                resizedMap.convertTo(scaledMap, CV_32F, 100.0);
+                // 추가로 Gaussian blur 적용하여 더 부드럽게
+                cv::GaussianBlur(resizedMap, resizedMap, cv::Size(21, 21), 0);
                 
-                maps.push_back(scaledMap);
+                // Anomaly Map 정규화 및 반전
+                double mapMinVal, mapMaxVal;
+                cv::minMaxLoc(resizedMap, &mapMinVal, &mapMaxVal);
+                
+                cv::Mat normalizedMap;
+                if (mapMaxVal <= 1.0) {
+                    normalizedMap = resizedMap * 100.0f;
+                } else {
+                    normalizedMap = (resizedMap / 255.0f) * 100.0f;
+                }
+                
+                // Map 반전 (높은 값 = 불량)
+                normalizedMap = 100.0f - normalizedMap;
+                
+                // 0-100 범위로 클리핑
+                normalizedMap.setTo(0, normalizedMap < 0);
+                normalizedMap.setTo(100, normalizedMap > 100);
+                
+                maps.push_back(normalizedMap);
             }
             
             modelScores[job.enginePath] = scores;

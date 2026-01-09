@@ -2,13 +2,15 @@
 <Config>
     <Language>ko</Language>
     <AutoSave>true</AutoSave>
-    <SerialPort>사용 가능한 포트 없음</SerialPort>
+    <LastRecipePath>20260108_131242_845</LastRecipePath>
+    <SerialPort>ttyTHS1 (Jetson 내장 UART)</SerialPort>
     <SerialBaudRate>115200</SerialBaudRate>
+    <SerialAutoConnect>true</SerialAutoConnect>
     <ServerIp>192.168.5.2</ServerIp>
     <ServerPort>5000</ServerPort>
     <AutoConnect>true</AutoConnect>
     <ReconnectInterval>3</ReconnectInterval>
     <CameraAutoConnect>false</CameraAutoConnect>
-    <PropertyPanel x="28" y="172" width="486" height="687" collapsed="false" expandedHeight="687"/>
-    <LogPanel x="573" y="734" width="800" height="288" collapsed="true"/>
+    <PropertyPanel x="11" y="181" width="383" height="687" collapsed="false" expandedHeight="687"/>
+    <LogPanel x="774" y="710" width="800" height="288" collapsed="true"/>
 </Config>

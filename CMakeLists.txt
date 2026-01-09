@@ -241,7 +241,6 @@ add_executable(Inspector
     InsProcessor.cpp 
     CameraView.cpp 
     FilterDialog.cpp 
-    CameraSettingsDialog.cpp 
     FilterPropertyWidget.cpp
     LanguageManager.cpp
     LanguageSettingsDialog.cpp

@@ -156,7 +156,7 @@ public:
     // ★ 카메라별 다음 검사할 프레임 인덱스 (서버가 지정)
     std::atomic<int> nextFrameIndex[2] = {-1, -1};  // 카메라0, 카메라1 각각
     std::atomic<int> totalTriggersReceived{0};  // 총 서버 메시지 수신 횟수
-    std::atomic<int> serverFrameCount[4] = {0, 0, 0, 0};  // 서버가 요청한 프레임별 카운트 (0,1,2,3)
+    std::atomic<int> serialFrameCount[4] = {0, 0, 0, 0};  // 시리얼로 받은 프레임별 카운트 (0,1,2,3)
     std::atomic<int> totalHardwareTriggersReceived{0};  // 총 하드웨어 트리거 수신 횟수
     std::atomic<int> hardwareTriggersPerCamera[2] = {0, 0};  // 카메라별 하드웨어 트리거 수신 횟수
     std::atomic<int> totalInspectionsExecuted{0};  // 총 검사 실행 횟수
@@ -248,6 +248,16 @@ public:
     // Frame 인덱스 계산
     int getFrameIndex(int cameraIndex) const;
     
+    // 시리얼/서버 프레임 인덱스 설정
+    void setNextFrameIndex(int cameraNumber, int frameIndex);
+    
+    // 서버 프레임 카운트 조회 (트리거 횟수)
+    int getSerialFrameCount(int frameIndex) const { 
+        if (frameIndex >= 0 && frameIndex < 4)
+            return serialFrameCount[frameIndex].load();
+        return 0;
+    }
+    
     // === 테스트 다이얼로그용 공용 메서드 ===
     void setCameraFrame(int index, const cv::Mat& frame);
     InspectionResult runInspection();
@@ -275,7 +285,7 @@ private slots:
     void onFrameIndexReceived(int frameIndex);  // 서버로부터 프레임 인덱스 수신 (0~3)
     void updateUITexts();
     void openLanguageSettings();
-    void showCameraSettings();
+
     void showServerSettings();
     void showSerialSettings();
     void showModelManagement();
@@ -291,7 +301,7 @@ private slots:
                         "무단 복제 및 배포를 금지합니다.").exec();
     }
     void saveCurrentImage();
-    void saveImageAsync(const cv::Mat &frame, bool isPassed);
+    void saveImageAsync(const cv::Mat &frame, bool isPassed, int cameraIndex = 0);
     void loadTeachingImage();
     void processGrabbedFrame(const cv::Mat& frame, int camIdx);
     void processGrabbedFrame(const cv::Mat& frame, int camIdx, int forceFrameIndex);  // 프레임 인덱스 강제 지정
@@ -374,7 +384,7 @@ private:
     QAction* camModeAction = nullptr;
     QAction* saveImageAction = nullptr;
     QAction* exitAction = nullptr;
-    QAction* cameraSettingsAction = nullptr;
+
     QAction* languageSettingsAction = nullptr;
     QAction* settingsAction = nullptr;
     QAction* loadRecipeAction = nullptr;
@@ -783,7 +793,7 @@ private:
     // 시리얼 통신 관련
     SerialCommunication* serialCommunication = nullptr;
     SerialSettingsDialog* serialSettingsDialog = nullptr;
-    CameraSettingsDialog* cameraSettingsDialog = nullptr;  // 카메라 설정 다이얼로그
+
     ClientDialog* clientDialog = nullptr;  // 서버 연결 설정 다이얼로그
     
     // 패턴 백업 관련 (검사 중지 시 원래 상태로 복원용)

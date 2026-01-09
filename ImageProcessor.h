@@ -116,9 +116,13 @@ public:
         void* inputBuffer = nullptr;      // GPU 메모리
         void* outputBuffer = nullptr;     // GPU 메모리 (anomaly_map)
         void* scoreBuffer = nullptr;      // GPU 메모리 (pred_score)
+        void* labelBuffer = nullptr;      // GPU 메모리 (pred_label)
+        void* maskBuffer = nullptr;       // GPU 메모리 (pred_mask)
         size_t inputSize = 0;
         size_t outputSize = 0;
         size_t scoreSize = 0;
+        size_t labelSize = 0;
+        size_t maskSize = 0;
         int inputWidth = 224;
         int inputHeight = 224;
         float normMin = 0.0f;
@@ -131,24 +135,6 @@ public:
     static bool initPatchCoreTensorRT(const QString& enginePath, const QString& device = "GPU");
     static void releasePatchCoreTensorRT();
     static bool isTensorRTPatchCoreLoaded();
-    
-    // TensorRT 추론
-    static bool runPatchCoreTensorRTInference(
-        const QString& enginePath,
-        const cv::Mat& image,
-        float& anomalyScore,
-        cv::Mat& anomalyMap,
-        float threshold = 0.0f
-    );
-    
-    // TensorRT 배치 추론
-    static bool runPatchCoreTensorRTBatchInference(
-        const QString& enginePath,
-        const std::vector<cv::Mat>& images,
-        std::vector<float>& anomalyScores,
-        std::vector<cv::Mat>& anomalyMaps,
-        float threshold = 0.0f
-    );
     
     // TensorRT 멀티모델 병렬 추론 (CUDA 스트림 활용)
     static bool runPatchCoreTensorRTMultiModelInference(

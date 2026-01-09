@@ -33,6 +33,9 @@ public:
                                                const cv::Size& roiSize, 
                                                double patternAngle,
                                                const cv::Point2f& offset);
+    
+    // Anomaly 모델 워밍업 (레시피 로드 시 호출)
+    void warmupAnomalyModels(const QList<PatternInfo>& patterns, const QString& recipeName);
 
 signals:
     void logMessage(const QString& message);

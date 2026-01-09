@@ -13,23 +13,111 @@ SerialSettingsDialog::SerialSettingsDialog(SerialCommunication* serialComm, QWid
 {
     setWindowTitle("시리얼 통신 설정");
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
-    setMinimumSize(500, 500);
-    resize(500, 500);
+    setMinimumSize(600, 700);
+    resize(600, 700);
     setStyleSheet(
-        "QDialog { background: white; color: black; }"
-        "QGroupBox { background: white; color: black; border: 1px solid #d0d0d0; border-radius: 4px; "
-        "padding-top: 10px; margin-top: 6px; }"
-        "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; "
-        "padding: 0 3px; color: black; }"
-        "QLabel { color: black; }"
-        "QPushButton { background: #f0f0f0; border: 1px solid #c0c0c0; border-radius: 3px; "
-        "padding: 5px; color: black; }"
-        "QPushButton:hover { background: #e0e0e0; }"
-        "QPushButton:pressed { background: #d0d0d0; }"
-        "QComboBox, QLineEdit, QSpinBox { background: white; color: black; "
-        "border: 1px solid #c0c0c0; padding: 3px; }"
-        "QTextEdit { background: white; color: black; border: 1px solid #c0c0c0; }"
-        "QCheckBox { color: black; }"
+        "QDialog {"
+        "    background-color: rgba(30, 30, 30, 240);"
+        "    border: 2px solid rgba(100, 100, 100, 200);"
+        "}"
+        "QGroupBox {"
+        "    color: white;"
+        "    background-color: transparent;"
+        "    border: 1px solid rgba(100, 100, 100, 150);"
+        "    margin-top: 10px;"
+        "    padding-top: 10px;"
+        "}"
+        "QGroupBox::title {"
+        "    color: white;"
+        "    subcontrol-origin: margin;"
+        "    left: 10px;"
+        "    padding: 0 5px;"
+        "}"
+        "QLabel {"
+        "    color: white;"
+        "    background-color: transparent;"
+        "}"
+        "QComboBox {"
+        "    background-color: rgba(50, 50, 50, 180);"
+        "    color: white;"
+        "    border: 1px solid rgba(100, 100, 100, 150);"
+        "    padding: 5px;"
+        "}"
+        "QComboBox::drop-down {"
+        "    border: none;"
+        "    width: 20px;"
+        "}"
+        "QComboBox::down-arrow {"
+        "    image: none;"
+        "    border-left: 5px solid transparent;"
+        "    border-right: 5px solid transparent;"
+        "    border-top: 5px solid white;"
+        "    width: 0;"
+        "    height: 0;"
+        "    margin-right: 5px;"
+        "}"
+        "QComboBox QAbstractItemView {"
+        "    background-color: rgba(50, 50, 50, 240);"
+        "    color: white;"
+        "    selection-background-color: rgba(70, 70, 70, 200);"
+        "}"
+        "QSpinBox {"
+        "    background-color: rgba(50, 50, 50, 180);"
+        "    color: white;"
+        "    border: 1px solid rgba(100, 100, 100, 150);"
+        "    padding: 3px;"
+        "}"
+        "QSpinBox::up-button {"
+        "    border: none;"
+        "    width: 16px;"
+        "}"
+        "QSpinBox::down-button {"
+        "    border: none;"
+        "    width: 16px;"
+        "}"
+        "QSpinBox::up-arrow {"
+        "    image: none;"
+        "    border-left: 4px solid transparent;"
+        "    border-right: 4px solid transparent;"
+        "    border-bottom: 4px solid white;"
+        "    width: 0;"
+        "    height: 0;"
+        "}"
+        "QSpinBox::down-arrow {"
+        "    image: none;"
+        "    border-left: 4px solid transparent;"
+        "    border-right: 4px solid transparent;"
+        "    border-top: 4px solid white;"
+        "    width: 0;"
+        "    height: 0;"
+        "}"
+        "QLineEdit {"
+        "    background-color: rgba(50, 50, 50, 180);"
+        "    color: white;"
+        "    border: 1px solid rgba(100, 100, 100, 150);"
+        "    padding: 5px;"
+        "}"
+        "QTextEdit {"
+        "    background-color: rgba(50, 50, 50, 180);"
+        "    color: white;"
+        "    border: 1px solid rgba(100, 100, 100, 150);"
+        "}"
+        "QCheckBox {"
+        "    color: white;"
+        "}"
+        "QPushButton {"
+        "    background-color: rgba(70, 70, 70, 200);"
+        "    color: white;"
+        "    border: 1px solid rgba(100, 100, 100, 150);"
+        "    padding: 8px 16px;"
+        "    font-weight: bold;"
+        "}"
+        "QPushButton:hover {"
+        "    background-color: rgba(90, 90, 90, 220);"
+        "}"
+        "QPushButton:pressed {"
+        "    background-color: rgba(60, 60, 60, 220);"
+        "}"
     );
     
     setupUI();
@@ -74,7 +162,7 @@ void SerialSettingsDialog::setupUI()
     portLabel = new QLabel("포트:");
     portComboBox = new QComboBox();
     refreshButton = new QPushButton("새로고침");
-    refreshButton->setMaximumWidth(80);
+    refreshButton->setMaximumWidth(100);
     
     baudRateLabel = new QLabel("속도:");
     baudRateSpinBox = new QSpinBox();
@@ -86,6 +174,10 @@ void SerialSettingsDialog::setupUI()
     connectionLayout->addWidget(refreshButton, 0, 2);
     connectionLayout->addWidget(baudRateLabel, 1, 0);
     connectionLayout->addWidget(baudRateSpinBox, 1, 1);
+    
+    // 자동 연결 체크박스
+    autoConnectCheckBox = new QCheckBox("자동 연결");
+    connectionLayout->addWidget(autoConnectCheckBox, 1, 2);
     
     // 연결 버튼
     QHBoxLayout* connectLayout = new QHBoxLayout();
@@ -125,35 +217,37 @@ void SerialSettingsDialog::setupUI()
     QVBoxLayout* logLayout = new QVBoxLayout(logGroup);
     
     logTextEdit = new QTextEdit();
-    logTextEdit->setMaximumHeight(150);
+    logTextEdit->setMinimumHeight(200);
     logTextEdit->setReadOnly(true);
-    
-    QHBoxLayout* logButtonLayout = new QHBoxLayout();
-    clearLogButton = new QPushButton("로그 지우기");
-    clearReceiveButton = new QPushButton("수신 지우기");
-    logButtonLayout->addWidget(clearLogButton);
-    logButtonLayout->addWidget(clearReceiveButton);
-    logButtonLayout->addStretch();
-    
     logLayout->addWidget(logTextEdit);
-    logLayout->addLayout(logButtonLayout);
+    
+    mainLayout->addWidget(logGroup);
+    
+    // 수신 데이터
+    QGroupBox* receiveGroup = new QGroupBox("수신 데이터");
+    QVBoxLayout* receiveLayout = new QVBoxLayout(receiveGroup);
     
     receiveTextEdit = new QTextEdit();
-    receiveTextEdit->setMaximumHeight(100);
+    receiveTextEdit->setMinimumHeight(150);
     receiveTextEdit->setReadOnly(true);
-    receiveTextEdit->setPlaceholderText("수신 데이터");
+    receiveLayout->addWidget(receiveTextEdit);
     
-    logLayout->addWidget(receiveTextEdit);
-    mainLayout->addWidget(logGroup);
+    mainLayout->addWidget(receiveGroup);
     
     // 하단 버튼들
     saveSettingsButton = new QPushButton("설정 저장");
-    saveSettingsButton->setMaximumWidth(80);
+    saveSettingsButton->setMaximumWidth(120);
+    clearLogButton = new QPushButton("로그 지우기");
+    clearLogButton->setMaximumWidth(120);
+    clearReceiveButton = new QPushButton("수신 지우기");
+    clearReceiveButton->setMaximumWidth(120);
     closeButton = new QPushButton("닫기");
     closeButton->setMaximumWidth(80);
     
     QHBoxLayout* bottomLayout = new QHBoxLayout();
     bottomLayout->addWidget(saveSettingsButton);
+    bottomLayout->addWidget(clearLogButton);
+    bottomLayout->addWidget(clearReceiveButton);
     bottomLayout->addStretch();
     bottomLayout->addWidget(closeButton);
     
@@ -407,6 +501,7 @@ void SerialSettingsDialog::loadSettings()
     // 저장된 시리얼 포트 설정 로드
     QString savedPort = config->getSerialPort();
     int savedBaudRate = config->getSerialBaudRate();
+    bool savedAutoConnect = config->getSerialAutoConnect();
     
     if (!savedPort.isEmpty()) {
         // 콤보박스에서 해당 포트를 찾아서 설정
@@ -419,6 +514,9 @@ void SerialSettingsDialog::loadSettings()
     
     baudRateSpinBox->setValue(savedBaudRate);
     addLogMessage(QString("저장된 보드레이트 설정 로드됨: %1").arg(savedBaudRate));
+    
+    autoConnectCheckBox->setChecked(savedAutoConnect);
+    addLogMessage(QString("자동 연결 설정 로드됨: %1").arg(savedAutoConnect ? "활성화" : "비활성화"));
 }
 
 void SerialSettingsDialog::saveSettings()
@@ -428,28 +526,45 @@ void SerialSettingsDialog::saveSettings()
     // 현재 연결된 포트와 보드레이트를 저장
     QString currentPort = portComboBox->currentText();
     int currentBaudRate = baudRateSpinBox->value();
+    bool autoConnect = autoConnectCheckBox->isChecked();
     
     config->setSerialPort(currentPort);
     config->setSerialBaudRate(currentBaudRate);
+    config->setSerialAutoConnect(autoConnect);
     
-    addLogMessage(QString("설정 저장됨: %1 @ %2 baud").arg(currentPort).arg(currentBaudRate));
+    addLogMessage(QString("설정 저장됨: %1 @ %2 baud, 자동연결: %3")
+        .arg(currentPort).arg(currentBaudRate).arg(autoConnect ? "활성화" : "비활성화"));
 }
 
 void SerialSettingsDialog::tryAutoConnect()
 {
     ConfigManager* config = ConfigManager::instance();
+    bool autoConnect = config->getSerialAutoConnect();
+    
+    // 자동 연결이 비활성화된 경우 스킨
+    if (!autoConnect) {
+        addLogMessage("자동 연결이 비활성화되어 있습니다.");
+        return;
+    }
+    
     QString savedPort = config->getSerialPort();
     
     if (!savedPort.isEmpty() && serialComm) {
-        // 포트가 실제로 사용 가능한지 확인
-        QStringList availablePorts = serialComm->getAvailableSerialPorts();
-        
-        for (const QString& port : availablePorts) {
-            if (port.startsWith(savedPort)) {  // 저장된 포트와 일치하거나 시작하는 포트 찾기
-                addLogMessage(QString("저장된 설정으로 자동 연결 시도: %1").arg(savedPort));
-                connectToPort();
-                return;
+        // 이미 refreshPortList()에서 포트 목록을 가져왔으므로 중복 호출 방지
+        // portComboBox에 있는 항목 중에서 찾기
+        int portIndex = -1;
+        for (int i = 0; i < portComboBox->count(); ++i) {
+            QString portText = portComboBox->itemText(i);
+            if (portText.startsWith(savedPort)) {
+                portIndex = i;
+                break;
             }
+        }
+        
+        if (portIndex >= 0) {
+            addLogMessage(QString("저장된 설정으로 자동 연결 시도: %1").arg(savedPort));
+            connectToPort();
+            return;
         }
         
         addLogMessage(QString("저장된 포트 %1을 찾을 수 없습니다").arg(savedPort));

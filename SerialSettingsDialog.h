@@ -63,6 +63,7 @@ private:
     QPushButton* refreshButton;
     QLabel* baudRateLabel;
     QSpinBox* baudRateSpinBox;
+    QCheckBox* autoConnectCheckBox;
     QPushButton* connectButton;
     QPushButton* disconnectButton;
     QLabel* statusLabel;

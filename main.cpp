@@ -22,7 +22,7 @@ void cleanupSpinnaker() {
     if (cleaned) return;
     cleaned = true;
     
-    qWarning() << "[Cleanup] Spinnaker System 정리 시작";
+    qDebug() << "[Cleanup] Spinnaker System 정리 시작";
     try {
         // System 인스턴스 획득 시도 - 이미 정리되었을 수 있음
         Spinnaker::SystemPtr system = nullptr;
@@ -30,7 +30,7 @@ void cleanupSpinnaker() {
             system = Spinnaker::System::GetInstance();
         } catch (const Spinnaker::Exception& e) {
             // System 인스턴스를 가져올 수 없으면 이미 정리된 것
-            qWarning() << "[Cleanup] Spinnaker System 이미 정리됨 또는 초기화 안됨";
+            qDebug() << "[Cleanup] Spinnaker System 이미 정리됨 또는 초기화 안됨";
             return;
         }
         
@@ -60,7 +60,7 @@ void cleanupSpinnaker() {
             // System 인스턴스 해제
             try {
                 system->ReleaseInstance();
-                qWarning() << "[Cleanup] Spinnaker System 정리 완료";
+                qDebug() << "[Cleanup] Spinnaker System 정리 완료";
             } catch (const Spinnaker::Exception& e) {
                 qWarning() << "[Cleanup] System ReleaseInstance 실패:" << e.what();
             }

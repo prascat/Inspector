@@ -112,9 +112,12 @@ QStringList SerialCommunication::getAvailableSerialPorts()
         }
         #endif
         
-        // Linux: ttyUSB, ttyACM 포트 체크
+        // Linux: ttyUSB, ttyACM, ttyTHS (Jetson), ttyS 포트 체크
         #ifdef Q_OS_LINUX
-        if (portName.startsWith("ttyUSB") || portName.startsWith("ttyACM")) {
+        if (portName.startsWith("ttyUSB") || 
+            portName.startsWith("ttyACM") ||
+            portName.startsWith("ttyTHS") ||  // Jetson UART
+            portName.startsWith("ttyS")) {    // 일반 시리얼 포트
             isSerialToUSB = true;
         }
         #endif
@@ -139,7 +142,23 @@ QStringList SerialCommunication::getAvailableSerialPorts()
         }
         
         if (isSerialToUSB) {
-            QString displayName = QString("%1 (%2)").arg(portName, description.isEmpty() ? manufacturer : description);
+            QString info;
+            if (!description.isEmpty()) {
+                info = description;
+            } else if (!manufacturer.isEmpty()) {
+                info = manufacturer;
+            } else {
+                // 내장 UART 포트인 경우 적절한 설명 추가
+                if (portName.startsWith("ttyTHS")) {
+                    info = "Jetson 내장 UART";
+                } else if (portName.startsWith("ttyS")) {
+                    info = "시리얼 포트";
+                } else {
+                    info = "시리얼 장치";
+                }
+            }
+            
+            QString displayName = QString("%1 (%2)").arg(portName, info);
             portNames << displayName;
             qDebug() << "[Serial] 사용 가능한 포트:" << displayName;
         }
@@ -222,7 +241,23 @@ void SerialCommunication::sendResponse(const QString &response)
     if (serialPort && serialPort->isOpen()) {
         QByteArray data = response.toUtf8() + "\r\n";
         serialPort->write(data);
-        qDebug() << "응답 전송:" << response;
+    }
+}
+
+void SerialCommunication::sendInspectionResult(int frameIndex, bool isPassed)
+{
+    if (serialPort && serialPort->isOpen()) {
+        QByteArray data;
+        data.append(static_cast<char>(0xFF));           // 시작 바이트
+        data.append(static_cast<char>(frameIndex + 1)); // 프레임 번호 (0~3 → 1~4)
+        data.append(static_cast<char>(isPassed ? 0x00 : 0x01)); // 검사 결과 (PASS:0x00, NG:0x01)
+        data.append(static_cast<char>(0xEF));           // 종료 바이트
+        
+        serialPort->write(data);
+        qDebug() << QString("[시리얼통신] 검사 결과 전송: 프레임[%1] %2 (%3)")
+            .arg(frameIndex)
+            .arg(isPassed ? "PASS" : "NG")
+            .arg(QString(data.toHex(' ')));
     }
 }
 
@@ -236,10 +271,46 @@ void SerialCommunication::readSerialData()
     if (!serialPort) return;
     
     QByteArray data = serialPort->readAll();
-    QString command = QString::fromUtf8(data).trimmed();
     
+    // 2바이트 명령 처리
+    if (data.size() >= 2) {
+        unsigned char byte1 = static_cast<unsigned char>(data[0]);
+        unsigned char byte2 = static_cast<unsigned char>(data[1]);
+        
+        // 검증: byte1 XOR byte2 = 0xFF
+        if ((byte1 ^ byte2) == 0xFF) {
+            // 명령 파싱
+            int frameIndex = -1;
+            if (byte1 == 0x01 && byte2 == 0xFE) {
+                frameIndex = 0;
+            } else if (byte1 == 0x02 && byte2 == 0xFD) {
+                frameIndex = 1;
+            } else if (byte1 == 0x03 && byte2 == 0xFC) {
+                frameIndex = 2;
+            } else if (byte1 == 0x04 && byte2 == 0xFB) {
+                frameIndex = 3;
+            }
+            
+            if (frameIndex >= 0) {
+                qDebug() << QString("[시리얼통신] 검사 요청: 프레임[%1] (0x%2 0x%3)")
+                    .arg(frameIndex)
+                    .arg(byte1, 2, 16, QChar('0'))
+                    .arg(byte2, 2, 16, QChar('0'));
+                
+                QString command = QString::number(frameIndex);
+                emit commandReceived(command);
+                processCommand(command);
+                return;
+            }
+        }
+        
+        qDebug() << "잘못된 시리얼 명령 형식:" << data.toHex();
+    }
+    
+    // 기존 텍스트 명령 처리 (호환성)
+    QString command = QString::fromUtf8(data).trimmed();
     if (!command.isEmpty()) {
-        qDebug() << "수신된 명령:" << command;
+        qDebug() << "수신된 텍스트 명령:" << command;
         emit commandReceived(command);
         processCommand(command);
     }
@@ -256,21 +327,31 @@ void SerialCommunication::handleSerialError(QSerialPort::SerialPortError error)
 
 void SerialCommunication::processCommand(const QString &command)
 {
-    qDebug() << "명령 처리 시작:" << command;
-    
-    // 단순히 숫자만 받아서 처리 (0, 1, 2 등)
+    // 프레임 인덱스로 받음 (0, 1, 2, 3)
     bool ok;
-    int cameraNumber = command.toInt(&ok);
+    int frameIndex = command.toInt(&ok);
     
-    if (ok && cameraNumber >= 0) {
-        qDebug() << cameraNumber << "번 카메라 검사 명령 처리";
-        performInspection(cameraNumber);
+    if (ok && frameIndex >= 0 && frameIndex < 4) {
+        if (!teachingWidget) {
+            qDebug() << "[시리얼통신] ERROR: TeachingWidget이 설정되지 않음";
+            sendResponse("ERROR");
+            return;
+        }
+        
+        // 서버 메시지처럼 처리: nextFrameIndex 설정
+        // frameIndex: 0,1,2,3 -> 카메라0(0,1), 카메라1(2,3)
+        int cameraNumber = frameIndex / 2;  // 0,1 -> 0번 카메라, 2,3 -> 1번 카메라
+        
+        // TeachingWidget의 nextFrameIndex 설정 (서버 요청과 동일)
+        teachingWidget->setNextFrameIndex(cameraNumber, frameIndex);
+        
+        // 검사는 TeachingWidget의 타이머나 트리거에서 자동 처리됨
+        sendResponse("ACK");
+        
     } else {
-        qDebug() << "잘못된 카메라 번호:" << command;
+        qDebug() << "[시리얼통신] ERROR: 잘못된 프레임 인덱스" << command;
         sendResponse("ERROR");
     }
-    
-    qDebug() << "명령 처리 완료:" << command;
 }
 
 void SerialCommunication::performInspection(int cameraNumber)

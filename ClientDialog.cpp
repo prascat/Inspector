@@ -336,8 +336,10 @@ void ClientDialog::onDataReceived()
 {
     QByteArray data = testSocket->readAll();
     
+    // [주석처리] 시리얼 통신으로 대체됨
     // 바이너리 바이트 값(0x00, 0x01, 0x02, 0x03)을 정수로 변환 → 프레임 트리거로 사용
     // 여러 바이트를 동시에 받은 경우 모두 처리
+    /*
     for (int i = 0; i < data.size(); ++i) {
         unsigned char byte = static_cast<unsigned char>(data[i]);
         int frameIndex = static_cast<int>(byte);
@@ -348,6 +350,7 @@ void ClientDialog::onDataReceived()
             qWarning() << QString("[소켓통신 READ] 유효하지 않은 데이터: %1").arg(frameIndex);
         }
     }
+    */
 }
 
 void ClientDialog::updateConnectionStatus()

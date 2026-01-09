@@ -232,7 +232,7 @@ struct PatternInfo {
     // ROI 속성 (includeAllCamera 제거됨)
     
     // Fiducial 속성
-    double matchThreshold = 75.0;  // 매칭 임계값 (0-100%)
+    double matchThreshold = 65.0;  // 매칭 임계값 (0-100%)
     bool useRotation = false;
     double minAngle = -15.0;
     double maxAngle = 15.0;
@@ -246,10 +246,10 @@ struct PatternInfo {
     QImage matchTemplateMask;   // 패턴 매칭용 마스크 (회전된 영역만 255, 나머지 0)
     bool patternMatchEnabled = false;  // 패턴 매칭 활성화 여부
     int patternMatchMethod = 0;        // 패턴 매칭 방법 (0: Coefficient, 1: Correlation)
-    double patternMatchThreshold = 80.0;  // 패턴 매칭 임계값 (0-100%)
+    double patternMatchThreshold = 65.0;  // 패턴 매칭 임계값 (0-100%)
     bool patternMatchUseRotation = false;  // 패턴 매칭 회전 사용 여부
-    double patternMatchMinAngle = -5.0;   // 패턴 매칭 최소 각도
-    double patternMatchMaxAngle = 5.0;    // 패턴 매칭 최대 각도
+    double patternMatchMinAngle = -3.0;   // 패턴 매칭 최소 각도
+    double patternMatchMaxAngle = 3.0;    // 패턴 매칭 최대 각도
     double patternMatchAngleStep = 1.0;    // 패턴 매칭 각도 스텝
     
     // Inspection 속성

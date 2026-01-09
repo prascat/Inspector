@@ -1,6 +1,10 @@
 /.vscode
 /build
-/deploy
+/deploy/*
+!/deploy/train_patchcore_anomalib.py
+!/deploy/lang.xml
+!/deploy/config.xml
+!/deploy/UserSet1
 /models
 .DS_Store
 .bmp

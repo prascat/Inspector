@@ -1202,6 +1202,13 @@ void TrainDialog::trainPattern(const QString& patternName)
     QString recipeDir = currentRecipeName.isEmpty() ? "default" : currentRecipeName;
     QString weightsBaseDir = recipesDir + "/" + recipeDir + "/weights";
     QString outputDir = weightsBaseDir + "/" + patternName;
+    
+    // 기존 모델 디렉토리 삭제 후 재생성 (깨끗한 학습)
+    QDir outputDirObj(outputDir);
+    if (outputDirObj.exists()) {
+        qDebug() << "[TRAIN] 기존 모델 디렉토리 삭제:" << outputDir;
+        outputDirObj.removeRecursively();
+    }
     QDir().mkpath(outputDir);
     
     // 로컬 Python 직접 실행 (JETSON 및 x86 공통)
@@ -1280,7 +1287,16 @@ void TrainDialog::trainPattern(const QString& patternName)
         if (trainProcess) {
             QString errorOutput = trainProcess->readAllStandardError();
             if (!errorOutput.trimmed().isEmpty()) {
-                qWarning() << "[TRAIN ERROR]" << errorOutput;
+                // INFO, WARNING, Processing 등 정상 메시지는 필터링
+                QString trimmed = errorOutput.trimmed();
+                if (trimmed.contains("ERROR") || trimmed.contains("Error") || 
+                    trimmed.contains("FAILED") || trimmed.contains("Failed") ||
+                    trimmed.contains("Exception") || trimmed.contains("Traceback")) {
+                    // 진짜 에러만 출력
+                    qWarning() << "[TRAIN ERROR]" << errorOutput;
+                }
+                // 나머지는 DEBUG 레벨로 (보통 안 보임)
+                // qDebug() << "[TRAIN STDERR]" << errorOutput;
             }
         }
     });
@@ -1455,9 +1471,9 @@ void TrainDialog::onTrainFinished(int exitCode, QProcess::ExitStatus exitStatus)
         QString weightsDir = recipesDir + "/" + recipeDir + "/weights/" + currentTrainingPattern;
         QDir outputDir(weightsDir);
         if (outputDir.exists()) {
-            // 삭제할 파일/폴더: patchcore_model.pt, Patchcore/, temp_dataset/
+            // 삭제할 폴더: Patchcore/, temp_dataset/ (PyTorch 모델은 유지)
             QStringList itemsToRemove;
-            itemsToRemove << "patchcore_model.pt" << "Patchcore" << "temp_dataset";
+            itemsToRemove << "Patchcore" << "temp_dataset";
             
             for (const QString& item : itemsToRemove) {
                 QString itemPath = weightsDir + "/" + item;
