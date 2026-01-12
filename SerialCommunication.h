@@ -28,6 +28,7 @@ public:
 
     // 데이터 전송
     void sendResponse(const QString &response);
+    void sendRawData(const QByteArray &data);  // Raw 바이트 전송
     void sendInspectionResult(int frameIndex, bool isPassed);  // 4바이트 검사 결과 전송
 
     // TeachingWidget 설정

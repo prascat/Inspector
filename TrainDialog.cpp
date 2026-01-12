@@ -83,40 +83,11 @@ void TrainDialog::setupUI()
     mainLayout->setContentsMargins(10, 10, 10, 10);
     mainLayout->setSpacing(10);
 
-    // ===== 좌측: 버튼 + 모드 선택 + 패턴 목록 + 티칭 이미지 =====
+    // ===== 좌측: 버튼 + 탭(A-PC/A-PD) + 패턴 목록 =====
     QWidget *leftWidget = new QWidget(this);
     QVBoxLayout *leftLayout = new QVBoxLayout(leftWidget);
     leftLayout->setContentsMargins(0, 0, 0, 0);
     leftLayout->setSpacing(10);
-    
-    // 모델 옵션 UI
-    QGroupBox *optionsGroupBox = new QGroupBox("모델 옵션", this);
-    QFormLayout *optionsLayout = new QFormLayout(optionsGroupBox);
-    optionsLayout->setSpacing(8);
-    
-    // Backbone 선택
-    backboneComboBox = new QComboBox(this);
-    backboneComboBox->addItem("resnet18");
-    backboneComboBox->addItem("resnet50");
-    backboneComboBox->addItem("wide_resnet50_2");
-    backboneComboBox->setCurrentIndex(2);  // 기본값: wide_resnet50_2
-    optionsLayout->addRow("Backbone:", backboneComboBox);
-    
-    // Coreset Ratio
-    coresetRatioSpinBox = new QDoubleSpinBox(this);
-    coresetRatioSpinBox->setRange(0.0, 1.0);
-    coresetRatioSpinBox->setSingleStep(0.01);
-    coresetRatioSpinBox->setDecimals(2);
-    coresetRatioSpinBox->setValue(0.01);  // 기본값: 0.01
-    optionsLayout->addRow("Coreset Ratio:", coresetRatioSpinBox);
-    
-    // Num Neighbors
-    numNeighborsSpinBox = new QSpinBox(this);
-    numNeighborsSpinBox->setRange(1, 50);
-    numNeighborsSpinBox->setValue(9);  // 기본값: 9
-    optionsLayout->addRow("Num Neighbors:", numNeighborsSpinBox);
-    
-    leftLayout->addWidget(optionsGroupBox);
     
     // 버튼들 (맨 위에 배치)
     addImagesButton = new QPushButton("이미지 추가", this);
@@ -152,8 +123,43 @@ void TrainDialog::setupUI()
     );
     leftLayout->addWidget(closeButton);
     
-    // 패턴 테이블 (체크박스, 패턴명, 학습여부)
-    patternTableWidget = new QTableWidget(this);
+    // 탭 위젯 생성
+    modelTabWidget = new QTabWidget(this);
+    
+    // ========== A-PC 탭 ==========
+    QWidget *apcTab = new QWidget();
+    QVBoxLayout *apcLayout = new QVBoxLayout(apcTab);
+    apcLayout->setContentsMargins(5, 5, 5, 5);
+    apcLayout->setSpacing(10);
+    
+    // A-PC 모델 옵션
+    QGroupBox *apcOptionsGroup = new QGroupBox("PatchCore 옵션", apcTab);
+    QFormLayout *apcOptionsLayout = new QFormLayout(apcOptionsGroup);
+    apcOptionsLayout->setSpacing(8);
+    
+    backboneComboBox = new QComboBox(apcTab);
+    backboneComboBox->addItem("resnet18");
+    backboneComboBox->addItem("resnet50");
+    backboneComboBox->addItem("wide_resnet50_2");
+    backboneComboBox->setCurrentIndex(2);
+    apcOptionsLayout->addRow("Backbone:", backboneComboBox);
+    
+    coresetRatioSpinBox = new QDoubleSpinBox(apcTab);
+    coresetRatioSpinBox->setRange(0.0, 1.0);
+    coresetRatioSpinBox->setSingleStep(0.01);
+    coresetRatioSpinBox->setDecimals(2);
+    coresetRatioSpinBox->setValue(0.01);
+    apcOptionsLayout->addRow("Coreset Ratio:", coresetRatioSpinBox);
+    
+    numNeighborsSpinBox = new QSpinBox(apcTab);
+    numNeighborsSpinBox->setRange(1, 50);
+    numNeighborsSpinBox->setValue(9);
+    apcOptionsLayout->addRow("Num Neighbors:", numNeighborsSpinBox);
+    
+    apcLayout->addWidget(apcOptionsGroup);
+    
+    // A-PC 패턴 테이블
+    patternTableWidget = new QTableWidget(apcTab);
     patternTableWidget->setColumnCount(3);
     patternTableWidget->setHorizontalHeaderLabels({"", "패턴명", "학습여부"});
     patternTableWidget->horizontalHeader()->setStretchLastSection(false);
@@ -167,39 +173,93 @@ void TrainDialog::setupUI()
     patternTableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
     patternTableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
     
-    // 헤더에 전체 선택 체크박스 추가
-    selectAllCheckBox = new QCheckBox(this);
+    selectAllCheckBox = new QCheckBox(patternTableWidget);
     selectAllCheckBox->setTristate(true);
-    
-    // 체크박스를 헤더의 0번 컬럼에 배치
-    QWidget *headerWidget = new QWidget();
-    QHBoxLayout *headerLayout = new QHBoxLayout(headerWidget);
-    headerLayout->addWidget(selectAllCheckBox);
-    headerLayout->setAlignment(Qt::AlignCenter);
-    headerLayout->setContentsMargins(0, 0, 0, 0);
-    headerWidget->setLayout(headerLayout);
-    
-    // 체크박스를 헤더 위에 오버레이로 배치
-    QHeaderView *header = patternTableWidget->horizontalHeader();
-    header->setMinimumSectionSize(50);
-    
-    // selectAllCheckBox를 테이블 위에 배치하고 위치 조정
-    selectAllCheckBox->setParent(patternTableWidget);
+    selectAllCheckBox->setStyleSheet(
+        "QCheckBox::indicator:checked { background-color: #4CAF50; border: 2px solid #4CAF50; }"
+        "QCheckBox::indicator:unchecked { background-color: white; border: 2px solid #CCCCCC; }"
+        "QCheckBox::indicator:indeterminate { background-color: #81C784; border: 2px solid #4CAF50; }"
+        "QCheckBox::indicator { width: 18px; height: 18px; }"
+    );
     selectAllCheckBox->move(15, 5);
     selectAllCheckBox->raise();
     
-    // 전체 선택 체크박스 연결
     connect(selectAllCheckBox, &QCheckBox::stateChanged, this, [this](int state) {
-        if (state == Qt::PartiallyChecked) {
-            return; // 부분 선택 상태에서는 아무 것도 하지 않음
-        }
+        if (state == Qt::PartiallyChecked) return;
         bool checked = (state == Qt::Checked);
         for (auto checkbox : patternCheckBoxes) {
             checkbox->setChecked(checked);
         }
     });
     
-    leftLayout->addWidget(patternTableWidget);
+    apcLayout->addWidget(patternTableWidget);
+    
+    modelTabWidget->addTab(apcTab, "A-PC (PatchCore)");
+    
+    // ========== A-PD 탭 ==========
+    QWidget *apdTab = new QWidget();
+    QVBoxLayout *apdLayout = new QVBoxLayout(apdTab);
+    apdLayout->setContentsMargins(5, 5, 5, 5);
+    apdLayout->setSpacing(10);
+    
+    // A-PD 모델 옵션
+    QGroupBox *apdOptionsGroup = new QGroupBox("PaDiM 옵션", apdTab);
+    QFormLayout *apdOptionsLayout = new QFormLayout(apdOptionsGroup);
+    apdOptionsLayout->setSpacing(8);
+    
+    padimBackboneComboBox = new QComboBox(apdTab);
+    padimBackboneComboBox->addItem("resnet18");
+    padimBackboneComboBox->addItem("resnet50");
+    padimBackboneComboBox->addItem("wide_resnet50_2");
+    padimBackboneComboBox->setCurrentIndex(2);
+    apdOptionsLayout->addRow("Backbone:", padimBackboneComboBox);
+    
+    padimNumLayersSpinBox = new QSpinBox(apdTab);
+    padimNumLayersSpinBox->setRange(1, 4);
+    padimNumLayersSpinBox->setValue(3);
+    apdOptionsLayout->addRow("Num Layers:", padimNumLayersSpinBox);
+    
+    apdLayout->addWidget(apdOptionsGroup);
+    
+    // A-PD 패턴 테이블
+    padimPatternTableWidget = new QTableWidget(apdTab);
+    padimPatternTableWidget->setColumnCount(3);
+    padimPatternTableWidget->setHorizontalHeaderLabels({"", "패턴명", "학습여부"});
+    padimPatternTableWidget->horizontalHeader()->setStretchLastSection(false);
+    padimPatternTableWidget->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
+    padimPatternTableWidget->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    padimPatternTableWidget->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
+    padimPatternTableWidget->setColumnWidth(0, 50);
+    padimPatternTableWidget->setColumnWidth(2, 80);
+    padimPatternTableWidget->verticalHeader()->setVisible(false);
+    padimPatternTableWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
+    padimPatternTableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
+    padimPatternTableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    
+    padimSelectAllCheckBox = new QCheckBox(padimPatternTableWidget);
+    padimSelectAllCheckBox->setTristate(true);
+    padimSelectAllCheckBox->setStyleSheet(
+        "QCheckBox::indicator:checked { background-color: #4CAF50; border: 2px solid #4CAF50; }"
+        "QCheckBox::indicator:unchecked { background-color: white; border: 2px solid #CCCCCC; }"
+        "QCheckBox::indicator:indeterminate { background-color: #81C784; border: 2px solid #4CAF50; }"
+        "QCheckBox::indicator { width: 18px; height: 18px; }"
+    );
+    padimSelectAllCheckBox->move(15, 5);
+    padimSelectAllCheckBox->raise();
+    
+    connect(padimSelectAllCheckBox, &QCheckBox::stateChanged, this, [this](int state) {
+        if (state == Qt::PartiallyChecked) return;
+        bool checked = (state == Qt::Checked);
+        for (auto checkbox : padimPatternCheckBoxes) {
+            checkbox->setChecked(checked);
+        }
+    });
+    
+    apdLayout->addWidget(padimPatternTableWidget);
+    
+    modelTabWidget->addTab(apdTab, "A-PD (PaDiM)");
+    
+    leftLayout->addWidget(modelTabWidget);
     
     leftWidget->setMaximumWidth(280);
     mainLayout->addWidget(leftWidget);
@@ -254,6 +314,7 @@ void TrainDialog::setupUI()
     if (addImagesButton) connect(addImagesButton, &QPushButton::clicked, this, &TrainDialog::onAddImagesClicked);
     if (deleteSelectedImageButton) connect(deleteSelectedImageButton, &QPushButton::clicked, this, &TrainDialog::onDeleteSelectedImageClicked);
     if (patternTableWidget) connect(patternTableWidget, &QTableWidget::itemSelectionChanged, this, &TrainDialog::onPatternSelectionChanged);
+    if (padimPatternTableWidget) connect(padimPatternTableWidget, &QTableWidget::itemSelectionChanged, this, &TrainDialog::onPadimPatternSelectionChanged);
     if (imageListWidget) connect(imageListWidget, &QListWidget::itemClicked, this, &TrainDialog::onImageItemClicked);
 }
 
@@ -284,43 +345,50 @@ void TrainDialog::setAnomalyPatterns(const QVector<PatternInfo*>& patterns)
 {
     anomalyPatterns = patterns;
     
-    // 테이블 초기화
+    // A-PC 테이블 초기화
     patternTableWidget->setRowCount(0);
     patternCheckBoxes.clear();
     
-    // ANOMALY 검사방법 패턴만 추가
-    int row = 0;
+    // A-PD 테이블 초기화
+    padimPatternTableWidget->setRowCount(0);
+    padimPatternCheckBoxes.clear();
+    
+    // A-PC 패턴 추가
+    int apcRow = 0;
     for (PatternInfo* pattern : patterns) {
         if (pattern && pattern->type == PatternType::INS &&
-            pattern->inspectionMethod == InspectionMethod::ANOMALY) {
+            pattern->inspectionMethod == InspectionMethod::A_PC) {
             
-            patternTableWidget->insertRow(row);
+            patternTableWidget->insertRow(apcRow);
             
-            // 체크박스 (0번 컬럼)
+            // 체크박스
             QCheckBox *checkBox = new QCheckBox();
+            checkBox->setStyleSheet(
+                "QCheckBox::indicator:checked { background-color: #4CAF50; border: 2px solid #4CAF50; }"
+                "QCheckBox::indicator:unchecked { background-color: white; border: 2px solid #CCCCCC; }"
+                "QCheckBox::indicator { width: 18px; height: 18px; }"
+            );
             QWidget *checkWidget = new QWidget();
             QHBoxLayout *checkLayout = new QHBoxLayout(checkWidget);
             checkLayout->addWidget(checkBox);
             checkLayout->setAlignment(Qt::AlignCenter);
             checkLayout->setContentsMargins(0, 0, 0, 0);
-            patternTableWidget->setCellWidget(row, 0, checkWidget);
+            patternTableWidget->setCellWidget(apcRow, 0, checkWidget);
             
-            // 패턴명 (1번 컬럼)
+            // 패턴명
             QTableWidgetItem *nameItem = new QTableWidgetItem(pattern->name);
             nameItem->setData(Qt::UserRole, pattern->name);
             nameItem->setTextAlignment(Qt::AlignCenter);
-            patternTableWidget->setItem(row, 1, nameItem);
+            patternTableWidget->setItem(apcRow, 1, nameItem);
             
-            // 학습여부 확인 (실제 모델 파일 존재 여부 체크)
+            // 학습여부 확인 (TensorRT 또는 ONNX)
             QString recipesDir = QCoreApplication::applicationDirPath() + "/recipes";
             QString recipeDir = currentRecipeName.isEmpty() ? "default" : currentRecipeName;
             QString weightsPath = recipesDir + "/" + recipeDir + "/weights/" + pattern->name;
+            QString trtFile = weightsPath + "/" + pattern->name + ".trt";
+            QString onnxFile = weightsPath + "/" + pattern->name + ".onnx";
+            bool isTrained = QFile::exists(trtFile) || QFile::exists(onnxFile);
             
-            // TensorRT 모델 파일 확인
-            QString modelFile = weightsPath + "/" + pattern->name + ".trt";
-            bool isTrained = QFile::exists(modelFile);
-            
-            // 학습여부 (2번 컬럼)
             QTableWidgetItem *trainedItem = new QTableWidgetItem(isTrained ? "✓ 학습됨" : "미학습");
             trainedItem->setTextAlignment(Qt::AlignCenter);
             if (isTrained) {
@@ -329,24 +397,18 @@ void TrainDialog::setAnomalyPatterns(const QVector<PatternInfo*>& patterns)
             } else {
                 trainedItem->setForeground(QBrush(QColor("#999999")));
             }
-            patternTableWidget->setItem(row, 2, trainedItem);
+            patternTableWidget->setItem(apcRow, 2, trainedItem);
             
-            // 체크박스 저장
             patternCheckBoxes[pattern->name] = checkBox;
             
-            // 체크박스 변경 시 자동 학습 버튼 활성화 상태 업데이트 및 전체 선택 체크박스 동기화
             connect(checkBox, &QCheckBox::stateChanged, [this](int) {
                 bool anyChecked = false;
                 bool allChecked = true;
                 for (auto checkbox : patternCheckBoxes) {
-                    if (checkbox->isChecked()) {
-                        anyChecked = true;
-                    } else {
-                        allChecked = false;
-                    }
+                    if (checkbox->isChecked()) anyChecked = true;
+                    else allChecked = false;
                 }
                 
-                // 전체 선택 체크박스 상태 업데이트 (시그널 블록)
                 if (selectAllCheckBox) {
                     selectAllCheckBox->blockSignals(true);
                     if (allChecked && !patternCheckBoxes.isEmpty()) {
@@ -359,21 +421,94 @@ void TrainDialog::setAnomalyPatterns(const QVector<PatternInfo*>& patterns)
                     selectAllCheckBox->blockSignals(false);
                 }
                 
-                // 공용 이미지가 있는지 확인
                 bool hasImages = !commonImages.isEmpty();
-                
                 autoTrainButton->setEnabled(anyChecked && hasImages);
             });
             
-            row++;
+            apcRow++;
         }
     }
     
-    // 행 높이 자동 조정
-    patternTableWidget->resizeRowsToContents();
+    // A-PD 패턴 추가
+    int apdRow = 0;
+    for (PatternInfo* pattern : patterns) {
+        if (pattern && pattern->type == PatternType::INS &&
+            pattern->inspectionMethod == InspectionMethod::A_PD) {
+            
+            padimPatternTableWidget->insertRow(apdRow);
+            
+            // 체크박스
+            QCheckBox *checkBox = new QCheckBox();
+            checkBox->setStyleSheet(
+                "QCheckBox::indicator:checked { background-color: #4CAF50; border: 2px solid #4CAF50; }"
+                "QCheckBox::indicator:unchecked { background-color: white; border: 2px solid #CCCCCC; }"
+                "QCheckBox::indicator { width: 18px; height: 18px; }"
+            );
+            QWidget *checkWidget = new QWidget();
+            QHBoxLayout *checkLayout = new QHBoxLayout(checkWidget);
+            checkLayout->addWidget(checkBox);
+            checkLayout->setAlignment(Qt::AlignCenter);
+            checkLayout->setContentsMargins(0, 0, 0, 0);
+            padimPatternTableWidget->setCellWidget(apdRow, 0, checkWidget);
+            
+            // 패턴명
+            QTableWidgetItem *nameItem = new QTableWidgetItem(pattern->name);
+            nameItem->setData(Qt::UserRole, pattern->name);
+            nameItem->setTextAlignment(Qt::AlignCenter);
+            padimPatternTableWidget->setItem(apdRow, 1, nameItem);
+            
+            // 학습여부 확인 (TensorRT 또는 ONNX)
+            QString recipesDir = QCoreApplication::applicationDirPath() + "/recipes";
+            QString recipeDir = currentRecipeName.isEmpty() ? "default" : currentRecipeName;
+            QString weightsPath = recipesDir + "/" + recipeDir + "/weights/" + pattern->name;
+            QString trtFile = weightsPath + "/" + pattern->name + "_padim.trt";
+            QString onnxFile = weightsPath + "/" + pattern->name + "_padim.onnx";
+            bool isTrained = QFile::exists(trtFile) || QFile::exists(onnxFile);
+            
+            QTableWidgetItem *trainedItem = new QTableWidgetItem(isTrained ? "✓ 학습됨" : "미학습");
+            trainedItem->setTextAlignment(Qt::AlignCenter);
+            if (isTrained) {
+                trainedItem->setForeground(QBrush(QColor("#4CAF50")));
+                trainedItem->setFont(QFont("", -1, QFont::Bold));
+            } else {
+                trainedItem->setForeground(QBrush(QColor("#999999")));
+            }
+            padimPatternTableWidget->setItem(apdRow, 2, trainedItem);
+            
+            padimPatternCheckBoxes[pattern->name] = checkBox;
+            
+            connect(checkBox, &QCheckBox::stateChanged, [this](int) {
+                bool anyChecked = false;
+                bool allChecked = true;
+                for (auto checkbox : padimPatternCheckBoxes) {
+                    if (checkbox->isChecked()) anyChecked = true;
+                    else allChecked = false;
+                }
+                
+                if (padimSelectAllCheckBox) {
+                    padimSelectAllCheckBox->blockSignals(true);
+                    if (allChecked && !padimPatternCheckBoxes.isEmpty()) {
+                        padimSelectAllCheckBox->setCheckState(Qt::Checked);
+                    } else if (!anyChecked) {
+                        padimSelectAllCheckBox->setCheckState(Qt::Unchecked);
+                    } else {
+                        padimSelectAllCheckBox->setCheckState(Qt::PartiallyChecked);
+                    }
+                    padimSelectAllCheckBox->blockSignals(false);
+                }
+                
+                bool hasImages = !commonImages.isEmpty();
+                autoTrainButton->setEnabled(anyChecked && hasImages);
+            });
+            
+            apdRow++;
+        }
+    }
     
-    if (patternTableWidget->rowCount() == 0) {
-        // 빈 테이블일 경우 자동 학습 버튼 비활성화
+    patternTableWidget->resizeRowsToContents();
+    padimPatternTableWidget->resizeRowsToContents();
+    
+    if (patternTableWidget->rowCount() == 0 && padimPatternTableWidget->rowCount() == 0) {
         autoTrainButton->setEnabled(false);
     }
 }
@@ -524,6 +659,30 @@ void TrainDialog::onPatternSelectionChanged()
     updateTeachingImagePreview();
 }
 
+void TrainDialog::onPadimPatternSelectionChanged()
+{
+    int currentRow = padimPatternTableWidget->currentRow();
+    if (currentRow < 0) {
+        currentSelectedPattern.clear();
+        return;
+    }
+    
+    QTableWidgetItem *nameItem = padimPatternTableWidget->item(currentRow, 1);
+    if (!nameItem) {
+        currentSelectedPattern.clear();
+        return;
+    }
+    
+    QString patternName = nameItem->data(Qt::UserRole).toString();
+    currentSelectedPattern = patternName;
+    
+    // 공용 이미지 개수 업데이트 (모든 패턴이 동일한 이미지 사용)
+    imageCountLabel->setText(QString("이미지 개수: %1").arg(commonImages.size()));
+    
+    // 패턴 이미지를 메인 이미지창에 표시
+    updatePadimTeachingImagePreview();
+}
+
 void TrainDialog::updateTeachingImagePreview()
 {
     int currentRow = patternTableWidget->currentRow();
@@ -574,11 +733,70 @@ void TrainDialog::updateTeachingImagePreview()
     previewImageLabel->setPixmap(scaled);
 }
 
+void TrainDialog::updatePadimTeachingImagePreview()
+{
+    int currentRow = padimPatternTableWidget->currentRow();
+    if (currentRow < 0) {
+        previewImageLabel->setText("패턴을 선택하세요");
+        return;
+    }
+    
+    QTableWidgetItem *nameItem = padimPatternTableWidget->item(currentRow, 1);
+    if (!nameItem) {
+        previewImageLabel->setText("패턴을 선택하세요");
+        return;
+    }
+    
+    QString patternName = nameItem->data(Qt::UserRole).toString();
+    if (patternName.isEmpty()) {
+        previewImageLabel->setText("유효하지 않은 패턴");
+        return;
+    }
+    
+    // 패턴 찾기
+    PatternInfo* selectedPattern = nullptr;
+    for (PatternInfo* pattern : anomalyPatterns) {
+        if (pattern && pattern->name == patternName) {
+            selectedPattern = pattern;
+            break;
+        }
+    }
+    
+    if (!selectedPattern) {
+        previewImageLabel->setText("패턴을 찾을 수 없음");
+        return;
+    }
+    
+    // 템플릿 이미지 가져오기
+    QImage templateImage = selectedPattern->templateImage;
+    
+    if (templateImage.isNull()) {
+        previewImageLabel->setText("티칭 이미지 없음");
+        qDebug() << "[updateTeachingImagePreview] 템플릿 이미지 없음 - 패턴:" << patternName 
+                 << "frameIndex:" << selectedPattern->frameIndex;
+        return;
+    }
+    
+    // 레이블 크기에 맞게 이미지 스케일링
+    QPixmap pixmap = QPixmap::fromImage(templateImage);
+    QPixmap scaled = pixmap.scaled(previewImageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    previewImageLabel->setPixmap(scaled);
+}
+
 void TrainDialog::onStartAutoTrainClicked()
 {
-    // 체크된 패턴 목록 수집
+    // 체크된 패턴 목록 수집 (A-PC와 A-PD 모두)
     QStringList checkedPatterns;
+    
+    // A-PC 패턴 체크박스 확인
     for (auto it = patternCheckBoxes.begin(); it != patternCheckBoxes.end(); ++it) {
+        if (it.value()->isChecked()) {
+            checkedPatterns.append(it.key());
+        }
+    }
+    
+    // A-PD 패턴 체크박스 확인
+    for (auto it = padimPatternCheckBoxes.begin(); it != padimPatternCheckBoxes.end(); ++it) {
         if (it.value()->isChecked()) {
             checkedPatterns.append(it.key());
         }
@@ -858,11 +1076,20 @@ void TrainDialog::onAddImagesClicked()
         updateImageGrid();
         imageCountLabel->setText(QString("이미지 개수: %1").arg(commonImages.size()));
         
+        // A-PC와 A-PD 체크박스 모두 확인
         bool anyChecked = false;
         for (auto checkbox : patternCheckBoxes) {
             if (checkbox->isChecked()) {
                 anyChecked = true;
                 break;
+            }
+        }
+        if (!anyChecked) {
+            for (auto checkbox : padimPatternCheckBoxes) {
+                if (checkbox->isChecked()) {
+                    anyChecked = true;
+                    break;
+                }
             }
         }
         
@@ -1224,7 +1451,18 @@ void TrainDialog::trainPattern(const QString& patternName)
     
     QStringList args;
     
-    QString scriptPath = QCoreApplication::applicationDirPath() + "/train_patchcore_anomalib.py";
+    // 패턴의 검사 방법에 따라 다른 스크립트 사용
+    QString scriptPath;
+    if (targetPattern->inspectionMethod == InspectionMethod::A_PC) {
+        scriptPath = QCoreApplication::applicationDirPath() + "/train_patchcore_anomalib.py";
+    } else if (targetPattern->inspectionMethod == InspectionMethod::A_PD) {
+        scriptPath = QCoreApplication::applicationDirPath() + "/train_padim_anomalib.py";
+    } else {
+        qWarning() << "[TRAIN] 알 수 없는 검사 방법:" << targetPattern->inspectionMethod;
+        trainNextPattern();
+        return;
+    }
+    
     args << "-u";  // unbuffered output
     args << "-W" << "ignore";  // Python 워닝 메시지 숨기기
     args << scriptPath;
@@ -1232,14 +1470,24 @@ void TrainDialog::trainPattern(const QString& patternName)
     args << "--output" << outputDir;
     args << "--pattern-name" << patternName;
     
-    // PatchCore 옵션 추가
-    if (backboneComboBox && coresetRatioSpinBox && numNeighborsSpinBox) {
-        args << "--backbone" << backboneComboBox->currentText();
-        args << "--coreset-ratio" << QString::number(coresetRatioSpinBox->value(), 'g');
-        args << "--num-neighbors" << QString::number(numNeighborsSpinBox->value());
+    // 모델별 옵션 추가
+    if (targetPattern->inspectionMethod == InspectionMethod::A_PC) {
+        // PatchCore 옵션
+        if (backboneComboBox && coresetRatioSpinBox && numNeighborsSpinBox) {
+            args << "--backbone" << backboneComboBox->currentText();
+            args << "--coreset-ratio" << QString::number(coresetRatioSpinBox->value(), 'g');
+            args << "--num-neighbors" << QString::number(numNeighborsSpinBox->value());
+        }
+    } else if (targetPattern->inspectionMethod == InspectionMethod::A_PD) {
+        // PaDiM 옵션
+        if (padimBackboneComboBox && padimNumLayersSpinBox) {
+            args << "--backbone" << padimBackboneComboBox->currentText();
+            args << "--n-features" << QString::number(padimNumLayersSpinBox->value());
+        }
     }
     
-    qDebug() << "[TRAIN] 로컬 학습 시작:" << trainScript << args;
+    QString modelType = (targetPattern->inspectionMethod == InspectionMethod::A_PC) ? "PatchCore" : "PaDiM";
+    qDebug() << "[TRAIN] 로컬 학습 시작 (" << modelType << "):" << trainScript << args;
     
     updateTrainingProgress(QString("%1 Training model '%2'...%3")
         .arg(getPatternProgressString()).arg(patternName).arg(getTotalTimeString()));
@@ -1287,16 +1535,25 @@ void TrainDialog::trainPattern(const QString& patternName)
         if (trainProcess) {
             QString errorOutput = trainProcess->readAllStandardError();
             if (!errorOutput.trimmed().isEmpty()) {
-                // INFO, WARNING, Processing 등 정상 메시지는 필터링
                 QString trimmed = errorOutput.trimmed();
-                if (trimmed.contains("ERROR") || trimmed.contains("Error") || 
+                
+                // Jetson Orin에서 정상적인 ONNX Runtime 및 TensorRT 경고 필터링
+                bool isNormalWarning = 
+                    trimmed.contains("device_discovery.cc") ||  // ONNX Runtime GPU discovery warning
+                    trimmed.contains("/sys/class/drm/card") ||  // DRM device path warning
+                    trimmed.contains("DiscoverDevicesForPlatform") ||
+                    trimmed.contains("[W:onnxruntime:") ||  // ONNX Runtime warnings
+                    trimmed.contains("TensorRT") && trimmed.contains("warning") ||  // TensorRT warnings
+                    trimmed.contains("INFO") || trimmed.contains("WARNING") ||
+                    trimmed.contains("Processing");
+                
+                // 진짜 에러만 출력 (정상 경고는 제외)
+                if (!isNormalWarning && (
+                    trimmed.contains("ERROR") || trimmed.contains("Error") || 
                     trimmed.contains("FAILED") || trimmed.contains("Failed") ||
-                    trimmed.contains("Exception") || trimmed.contains("Traceback")) {
-                    // 진짜 에러만 출력
+                    trimmed.contains("Exception") || trimmed.contains("Traceback"))) {
                     qWarning() << "[TRAIN ERROR]" << errorOutput;
                 }
-                // 나머지는 DEBUG 레벨로 (보통 안 보임)
-                // qDebug() << "[TRAIN STDERR]" << errorOutput;
             }
         }
     });
@@ -1424,11 +1681,7 @@ void TrainDialog::onTrainOutputReady()
         return;
     }
     
-    // 기본: Training model 표시
-    if (output.contains("Training") || output.contains("Starting")) {
-        updateTrainingProgress(QString("%1 Training model '%2'...%3")
-            .arg(patternProgress).arg(currentTrainingPattern).arg(totalElapsedStr));
-    }
+    // 기타 출력은 로그로만 남김 (중복 메시지 방지)
 }
 
 void TrainDialog::onTrainFinished(int exitCode, QProcess::ExitStatus exitStatus)

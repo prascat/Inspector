@@ -9,6 +9,31 @@
 #include <QTimer>
 #include <QCheckBox>
 #include <QThread>
+#include <QJsonObject>
+#include <QByteArray>
+#include <cstdint>
+
+// 메시지 타입
+enum class MessageType : uint32_t {
+    INSPECTION_REQUEST = 0x01,
+    INSPECTION_RESPONSE = 0x02,
+    HEARTBEAT_LEGACY = 0x03,
+    HEARTBEAT = 0x10,
+    ERROR = 0xFF
+};
+
+// 프로토콜 헤더 (32바이트)
+#pragma pack(push, 1)
+struct ProtocolHeader {
+    uint32_t stx;              // 0x02020202
+    uint32_t messageType;      // MessageType
+    uint32_t sequenceNumber;   // 자동 증가
+    int32_t dataLength;        // 본문 길이
+    int64_t timestamp;         // Unix epoch milliseconds
+    uint32_t checksum;         // CRC32 (현재 미사용)
+    uint32_t reserved;         // 예약
+};
+#pragma pack(pop)
 
 class ClientDialog : public QDialog {
     Q_OBJECT
@@ -20,10 +45,14 @@ public:
     int exec() override;
     
     // 연결 관리
-    void initialize();  // 프로그램 시작 시 호출
+    void initialize();
     bool isServerConnected() const { return isConnected; }
 
-    // 메시지 전송
+    // 프로토콜 메시지 전송
+    bool sendInspectionResult(const QJsonObject& result);
+    bool sendHeartbeat();
+    
+    // 레거시 메시지 전송 (하위 호환)
     bool sendMessage(const QString& message);
     bool sendData(const QByteArray& data);
 
@@ -45,7 +74,7 @@ public:
 
 signals:
     void settingsChanged();
-    void frameIndexReceived(int frameIndex);  // 검사할 프레임 인덱스 수신 (0~3)
+    void inspectionRequestReceived(const QJsonObject& request);
 
 private slots:
     void onTestConnection();
@@ -65,11 +94,19 @@ private:
     void loadSettings();
     void saveSettings();
     void updateLanguage();
+    
+    // 프로토콜 처리
+    bool sendProtocolMessage(MessageType type, const QByteArray& jsonData);
+    void processReceivedData();
+    bool parseHeader(const QByteArray& headerData, ProtocolHeader& header);
+    void handleInspectionRequest(const QJsonObject& request);
+    void handleHeartbeat();
 
     // UI 요소
     QLineEdit* ipEdit;
     QLineEdit* portEdit;
     QLineEdit* reconnectIntervalEdit;
+    QLineEdit* heartbeatIntervalEdit;
     QCheckBox* autoConnectCheckBox;
     QPushButton* testButton;
     QPushButton* saveButton;
@@ -82,10 +119,12 @@ private:
     int serverPort;
     bool autoConnect;
     int reconnectInterval;
+    int heartbeatInterval;
     
     // TCP 소켓
     QTcpSocket* testSocket;
     QTimer* statusTimer;
+    QTimer* heartbeatTimer;  // Heartbeat 타이머
     
     // 재연결 스레드
     QThread* reconnectThread;
@@ -93,6 +132,13 @@ private:
     
     // 연결 상태
     bool isConnected;
+    
+    // 프로토콜 상태
+    QByteArray receiveBuffer;
+    uint32_t sequenceNumber;
+    static constexpr uint32_t STX = 0x02020202;
+    static constexpr int MAX_DATA_LENGTH = 10 * 1024 * 1024;  // 10MB
+    static constexpr int HEARTBEAT_INTERVAL = 30000;  // 30초 (milliseconds)
 };
 
 #endif // CLIENTDIALOG_H

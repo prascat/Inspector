@@ -2377,7 +2377,8 @@ void CameraView::drawINSPatterns(QPainter &painter, const InspectionResult &resu
 
         // ANOMALY 패턴은 자체 각도 사용, 그 외는 부모 각도 사용
         double insAngle = 0.0;
-        if (patternInfo->inspectionMethod == InspectionMethod::ANOMALY) {
+        if (patternInfo->inspectionMethod == InspectionMethod::A_PC || 
+            patternInfo->inspectionMethod == InspectionMethod::A_PD) {
             insAngle = patternInfo->angle;  // ANOMALY 패턴 자체 각도 사용
         } else {
             insAngle = result.parentAngles.value(patternId, 0.0);
@@ -2408,7 +2409,8 @@ void CameraView::drawINSPatterns(QPainter &painter, const InspectionResult &resu
             {
                 label = QString("%1: %2").arg(patternInfo->name).arg(methodName);
             }
-            else if (patternInfo->inspectionMethod == InspectionMethod::ANOMALY)
+            else if (patternInfo->inspectionMethod == InspectionMethod::A_PC ||
+                     patternInfo->inspectionMethod == InspectionMethod::A_PD)
             {
                 // ANOMALY는 패턴명만 표시
                 label = patternInfo->name;
@@ -2465,7 +2467,8 @@ void CameraView::drawINSPatterns(QPainter &painter, const InspectionResult &resu
         case InspectionMethod::SSIM:
             drawINSSSIMVisualization(painter, result, patternId, patternInfo, inspRectScene, insAngle);
             break;
-        case InspectionMethod::ANOMALY:
+        case InspectionMethod::A_PC:
+        case InspectionMethod::A_PD:
             drawINSAnomalyVisualization(painter, result, patternId, patternInfo, inspRectScene, insAngle);
             break;
         }

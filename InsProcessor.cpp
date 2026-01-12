@@ -47,49 +47,110 @@ void InsProcessor::warmupAnomalyModels(const QList<PatternInfo>& patterns, const
     // ANOMALY 타입 패턴에서 사용하는 모든 고유 모델 경로와 패턴 크기 수집
     QMap<QString, QSize> modelSizes;  // 모델 경로 -> 패턴 크기
     for (const PatternInfo& pattern : patterns) {
-        if (pattern.type == PatternType::INS && 
-            pattern.inspectionMethod == static_cast<int>(InspectionMethod::ANOMALY) && 
-            pattern.enabled) {
+        if (pattern.type == PatternType::INS && pattern.enabled) {
             QString weightsDir = QCoreApplication::applicationDirPath() + "/recipes/" + recipeName + "/weights";
+            QString modelPath;
+            
+            if (pattern.inspectionMethod == static_cast<int>(InspectionMethod::A_PC)) {
 #ifdef USE_TENSORRT
-            QString modelPath = weightsDir + "/" + pattern.name + "/" + pattern.name + ".trt";
+                modelPath = weightsDir + "/" + pattern.name + "/" + pattern.name + ".trt";
 #else
-            QString modelPath = weightsDir + "/" + pattern.name + "/" + pattern.name + ".onnx";
+                modelPath = weightsDir + "/" + pattern.name + "/" + pattern.name + ".onnx";
 #endif
-            QSize patternSize(static_cast<int>(pattern.rect.width()), 
-                            static_cast<int>(pattern.rect.height()));
-            modelSizes[modelPath] = patternSize;
+                QSize patternSize(static_cast<int>(pattern.rect.width()), 
+                                static_cast<int>(pattern.rect.height()));
+                modelSizes[modelPath] = patternSize;
+            }
+            else if (pattern.inspectionMethod == static_cast<int>(InspectionMethod::A_PD)) {
+#ifdef USE_TENSORRT
+                modelPath = weightsDir + "/" + pattern.name + "/" + pattern.name + "_padim.trt";
+#else
+                modelPath = weightsDir + "/" + pattern.name + "/" + pattern.name + "_padim.onnx";
+#endif
+                QSize patternSize(static_cast<int>(pattern.rect.width()), 
+                                static_cast<int>(pattern.rect.height()));
+                modelSizes[modelPath] = patternSize;
+            }
         }
     }
     
     if (modelSizes.isEmpty()) {
+        logDebug("워밍업할 AI 모델이 없습니다.");
         return;
     }
     
-    logDebug(QString("[워밍업] %1개 Anomaly 모델 초기화 시작...").arg(modelSizes.size()));
+    logDebug(QString("%1개 AI 모델 초기화 시작...").arg(modelSizes.size()));
     
     int loadedCount = 0;
     for (auto it = modelSizes.begin(); it != modelSizes.end(); ++it) {
         const QString& modelPath = it.key();
         const QSize& patternSize = it.value();
         
-        // 실제 패턴 크기의 더미 이미지 생성
-        cv::Mat dummyImage = cv::Mat(patternSize.height(), patternSize.width(), CV_8UC3, cv::Scalar(128, 128, 128));
-        
-        // 모델 초기화 (내부에서 캐시 확인)
-        if (initPatchCoreModel(modelPath)) {
-            // 멀티모델 추론으로 워밍업
-            QMap<QString, std::vector<cv::Mat>> modelImages;
-            modelImages[modelPath] = {dummyImage};
-            QMap<QString, std::vector<float>> modelScores;
-            QMap<QString, std::vector<cv::Mat>> modelMaps;
-            ImageProcessor::runPatchCoreTensorRTMultiModelInference(modelImages, modelScores, modelMaps);
-            loadedCount++;
-            logDebug(QString("[워밍업] %1 (%2x%3) 완료").arg(modelPath.section('/', -1)).arg(patternSize.width()).arg(patternSize.height()));
+        try {
+            // 모델 파일 존재 확인
+            if (!QFile::exists(modelPath)) {
+                logDebug(QString("모델 파일이 존재하지 않음: %1").arg(modelPath));
+                continue;
+            }
+            
+            // 패턴 크기 유효성 검증
+            if (patternSize.width() <= 0 || patternSize.height() <= 0) {
+                logDebug(QString("잘못된 패턴 크기: %1x%2").arg(patternSize.width()).arg(patternSize.height()));
+                continue;
+            }
+            
+            // 실제 패턴 크기의 더미 이미지 생성
+            cv::Mat dummyImage = cv::Mat(patternSize.height(), patternSize.width(), CV_8UC3, cv::Scalar(128, 128, 128));
+            
+            // 모델 타입 판별 (_padim 접미사로 구분)
+            bool isPaDiM = modelPath.contains("_padim");
+            
+            // 모델 초기화
+            bool initSuccess = false;
+            if (isPaDiM) {
+#ifdef USE_TENSORRT
+                initSuccess = ImageProcessor::initPaDiMTensorRT(modelPath);
+#elif defined(USE_ONNX)
+                initSuccess = ImageProcessor::initPaDiMONNX(modelPath);
+#endif
+            } else {
+                initSuccess = initPatchCoreModel(modelPath);
+            }
+            
+            if (initSuccess) {
+                // 멀티모델 추론으로 워밍업
+                QMap<QString, std::vector<cv::Mat>> modelImages;
+                modelImages[modelPath] = {dummyImage};
+                QMap<QString, std::vector<float>> modelScores;
+                QMap<QString, std::vector<cv::Mat>> modelMaps;
+                
+                if (isPaDiM) {
+#ifdef USE_TENSORRT
+                    ImageProcessor::runPaDiMTensorRTMultiModelInference(modelImages, modelScores, modelMaps);
+#elif defined(USE_ONNX)
+                    ImageProcessor::runPaDiMONNXInference(modelPath, {dummyImage}, modelScores[modelPath], modelMaps[modelPath]);
+#endif
+                } else {
+#ifdef USE_TENSORRT
+                    ImageProcessor::runPatchCoreTensorRTMultiModelInference(modelImages, modelScores, modelMaps);
+#elif defined(USE_ONNX)
+                    ImageProcessor::runPatchCoreONNXInference(modelPath, {dummyImage}, modelScores[modelPath], modelMaps[modelPath]);
+#endif
+                }
+                
+                loadedCount++;
+                logDebug(QString("%1 (%2x%3) 완료").arg(modelPath.section('/', -1)).arg(patternSize.width()).arg(patternSize.height()));
+            } else {
+                logDebug(QString("모델 초기화 실패: %1").arg(modelPath));
+            }
+        } catch (const std::exception& e) {
+            logDebug(QString("모델 워밍업 중 예외 발생: %1 - %2").arg(modelPath).arg(e.what()));
+        } catch (...) {
+            logDebug(QString("모델 워밍업 중 알 수 없는 오류: %1").arg(modelPath));
         }
     }
     
-    logDebug(QString("[워밍업] 완료: %1/%2개 모델 준비됨").arg(loadedCount).arg(modelSizes.size()));
+    logDebug(QString("완료: %1/%2개 모델 준비됨").arg(loadedCount).arg(modelSizes.size()));
 }
 
 InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QList<PatternInfo> &patterns, const QString& cameraName)
@@ -124,7 +185,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     
     // 검사 시작 로그 (옵션 2 형식)
     QString cameraInfo = cameraName.isEmpty() ? "" : QString(" (Cam %1)").arg(cameraName);
-    logDebug(QString("[검사 시작] %1%2").arg(stageLabel).arg(cameraInfo));
+    logDebug(QString("[Inspect Start] %1%2").arg(stageLabel).arg(cameraInfo));
 
     result.isPassed = true;
     
@@ -320,7 +381,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             else
             {
                 // 매칭 실패 시에도 검출된 각도는 적용
-                logDebug(QString("FID 패턴 '%1' 매칭 실패 - 하지만 검출 각도는 적용: %2°")
+                logDebug(QString("FID pattern '%1' match failed - but detected angle applied: %2°")
                              .arg(pattern.name)
                              .arg(matchAngle, 0, 'f', 2));
 
@@ -345,13 +406,14 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     {
         // ===== ANOMALY 패턴 배치 처리 =====
         // 같은 모델을 사용하는 ANOMALY 패턴들을 그룹화
-        QMap<QString, QList<PatternInfo>> anomalyGroups; // key: 모델 경로
+        QMap<QString, QList<PatternInfo>> anomalyGroupsAPC; // key: 모델 경로 (A-PC)
+        QMap<QString, QList<PatternInfo>> anomalyGroupsAPD; // key: 모델 경로 (A-PD)
         QMap<QUuid, int> anomalyPatternIndexMap; // 패턴 ID -> 배치 내 인덱스
         
         int totalAnomalyCount = 0;
         for (const PatternInfo &pattern : insPatterns)
         {
-            if (pattern.inspectionMethod == InspectionMethod::ANOMALY)
+            if (pattern.inspectionMethod == InspectionMethod::A_PC)
             {
                 totalAnomalyCount++;
                 // 현재 레시피명 가져오기
@@ -367,23 +429,43 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
 #else
                 QString modelPath = weightsDir + "/" + pattern.name + "/" + pattern.name + ".onnx";
 #endif
-                anomalyGroups[modelPath].append(pattern);
+                anomalyGroupsAPC[modelPath].append(pattern);
+            }
+            else if (pattern.inspectionMethod == InspectionMethod::A_PD)
+            {
+                totalAnomalyCount++;
+                // 현재 레시피명 가져오기
+                QString recipeName = ConfigManager::instance()->getLastRecipePath();
+                if (recipeName.isEmpty()) {
+                    recipeName = "default";
+                }
+                
+                // 모델 파일 경로 (레시피별, _padim suffix)
+                QString weightsDir = QCoreApplication::applicationDirPath() + "/recipes/" + recipeName + "/weights";
+#ifdef USE_TENSORRT
+                QString modelPath = weightsDir + "/" + pattern.name + "/" + pattern.name + "_padim.trt";
+#else
+                QString modelPath = weightsDir + "/" + pattern.name + "/" + pattern.name + "_padim.onnx";
+#endif
+                anomalyGroupsAPD[modelPath].append(pattern);
             }
         }
         
         // ANOMALY 전체 처리 시작
         auto anomalyBatchStart = std::chrono::high_resolution_clock::now();
-        int anomalyGroupCount = anomalyGroups.size();
+        int anomalyGroupCount = anomalyGroupsAPC.size() + anomalyGroupsAPD.size();
         
 #ifdef USE_TENSORRT
-        // ===== TensorRT 멀티모델 병렬 처리 =====
-        if (anomalyGroupCount >= 1) {
+        // ===== A-PC TensorRT 멀티모델 병렬 처리 =====
+        auto apcBatchStart = std::chrono::high_resolution_clock::now();
+        int apcPatternCount = 0;
+        if (anomalyGroupsAPC.size() >= 1) {
             // 모든 모델 로드
             QMap<QString, std::vector<cv::Mat>> modelImages;
             QMap<QString, QList<PatternInfo>> modelValidPatterns;
             
             int loadedModelCount = 0;
-            for (auto groupIt = anomalyGroups.begin(); groupIt != anomalyGroups.end(); ++groupIt) {
+            for (auto groupIt = anomalyGroupsAPC.begin(); groupIt != anomalyGroupsAPC.end(); ++groupIt) {
                 const QString& modelPath = groupIt.key();
                 const QList<PatternInfo>& group = groupIt.value();
                 
@@ -395,7 +477,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                     for (const PatternInfo& pattern : group) {
                         result.insResults[pattern.id] = false;
                         result.insScores[pattern.id] = 0.0;
-                        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                        result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
                         result.isPassed = false;
                     }
                     continue;
@@ -423,7 +505,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                                 // 부모 FID 매칭 실패
                                 result.insResults[pattern.id] = false;
                                 result.insScores[pattern.id] = 0.0;
-                                result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                                result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
                                 result.isPassed = false;
                                 continue;
                             }
@@ -503,7 +585,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                         if (width < 10 || height < 10) {
                             result.insResults[pattern.id] = false;
                             result.insScores[pattern.id] = 0.0;
-                            result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                            result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
                             result.isPassed = false;
                             continue;
                         }
@@ -532,7 +614,14 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             bool multiSuccess = ImageProcessor::runPatchCoreTensorRTMultiModelInference(
                 modelImages, modelScores, modelMaps);
             auto inferenceEnd = std::chrono::high_resolution_clock::now();
-            auto inferenceDuration = std::chrono::duration_cast<std::chrono::microseconds>(inferenceEnd - inferenceStart).count() / 1000.0;
+            auto inferenceDuration = std::chrono::duration_cast<std::chrono::milliseconds>(inferenceEnd - inferenceStart).count();
+            
+            // 전체 패턴 수 계산
+            int totalPatterns = 0;
+            for (auto it = modelValidPatterns.begin(); it != modelValidPatterns.end(); ++it) {
+                totalPatterns += it.value().size();
+            }
+            int avgPatternTime = (totalPatterns > 0) ? (inferenceDuration / totalPatterns) : 0;
             
             if (multiSuccess) {
                 // 결과 처리 (기존 로직과 동일)
@@ -592,7 +681,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                         
                         result.insScores[pattern.id] = static_cast<double>(roiAnomalyScore);
                         result.insResults[pattern.id] = !hasDefect;
-                        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+                        result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
                         result.anomalyDefectContours[pattern.id] = defectContours;
                         result.anomalyRawMap[pattern.id] = anomalyMap.clone();
                         
@@ -603,6 +692,273 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                         cv::applyColorMap(normalized, colorHeatmap, cv::COLORMAP_JET);
                         result.anomalyHeatmap[pattern.id] = colorHeatmap.clone();
                         result.anomalyHeatmapRect[pattern.id] = pattern.rect;
+                        
+                        result.isPassed = result.isPassed && !hasDefect;
+                        apcPatternCount++;
+                        
+                        QString insResultText = !hasDefect ? "PASS" : "NG";
+                        QString resultColor = !hasDefect ? "<font color='#00FF00'>" : "<font color='#FF0000'>";
+                        int defectCount = defectContours.size();
+                        
+                        QString methodName = "A-PC";
+                        if (defectCount > 0)
+                        {
+                            int maxW = 0, maxH = 0;
+                            for (const auto& contour : defectContours)
+                            {
+                                cv::Rect bbox = cv::boundingRect(contour);
+                                if (bbox.width > maxW) maxW = bbox.width;
+                                if (bbox.height > maxH) maxH = bbox.height;
+                            }
+                            logDebug(QString("  └─ <font color='#8BCB8B'>%1(%2)</font>: W:%3 H:%4 Detects:%5 (score=%6, thr=%7) [%8ms]")
+                                .arg(pattern.name).arg(methodName).arg(maxW).arg(maxH).arg(defectCount)
+                                .arg(roiAnomalyScore, 0, 'f', 2).arg(pattern.passThreshold, 0, 'f', 2).arg(avgPatternTime));
+                        }
+                        else
+                        {
+                            logDebug(QString("  └─ <font color='#8BCB8B'>%1(%2)</font>: %3%4</font> (score=%5, thr=%6) [%7ms]")
+                                .arg(pattern.name).arg(methodName).arg(resultColor).arg(insResultText)
+                                .arg(roiAnomalyScore, 0, 'f', 2).arg(pattern.passThreshold, 0, 'f', 2).arg(avgPatternTime));
+                        }
+                    }
+                }
+            }
+        }
+        
+        // ===== A-PD TensorRT 멀티모델 병렬 처리 =====
+        auto apdBatchStart = std::chrono::high_resolution_clock::now();
+        int apdPatternCount = 0;
+        if (anomalyGroupsAPD.size() >= 1) {
+            // 모든 모델 로드
+            QMap<QString, std::vector<cv::Mat>> modelImages;
+            QMap<QString, QList<PatternInfo>> modelValidPatterns;
+            
+            int loadedModelCount = 0;
+            for (auto groupIt = anomalyGroupsAPD.begin(); groupIt != anomalyGroupsAPD.end(); ++groupIt) {
+                const QString& modelPath = groupIt.key();
+                const QList<PatternInfo>& group = groupIt.value();
+                
+                if (group.isEmpty()) continue;
+                
+                // PaDiM 모델 로드
+                if (!ImageProcessor::initPaDiMTensorRT(modelPath)) {
+                    logDebug(QString("A-PD: 모델 로드 실패 - %1").arg(modelPath));
+                    for (const PatternInfo& pattern : group) {
+                        result.insResults[pattern.id] = false;
+                        result.insScores[pattern.id] = 0.0;
+                        result.insMethodTypes[pattern.id] = InspectionMethod::A_PD;
+                        result.isPassed = false;
+                    }
+                    continue;
+                }
+                loadedModelCount++;
+                
+                std::vector<cv::Mat> roiImages;
+                QList<PatternInfo> validPatterns;
+                
+                // ROI 추출 (A-PC와 동일한 로직)
+                for (const PatternInfo &pattern : group) {
+                    QRect adjustedRect = QRect(
+                        static_cast<int>(pattern.rect.x()),
+                        static_cast<int>(pattern.rect.y()),
+                        static_cast<int>(pattern.rect.width()),
+                        static_cast<int>(pattern.rect.height()));
+                    
+                    // 부모 FID 정보 확인 및 위치 조정
+                    if (!pattern.parentId.isNull())
+                    {
+                        if (result.fidResults.contains(pattern.parentId))
+                        {
+                            if (!result.fidResults[pattern.parentId])
+                            {
+                                // 부모 FID 매칭 실패
+                                result.insResults[pattern.id] = false;
+                                result.insScores[pattern.id] = 0.0;
+                                result.insMethodTypes[pattern.id] = InspectionMethod::A_PD;
+                                result.isPassed = false;
+                                continue;
+                            }
+                            
+                            // FID 기반 위치 조정
+                            double fidScore = result.matchScores.value(pattern.parentId, 0.0);
+                            if (fidScore < 0.999 && result.locations.contains(pattern.parentId))
+                            {
+                                cv::Point fidLoc = result.locations[pattern.parentId];
+                                double fidAngle = result.angles[pattern.parentId];
+                                
+                                // FID 원래 정보 찾기
+                                QPoint originalFidCenter;
+                                for (const PatternInfo &fid : fidPatterns)
+                                {
+                                    if (fid.id == pattern.parentId)
+                                    {
+                                        originalFidCenter = QPoint(
+                                            static_cast<int>(fid.rect.center().x()),
+                                            static_cast<int>(fid.rect.center().y()));
+                                        break;
+                                    }
+                                }
+                                
+                                // 위치 오프셋 계산
+                                cv::Point parentOffset(
+                                    fidLoc.x - originalFidCenter.x(),
+                                    fidLoc.y - originalFidCenter.y());
+                                
+                                // 회전 각도 차이 계산
+                                double parentFidTeachingAngle = 0.0;
+                                for (const PatternInfo &p : patterns)
+                                {
+                                    if (p.id == pattern.parentId)
+                                    {
+                                        parentFidTeachingAngle = p.angle;
+                                        break;
+                                    }
+                                }
+                                double fidAngleDiff = fidAngle - parentFidTeachingAngle;
+                                
+                                // INS 패턴 중심점 계산
+                                QPointF insOriginalCenter = pattern.rect.center();
+                                QPointF relativePos(
+                                    insOriginalCenter.x() - originalFidCenter.x(),
+                                    insOriginalCenter.y() - originalFidCenter.y());
+                                
+                                // 회전 적용
+                                double rad = fidAngleDiff * M_PI / 180.0;
+                                double rotatedX = relativePos.x() * cos(rad) - relativePos.y() * sin(rad);
+                                double rotatedY = relativePos.x() * sin(rad) + relativePos.y() * cos(rad);
+                                
+                                // 새로운 중심점 계산
+                                int newCenterX = static_cast<int>(std::lround(fidLoc.x + rotatedX));
+                                int newCenterY = static_cast<int>(std::lround(fidLoc.y + rotatedY));
+                                
+                                adjustedRect = QRect(
+                                    newCenterX - pattern.rect.width() / 2,
+                                    newCenterY - pattern.rect.height() / 2,
+                                    pattern.rect.width(),
+                                    pattern.rect.height());
+                            }
+                        }
+                    }
+                    
+                    // 경계 조정
+                    if (adjustedRect.x() < 0 || adjustedRect.y() < 0 ||
+                        adjustedRect.x() + adjustedRect.width() > image.cols ||
+                        adjustedRect.y() + adjustedRect.height() > image.rows) {
+                        int x = std::max(0, adjustedRect.x());
+                        int y = std::max(0, adjustedRect.y());
+                        int width = std::min(image.cols - x, adjustedRect.width());
+                        int height = std::min(image.rows - y, adjustedRect.height());
+                        if (width < 10 || height < 10) {
+                            result.insResults[pattern.id] = false;
+                            result.insScores[pattern.id] = 0.0;
+                            result.insMethodTypes[pattern.id] = InspectionMethod::A_PD;
+                            result.isPassed = false;
+                            continue;
+                        }
+                        adjustedRect = QRect(x, y, width, height);
+                    }
+                    
+                    cv::Rect roiRect(adjustedRect.x(), adjustedRect.y(), adjustedRect.width(), adjustedRect.height());
+                    cv::Mat roiImage = image(roiRect).clone();
+                    
+                    roiImages.push_back(roiImage);
+                    validPatterns.append(pattern);
+                    result.adjustedRects[pattern.id] = adjustedRect;
+                }
+                
+                if (!roiImages.empty()) {
+                    modelImages[modelPath] = roiImages;
+                    modelValidPatterns[modelPath] = validPatterns;
+                }
+            }
+            
+            // 멀티모델 병렬 추론 실행
+            QMap<QString, std::vector<float>> modelScores;
+            QMap<QString, std::vector<cv::Mat>> modelMaps;
+            
+            auto inferenceStart = std::chrono::high_resolution_clock::now();
+            bool multiSuccess = ImageProcessor::runPaDiMTensorRTMultiModelInference(
+                modelImages, modelScores, modelMaps);
+            auto inferenceEnd = std::chrono::high_resolution_clock::now();
+            auto inferenceDuration = std::chrono::duration_cast<std::chrono::milliseconds>(inferenceEnd - inferenceStart).count();
+            
+            // 전체 패턴 수 계산
+            int totalPatterns = 0;
+            for (auto it = modelValidPatterns.begin(); it != modelValidPatterns.end(); ++it) {
+                totalPatterns += it.value().size();
+            }
+            int avgPatternTime = (totalPatterns > 0) ? (inferenceDuration / totalPatterns) : 0;
+            
+            if (multiSuccess) {
+                // 결과 처리
+                for (auto it = modelValidPatterns.begin(); it != modelValidPatterns.end(); ++it) {
+                    const QString& modelPath = it.key();
+                    const QList<PatternInfo>& validPatterns = it.value();
+                    
+                    if (!modelScores.contains(modelPath) || !modelMaps.contains(modelPath)) {
+                        continue;
+                    }
+                    
+                    const std::vector<float>& anomalyScores = modelScores[modelPath];
+                    const std::vector<cv::Mat>& anomalyMaps = modelMaps[modelPath];
+                    
+                    for (int i = 0; i < validPatterns.size(); i++) {
+                        const PatternInfo& pattern = validPatterns[i];
+                        
+                        if (i >= anomalyScores.size() || i >= anomalyMaps.size()) {
+                            break;
+                        }
+                        
+                        float roiAnomalyScore = anomalyScores[i];
+                        cv::Mat anomalyMap = anomalyMaps[i];
+                        roiAnomalyScore = std::max(0.0f, std::min(100.0f, roiAnomalyScore));
+                        
+                        // Threshold 처리
+                        cv::Mat binaryMask;
+                        cv::threshold(anomalyMap, binaryMask, pattern.passThreshold, 255, cv::THRESH_BINARY);
+                        binaryMask.convertTo(binaryMask, CV_8U);
+                        
+                        std::vector<std::vector<cv::Point>> contours;
+                        cv::findContours(binaryMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+                        
+                        bool hasDefect = false;
+                        std::vector<std::vector<cv::Point>> defectContours;
+                        QRectF adjustedRectF = result.adjustedRects[pattern.id];
+                        int adjustedX = static_cast<int>(adjustedRectF.x());
+                        int adjustedY = static_cast<int>(adjustedRectF.y());
+                        
+                        for (const auto& contour : contours) {
+                            int blobSize = static_cast<int>(cv::contourArea(contour));
+                            cv::Rect bbox = cv::boundingRect(contour);
+                            
+                            bool sizeCheck = (blobSize >= pattern.anomalyMinBlobSize);
+                            bool widthCheck = (bbox.width >= pattern.anomalyMinDefectWidth);
+                            bool heightCheck = (bbox.height >= pattern.anomalyMinDefectHeight);
+                            
+                            if (sizeCheck || (widthCheck && heightCheck)) {
+                                hasDefect = true;
+                                std::vector<cv::Point> absoluteContour;
+                                for (const auto& pt : contour) {
+                                    absoluteContour.push_back(cv::Point(pt.x + adjustedX, pt.y + adjustedY));
+                                }
+                                defectContours.push_back(absoluteContour);
+                            }
+                        }
+                        
+                        result.insScores[pattern.id] = static_cast<double>(roiAnomalyScore);
+                        result.insResults[pattern.id] = !hasDefect;
+                        result.insMethodTypes[pattern.id] = InspectionMethod::A_PD;
+                        result.anomalyDefectContours[pattern.id] = defectContours;
+                        result.anomalyRawMap[pattern.id] = anomalyMap.clone();
+                        
+                        // 히트맵 생성
+                        cv::Mat normalized;
+                        anomalyMap.convertTo(normalized, CV_8U, 255.0 / 100.0);
+                        cv::Mat colorHeatmap;
+                        cv::applyColorMap(normalized, colorHeatmap, cv::COLORMAP_JET);
+                        result.anomalyHeatmap[pattern.id] = colorHeatmap.clone();
+                        result.anomalyHeatmapRect[pattern.id] = pattern.rect;
+                        apdPatternCount++;
                         
                         result.isPassed = result.isPassed && !hasDefect;
                         
@@ -619,39 +975,42 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                                 if (bbox.width > maxW) maxW = bbox.width;
                                 if (bbox.height > maxH) maxH = bbox.height;
                             }
-                            logDebug(QString("  └─ <font color='#8BCB8B'>%1(ANOMALY)</font>: W:%2 H:%3 Detects:%4 (score=%5, thr=%6)")
+                            logDebug(QString("  └─ <font color='#8BCB8B'>%1(A-PD)</font>: W:%2 H:%3 Detects:%4 (score=%5, thr=%6) [%7ms]")
                                 .arg(pattern.name).arg(maxW).arg(maxH).arg(defectCount)
-                                .arg(roiAnomalyScore, 0, 'f', 2).arg(pattern.passThreshold, 0, 'f', 2));
+                                .arg(roiAnomalyScore, 0, 'f', 2).arg(pattern.passThreshold, 0, 'f', 2).arg(avgPatternTime));
                         }
                         else
                         {
-                            logDebug(QString("  └─ <font color='#8BCB8B'>%1(ANOMALY)</font>: %2%3</font> (score=%4, thr=%5)")
+                            logDebug(QString("  └─ <font color='#8BCB8B'>%1(A-PD)</font>: %2%3</font> (score=%4, thr=%5) [%6ms]")
                                 .arg(pattern.name).arg(resultColor).arg(insResultText)
-                                .arg(roiAnomalyScore, 0, 'f', 2).arg(pattern.passThreshold, 0, 'f', 2));
+                                .arg(roiAnomalyScore, 0, 'f', 2).arg(pattern.passThreshold, 0, 'f', 2).arg(avgPatternTime));
                         }
                     }
                 }
-            } else {
-                logDebug("[ANOMALY] 멀티모델 병렬 추론 실패");
             }
         }
 #endif
         
-        // ANOMALY 전체 처리 완료 요약
+        // Anomaly 전체 처리 완료 요약
         if (totalAnomalyCount > 0) {
             auto anomalyBatchEnd = std::chrono::high_resolution_clock::now();
-            auto anomalyTotalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(anomalyBatchEnd - anomalyBatchStart).count();
-            logDebug(QString("[ANOMALY 완료] %1개 패턴 검사 완료 (%2ms, 평균 %3ms/패턴)")
-                .arg(totalAnomalyCount)
-                .arg(anomalyTotalDuration)
-                .arg(totalAnomalyCount > 0 ? anomalyTotalDuration / totalAnomalyCount : 0));
+            
+            long long apcDuration = 0;
+            long long apdDuration = 0;
+            if (apcPatternCount > 0) {
+                apcDuration = std::chrono::duration_cast<std::chrono::milliseconds>(apdBatchStart - apcBatchStart).count();
+            }
+            if (apdPatternCount > 0) {
+                apdDuration = std::chrono::duration_cast<std::chrono::milliseconds>(anomalyBatchEnd - apdBatchStart).count();
+            }
         }
         
-        // ===== 일반 INS 패턴 처리 (ANOMALY 제외) =====
+        // ===== 일반 INS 패턴 처리 (A-PC, A-PD 제외) =====
         for (const PatternInfo &pattern : insPatterns)
         {
-            // ANOMALY는 이미 배치로 처리됨
-            if (pattern.inspectionMethod == InspectionMethod::ANOMALY)
+            // A-PC와 A-PD는 이미 배치로 처리됨
+            if (pattern.inspectionMethod == InspectionMethod::A_PC ||
+                pattern.inspectionMethod == InspectionMethod::A_PD)
             {
                 continue;
             }
@@ -784,10 +1143,6 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                         pattern.patternMatchUseRotation ? pattern.patternMatchAngleStep : 1.0,
                         maskMat  // 마스크 전달
                     );
-                    auto insMatchEnd = std::chrono::high_resolution_clock::now();
-                    auto insMatchDuration = std::chrono::duration_cast<std::chrono::milliseconds>(insMatchEnd - insMatchStart).count();
-                    qDebug() << QString("[INS 패턴매칭] 패턴 '%1' 시간: %2ms (점수: %3)").arg(pattern.name).arg(insMatchDuration).arg(matchScore * 100.0, 0, 'f', 1);
-
                     // 패턴 매칭 완료
 
                     if (matched && (matchScore * 100.0) >= pattern.patternMatchThreshold)
@@ -841,7 +1196,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                     // 부모 FID가 매칭에 실패했을 경우 이 INS 패턴은 FAIL (검사 불가)
                     if (!result.fidResults[pattern.parentId])
                     {
-                        logDebug(QString("INS 패턴 '%1': FAIL - 부모 FID 매칭 실패로 검사 불가")
+                        logDebug(QString("INS pattern '%1': FAIL - Cannot inspect (parent FID match failed)")
                                      .arg(pattern.name));
                         result.insResults[pattern.id] = false;
                         result.insScores[pattern.id] = 0.0;
@@ -1178,9 +1533,10 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 break;
             }
 
-            case InspectionMethod::ANOMALY:
+            case InspectionMethod::A_PC:
+            case InspectionMethod::A_PD:
             {
-                // ANOMALY는 배치로 이미 처리됨 - 로그만 출력하고 continue
+                // A-PC와 A-PD는 배치로 이미 처리됨 - 로그만 출력하고 continue
                 // 결과는 배치 처리 단계에서 이미 result에 저장됨
                 inspPassed = result.insResults.value(pattern.id, false);
                 inspScore = result.insScores.value(pattern.id, 0.0);
@@ -1258,9 +1614,11 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
 
             // 검사 방법별 결과 포맷팅
             QString resultDetail;
-            if (pattern.inspectionMethod == InspectionMethod::ANOMALY)
+            if (pattern.inspectionMethod == InspectionMethod::A_PC ||
+                pattern.inspectionMethod == InspectionMethod::A_PD)
             {
-                // ANOMALY: 불량 개수 및 최대 W/H 표시
+                // A-PC/A-PD: 불량 개수 및 최대 W/H 표시
+                QString methodName = InspectionMethod::getName(pattern.inspectionMethod);
                 int defectCount = result.anomalyDefectContours.value(pattern.id).size();
                 if (defectCount > 0) {
                     // 최대 컨투어 W/H 찾기
@@ -1272,7 +1630,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                     }
                     resultDetail = QString("  └─ %1%2(%3)%4: W:%5 H:%6 Detects:%7 (%8ms)")
                                        .arg(colorGreen).arg(pattern.name)
-                                       .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
+                                       .arg(methodName).arg(colorEnd)
                                        .arg(maxW)
                                        .arg(maxH)
                                        .arg(defectCount)
@@ -1280,7 +1638,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 } else {
                     resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (%8ms)")
                                        .arg(colorGreen).arg(pattern.name)
-                                       .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
+                                       .arg(methodName).arg(colorEnd)
                                        .arg(resultColor).arg(insResultText).arg(colorEnd)
                                        .arg(insDuration);
                 }
@@ -1292,7 +1650,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 
                 // gradient points 부족으로 검사 실패한 경우 (score = 0.0)
                 if (inspScore == 0.0 && !result.stripPointsValid.value(pattern.id, false)) {
-                    resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (gradient points 부족) (%8ms)")
+                    resultDetail = QString("  └─ %1%2(%3)%4: %5%6%7 (insufficient gradient points) (%8ms)")
                                        .arg(colorGreen).arg(pattern.name)
                                        .arg(InspectionMethod::getName(pattern.inspectionMethod)).arg(colorEnd)
                                        .arg(resultColor).arg(insResultText).arg(colorEnd)
@@ -1390,7 +1748,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     QString coloredResult = result.isPassed 
         ? QString("<font color='#4CAF50'>%1</font>").arg(resultText)
         : QString("<font color='#f44336'>%1</font>").arg(resultText);
-    logDebug(QString("  └─ 결과: %1 (%2ms)").arg(coloredResult).arg(duration.count()));
+    logDebug(QString("  └─ Result: %1 (%2ms)").arg(coloredResult).arg(duration.count()));
 
     // 이미지 저장 (NG/OK 상관없이 모두 저장)
     // frameIndex는 이미 위에서 선언됨 (line 49)
@@ -2671,7 +3029,7 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
         logDebug(QString("ANOMALY 검사 실패: 모델 파일 없음 - 패턴 '%1', 경로: %2").arg(pattern.name).arg(fullModelPath));
         score = 0.0;
         result.insScores[pattern.id] = score;
-        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+        result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
         return false;
     }
     
@@ -2680,7 +3038,7 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
         logDebug(QString("ANOMALY 검사 실패: 모델 로드 실패 - 패턴 '%1'").arg(pattern.name));
         score = 0.0;
         result.insScores[pattern.id] = score;
-        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+        result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
         return false;
     }
     
@@ -2700,7 +3058,7 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
         logDebug(QString("ANOMALY 검사 실패: 유효하지 않은 ROI - 패턴 '%1'").arg(pattern.name));
         score = 0.0;
         result.insScores[pattern.id] = score;
-        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+        result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
         return false;
     }
     
@@ -2737,7 +3095,7 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
         logDebug(QString("ANOMALY 검사 실패: PatchCore 추론 실패 - 패턴 '%1'").arg(pattern.name));
         score = 0.0;
         result.insScores[pattern.id] = score;
-        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+        result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
         return false;
     }
     
@@ -2746,7 +3104,7 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
         logDebug(QString("ANOMALY 검사 실패: anomaly map이 비어있음 - 패턴 '%1'").arg(pattern.name));
         score = 0.0;
         result.insScores[pattern.id] = score;
-        result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+        result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
         return false;
     }
     
@@ -2823,7 +3181,7 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     
     // 결과 저장
     result.insScores[pattern.id] = score;
-    result.insMethodTypes[pattern.id] = InspectionMethod::ANOMALY;
+    result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
     
     return !hasDefect;
 }
@@ -3016,12 +3374,11 @@ bool InsProcessor::checkDiff(const cv::Mat &image, const PatternInfo &pattern, d
         result.insScores[pattern.id] = score;           // 점수 저장 (0-1 범위)
         result.insResults[pattern.id] = passed;         // 검사 결과 저장
 
-        // 디버그 출력 - 점수를 백분율로 표시
-        logDebug(QString("DIFF 검사 결과 - 패턴: '%1', 유사도: %2%, 임계값: %3%, 결과: %4")
+        logDebug(QString("   └─ %1(DIFF): %2 (score=%3, thr=%4)")
                      .arg(pattern.name)
+                     .arg(passed ? "PASS" : "NG")
                      .arg(scorePercentage, 0, 'f', 2)
-                     .arg(pattern.passThreshold, 0, 'f', 2)
-                     .arg(passed ? "합격" : "불합격"));
+                     .arg(pattern.passThreshold, 0, 'f', 2));
 
         return passed;
     }
@@ -3499,7 +3856,7 @@ bool InsProcessor::checkStrip(const cv::Mat &image, const PatternInfo &pattern, 
         }
         else
         {
-            logDebug("STRIP 검사 실패: gradientPoints 개수 부족 (" + QString::number(gradientPoints.size()) + "/4)");
+            logDebug("STRIP inspection failed: Insufficient gradient points (" + QString::number(gradientPoints.size()) + "/4)");
             score = 0.0;
             return false; // FAIL 처리
         }

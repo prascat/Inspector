@@ -1091,14 +1091,25 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                     }
                 }
                 
-                if (cameraIdx >= 0) {
-                    // cameraFrames에 직접 설정
-                    if (cameraIdx >= static_cast<int>(teachingWidget->cameraFrames.size())) {
+                if (cameraIdx >= 0 && cameraIdx < 4) {
+                    // teachingImage 유효성 검증
+                    if (teachingImage.empty() || !teachingImage.data) {
+                        qWarning() << QString("[RecipeManager] 카메라 %1: 유효하지 않은 teachingImage").arg(cameraIdx);
+                    } else {
+                        try {
+                            // 안전한 복사
+                            cv::Mat clonedImage = teachingImage.clone();
+                            if (!clonedImage.empty() && clonedImage.data) {
+                                teachingWidget->cameraFrames[cameraIdx] = std::move(clonedImage);
+                                qDebug() << QString("카메라 '%1' (인덱스 %2) base64 티칭 이미지를 cameraFrames에 직접 설정: %3x%4")
+                                            .arg(cameraUuid).arg(cameraIdx).arg(teachingImage.cols).arg(teachingImage.rows);
+                            } else {
+                                qWarning() << QString("[RecipeManager] 카메라 %1: clone 실패").arg(cameraIdx);
+                            }
+                        } catch (const std::exception& e) {
+                            qCritical() << QString("[RecipeManager] 카메라 %1 이미지 할당 중 예외: %2").arg(cameraIdx).arg(e.what());
+                        }
                     }
-                    teachingWidget->cameraFrames[cameraIdx] = teachingImage.clone();
-                    
-                    qDebug() << QString("카메라 '%1' (인덱스 %2) base64 티칭 이미지를 cameraFrames에 직접 설정: %3x%4")
-                                .arg(cameraUuid).arg(cameraIdx).arg(teachingImage.cols).arg(teachingImage.rows);
                 }
             }
         }
@@ -1131,11 +1142,19 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                         // ★ imageIndex를 직접 사용해서 cameraFrames에 저장
                         // imageIndex는 0,1,2,3 순차 프레임 인덱스
                         if (imageIndex >= 0 && imageIndex < 4) {
-                            // cameraFrames 크기 확장
-                            if (imageIndex >= static_cast<int>(teachingWidget->cameraFrames.size())) {
+                            try {
+                                // 안전한 복사
+                                cv::Mat clonedImage = teachingImage.clone();
+                                if (!clonedImage.empty() && clonedImage.data) {
+                                    teachingWidget->cameraFrames[imageIndex] = std::move(clonedImage);
+                                    qDebug() << QString("[RecipeManager] imageIndex %1에 티칭 이미지 저장: %2x%3")
+                                                .arg(imageIndex).arg(teachingImage.cols).arg(teachingImage.rows);
+                                } else {
+                                    qWarning() << QString("[RecipeManager] imageIndex %1: clone 실패").arg(imageIndex);
+                                }
+                            } catch (const std::exception& e) {
+                                qCritical() << QString("[RecipeManager] imageIndex %1 이미지 할당 중 예외: %2").arg(imageIndex).arg(e.what());
                             }
-                            teachingWidget->cameraFrames[imageIndex] = teachingImage.clone();
-                            // cameraFrames 저장 완료 (로그 제거)
                         } else {
                             qDebug() << QString("[RecipeManager] ✗ imageIndex=%1은 범위를 벗어남 (0-3만 허용)").arg(imageIndex);
                         }

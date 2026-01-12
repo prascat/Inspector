@@ -135,7 +135,7 @@ Inspector는 Qt6, OpenCV, TensorRT를 기반으로 한 산업용 머신 비전 �
 ## 최근 개선 사항 (2026)
 
 🆕 최신 업데이트
-- AI 이상 탐지: PatchCore 알고리즘 통합
+- AI 이상 탐지: PatchCore 및 PaDiM 알고리즘 통합
 - TensorRT 최적화: FP16 추론으로 실시간 AI 검사
 - 자동 학습 시스템: GUI 통합 모델 학습
 - 히트맵 시각화: 실시간 이상 영역 표시
@@ -191,7 +191,6 @@ make -j6
 - 치수 측정: 교정된 카메라를 사용한 정밀 측정
 - 표면 품질 평가: 스크래치, 덴트, 변색 감지
 - 조립 확인: 부품 존재 및 올바른 방향 확인
-- 코드 읽기: 바코드 및 QR 코드 확인
 - 색상 매칭: 정밀한 색상 일관성 확인
 
 ## FLIR 카메라 통합
@@ -271,13 +270,6 @@ UserSet 파라미터 수정 가능 여부 제어
 ```
 
 #사전 설정된 UserSet
-
-UserSet0 - LIVE 모드 (연속 획득)
-- TriggerMode: Off (자유 실행)
-- AcquisitionMode: Continuous
-- FrameRate: 30 FPS
-- 목적: 실시간 라이브 프리뷰 및 카메라 테스트
-- 사용 사례: 패턴 생성, 템플릿 생성, 수동 검사
 
 UserSet1 - TRIGGER 모드 (트리거 획득)
 - TriggerMode: On

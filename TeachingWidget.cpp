@@ -246,11 +246,11 @@ void CameraGrabberThread::run()
                 CameraInfo info = parent->getCameraInfo(m_cameraIndex);
 
                 // Spinnaker 카메라 처리
-                if (info.uniqueId.startsWith("SPINNAKER_"))
-                {
 #ifdef USE_SPINNAKER
+                if (parent->m_useSpinnaker)
+                {
                     // ★ 카메라가 중지되는 중이면 프레임 획득하지 않음
-                    if (!parent->camOff && parent->m_useSpinnaker && m_cameraIndex < static_cast<int>(parent->m_spinCameras.size()))
+                    if (!parent->camOff && m_cameraIndex < static_cast<int>(parent->m_spinCameras.size()))
                     {
                         auto spinCamera = parent->m_spinCameras[m_cameraIndex];
                         
@@ -316,11 +316,6 @@ void CameraGrabberThread::run()
                                                     // **트리거 신호 수신 - 검사 자동 시작**
                                                     if (!frame.empty())
                                                     {
-                                                        int hwTotal = ++parent->totalHardwareTriggersReceived;
-                                                        int hwCam = ++parent->hardwareTriggersPerCamera[m_cameraIndex];
-                                                        int serverCount = parent->totalTriggersReceived.load();
-                                                        int hwCam0 = parent->hardwareTriggersPerCamera[0].load();
-                                                        int hwCam1 = parent->hardwareTriggersPerCamera[1].load();
                                                         
                                                         // ★ 실제 프레임 인덱스를 읽어서 해당 카운트 증가
                                                         int currentFrameIdx = parent->nextFrameIndex[m_cameraIndex].load();
@@ -328,17 +323,9 @@ void CameraGrabberThread::run()
                                                             parent->serialFrameCount[currentFrameIdx]++;
                                                         }
                                                         
-                                                        int f0 = parent->serialFrameCount[0].load();
-                                                        int f1 = parent->serialFrameCount[1].load();
-                                                        int f2 = parent->serialFrameCount[2].load();
-                                                        int f3 = parent->serialFrameCount[3].load();
-                                                        
-                                                        qDebug().noquote() << QString("[카메라 HW 트리거] 서버:%1(0:%2, 1:%3, 2:%4, 3:%5) | HW전체:%6 (CAM0:%7 CAM1:%8)")
-                                                                    .arg(serverCount)
-                                                                    .arg(f0).arg(f1).arg(f2).arg(f3)
-                                                                    .arg(hwTotal)
-                                                                    .arg(hwCam0)
-                                                                    .arg(hwCam1);
+                                                        qDebug().noquote() << QString("Cam%1 Capture - Frame[%2]")
+                                                                    .arg(m_cameraIndex)
+                                                                    .arg(currentFrameIdx);
                                                         emit triggerSignalReceived(frame, m_cameraIndex);
                                                     }
                                                 }
@@ -596,8 +583,13 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     // 이벤트 연결
     connectEvents();
 
-    // InsProcessor 로그를 오버레이로 연결
-    connect(insProcessor, &InsProcessor::logMessage, this, &TeachingWidget::receiveLogMessage);
+    // InsProcessor가 초기화되었는지 확인 후 로그 연결
+    if (insProcessor) {
+        // InsProcessor 로그를 오버레이로 연결
+        connect(insProcessor, &InsProcessor::logMessage, this, &TeachingWidget::receiveLogMessage);
+    } else {
+        qCritical() << "[TeachingWidget] insProcessor 초기화 실패!";
+    }
 
     uiUpdateThread = new UIUpdateThread(this);
 
@@ -694,9 +686,9 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     QTimer::singleShot(1500, this, [this]() {
         ClientDialog::instance()->initialize();
         
-        // 프레임 인덱스 수신 시그널 연결
-        connect(ClientDialog::instance(), &ClientDialog::frameIndexReceived,
-                this, &TeachingWidget::onFrameIndexReceived);
+        // 검사 요청 시그널 연결
+        connect(ClientDialog::instance(), &ClientDialog::inspectionRequestReceived,
+                this, &TeachingWidget::onInspectionRequestReceived);
     });
 
     // 시리얼 통신 자동 연결 (저장된 설정 확인)
@@ -939,7 +931,13 @@ void TeachingWidget::openRecipe(bool autoMode)
 
 void TeachingWidget::initBasicSettings()
 {
+    // InsProcessor 초기화 (검사 로직 담당)
     insProcessor = new InsProcessor(this);
+    if (!insProcessor) {
+        qCritical() << "[initBasicSettings] InsProcessor 생성 실패!";
+    } else {
+        qDebug() << "[initBasicSettings] InsProcessor 초기화 완료";
+    }
 
     // 시리얼 통신 객체 초기화
     serialCommunication = new SerialCommunication(this);
@@ -987,8 +985,8 @@ void TeachingWidget::initBasicSettings()
     lastUsedFrameIndex = -1;  // 마지막 사용 프레임 인덱스 초기화
     
     // ★ 카메라별 다음 프레임 인덱스 초기화
-    nextFrameIndex[0] = -1;
-    nextFrameIndex[1] = -1;
+    nextFrameIndex[0] = 0;
+    nextFrameIndex[1] = 0;
     totalTriggersReceived = 0;
     totalInspectionsExecuted = 0;
 
@@ -4159,7 +4157,8 @@ void TeachingWidget::createPropertyPanels()
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::STRIP));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::CRIMP));
     insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::SSIM));
-    insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::ANOMALY));
+    insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::A_PC));
+    insMethodCombo->addItem(InspectionMethod::getName(InspectionMethod::A_PD));
     insMethodCombo->setCurrentIndex(0); // 기본값을 DIFF로 설정
     basicInspectionLayout->addRow(insMethodLabel, insMethodCombo);
 
@@ -4301,14 +4300,6 @@ void TeachingWidget::createPropertyPanels()
     anomalyMinDefectHeightSpin->setRange(1, 1000);
     anomalyMinDefectHeightSpin->setValue(5);
     anomalyLayout->addRow("최소 불량 H (px):", anomalyMinDefectHeightSpin);
-    
-    // Train 버튼 추가
-    anomalyTrainButton = new QPushButton("Train", anomalySettingsWidget);
-    anomalyTrainButton->setStyleSheet(
-        "QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 5px; border-radius: 3px; }"
-        "QPushButton:hover { background-color: #45a049; }"
-        "QPushButton:pressed { background-color: #3d8b40; }");
-    anomalyLayout->addRow("", anomalyTrainButton);
     
     basicInspectionLayout->addRow("", anomalySettingsWidget);
     anomalySettingsWidget->setVisible(false);  // 초기에는 숨김 (ANOMALY 선택 시만 표시)
@@ -5048,10 +5039,10 @@ void TeachingWidget::createPropertyPanels()
                 if (ssimSettingsWidget)
                     ssimSettingsWidget->setVisible(index == InspectionMethod::SSIM); // SSIM
                 if (anomalySettingsWidget)
-                    anomalySettingsWidget->setVisible(index == InspectionMethod::ANOMALY); // ANOMALY
+                    anomalySettingsWidget->setVisible(index == InspectionMethod::A_PC || index == InspectionMethod::A_PD); // A-PC, A-PD
                 
                 // 합격 임계값: ANOMALY일 때는 슬라이더, 다른 방법(DIFF)일 때는 SpinBox
-                bool isAnomaly = (index == InspectionMethod::ANOMALY);
+                bool isAnomaly = (index == InspectionMethod::A_PC || index == InspectionMethod::A_PD);
                 bool isDiff = (index == InspectionMethod::DIFF);
                 
                 // SpinBox는 DIFF에서만 표시
@@ -5165,65 +5156,8 @@ void TeachingWidget::createPropertyPanels()
         }
     });
     
-    // ANOMALY Train 버튼 연결
-    connect(anomalyTrainButton, &QPushButton::clicked, [this]() {
-        if (!cameraView) return;
-        
-        // 현재 모드의 모든 ANOMALY 패턴 수집
-        QVector<PatternInfo*> anomalyPatterns;
-        QVector<PatternInfo*> allPatternsVec;
-        const QList<PatternInfo>& allPatterns = cameraView->getPatterns();
-        
-        for (const PatternInfo& pattern : allPatterns) {
-            PatternInfo* patPtr = const_cast<PatternInfo*>(&pattern);
-            allPatternsVec.append(patPtr);  // 모든 패턴 추가 (FID 포함)
-            
-            if (pattern.type == PatternType::INS && 
-                pattern.inspectionMethod == InspectionMethod::ANOMALY) {
-                qDebug() << "[모델관리] ANOMALY 패턴 발견:" << pattern.name 
-                         << "frameIndex:" << pattern.frameIndex;
-                anomalyPatterns.append(patPtr);
-            }
-        }
-        
-        qDebug() << "[모델관리] 전체 패턴:" << allPatterns.size() 
-                 << "ANOMALY 패턴:" << anomalyPatterns.size();
-        
-        if (anomalyPatterns.isEmpty()) {
-            QMessageBox::warning(this, "경고", "ANOMALY 검사 방법을 사용하는 INS 패턴이 없습니다.");
-            return;
-        }
-        
-        // TrainDialog 표시
-        TrainDialog* trainDialog = new TrainDialog(this);
-        activeTrainDialog = trainDialog;  // 활성 다이얼로그 저장
-        trainDialog->setAllPatterns(allPatternsVec);  // 모든 패턴 설정 (FID 찾기용)
-        trainDialog->setAnomalyPatterns(anomalyPatterns);
-        trainDialog->setCurrentRecipeName(currentRecipeName);  // 현재 레시피명 전달
-        
-        // Train 요청 시그널 연결
-        connect(trainDialog, &TrainDialog::trainRequested, this, [this](const QString& patternName) {
-            trainAnomalyPattern(patternName);
-        });
-        
-        // 학습 완료 시그널 연결 - 모델 리로딩
-        connect(trainDialog, &TrainDialog::trainingFinished, this, [this](bool success) {
-            if (success) {
-                qDebug() << "[TRAIN] 학습 완료됨. 모델 리로딩 시작...";
-                // 기존 모델 해제
-                ImageProcessor::releasePatchCoreTensorRT();
-                qDebug() << "[TRAIN] 모델 리로딩 완료. 새로 학습된 모델을 사용할 수 있습니다.";
-            }
-        });
-        
-        // 다이얼로그 닫힐 때 activeTrainDialog 초기화
-        connect(trainDialog, &QWidget::destroyed, this, [this]() {
-            activeTrainDialog = nullptr;
-        });
-        
-        trainDialog->show();
-        trainDialog->setAttribute(Qt::WA_DeleteOnClose);
-    });
+    // 모델 관리는 메뉴 > 모델관리에서만 접근
+    // (Train 버튼 제거됨)
 
     // 패턴 매칭 활성화 체크박스 연결
     if (insPatternMatchGroup) {
@@ -6207,24 +6141,6 @@ void TeachingWidget::updateInsMatchTemplate(PatternInfo *pattern)
     pattern->matchTemplate = qimg.copy();
     pattern->matchTemplateMask = maskImg.copy();
 
-    if (pattern->matchTemplateMask.isNull()) {
-        qDebug() << QString("INS 패턴 '%1' matchTemplate 업데이트: %2x%3, 포맷=%4, 마스크=NULL, 각도=%5°")
-                        .arg(pattern->name)
-                        .arg(pattern->matchTemplate.width())
-                        .arg(pattern->matchTemplate.height())
-                        .arg(pattern->matchTemplate.format())
-                        .arg(pattern->angle, 0, 'f', 2);
-    } else {
-        qDebug() << QString("INS 패턴 '%1' matchTemplate 업데이트: %2x%3, 포맷=%4, 마스크=%5x%6, 각도=%7°")
-                        .arg(pattern->name)
-                        .arg(pattern->matchTemplate.width())
-                        .arg(pattern->matchTemplate.height())
-                        .arg(pattern->matchTemplate.format())
-                        .arg(pattern->matchTemplateMask.width())
-                        .arg(pattern->matchTemplateMask.height())
-                        .arg(pattern->angle, 0, 'f', 2);
-    }
-
     // UI 업데이트 (현재 선택된 패턴인 경우에만)
     if (insMatchTemplateImg)
     {
@@ -6642,7 +6558,7 @@ void TeachingWidget::connectPropertyPanelEvents()
                                 // STRIP과 SSIM 검사에서는 검사 임계값과 결과 반전 옵션 필요 없음 (ANOMALY는 표시)
                                 if (insPassThreshSpin && insPassThreshLabel)
                                 {
-                                    bool isAnomaly = (index == InspectionMethod::ANOMALY);
+                                    bool isAnomaly = (index == InspectionMethod::A_PC || index == InspectionMethod::A_PD);
                                     bool isDiff = (index == InspectionMethod::DIFF);
                                     
                                     // SpinBox는 DIFF에서만 표시
@@ -6663,7 +6579,7 @@ void TeachingWidget::connectPropertyPanelEvents()
                                 // 슬라이더는 ANOMALY에서만 표시
                                 if (insPassThreshSlider)
                                 {
-                                    insPassThreshSlider->parentWidget()->setVisible(index == InspectionMethod::ANOMALY);
+                                    insPassThreshSlider->parentWidget()->setVisible(index == InspectionMethod::A_PC || index == InspectionMethod::A_PD);
                                 }
 
                                 // SSIM 설정 위젯 표시/숨김
@@ -6675,7 +6591,7 @@ void TeachingWidget::connectPropertyPanelEvents()
                                 // ANOMALY 설정 위젯 표시/숨김
                                 if (anomalySettingsWidget)
                                 {
-                                    anomalySettingsWidget->setVisible(index == InspectionMethod::ANOMALY);
+                                    anomalySettingsWidget->setVisible(index == InspectionMethod::A_PC || index == InspectionMethod::A_PD);
                                 }
 
                                 // 패턴 매칭 패널 표시 설정
@@ -8237,7 +8153,8 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                 // ANOMALY 설정 위젯 표시/숨김 및 값 설정
                 if (anomalySettingsWidget)
                 {
-                    bool isANOMALY = (pattern->inspectionMethod == InspectionMethod::ANOMALY);
+                    bool isANOMALY = (pattern->inspectionMethod == InspectionMethod::A_PC || 
+                                      pattern->inspectionMethod == InspectionMethod::A_PD);
                     anomalySettingsWidget->setVisible(isANOMALY);
                     
                     if (isANOMALY)
@@ -8261,32 +8178,6 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                             anomalyMinDefectHeightSpin->blockSignals(true);
                             anomalyMinDefectHeightSpin->setValue(pattern->anomalyMinDefectHeight);
                             anomalyMinDefectHeightSpin->blockSignals(false);
-                        }
-                        
-                        // Train 버튼 상태 업데이트 (모델 파일 존재 여부 확인)
-                        if (anomalyTrainButton)
-                        {
-                            QString modelPath = QCoreApplication::applicationDirPath() + QString("/weights/%1/%1.xml").arg(pattern->name);
-                            QFileInfo modelFile(modelPath);
-                            
-                            if (modelFile.exists())
-                            {
-                                // 모델 파일이 있으면 "Trained" (빨간색)
-                                anomalyTrainButton->setText("Trained");
-                                anomalyTrainButton->setStyleSheet(
-                                    "QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 5px; border-radius: 3px; }"
-                                    "QPushButton:hover { background-color: #da190b; }"
-                                    "QPushButton:pressed { background-color: #c0180a; }");
-                            }
-                            else
-                            {
-                                // 모델 파일이 없으면 "Train" (녹색)
-                                anomalyTrainButton->setText("Train");
-                                anomalyTrainButton->setStyleSheet(
-                                    "QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 5px; border-radius: 3px; }"
-                                    "QPushButton:hover { background-color: #45a049; }"
-                                    "QPushButton:pressed { background-color: #3d8b40; }");
-                            }
                         }
                     }
                 }
@@ -8382,7 +8273,8 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
 
                 if (insPassThreshSpin)
                 {
-                    bool isAnomaly = (pattern->inspectionMethod == InspectionMethod::ANOMALY);
+                    bool isAnomaly = (pattern->inspectionMethod == InspectionMethod::A_PC ||
+                                      pattern->inspectionMethod == InspectionMethod::A_PD);
                     bool isDiff = (pattern->inspectionMethod == InspectionMethod::DIFF);
                     
                     // SpinBox는 DIFF에서만 표시
@@ -8408,7 +8300,8 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
                 // 슬라이더 값 설정 (ANOMALY)
                 if (insPassThreshSlider)
                 {
-                    bool isAnomaly = (pattern->inspectionMethod == InspectionMethod::ANOMALY);
+                    bool isAnomaly = (pattern->inspectionMethod == InspectionMethod::A_PC ||
+                                      pattern->inspectionMethod == InspectionMethod::A_PD);
                     insPassThreshSlider->parentWidget()->setVisible(isAnomaly);
                     
                     if (isAnomaly)
@@ -9892,6 +9785,16 @@ void TeachingWidget::updateSinglePreview(int frameIndex)
     updateSinglePreviewWithFrame(frameIndex, previewFrame);
 }
 
+// 검사 요청 수신 처리 (소켓 통신)
+void TeachingWidget::onInspectionRequestReceived(const QJsonObject& request)
+{
+    qDebug().noquote() << "[Socket] 검사 요청 수신:" << QJsonDocument(request).toJson(QJsonDocument::Compact);
+    
+    // TODO: 요청 파싱 및 검사 실행
+    // request_id, inspection_type, parameters 등 처리
+}
+
+// 프레임 인덱스 수신 처리 (시리얼 통신 - 레거시)
 void TeachingWidget::onFrameIndexReceived(int frameIndex)
 {
     // TEACH ON/OFF 상태 관계없이 시리얼 트리거는 처리
@@ -9936,21 +9839,16 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int triggerCa
     int frameIdx = nextFrameIndex[triggerCameraIndex].load();
     
     if (frameIdx < 0 || frameIdx >= 4) {
-        // 서버가 프레임 인덱스를 지정하지 않은 경우 - 검사 스킵
-        qWarning() << QString("[Trigger] 서버 프레임 인덱스 없음 - 검사 스킵 (카메라%1) | CAM0:%2 CAM1:%3 | 통계 서버:%4 HW:%5 실행:%6")
-                      .arg(triggerCameraIndex)
-                      .arg(nextFrameIndex[0].load())
-                      .arg(nextFrameIndex[1].load())
-                      .arg(totalTriggersReceived.load())
-                      .arg(totalHardwareTriggersReceived.load())
-                      .arg(totalInspectionsExecuted.load());
         return;
     }
     
     totalInspectionsExecuted++;  // 검사 실행 카운트
     
+    // ★ 시리얼/서버 명령으로 트리거된 검사 플래그 설정
+    frameTriggeredBySerial[frameIdx] = true;
+    
     // ★ 트리거 사용 후 즉시 초기화 (같은 메시지로 중복 검사 방지)
-    nextFrameIndex[triggerCameraIndex] = -1;
+    nextFrameIndex[triggerCameraIndex] = 0;
     
     // ★★★ 같은 프레임이 이미 처리 중이면 무시 (동시 접근 차단)
     bool expected = false;
@@ -10067,15 +9965,20 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int triggerCa
     // 트리거 처리 완료 시간 측정
     auto triggerEndTime = std::chrono::high_resolution_clock::now();
     auto triggerDuration = std::chrono::duration_cast<std::chrono::milliseconds>(triggerEndTime - triggerStartTime).count();
-    qDebug().noquote() << QString("[Trigger] 전체 처리 시간: %1ms (Cam:%2 Frame[%3])").arg(triggerDuration).arg(triggerCameraIndex).arg(frameIdx);
+    qDebug().noquote() << QString("[Inspect] Total: %1ms (Cam:%2 Frame[%3])").arg(triggerDuration).arg(triggerCameraIndex).arg(frameIdx);
     
-    // ★★★ 시리얼 통신으로 검사 결과 전송 (4바이트: 0xFF frameIdx+1 result 0xEF)
+    // ★★★ 시리얼 통신으로 검사 결과 전송 (메인 스레드에서 실행)
     if (serialCommunication && serialCommunication->isConnected()) {
-        serialCommunication->sendInspectionResult(frameIdx, passed);
+        QMetaObject::invokeMethod(this, [this, frameIdx, passed]() {
+            if (serialCommunication && serialCommunication->isConnected()) {
+                serialCommunication->sendInspectionResult(frameIdx, passed);
+            }
+        }, Qt::QueuedConnection);
     }
     
     // 프레임 처리 완료 플래그 해제
     frameProcessing[frameIdx] = false;
+    frameTriggeredBySerial[frameIdx] = false;  // 플래그 초기화
 }
 
 // processNextInspection 함수 제거됨 - 순차 처리로 변경
@@ -10094,8 +9997,8 @@ void TeachingWidget::startCamera()
     camOff = false;
     
     // ★ 서버 프레임 인덱스 초기화
-    nextFrameIndex[0] = -1;
-    nextFrameIndex[1] = -1;
+    nextFrameIndex[0] = 0;
+    nextFrameIndex[1] = 0;
     lastUsedFrameIndex = -1;
     totalTriggersReceived = 0;
     totalInspectionsExecuted = 0;
@@ -10109,15 +10012,16 @@ void TeachingWidget::startCamera()
 
     // ★ 모든 레시피 데이터 초기화 (공용 함수 사용)
     // clearAllRecipeData() 내부에 CAM ON 체크가 있으므로 직접 초기화
+    // ★ 화면 깜빡임 방지: 배경 이미지는 유지하고 프레임만 초기화
     for (auto& frame : cameraFrames) {
         frame.release();
     }
     if (cameraView)
     {
-        cameraView->setBackgroundPixmap(QPixmap());
+        // 배경 이미지는 유지 (번쩍임 방지)
         cameraView->clearPatterns();
         cameraView->setSelectedPatternId(QUuid());
-        cameraView->update();
+        // update() 호출 제거 (깜빡임 방지)
     }
     if (patternTree)
     {
@@ -10704,7 +10608,7 @@ void TeachingWidget::updateTreeItemTexts(QTreeWidgetItem *item)
             // 필터 이름을 번역된 텍스트로 변경
             QString filterName = getFilterTypeName(filter.type);
             item->setText(0, filterName);
-            item->setText(1, TR("FILTER_TYPE_ABBREV")); // "FIL" 등
+            item->setText(1, "FIL");
 
             // 상태 텍스트도 번역
             item->setText(2, filter.enabled ? TR("ACTIVE") : TR("INACTIVE"));
@@ -10732,7 +10636,7 @@ void TeachingWidget::updateTreeItemTexts(QTreeWidgetItem *item)
                 typeText = TR("INS");
                 break;
             case PatternType::FIL:
-                typeText = TR("FILTER_TYPE_ABBREV");
+                typeText = "FIL";
                 break;
             }
             item->setText(1, typeText);
@@ -10837,7 +10741,8 @@ void TeachingWidget::showModelManagement()
         // const_cast 사용하여 포인터로 변환 (TrainDialog에서 읽기만 함)
         PatternInfo* pattern = const_cast<PatternInfo*>(&allPatterns[i]);
         allPatternsVec.append(pattern);  // 모든 패턴 추가 (FID 포함)
-        if (pattern && pattern->inspectionMethod == InspectionMethod::ANOMALY) {
+        if (pattern && (pattern->inspectionMethod == InspectionMethod::A_PC ||
+                        pattern->inspectionMethod == InspectionMethod::A_PD)) {
             anomalyPatterns.append(pattern);
         }
     }
@@ -10879,8 +10784,8 @@ void TeachingWidget::showModelManagement()
     // 현재 모드 전달 (0: STRIP, 1: CRIMP)
     int currentMode = 0; // 기본값
     activeTrainDialog->setAllPatterns(allPatternsVec);  // 모든 패턴 설정 (FID 찾기용)
+    activeTrainDialog->setCurrentRecipeName(currentRecipeName);  // 현재 레시피명 전달 (패턴 설정 전에 먼저)
     activeTrainDialog->setAnomalyPatterns(anomalyPatterns);
-    activeTrainDialog->setCurrentRecipeName(currentRecipeName);  // 현재 레시피명 전달
     
     // 다이얼로그 표시
     activeTrainDialog->show();
@@ -10986,8 +10891,7 @@ void TeachingWidget::updateCameraFrame()
 
 #ifdef USE_SPINNAKER
         // Spinnaker 카메라 확인
-        if (m_useSpinnaker && cameraInfos[cameraIndex].uniqueId.startsWith("SPINNAKER_") &&
-            cameraIndex < static_cast<int>(m_spinCameras.size()))
+        if (m_useSpinnaker && cameraIndex < static_cast<int>(m_spinCameras.size()))
         {
 
             cv::Mat frame = grabFrameFromSpinnakerCamera(m_spinCameras[cameraIndex]);
@@ -12988,8 +12892,7 @@ void TeachingWidget::switchToTestMode()
 
 #ifdef USE_SPINNAKER
     // Spinnaker 카메라 확인
-    if (m_useSpinnaker && cameraIndex >= 0 && cameraIndex < cameraInfos.size() &&
-        cameraInfos[cameraIndex].uniqueId.startsWith("SPINNAKER_"))
+    if (m_useSpinnaker && cameraIndex >= 0 && cameraIndex < cameraInfos.size())
     {
 
         if (!m_spinCameras.empty() && cameraIndex < static_cast<int>(m_spinCameras.size()))
@@ -13191,7 +13094,7 @@ void TeachingWidget::setNextFrameIndex(int cameraNumber, int frameIndex)
         int oldValue = nextFrameIndex[cameraNumber].load();
         nextFrameIndex[cameraNumber].store(frameIndex);
         
-        qDebug() << QString("[시리얼 명령] 카메라%1의 nextFrameIndex = %2 설정됨")
+        qDebug().noquote() << QString("[Serial] Cam%1 nextFrameIndex = %2 set")
             .arg(cameraNumber).arg(frameIndex);
     }
 }
@@ -13825,11 +13728,11 @@ bool TeachingWidget::connectSpinnakerCamera(int index, CameraInfo &info)
             // 정보를 가져오지 못했더라도 계속 진행
         }
 
-        // 고유 ID 생성
-        info.uniqueId = "SPINNAKER_" + info.serialNumber;
+        // 고유 ID 생성 (시리얼 번호만 사용)
+        info.uniqueId = info.serialNumber;
         if (info.uniqueId.isEmpty())
         {
-            info.uniqueId = QString("SPINNAKER_%1").arg(index);
+            info.uniqueId = QString("%1").arg(index);
         }
 
         // 카메라 저장
@@ -14776,7 +14679,7 @@ void TeachingWidget::removePattern()
                 // ANOMALY 패턴이면 가중치 폴더도 삭제
                 PatternInfo* pattern = cameraView->getPatternById(patternId);
                 if (pattern && pattern->type == PatternType::INS && 
-                    pattern->inspectionMethod == InspectionMethod::ANOMALY) {
+                    pattern->inspectionMethod == InspectionMethod::A_PC) {
                     AnomalyWeightUtils::removeWeightFolder(pattern->name);
                 }
                 
@@ -16479,11 +16382,12 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         QString weightsDir = QCoreApplication::applicationDirPath() + "/recipes/" + recipeName + "/weights";
         QDir weightsDirObj(weightsDir);
         if (weightsDirObj.exists()) {
-            // 현재 레시피의 ANOMALY 패턴 이름 목록
+            // 현재 레시피의 A-PC, A-PD 패턴 이름 목록
             QSet<QString> anomalyPatternNames;
             for (const PatternInfo& pattern : cameraView->getPatterns()) {
                 if (pattern.type == PatternType::INS && 
-                    pattern.inspectionMethod == InspectionMethod::ANOMALY) {
+                    (pattern.inspectionMethod == InspectionMethod::A_PC ||
+                     pattern.inspectionMethod == InspectionMethod::A_PD)) {
                     anomalyPatternNames.insert(pattern.name);
                 }
             }
@@ -16533,9 +16437,6 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
                 cameraView->setBackgroundImage(pixmap);
                 cameraView->setCurrentFrameIndex(firstValidFrameIndex);
                 cameraView->setCurrentCameraUuid(firstCameraUuid);
-                
-                qDebug() << "[onRecipeSelected] 첫 번째 유효한 프레임 표시 - frameIndex:" << firstValidFrameIndex 
-                         << "cameraUuid:" << firstCameraUuid;
             }
             // CAM OFF 상태에서만 updateCameraFrame 호출 (CAM ON에서는 배경 이미지 유지)
             if (camOff) {
@@ -16570,8 +16471,30 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         isLoadingRecipe = false;
         
         // Anomaly 모델 워밍업 (첫 검사 속도 향상)
-        if (insProcessor) {
-            insProcessor->warmupAnomalyModels(allPatterns, recipeName);
+        // AI 검사 패턴이 있는지 먼저 확인
+        bool hasAIPatterns = false;
+        for (const auto& pattern : allPatterns) {
+            if (pattern.type == PatternType::INS && pattern.enabled &&
+                (pattern.inspectionMethod == static_cast<int>(InspectionMethod::A_PC) ||
+                 pattern.inspectionMethod == static_cast<int>(InspectionMethod::A_PD))) {
+                hasAIPatterns = true;
+                break;
+            }
+        }
+        
+        if (hasAIPatterns && insProcessor) {
+            qDebug() << "[onRecipeSelected] AI 패턴 발견 - 모델 워밍업 시작";
+            try {
+                insProcessor->warmupAnomalyModels(allPatterns, recipeName);
+            } catch (const std::exception& e) {
+                qCritical() << "[onRecipeSelected] warmupAnomalyModels 실패:" << e.what();
+            } catch (...) {
+                qCritical() << "[onRecipeSelected] warmupAnomalyModels 알 수 없는 오류 발생";
+            }
+        } else if (!hasAIPatterns) {
+            qDebug() << "[onRecipeSelected] AI 패턴 없음 - 모델 워밍업 건너뜀";
+        } else {
+            qWarning() << "[onRecipeSelected] insProcessor가 nullptr입니다. 모델 워밍업을 건너뜁니다.";
         }
 
         if (!cameraInfos.isEmpty())
@@ -16671,7 +16594,7 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
             for (const PatternInfo &pattern : patterns)
             {
                 if (pattern.type == PatternType::INS && 
-                    pattern.inspectionMethod == InspectionMethod::ANOMALY)
+                    pattern.inspectionMethod == InspectionMethod::A_PC)
                 {
                     QString appDir = QCoreApplication::applicationDirPath();
                     // 패턴 이름 기반으로 모델 경로 구성: weights/{패턴명}/{패턴명}.xml
@@ -16957,7 +16880,7 @@ void TeachingWidget::trainAnomalyPattern(const QString& patternName)
     
     for (const PatternInfo& pattern : allPatterns) {
         if (pattern.type == PatternType::INS && 
-            pattern.inspectionMethod == InspectionMethod::ANOMALY &&
+            pattern.inspectionMethod == InspectionMethod::A_PC &&
             pattern.name == patternName) {
             patternPtr = const_cast<PatternInfo*>(&pattern);
             break;
@@ -17302,23 +17225,16 @@ void TeachingWidget::trainAnomalyPattern(const QString& patternName)
                 msgBox.exec();
             }
             
-            // Train 버튼을 Trained로 업데이트
-            if (anomalyTrainButton) {
-                anomalyTrainButton->setText("Trained");
-                anomalyTrainButton->setStyleSheet(
-                    "QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 5px; border-radius: 3px; }"
-                    "QPushButton:hover { background-color: #da190b; }"
-                    "QPushButton:pressed { background-color: #c0180a; }");
-            }
+            // Train 버튼 제거됨 - 더 이상 사용하지 않음
         } else {
-            qDebug() << "[ANOMALY TRAIN] Docker stdout:" << output;
-            qDebug() << "[ANOMALY TRAIN] Docker stderr:" << error;
-            CustomMessageBox msgBox(this, CustomMessageBox::Critical, "Training Failed",
-                QString("Docker training failed (exit code: %1)\n\nError:\n%2")
+            qDebug() << "[ANOMALY TRAIN] Training failed - stdout:" << output;
+            qDebug() << "[ANOMALY TRAIN] Training failed - stderr:" << error;
+            CustomMessageBox msgBox(this, CustomMessageBox::Critical, "학습 실패",
+                QString("모델 학습 실패 (exit code: %1)\n\nError:\n%2")
                     .arg(exitCode)
                     .arg(error.isEmpty() ? output : error));
             msgBox.exec();
-            qDebug() << "[ANOMALY TRAIN] Training failed:" << exitCode;
+            qDebug() << "[ANOMALY TRAIN] Training failed with exit code:" << exitCode;
         }
         
         // 임시 폴더 삭제

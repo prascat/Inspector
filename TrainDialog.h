@@ -24,6 +24,7 @@
 #include <QComboBox>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
+#include <QTabWidget>
 #include <opencv2/opencv.hpp>
 #include "CommonDefs.h"
 
@@ -56,6 +57,7 @@ private slots:
     void onDeleteSelectedImageClicked();
     void onModeChanged(int id);
     void onPatternSelectionChanged();
+    void onPadimPatternSelectionChanged();
     void onStartAutoTrainClicked();
     void onImageItemClicked(QListWidgetItem* item);
     void onTrainOutputReady();
@@ -74,6 +76,7 @@ private:
     void applyBlackTheme();
     void updateImageGrid(bool scrollToEnd = true);
     void updateTeachingImagePreview();
+    void updatePadimTeachingImagePreview();
     void trainPattern(const QString& patternName);
     void trainNextPattern();
     void updateTrainingProgress(const QString& message);
@@ -82,18 +85,27 @@ private:
     QString getTotalTimeString() const;  // 총 경과 시간 문자열 반환
     QString getPatternProgressString() const;  // 패턴 진행률 문자열 반환 [1/3]
 
+    QTabWidget *modelTabWidget;
+    
+    // A-PC 탭 위젯들
     QTableWidget *patternTableWidget;
+    QComboBox *backboneComboBox;
+    QDoubleSpinBox *coresetRatioSpinBox;
+    QSpinBox *numNeighborsSpinBox;
+    QCheckBox *selectAllCheckBox;
+    
+    // A-PD 탭 위젯들
+    QTableWidget *padimPatternTableWidget;
+    QComboBox *padimBackboneComboBox;
+    QSpinBox *padimNumLayersSpinBox;
+    QCheckBox *padimSelectAllCheckBox;
+    
     QPushButton *closeButton;
     QPushButton *clearImagesButton;
     QPushButton *addImagesButton;
     QPushButton *deleteSelectedImageButton;
     QPushButton *autoTrainButton;
     QLabel *imageCountLabel;
-    
-    // PatchCore 옵션 UI
-    QComboBox *backboneComboBox;
-    QDoubleSpinBox *coresetRatioSpinBox;
-    QSpinBox *numNeighborsSpinBox;
     
     // 이미지 미리보기 리스트
     QListWidget *imageListWidget;
@@ -113,9 +125,9 @@ private:
     // 현재 선택된 패턴 이름
     QString currentSelectedPattern;
     
-    // 체크박스와 패턴 매핑
+    // 체크박스와 패턴 매핑 (A-PC, A-PD 각각)
     QMap<QString, QCheckBox*> patternCheckBoxes;
-    QCheckBox *selectAllCheckBox;  // 전체 선택/해제 체크박스
+    QMap<QString, QCheckBox*> padimPatternCheckBoxes;
     
     // 마우스 드래그 관련
     bool m_dragging;

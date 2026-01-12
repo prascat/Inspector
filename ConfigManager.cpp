@@ -28,6 +28,7 @@ ConfigManager::ConfigManager(QObject* parent) : QObject(parent) {
     m_serverPort = 5000;  // 기본 서버 포트
     m_autoConnect = false;  // 기본 자동 연결 비활성화
     m_reconnectInterval = 10;  // 기본 재연결 간격 10초
+    m_heartbeatInterval = 30;  // 기본 Heartbeat 주기 30초
     m_cameraAutoConnect = false;  // 기본 카메라 자동 연결 비활성화
     
     // 프로퍼티 패널 기본값
@@ -112,6 +113,10 @@ bool ConfigManager::loadConfig() {
                 m_reconnectInterval = xml.readElementText().toInt();
                 if (m_reconnectInterval < 1) m_reconnectInterval = 10;
                 qDebug() << "[ConfigManager] 재연결 간격 로드됨:" << m_reconnectInterval << "초";
+            } else if (xml.name() == QLatin1String("HeartbeatInterval")) {
+                m_heartbeatInterval = xml.readElementText().toInt();
+                if (m_heartbeatInterval < 5) m_heartbeatInterval = 30;
+                qDebug() << "[ConfigManager] Heartbeat 주기 로드됨:" << m_heartbeatInterval << "초";
             } else if (xml.name() == QLatin1String("CameraAutoConnect")) {
                 QString value = xml.readElementText();
                 m_cameraAutoConnect = (value.toLower() == "true");
@@ -202,6 +207,7 @@ bool ConfigManager::saveConfig() {
     xml.writeTextElement("ServerPort", QString::number(m_serverPort));
     xml.writeTextElement("AutoConnect", m_autoConnect ? "true" : "false");
     xml.writeTextElement("ReconnectInterval", QString::number(m_reconnectInterval));
+    xml.writeTextElement("HeartbeatInterval", QString::number(m_heartbeatInterval));
     
     // 카메라 자동 연결 설정 저장
     xml.writeTextElement("CameraAutoConnect", m_cameraAutoConnect ? "true" : "false");
@@ -356,6 +362,18 @@ void ConfigManager::setReconnectInterval(int seconds) {
         m_reconnectInterval = seconds;
         emit configChanged();
         qDebug() << "[ConfigManager] 재연결 간격 변경됨:" << seconds << "초";
+    }
+}
+
+int ConfigManager::getHeartbeatInterval() const {
+    return m_heartbeatInterval;
+}
+
+void ConfigManager::setHeartbeatInterval(int seconds) {
+    if (m_heartbeatInterval != seconds && seconds >= 5) {
+        m_heartbeatInterval = seconds;
+        emit configChanged();
+        qDebug() << "[ConfigManager] Heartbeat 주기 변경됨:" << seconds << "초";
     }
 }
 

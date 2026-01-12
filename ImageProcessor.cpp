@@ -3351,6 +3351,193 @@ bool ImageProcessor::runPatchCoreTensorRTMultiModelInference(
     }
 }
 
+// ===== PaDiM TensorRT 구현 =====
+bool ImageProcessor::initPaDiMTensorRT(const QString& enginePath, const QString& device)
+{
+    // PaDiM은 PatchCore와 동일한 구조를 사용하므로 동일한 초기화 함수 재사용
+    // 단, 통계 파일명이 {pattern_name}_padim 형식
+    try {
+        // 이미 로드된 경우 스킵
+        if (s_tensorrtPatchCoreModels.contains(enginePath)) {
+            return true;
+        }
+        
+        // 정규화 통계 파일 읽기 (_padim suffix)
+        QFileInfo engineFileInfo(enginePath);
+        QString patternName = engineFileInfo.dir().dirName();
+        QString normStatsPath = engineFileInfo.absolutePath() + "/" + patternName + "_padim";
+        
+        QFile normStatsFile(normStatsPath);
+        
+        TensorRTPatchCoreModelInfo modelInfo;
+        
+        if (normStatsFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&normStatsFile);
+            float meanPixel = 0.0f;
+            float maxPixel = 0.0f;
+            
+            while (!in.atEnd()) {
+                QString line = in.readLine().trimmed();
+                if (line.startsWith("mean_pixel=")) {
+                    meanPixel = line.mid(11).toFloat();
+                } else if (line.startsWith("max_pixel=")) {
+                    maxPixel = line.mid(10).toFloat();
+                }
+            }
+            normStatsFile.close();
+            
+            if (maxPixel > 0) {
+                modelInfo.normMin = meanPixel;
+                modelInfo.normMax = maxPixel;
+            } else {
+                qWarning() << "[initPaDiMModel] 유효하지 않은 통계 값 - meanPixel:" << meanPixel << "maxPixel:" << maxPixel;
+            }
+        } else {
+            qWarning() << "[initPaDiMModel] 통계 파일 열기 실패:" << normStatsPath;
+        }
+        
+        // TensorRT 엔진 로드 (PatchCore와 동일한 로직)
+        IRuntime* runtime = createInferRuntime(gTRTLogger);
+        if (!runtime) {
+            return false;
+        }
+        
+        QFile engineFile(enginePath);
+        if (!engineFile.open(QIODevice::ReadOnly)) {
+            delete runtime;
+            return false;
+        }
+        
+        QByteArray engineData = engineFile.readAll();
+        engineFile.close();
+        
+        ICudaEngine* engine = runtime->deserializeCudaEngine(
+            engineData.data(),
+            engineData.size()
+        );
+        
+        if (!engine) {
+            delete runtime;
+            return false;
+        }
+        
+        IExecutionContext* context = engine->createExecutionContext();
+        if (!context) {
+            delete engine;
+            delete runtime;
+            return false;
+        }
+        
+        // CUDA 스트림 생성
+        cudaStream_t stream;
+        cudaStreamCreate(&stream);
+        
+        // TensorRT 엔진의 실제 텐서 순서 확인 및 버퍼 할당
+        int32_t nbIOTensors = engine->getNbIOTensors();
+        
+        void* inputBuffer = nullptr;
+        void* outputBuffer = nullptr;  // anomaly_map
+        void* scoreBuffer = nullptr;   // pred_score
+        void* labelBuffer = nullptr;   // pred_label (optional)
+        void* maskBuffer = nullptr;    // pred_mask (optional)
+        
+        modelInfo.inputSize = 0;
+        modelInfo.outputSize = 0;
+        modelInfo.scoreSize = 0;
+        modelInfo.labelSize = 0;
+        modelInfo.maskSize = 0;
+        
+        for (int32_t i = 0; i < nbIOTensors; i++) {
+            const char* tensorName = engine->getIOTensorName(i);
+            auto dims = engine->getTensorShape(tensorName);
+            bool isInput = engine->getTensorIOMode(tensorName) == nvinfer1::TensorIOMode::kINPUT;
+            
+            // 텐서 크기 계산
+            int64_t volume = 1;
+            for (int j = 0; j < dims.nbDims; j++) {
+                volume *= dims.d[j];
+            }
+            size_t bufferSize = volume * sizeof(float);
+            
+            cudaError_t err;
+            if (isInput) {
+                modelInfo.inputSize = bufferSize;
+                modelInfo.inputWidth = dims.d[3];
+                modelInfo.inputHeight = dims.d[2];
+                err = cudaMalloc(&inputBuffer, bufferSize);
+                if (err != cudaSuccess) {
+                    qCritical() << "[PaDiM-TRT] cudaMalloc 실패 (input):" << cudaGetErrorString(err);
+                    delete context;
+                    delete engine;
+                    delete runtime;
+                    return false;
+                }
+            } else {
+                if (std::strcmp(tensorName, "anomaly_map") == 0) {
+                    modelInfo.outputSize = bufferSize;
+                    err = cudaMalloc(&outputBuffer, bufferSize);
+                    if (err != cudaSuccess) {
+                        qCritical() << "[PaDiM-TRT] cudaMalloc 실패 (anomaly_map):" << cudaGetErrorString(err);
+                        if (inputBuffer) cudaFree(inputBuffer);
+                        delete context;
+                        delete engine;
+                        delete runtime;
+                        return false;
+                    }
+                } else if (std::strcmp(tensorName, "pred_score") == 0) {
+                    modelInfo.scoreSize = bufferSize;
+                    err = cudaMalloc(&scoreBuffer, bufferSize);
+                    if (err != cudaSuccess) {
+                        qCritical() << "[PaDiM-TRT] cudaMalloc 실패 (pred_score):" << cudaGetErrorString(err);
+                        if (inputBuffer) cudaFree(inputBuffer);
+                        if (outputBuffer) cudaFree(outputBuffer);
+                        delete context;
+                        delete engine;
+                        delete runtime;
+                        return false;
+                    }
+                } else if (std::strcmp(tensorName, "pred_label") == 0) {
+                    modelInfo.labelSize = bufferSize;
+                    err = cudaMalloc(&labelBuffer, bufferSize);
+                } else if (std::strcmp(tensorName, "pred_mask") == 0) {
+                    modelInfo.maskSize = bufferSize;
+                    err = cudaMalloc(&maskBuffer, bufferSize);
+                }
+            }
+        }
+        
+        // 모델 정보 저장
+        modelInfo.runtime = runtime;
+        modelInfo.engine = engine;
+        modelInfo.context = context;
+        modelInfo.cudaStream = stream;
+        modelInfo.inputBuffer = inputBuffer;
+        modelInfo.outputBuffer = outputBuffer;
+        modelInfo.scoreBuffer = scoreBuffer;
+        modelInfo.labelBuffer = labelBuffer;
+        modelInfo.maskBuffer = maskBuffer;
+        
+        // 모델 캐시에 저장
+        s_tensorrtPatchCoreModels[enginePath] = modelInfo;
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        qCritical() << "[PaDiM-TRT] 초기화 실패:" << e.what();
+        return false;
+    }
+}
+
+bool ImageProcessor::runPaDiMTensorRTMultiModelInference(
+    const QMap<QString, std::vector<cv::Mat>>& modelImages,
+    QMap<QString, std::vector<float>>& modelScores,
+    QMap<QString, std::vector<cv::Mat>>& modelMaps)
+{
+    // PaDiM은 PatchCore와 동일한 추론 구조를 사용
+    // 단, initPaDiMTensorRT로 로드된 모델을 사용
+    return runPatchCoreTensorRTMultiModelInference(modelImages, modelScores, modelMaps);
+}
+
 #endif  // USE_TENSORRT
 
 // ===== ONNX Runtime PatchCore 구현 (x86 Linux용) =====
@@ -3613,6 +3800,102 @@ bool ImageProcessor::runPatchCoreONNXBatchInference(
         qCritical() << "[ONNX Batch] 예외:" << e.what();
         return false;
     }
+}
+
+// ===== PaDiM ONNX 구현 =====
+bool ImageProcessor::initPaDiMONNX(const QString& modelPath)
+{
+    // PaDiM은 PatchCore와 동일한 구조를 사용하므로 동일한 초기화 함수 재사용
+    try {
+        // 이미 로드된 경우 스킵
+        if (s_onnxPatchCoreModels.contains(modelPath)) {
+            return true;
+        }
+        
+        // 정규화 통계 파일 읽기 (_padim suffix)
+        QString onnxPath = modelPath;
+        if (!onnxPath.endsWith(".onnx")) {
+            onnxPath += "_padim.onnx";
+        }
+        
+        QFileInfo modelFileInfo(onnxPath);
+        QString patternName = modelFileInfo.dir().dirName();
+        QString normStatsPath = modelFileInfo.absolutePath() + "/" + patternName + "_padim";
+        
+        QFile normStatsFile(normStatsPath);
+        
+        ONNXPatchCoreModelInfo modelInfo;
+        
+        if (normStatsFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&normStatsFile);
+            float meanPixel = 0.0f;
+            float maxPixel = 0.0f;
+            
+            while (!in.atEnd()) {
+                QString line = in.readLine().trimmed();
+                if (line.startsWith("mean_pixel=")) {
+                    meanPixel = line.mid(11).toFloat();
+                } else if (line.startsWith("max_pixel=")) {
+                    maxPixel = line.mid(10).toFloat();
+                }
+            }
+            normStatsFile.close();
+            
+            if (maxPixel > 0) {
+                modelInfo.normMin = meanPixel;
+                modelInfo.normMax = maxPixel;
+            } else {
+                qWarning() << "[initPaDiMONNX] 유효하지 않은 통계 값 - meanPixel:" << meanPixel << "maxPixel:" << maxPixel;
+            }
+        } else {
+            qWarning() << "[initPaDiMONNX] 통계 파일 열기 실패:" << normStatsPath;
+        }
+        
+        // ONNX 세션 생성
+        Ort::SessionOptions sessionOptions;
+        sessionOptions.SetIntraOpNumThreads(4);
+        sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+        
+        auto* env = new Ort::Env(ORT_LOGGING_LEVEL_WARNING, "PaDiM");
+        auto* session = new Ort::Session(*env, onnxPath.toStdString().c_str(), sessionOptions);
+        auto* memoryInfo = new Ort::MemoryInfo(
+            Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)
+        );
+        
+        // 입력 shape 가져오기
+        auto inputTypeInfo = session->GetInputTypeInfo(0);
+        auto inputTensorInfo = inputTypeInfo.GetTensorTypeAndShapeInfo();
+        auto inputShape = inputTensorInfo.GetShape();
+        
+        modelInfo.inputHeight = static_cast<int>(inputShape[2]);
+        modelInfo.inputWidth = static_cast<int>(inputShape[3]);
+        modelInfo.env = env;
+        modelInfo.session = session;
+        modelInfo.memoryInfo = memoryInfo;
+        
+        // 모델 캐시에 저장
+        s_onnxPatchCoreModels[modelPath] = modelInfo;
+        
+        qDebug() << "[PaDiM-ONNX] 모델 로드 성공:" << onnxPath
+                 << "입력 크기:" << modelInfo.inputWidth << "x" << modelInfo.inputHeight;
+        
+        return true;
+        
+    } catch (const Ort::Exception& e) {
+        qCritical() << "[PaDiM-ONNX] 초기화 실패:" << e.what();
+        return false;
+    }
+}
+
+bool ImageProcessor::runPaDiMONNXInference(
+    const QString& modelPath,
+    const std::vector<cv::Mat>& images,
+    std::vector<float>& anomalyScores,
+    std::vector<cv::Mat>& anomalyMaps)
+{
+    // PaDiM은 PatchCore와 동일한 추론 구조를 사용
+    // 단, initPaDiMONNX로 로드된 모델을 사용
+    return runPatchCoreONNXInference(modelPath, images, anomalyScores, anomalyMaps);
 }
 
 #endif  // USE_ONNX

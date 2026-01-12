@@ -25,9 +25,11 @@ ClientDialog::ClientDialog(QWidget* parent)
     , serverPort(5000)
     , autoConnect(false)
     , reconnectInterval(10)
+    , heartbeatInterval(30)
     , reconnectThread(nullptr)
     , shouldReconnect(false)
     , isConnected(false)
+    , sequenceNumber(0)
 {
     setWindowTitle("서버 연결 설정");
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
@@ -36,6 +38,7 @@ ClientDialog::ClientDialog(QWidget* parent)
 
     testSocket = new QTcpSocket(this);
     statusTimer = new QTimer(this);
+    heartbeatTimer = new QTimer(this);
     
     connect(testSocket, &QTcpSocket::connected, this, &ClientDialog::onSocketConnected);
     connect(testSocket, &QTcpSocket::disconnected, this, &ClientDialog::onSocketDisconnected);
@@ -43,6 +46,7 @@ ClientDialog::ClientDialog(QWidget* parent)
             this, &ClientDialog::onSocketError);
     connect(testSocket, &QTcpSocket::readyRead, this, &ClientDialog::onDataReceived);
     connect(statusTimer, &QTimer::timeout, this, &ClientDialog::updateConnectionStatus);
+    connect(heartbeatTimer, &QTimer::timeout, this, &ClientDialog::sendHeartbeat);
     
     statusTimer->start(1000); // 1초마다 상태 업데이트
 
@@ -106,6 +110,12 @@ void ClientDialog::setupUI()
     reconnectIntervalEdit->setPlaceholderText("예: 10");
     reconnectIntervalEdit->setValidator(new QIntValidator(1, 300, this));
     formLayout->addRow("재연결 간격(초):", reconnectIntervalEdit);
+    
+    // Heartbeat 주기 입력
+    heartbeatIntervalEdit = new QLineEdit(this);
+    heartbeatIntervalEdit->setPlaceholderText("예: 30");
+    heartbeatIntervalEdit->setValidator(new QIntValidator(5, 300, this));
+    formLayout->addRow("Heartbeat 주기(초):", heartbeatIntervalEdit);
     
     // 자동 연결 체크박스
     autoConnectCheckBox = new QCheckBox("프로그램 시작 시 자동 연결", this);
@@ -183,10 +193,12 @@ void ClientDialog::loadSettings()
     serverPort = config->getServerPort();
     autoConnect = config->getAutoConnect();
     reconnectInterval = config->getReconnectInterval();
+    heartbeatInterval = config->getHeartbeatInterval();
     
     ipEdit->setText(serverIp);
     portEdit->setText(QString::number(serverPort));
     reconnectIntervalEdit->setText(QString::number(reconnectInterval));
+    heartbeatIntervalEdit->setText(QString::number(heartbeatInterval));
     autoConnectCheckBox->setChecked(autoConnect);
 }
 
@@ -196,6 +208,8 @@ void ClientDialog::saveSettings()
     serverPort = portEdit->text().toInt();
     reconnectInterval = reconnectIntervalEdit->text().toInt();
     if (reconnectInterval < 1) reconnectInterval = 10;
+    heartbeatInterval = heartbeatIntervalEdit->text().toInt();
+    if (heartbeatInterval < 5) heartbeatInterval = 30;
     autoConnect = autoConnectCheckBox->isChecked();
     
     ConfigManager* config = ConfigManager::instance();
@@ -203,9 +217,10 @@ void ClientDialog::saveSettings()
     config->setServerPort(serverPort);
     config->setAutoConnect(autoConnect);
     config->setReconnectInterval(reconnectInterval);
+    config->setHeartbeatInterval(heartbeatInterval);
     config->saveConfig();
     
-    qDebug() << "서버 설정 저장됨 - IP:" << serverIp << "Port:" << serverPort << "재연결 간격:" << reconnectInterval << "초";
+    qDebug() << "Server settings saved - IP:" << serverIp << "Port:" << serverPort << "Reconnect interval:" << reconnectInterval << "sec" << "Heartbeat interval:" << heartbeatInterval << "sec";
 }
 
 void ClientDialog::setServerIp(const QString& ip)
@@ -296,6 +311,11 @@ void ClientDialog::onSocketConnected()
         stopReconnectThread();
     }
     
+    // Heartbeat 타이머 시작 (설정값 사용)
+    int intervalMs = heartbeatInterval * 1000;
+    heartbeatTimer->start(intervalMs);
+    qDebug() << "[Protocol] Heartbeat timer started -" << heartbeatInterval << "sec interval";
+    
     statusLabel->setText(QString("서버에 연결되었습니다: %1:%2")
                         .arg(testSocket->peerAddress().toString())
                         .arg(testSocket->peerPort()));
@@ -308,6 +328,10 @@ void ClientDialog::onSocketConnected()
 void ClientDialog::onSocketDisconnected()
 {
     isConnected = false;
+    
+    // Stop Heartbeat timer
+    heartbeatTimer->stop();
+    qDebug() << "[Protocol] Heartbeat timer stopped";
     statusLabel->setText("서버와의 연결이 해제되었습니다.");
     connectionStatusLabel->setText("미연결");
     connectionStatusLabel->setStyleSheet("QLabel { padding: 10px; background-color: #f0f0f0; border-radius: 5px; }");
@@ -334,23 +358,7 @@ void ClientDialog::onSocketError(QAbstractSocket::SocketError error)
 
 void ClientDialog::onDataReceived()
 {
-    QByteArray data = testSocket->readAll();
-    
-    // [주석처리] 시리얼 통신으로 대체됨
-    // 바이너리 바이트 값(0x00, 0x01, 0x02, 0x03)을 정수로 변환 → 프레임 트리거로 사용
-    // 여러 바이트를 동시에 받은 경우 모두 처리
-    /*
-    for (int i = 0; i < data.size(); ++i) {
-        unsigned char byte = static_cast<unsigned char>(data[i]);
-        int frameIndex = static_cast<int>(byte);
-        
-        if (frameIndex >= 0 && frameIndex <= 3) {
-            emit frameIndexReceived(frameIndex);
-        } else {
-            qWarning() << QString("[소켓통신 READ] 유효하지 않은 데이터: %1").arg(frameIndex);
-        }
-    }
-    */
+    processReceivedData();
 }
 
 void ClientDialog::updateConnectionStatus()
@@ -519,4 +527,193 @@ bool ClientDialog::sendData(const QByteArray& data)
     testSocket->flush();
     qDebug() << "[ClientDialog] 데이터 전송 성공:" << bytesWritten << "bytes";
     return true;
+}
+
+// ===== 프로토콜 처리 함수 =====
+
+#include <QJsonDocument>
+#include <QDateTime>
+#include <cstring>
+
+// 프로토콜 메시지 전송 (헤더 + JSON)
+bool ClientDialog::sendProtocolMessage(MessageType type, const QByteArray& jsonData)
+{
+    if (!isConnected || testSocket->state() != QAbstractSocket::ConnectedState) {
+        qWarning() << "[Protocol] 서버 미연결 - 전송 실패";
+        return false;
+    }
+    
+    // 헤더 생성
+    ProtocolHeader header;
+    header.stx = STX;
+    header.messageType = static_cast<uint32_t>(type);
+    header.sequenceNumber = ++sequenceNumber;
+    header.dataLength = jsonData.size();
+    header.timestamp = QDateTime::currentMSecsSinceEpoch();
+    header.checksum = 0;  // 현재 미사용
+    header.reserved = 0;
+    
+    // 헤더를 바이트 배열로 변환
+    QByteArray headerData(reinterpret_cast<const char*>(&header), sizeof(ProtocolHeader));
+    
+    // 전체 메시지 = 헤더 + 본문
+    QByteArray fullMessage = headerData + jsonData;
+    
+    qint64 bytesWritten = testSocket->write(fullMessage);
+    if (bytesWritten == -1) {
+        qWarning() << "[Protocol] 전송 실패:" << testSocket->errorString();
+        return false;
+    }
+    
+    testSocket->flush();
+    
+    QString typeName;
+    switch(type) {
+        case MessageType::INSPECTION_REQUEST: typeName = "INSPECTION_REQUEST"; break;
+        case MessageType::INSPECTION_RESPONSE: typeName = "INSPECTION_RESPONSE"; break;
+        case MessageType::HEARTBEAT_LEGACY: typeName = "HEARTBEAT_LEGACY"; break;
+        case MessageType::HEARTBEAT: typeName = "HEARTBEAT"; break;
+        case MessageType::ERROR: typeName = "ERROR"; break;
+        default: typeName = "UNKNOWN"; break;
+    }
+    
+    qDebug().noquote() << QString("[Protocol] Sent %1 - Type:0x%2 Seq:%3 Size:%4+%5=%6 bytes")
+        .arg(typeName)
+        .arg(static_cast<uint32_t>(type), 2, 16, QChar('0'))
+        .arg(header.sequenceNumber)
+        .arg(sizeof(ProtocolHeader))
+        .arg(jsonData.size())
+        .arg(bytesWritten);
+    
+    return true;
+}
+
+// 검사 결과 전송
+bool ClientDialog::sendInspectionResult(const QJsonObject& result)
+{
+    QJsonDocument doc(result);
+    QByteArray jsonData = doc.toJson(QJsonDocument::Compact);
+    
+    qDebug().noquote() << "[Protocol] 검사 결과 전송:" << QString::fromUtf8(jsonData);
+    
+    return sendProtocolMessage(MessageType::INSPECTION_RESPONSE, jsonData);
+}
+
+// Heartbeat 전송 (레거시 타입 사용)
+bool ClientDialog::sendHeartbeat()
+{
+    QJsonObject heartbeat;
+    heartbeat["type"] = "heartbeat";
+    heartbeat["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    
+    QJsonDocument doc(heartbeat);
+    QByteArray jsonData = doc.toJson(QJsonDocument::Compact);
+    
+    return sendProtocolMessage(MessageType::HEARTBEAT_LEGACY, jsonData);
+}
+
+// 수신 데이터 처리
+void ClientDialog::processReceivedData()
+{
+    receiveBuffer.append(testSocket->readAll());
+    
+    while (receiveBuffer.size() >= static_cast<int>(sizeof(ProtocolHeader))) {
+        // 헤더 파싱
+        ProtocolHeader header;
+        if (!parseHeader(receiveBuffer.left(sizeof(ProtocolHeader)), header)) {
+            qWarning() << "[Protocol] 헤더 파싱 실패 - STX 불일치, 1바이트 버림";
+            receiveBuffer.remove(0, 1);  // STX 찾을 때까지 1바이트씩 버림
+            continue;
+        }
+        
+        // 데이터 길이 검증
+        if (header.dataLength < 0 || header.dataLength > MAX_DATA_LENGTH) {
+            qWarning() << "[Protocol] 비정상 데이터 길이:" << header.dataLength << "- 연결 해제";
+            receiveBuffer.clear();
+            testSocket->disconnectFromHost();
+            return;
+        }
+        
+        // 전체 메시지가 수신될 때까지 대기
+        int totalSize = sizeof(ProtocolHeader) + header.dataLength;
+        if (receiveBuffer.size() < totalSize) {
+            return;  // 더 기다림
+        }
+        
+        // 본문 추출
+        QByteArray jsonData = receiveBuffer.mid(sizeof(ProtocolHeader), header.dataLength);
+        receiveBuffer.remove(0, totalSize);
+        
+        qDebug().noquote() << QString("[Protocol] 수신 완료 - Type:0x%1 Seq:%2 Size:%3 bytes")
+            .arg(header.messageType, 2, 16, QChar('0'))
+            .arg(header.sequenceNumber)
+            .arg(header.dataLength);
+        
+        // 메시지 타입별 처리
+        MessageType type = static_cast<MessageType>(header.messageType);
+        
+        switch (type) {
+        case MessageType::INSPECTION_REQUEST: {
+            if (header.dataLength > 0) {
+                QJsonDocument doc = QJsonDocument::fromJson(jsonData);
+                if (!doc.isNull() && doc.isObject()) {
+                    handleInspectionRequest(doc.object());
+                } else {
+                    qWarning() << "[Protocol] JSON 파싱 실패:" << QString::fromUtf8(jsonData);
+                }
+            }
+            break;
+        }
+        
+        case MessageType::HEARTBEAT_LEGACY:
+        case MessageType::HEARTBEAT: {
+            handleHeartbeat();
+            break;
+        }
+        
+        case MessageType::ERROR: {
+            qWarning() << "[Protocol] 서버 오류 메시지:" << QString::fromUtf8(jsonData);
+            break;
+        }
+        
+        default:
+            qWarning() << "[Protocol] 알 수 없는 메시지 타입:" << header.messageType;
+            break;
+        }
+    }
+}
+
+// 헤더 파싱
+bool ClientDialog::parseHeader(const QByteArray& headerData, ProtocolHeader& header)
+{
+    if (headerData.size() < static_cast<int>(sizeof(ProtocolHeader))) {
+        return false;
+    }
+    
+    std::memcpy(&header, headerData.constData(), sizeof(ProtocolHeader));
+    
+    // STX 검증
+    if (header.stx != STX) {
+        return false;
+    }
+    
+    return true;
+}
+
+// 검사 요청 처리
+void ClientDialog::handleInspectionRequest(const QJsonObject& request)
+{
+    qDebug().noquote() << "[Protocol] 검사 요청 수신:" 
+                       << QJsonDocument(request).toJson(QJsonDocument::Compact);
+    
+    emit inspectionRequestReceived(request);
+}
+
+// Heartbeat 처리
+void ClientDialog::handleHeartbeat()
+{
+    qDebug() << "[Protocol] Heartbeat 수신";
+    
+    // Heartbeat 응답 (현재는 로그만, 필요시 응답 전송)
+    // sendHeartbeat();
 }

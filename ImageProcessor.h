@@ -142,6 +142,14 @@ public:
         QMap<QString, std::vector<float>>& modelScores,
         QMap<QString, std::vector<cv::Mat>>& modelMaps
     );
+    
+    // ===== PaDiM TensorRT 지원 =====
+    static bool initPaDiMTensorRT(const QString& enginePath, const QString& device = "GPU");
+    static bool runPaDiMTensorRTMultiModelInference(
+        const QMap<QString, std::vector<cv::Mat>>& modelImages,
+        QMap<QString, std::vector<float>>& modelScores,
+        QMap<QString, std::vector<cv::Mat>>& modelMaps
+    );
 #endif  // USE_TENSORRT
     
     // ===== ONNX Runtime PatchCore 관련 (x86 Linux용) =====
@@ -177,6 +185,16 @@ public:
         const std::vector<cv::Mat>& images,
         std::vector<float>& anomalyScores,
         std::vector<cv::Mat>& anomalyMaps,
+        float threshold = 0.0f
+    );
+    
+    // ===== PaDiM ONNX 지원 =====
+    static bool initPaDiMONNX(const QString& modelPath);
+    static bool runPaDiMONNXInference(
+        const QString& modelPath,
+        const cv::Mat& image,
+        float& anomalyScore,
+        cv::Mat& anomalyMap,
         float threshold = 0.0f
     );
 #endif  // USE_ONNX

@@ -70,6 +70,7 @@ private:
     
     QLabel* testCommandLabel;
     QLineEdit* testCommandLineEdit;
+    QComboBox* sendModeComboBox;
     QCheckBox* sendRealSerialCheckBox;
     QPushButton* sendTestButton;
     

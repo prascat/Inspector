@@ -419,7 +419,8 @@ namespace InspectionMethod {
     const int STRIP = 1;        // STRIP 검사 
     const int CRIMP = 2;        // CRIMP 검사
     const int SSIM = 3;         // SSIM 검사 (구조적 유사도)
-    const int ANOMALY = 4;      // ANOMALY 검사 (PatchCore 이상 탐지)
+    const int A_PC = 4;         // A-PC 검사 (PatchCore 이상 탐지)
+    const int A_PD = 5;         // A-PD 검사 (PaDiM 이상 탐지)
     
     // 검사 방법 이름 반환 함수
     inline QString getName(int method) {
@@ -432,15 +433,17 @@ namespace InspectionMethod {
                 return "CRIMP";
             case SSIM:
                 return "SSIM";
-            case ANOMALY:
-                return "ANOMALY";
+            case A_PC:
+                return "A-PC";
+            case A_PD:
+                return "A-PD";
             default:
                 return "UNKNOWN";
         }
     }
     
     // 검사 방법 개수
-    const int COUNT = 5;
+    const int COUNT = 6;
 }
 
 namespace UIColors {

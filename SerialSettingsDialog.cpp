@@ -200,11 +200,18 @@ void SerialSettingsDialog::setupUI()
     
     testCommandLabel = new QLabel("명령:");
     testCommandLineEdit = new QLineEdit();
+    
+    sendModeComboBox = new QComboBox();
+    sendModeComboBox->addItem("ASCII");
+    sendModeComboBox->addItem("HEX");
+    sendModeComboBox->setMaximumWidth(80);
+    
     sendTestButton = new QPushButton("전송");
     sendTestButton->setMaximumWidth(60);
     
     testLayout->addWidget(testCommandLabel);
     testLayout->addWidget(testCommandLineEdit);
+    testLayout->addWidget(sendModeComboBox);
     testLayout->addWidget(sendTestButton);
     
     sendRealSerialCheckBox = new QCheckBox("실제 시리얼로 전송");
@@ -217,7 +224,7 @@ void SerialSettingsDialog::setupUI()
     QVBoxLayout* logLayout = new QVBoxLayout(logGroup);
     
     logTextEdit = new QTextEdit();
-    logTextEdit->setMinimumHeight(200);
+    logTextEdit->setMinimumHeight(350);
     logTextEdit->setReadOnly(true);
     logLayout->addWidget(logTextEdit);
     
@@ -440,12 +447,37 @@ void SerialSettingsDialog::sendTestCommand()
         return;
     }
     
-    addLogMessage(QString("전송: %1").arg(command));
+    bool isHexMode = (sendModeComboBox->currentText() == "HEX");
+    QByteArray dataToSend;
+    
+    if (isHexMode) {
+        // HEX 모드: 공백으로 구분된 16진수 바이트 파싱
+        QStringList hexBytes = command.split(" ", Qt::SkipEmptyParts);
+        for (const QString& hexByte : hexBytes) {
+            bool ok;
+            quint8 byte = hexByte.toUInt(&ok, 16);
+            if (ok) {
+                dataToSend.append(byte);
+            } else {
+                addLogMessage(QString("[오류] 잘못된 HEX 값: %1").arg(hexByte));
+                return;
+            }
+        }
+        addLogMessage(QString("전송 (HEX): %1 (%2 bytes)").arg(command).arg(dataToSend.size()));
+    } else {
+        // ASCII 모드: 문자열 그대로 전송
+        dataToSend = command.toUtf8();
+        addLogMessage(QString("전송 (ASCII): %1").arg(command));
+    }
     
     if (sendRealSerialCheckBox->isChecked()) {
         // 실제 시리얼 포트로 전송
         addLogMessage("→ 실제 시리얼 포트로 전송");
-        serialComm->sendResponse(command);
+        if (isHexMode) {
+            serialComm->sendRawData(dataToSend);
+        } else {
+            serialComm->sendResponse(command);
+        }
     } else {
         // 내부 processCommand로 시뮬레이션
         addLogMessage("→ 내부 명령 처리로 시뮬레이션");

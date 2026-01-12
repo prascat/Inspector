@@ -51,6 +51,10 @@ public:
     int getReconnectInterval() const;
     void setReconnectInterval(int seconds);
     
+    // Heartbeat 주기 설정
+    int getHeartbeatInterval() const;
+    void setHeartbeatInterval(int seconds);
+    
     // 카메라 자동 연결 설정
     bool getCameraAutoConnect() const;
     void setCameraAutoConnect(bool enable);
@@ -93,6 +97,7 @@ private:
     int m_serverPort;
     bool m_autoConnect;
     int m_reconnectInterval;
+    int m_heartbeatInterval;
     bool m_cameraAutoConnect;
     
     // 프로퍼티 패널 설정

@@ -9,8 +9,9 @@
     <ServerIp>192.168.5.2</ServerIp>
     <ServerPort>5000</ServerPort>
     <AutoConnect>true</AutoConnect>
-    <ReconnectInterval>3</ReconnectInterval>
+    <ReconnectInterval>10</ReconnectInterval>
+    <HeartbeatInterval>30</HeartbeatInterval>
     <CameraAutoConnect>false</CameraAutoConnect>
-    <PropertyPanel x="11" y="181" width="383" height="687" collapsed="false" expandedHeight="687"/>
-    <LogPanel x="774" y="710" width="800" height="288" collapsed="true"/>
+    <PropertyPanel x="28" y="117" width="430" height="600" collapsed="false" expandedHeight="600"/>
+    <LogPanel x="0" y="502" width="800" height="500" collapsed="false"/>
 </Config>

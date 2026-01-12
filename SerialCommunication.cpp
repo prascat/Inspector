@@ -244,6 +244,15 @@ void SerialCommunication::sendResponse(const QString &response)
     }
 }
 
+void SerialCommunication::sendRawData(const QByteArray &data)
+{
+    if (serialPort && serialPort->isOpen()) {
+        qint64 bytesWritten = serialPort->write(data);
+        serialPort->flush();
+        qDebug() << "[Serial] Raw data sent:" << bytesWritten << "bytes";
+    }
+}
+
 void SerialCommunication::sendInspectionResult(int frameIndex, bool isPassed)
 {
     if (serialPort && serialPort->isOpen()) {
@@ -253,11 +262,16 @@ void SerialCommunication::sendInspectionResult(int frameIndex, bool isPassed)
         data.append(static_cast<char>(isPassed ? 0x00 : 0x01)); // 검사 결과 (PASS:0x00, NG:0x01)
         data.append(static_cast<char>(0xEF));           // 종료 바이트
         
-        serialPort->write(data);
-        qDebug() << QString("[시리얼통신] 검사 결과 전송: 프레임[%1] %2 (%3)")
+        qint64 bytesWritten = serialPort->write(data);
+        serialPort->flush();  // 버퍼 즉시 전송
+        
+        qDebug().noquote() << QString("[Serial] Result sent: Frame[%1] %2 (%3) - %4 bytes written")
             .arg(frameIndex)
             .arg(isPassed ? "PASS" : "NG")
-            .arg(QString(data.toHex(' ')));
+            .arg(QString(data.toHex(' ')))
+            .arg(bytesWritten);
+    } else {
+        qWarning() << "[시리얼통신] 포트가 열려있지 않음 - 전송 실패";
     }
 }
 
@@ -292,7 +306,7 @@ void SerialCommunication::readSerialData()
             }
             
             if (frameIndex >= 0) {
-                qDebug() << QString("[시리얼통신] 검사 요청: 프레임[%1] (0x%2 0x%3)")
+                qDebug().noquote() << QString("[Serial] Inspect request: Frame[%1] (0x%2 0x%3)")
                     .arg(frameIndex)
                     .arg(byte1, 2, 16, QChar('0'))
                     .arg(byte2, 2, 16, QChar('0'));
@@ -334,7 +348,6 @@ void SerialCommunication::processCommand(const QString &command)
     if (ok && frameIndex >= 0 && frameIndex < 4) {
         if (!teachingWidget) {
             qDebug() << "[시리얼통신] ERROR: TeachingWidget이 설정되지 않음";
-            sendResponse("ERROR");
             return;
         }
         
@@ -346,11 +359,11 @@ void SerialCommunication::processCommand(const QString &command)
         teachingWidget->setNextFrameIndex(cameraNumber, frameIndex);
         
         // 검사는 TeachingWidget의 타이머나 트리거에서 자동 처리됨
-        sendResponse("ACK");
+        // ACK 응답 제거 - 검사 완료 후 4바이트로 결과 전송
         
     } else {
         qDebug() << "[시리얼통신] ERROR: 잘못된 프레임 인덱스" << command;
-        sendResponse("ERROR");
+        // ERROR 응답 제거
     }
 }
 
@@ -358,7 +371,6 @@ void SerialCommunication::performInspection(int cameraNumber)
 {
     if (!teachingWidget) {
         qDebug() << "TeachingWidget이 설정되지 않음";
-        sendResponse("ERROR");
         return;
     }
     
@@ -369,19 +381,10 @@ void SerialCommunication::performInspection(int cameraNumber)
         
         qDebug() << "검사 결과 받음 - isPassed:" << result.isPassed;
         
-        // 검사 결과에 따라 응답 전송
-        QString response;
-        if (result.isPassed) {
-            response = "PASS";
-        } else {
-            response = "FAIL";
-        }
-        
-        qDebug() << "최종 응답:" << response;
-        sendResponse(response);
+        // 텍스트 응답 제거 - 검사 완료 후 4바이트로 자동 전송됨
         
         qDebug() << "검사 완료";
-        emit inspectionCompleted(cameraNumber, response);
+        emit inspectionCompleted(cameraNumber, result.isPassed ? "PASS" : "FAIL");
         
     } catch (const std::exception& e) {
     

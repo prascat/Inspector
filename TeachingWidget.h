@@ -154,7 +154,7 @@ public:
     int currentDisplayFrameIndex = 0;  // 현재 메인 뷰에 표시된 프레임 인덱스 (0~3)
     
     // ★ 카메라별 다음 검사할 프레임 인덱스 (서버가 지정)
-    std::atomic<int> nextFrameIndex[2] = {-1, -1};  // 카메라0, 카메라1 각각
+    std::atomic<int> nextFrameIndex[2] = {0, 0};  // 카메라0, 카메라1 각각
     std::atomic<int> totalTriggersReceived{0};  // 총 서버 메시지 수신 횟수
     std::atomic<int> serialFrameCount[4] = {0, 0, 0, 0};  // 시리얼로 받은 프레임별 카운트 (0,1,2,3)
     std::atomic<int> totalHardwareTriggersReceived{0};  // 총 하드웨어 트리거 수신 횟수
@@ -164,6 +164,7 @@ public:
     
     int lastUsedFrameIndex = -1;  // 마지막으로 사용한 프레임 인덱스 (자동 순환용)
     std::atomic<bool> frameProcessing[4] = {false, false, false, false};  // 각 프레임 처리 중 플래그
+    std::atomic<bool> frameTriggeredBySerial[4] = {false, false, false, false};  // 시리얼/서버 명령으로 트리거된 검사
     
     // 스레드 안전 cameraInfos 접근 함수들
     QVector<CameraInfo> getCameraInfos() const;
@@ -282,7 +283,8 @@ signals:
     
 private slots:
     void onTriggerSignalReceived(const cv::Mat& frame, int cameraIndex);
-    void onFrameIndexReceived(int frameIndex);  // 서버로부터 프레임 인덱스 수신 (0~3)
+    void onInspectionRequestReceived(const QJsonObject& request);  // 소켓 검사 요청 수신
+    void onFrameIndexReceived(int frameIndex);  // 시리얼 프레임 인덱스 수신 (레거시)
     void updateUITexts();
     void openLanguageSettings();
 
@@ -606,7 +608,7 @@ private:
     QSpinBox* anomalyMinBlobSizeSpin = nullptr;
     QSpinBox* anomalyMinDefectWidthSpin = nullptr;
     QSpinBox* anomalyMinDefectHeightSpin = nullptr;
-    QPushButton* anomalyTrainButton = nullptr;  // ANOMALY 학습 버튼
+    // QPushButton* anomalyTrainButton = nullptr;  // 제거됨 - 모델 관리는 메뉴에서만 접근
 
     // 패턴 기본 정보 관련 위젯들
     QLabel* patternIdValue = nullptr;      
