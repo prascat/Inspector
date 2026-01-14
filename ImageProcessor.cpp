@@ -1927,24 +1927,9 @@ bool ImageProcessor::performStripInspection(const cv::Mat &roiImage, const cv::M
         // 클립된 Y 좌표 사용
         boxCenterY = clippedBoxCenterY;
 
-        // 각도에 따른 bounding box 크기 계산 (템플릿 이미지와 동일한 방식)
-        // cosA, sinA는 위에서 이미 계산됨
-        int actualBoxWidth, actualBoxHeight;
-
-        if (std::abs(angle) < 0.1)
-        {
-            // 각도가 거의 없으면 원본 크기 사용
-            actualBoxWidth = thicknessBoxWidth;
-            actualBoxHeight = thicknessBoxHeight;
-        }
-        else
-        {
-            // 각도가 있으면 bounding box 크기 계산
-            double rotatedBoxWidth = std::abs(thicknessBoxWidth * cosA) + std::abs(thicknessBoxHeight * sinA);
-            double rotatedBoxHeight = std::abs(thicknessBoxWidth * sinA) + std::abs(thicknessBoxHeight * cosA);
-            actualBoxWidth = static_cast<int>(std::round(rotatedBoxWidth));
-            actualBoxHeight = static_cast<int>(std::round(rotatedBoxHeight));
-        }
+        // UI 파라미터 크기를 그대로 사용 (각도 관계없이 사용자가 설정한 크기 적용)
+        int actualBoxWidth = thicknessBoxWidth;
+        int actualBoxHeight = thicknessBoxHeight;
 
         // 박스 왼쪽 끝 계산 (bounding box 기준)
         int boxLeftX = boxCenterX - actualBoxWidth / 2;
@@ -2092,10 +2077,15 @@ bool ImageProcessor::performStripInspection(const cv::Mat &roiImage, const cv::M
             }
 
             // 첫 번째 검은색 시작점부터 마지막 검은색 끝점까지 모든 포인트를 절대좌표로 저장
-            // 회전된 박스 내부에 있는지 체크
+            // 회전된 박스 내부의 포인트만 저장
             if (firstBlackIdx >= 0 && lastBlackIdx >= 0 &&
                 firstBlackIdx < linePoints.size() && lastBlackIdx < linePoints.size())
             {
+                // 회전된 박스 내부 체크를 위한 준비
+                double halfWidth = actualBoxWidth / 2.0;
+                double halfHeight = actualBoxHeight / 2.0;
+                double cosAngleFront = cos(frontAngleRad);
+                double sinAngleFront = sin(frontAngleRad);
 
                 for (int i = firstBlackIdx; i <= lastBlackIdx; i++)
                 {
@@ -2103,9 +2093,19 @@ bool ImageProcessor::performStripInspection(const cv::Mat &roiImage, const cv::M
                     {
                         cv::Point pt = linePoints[i];
 
-                        // 바운딩 박스 범위 내의 모든 점 저장 (회전 체크 제거)
-                        // 각도가 있을 때 양쪽 끝까지 포함하도록 함
-                        blackRegionPoints.push_back(pt);
+                        // 포인트를 박스 중심 기준 좌표로 변환
+                        double relX = pt.x - boxCenterX;
+                        double relY = pt.y - boxCenterY;
+
+                        // 역회전 적용 (포인트를 박스의 로컬 좌표계로 변환)
+                        double localX = relX * cosAngleFront + relY * sinAngleFront;
+                        double localY = -relX * sinAngleFront + relY * cosAngleFront;
+
+                        // 회전되지 않은 박스 범위 내에 있는지 체크
+                        if (std::abs(localX) <= halfWidth && std::abs(localY) <= halfHeight)
+                        {
+                            blackRegionPoints.push_back(pt);
+                        }
                     }
                 }
             }
@@ -2217,23 +2217,9 @@ bool ImageProcessor::performStripInspection(const cv::Mat &roiImage, const cv::M
         std::vector<cv::Point> blackRegionPoints_rear;               // 검은색이 실제로 검출된 구간만 저장 (빨간색으로 표시용)
         std::vector<std::pair<cv::Point, cv::Point>> scanLines_rear; // 실제 검은색 구간 스캔 라인 (시각화용)
 
-        // 각도에 따른 bounding box 크기 계산 (템플릿 이미지와 동일한 방식)
-        int actualBoxWidth_rear, actualBoxHeight_rear;
-
-        if (std::abs(angle) < 0.1)
-        {
-            // 각도가 거의 없으면 원본 크기 사용
-            actualBoxWidth_rear = rearThicknessBoxWidth;
-            actualBoxHeight_rear = rearThicknessBoxHeight;
-        }
-        else
-        {
-            // 각도가 있으면 bounding box 크기 계산
-            double rotatedBoxWidth_rear = std::abs(rearThicknessBoxWidth * cosA_rear) + std::abs(rearThicknessBoxHeight * sinA_rear);
-            double rotatedBoxHeight_rear = std::abs(rearThicknessBoxWidth * sinA_rear) + std::abs(rearThicknessBoxHeight * cosA_rear);
-            actualBoxWidth_rear = static_cast<int>(std::round(rotatedBoxWidth_rear));
-            actualBoxHeight_rear = static_cast<int>(std::round(rotatedBoxHeight_rear));
-        }
+        // UI 파라미터 크기를 그대로 사용 (각도 관계없이 사용자가 설정한 크기 적용)
+        int actualBoxWidth_rear = rearThicknessBoxWidth;
+        int actualBoxHeight_rear = rearThicknessBoxHeight;
 
         // 박스 왼쪽 끝 계산 (bounding box 기준)
         int boxLeftX_rear = boxCenterX_rear - actualBoxWidth_rear / 2;
@@ -2356,13 +2342,30 @@ bool ImageProcessor::performStripInspection(const cv::Mat &roiImage, const cv::M
                             // 마지막 검은색 구간의 끝점 업데이트
                             lastBlackIdx_rear = i - 1;
 
-                            // 바운딩 박스 내부의 모든 검은색 포인트 저장 (회전 체크 제거)
+                            // 회전된 박스 내부의 검은색 포인트만 저장
                             if (regionStart < linePoints_rear.size() && i - 1 < linePoints_rear.size())
                             {
+                                // 회전된 박스 내부 체크를 위한 준비
+                                double halfWidth_rear = actualBoxWidth_rear / 2.0;
+                                double halfHeight_rear = actualBoxHeight_rear / 2.0;
+
                                 for (int idx = regionStart; idx < i && idx < linePoints_rear.size(); idx++)
                                 {
                                     cv::Point pt = linePoints_rear[idx];
-                                    blackRegionPoints_rear.push_back(pt);
+                                    
+                                    // 포인트를 박스 중심 기준 좌표로 변환
+                                    double relX = pt.x - boxCenterX_rear;
+                                    double relY = pt.y - boxCenterY_rear;
+
+                                    // 역회전 적용 (포인트를 박스의 로컬 좌표계로 변환)
+                                    double localX = relX * cosAngle_rear + relY * sinAngle_rear;
+                                    double localY = -relX * sinAngle_rear + relY * cosAngle_rear;
+
+                                    // 회전되지 않은 박스 범위 내에 있는지 체크
+                                    if (std::abs(localX) <= halfWidth_rear && std::abs(localY) <= halfHeight_rear)
+                                    {
+                                        blackRegionPoints_rear.push_back(pt);
+                                    }
                                 }
                             }
                         }
@@ -2387,13 +2390,30 @@ bool ImageProcessor::performStripInspection(const cv::Mat &roiImage, const cv::M
                     // 마지막 검은색 구간의 끝점 업데이트
                     lastBlackIdx_rear = it.count - 1;
 
-                    // 바운딩 박스 내부의 모든 검은색 포인트 저장 (회전 체크 제거)
+                    // 회전된 박스 내부의 검은색 포인트만 저장
                     if (regionStart < linePoints_rear.size() && it.count - 1 < linePoints_rear.size())
                     {
+                        // 회전된 박스 내부 체크를 위한 준비
+                        double halfWidth_rear = actualBoxWidth_rear / 2.0;
+                        double halfHeight_rear = actualBoxHeight_rear / 2.0;
+
                         for (int idx = regionStart; idx < it.count && idx < linePoints_rear.size(); idx++)
                         {
                             cv::Point pt = linePoints_rear[idx];
-                            blackRegionPoints_rear.push_back(pt);
+                            
+                            // 포인트를 박스 중심 기준 좌표로 변환
+                            double relX = pt.x - boxCenterX_rear;
+                            double relY = pt.y - boxCenterY_rear;
+
+                            // 역회전 적용 (포인트를 박스의 로컬 좌표계로 변환)
+                            double localX = relX * cosAngle_rear + relY * sinAngle_rear;
+                            double localY = -relX * sinAngle_rear + relY * cosAngle_rear;
+
+                            // 회전되지 않은 박스 범위 내에 있는지 체크
+                            if (std::abs(localX) <= halfWidth_rear && std::abs(localY) <= halfHeight_rear)
+                            {
+                                blackRegionPoints_rear.push_back(pt);
+                            }
                         }
                     }
                 }

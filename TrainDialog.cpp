@@ -16,6 +16,7 @@
 #include "CustomFileDialog.h"
 #include "CustomMessageBox.h"
 #include "ImageProcessor.h"
+#include <QPainter>
 
 TrainDialog::TrainDialog(QWidget *parent)
     : QWidget(parent)
@@ -1338,70 +1339,192 @@ void TrainDialog::trainPattern(const QString& patternName)
     int croppedCount = 0;
     int fidMatchFailCount = 0;
     
+    // 트레이닝 오버레이 숨기기 (이미지 표시를 위해)
+    if (trainingOverlay) {
+        trainingOverlay->hide();
+    }
+    
     for (int i = 0; i < commonImages.size(); ++i) {
-        // 진행률 업데이트 (5개마다 또는 마지막)
-        if (i % 5 == 0 || i == commonImages.size() - 1) {
-            updateTrainingProgress(QString("%1 Extracting ROI '%2'... (%3/%4)%5")
-                .arg(getPatternProgressString()).arg(patternName).arg(i + 1).arg(commonImages.size()).arg(getTotalTimeString()));
-            QApplication::processEvents();
-        }
-        
         cv::Mat image = commonImages[i];
         if (image.empty()) continue;
+        
+        // BGR을 RGB로 변환하여 표시용 이미지 생성
+        cv::Mat displayImage = image.clone();
         
         int finalRoiX = roiX, finalRoiY = roiY;
         
         if (useFidMatching && !fidTemplate.empty()) {
-            // FID ROI 영역에서만 검색 (마진 추가)
-            int searchMargin = 50;  // 검색 마진 (픽셀)
-            int fidRoiX = std::max(0, static_cast<int>(parentFidPattern->rect.x()) - searchMargin);
-            int fidRoiY = std::max(0, static_cast<int>(parentFidPattern->rect.y()) - searchMargin);
-            int fidRoiW = static_cast<int>(parentFidPattern->rect.width()) + searchMargin * 2;
-            int fidRoiH = static_cast<int>(parentFidPattern->rect.height()) + searchMargin * 2;
+            // 부모 ROI 전체 영역에서 FID 패턴 검색 (실시간 검사와 동일)
+            // FID 패턴의 중심이 포함된 ROI 찾기 (실시간 코드와 동일)
+            cv::Rect searchROI;
+            QPoint fidCenter = QPoint(
+                static_cast<int>(parentFidPattern->rect.center().x()),
+                static_cast<int>(parentFidPattern->rect.center().y()));
+            
+            for (PatternInfo* p : allPatterns) {
+                if (p->type == PatternType::ROI && p->enabled) {
+                    // FID 패턴이 이 ROI 내부에 있는지 확인 (중심점 기준)
+                    if (p->rect.contains(fidCenter)) {
+                        searchROI = cv::Rect(
+                            static_cast<int>(p->rect.x()),
+                            static_cast<int>(p->rect.y()),
+                            static_cast<int>(p->rect.width()),
+                            static_cast<int>(p->rect.height())
+                        );
+                        break; // 첫 번째로 찾은 포함하는 ROI 사용
+                    }
+                }
+            }
+            
+            // ROI를 못 찾으면 FID 패턴 주변 영역 사용 (실시간 코드와 동일)
+            if (searchROI.area() == 0) {
+                int margin = std::max(static_cast<int>(parentFidPattern->rect.width()), 
+                                     static_cast<int>(parentFidPattern->rect.height()));
+                searchROI = cv::Rect(
+                    std::max(0, static_cast<int>(parentFidPattern->rect.x()) - margin),
+                    std::max(0, static_cast<int>(parentFidPattern->rect.y()) - margin),
+                    std::min(image.cols - std::max(0, static_cast<int>(parentFidPattern->rect.x()) - margin),
+                            static_cast<int>(parentFidPattern->rect.width()) + 2 * margin),
+                    std::min(image.rows - std::max(0, static_cast<int>(parentFidPattern->rect.y()) - margin),
+                            static_cast<int>(parentFidPattern->rect.height()) + 2 * margin));
+            }
+            
+            int fidRoiX = searchROI.x;
+            int fidRoiY = searchROI.y;
+            int fidRoiW = searchROI.width;
+            int fidRoiH = searchROI.height;
             
             // 이미지 범위 체크
+            if (fidRoiX < 0) fidRoiX = 0;
+            if (fidRoiY < 0) fidRoiY = 0;
             if (fidRoiX + fidRoiW > image.cols) fidRoiW = image.cols - fidRoiX;
             if (fidRoiY + fidRoiH > image.rows) fidRoiH = image.rows - fidRoiY;
             
             // 검색 영역 추출
             cv::Mat searchRegion = image(cv::Rect(fidRoiX, fidRoiY, fidRoiW, fidRoiH));
             
+            // 템플릿 크기 검증
+            if (fidTemplate.cols > searchRegion.cols || fidTemplate.rows > searchRegion.rows) {
+                fidMatchFailCount++;
+                qDebug() << QString("[TRAIN] FID template too large - skip: %1 (template:%2x%3, search:%4x%5)")
+                    .arg(i).arg(fidTemplate.cols).arg(fidTemplate.rows).arg(searchRegion.cols).arg(searchRegion.rows);
+                continue;
+            }
+            
+            // 색상 채널 맞추기 (grayscale로 변환하여 매칭)
+            cv::Mat searchGray, templateGray;
+            if (searchRegion.channels() == 3) {
+                cv::cvtColor(searchRegion, searchGray, cv::COLOR_BGR2GRAY);
+            } else {
+                searchGray = searchRegion;
+            }
+            
+            if (fidTemplate.channels() == 3) {
+                cv::cvtColor(fidTemplate, templateGray, cv::COLOR_BGR2GRAY);
+            } else {
+                templateGray = fidTemplate;
+            }
+            
             cv::Mat result;
-            int matchMethod = cv::TM_CCOEFF_NORMED;
+            // 레시피의 FID 패턴 설정 사용
+            int matchMethod = (parentFidPattern->fidMatchMethod == 0) ? cv::TM_CCOEFF_NORMED : cv::TM_CCORR_NORMED;
+            double matchThreshold = parentFidPattern->matchThreshold / 100.0;  // 퍼센트를 0~1로 변환
             
             if (!fidMask.empty()) {
-                cv::matchTemplate(searchRegion, fidTemplate, result, matchMethod, fidMask);
+                cv::matchTemplate(searchGray, templateGray, result, matchMethod, fidMask);
             } else {
-                cv::matchTemplate(searchRegion, fidTemplate, result, matchMethod);
+                cv::matchTemplate(searchGray, templateGray, result, matchMethod);
             }
             
             double minVal, maxVal;
             cv::Point minLoc, maxLoc;
             cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
             
-            if (maxVal < 0.7) {
+            // 시각화: 검색 영역 (파란색)
+            cv::rectangle(displayImage, cv::Rect(fidRoiX, fidRoiY, fidRoiW, fidRoiH), 
+                         cv::Scalar(255, 0, 0), 3);
+            
+            // 시각화: FID 매칭 위치 (녹색=성공, 빨간색=실패)
+            int matchX = fidRoiX + maxLoc.x;
+            int matchY = fidRoiY + maxLoc.y;
+            cv::Scalar matchColor = (maxVal >= matchThreshold) ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 0, 255);
+            cv::rectangle(displayImage, cv::Rect(matchX, matchY, fidTemplate.cols, fidTemplate.rows),
+                         matchColor, 3);
+            
+            // 매칭 점수 텍스트
+            QString scoreText = QString("FID: %1%").arg(maxVal * 100.0, 0, 'f', 1);
+            cv::putText(displayImage, scoreText.toStdString(), cv::Point(matchX, matchY - 10),
+                       cv::FONT_HERSHEY_SIMPLEX, 0.7, matchColor, 2);
+            
+            // FID 매칭 성공 시 상대 좌표로 계산하여 INS 패턴 영역 align
+            if (maxVal >= matchThreshold) {
+                // 검색 영역 내 좌표를 전체 이미지 좌표로 변환
+                double fidMatchCenterX = fidRoiX + maxLoc.x + fidTemplate.cols / 2.0;
+                double fidMatchCenterY = fidRoiY + maxLoc.y + fidTemplate.rows / 2.0;
+                
+                // 티칭 시의 상대 좌표 계산
+                double relativeX = insTeachingCenter.x() - fidTeachingCenter.x();
+                double relativeY = insTeachingCenter.y() - fidTeachingCenter.y();
+                
+                // FID 매칭 위치 기준으로 INS 패턴 위치 계산 (align)
+                double newInsCenterX = fidMatchCenterX + relativeX;
+                double newInsCenterY = fidMatchCenterY + relativeY;
+                
+                finalRoiX = static_cast<int>(newInsCenterX - roiW / 2.0);
+                finalRoiY = static_cast<int>(newInsCenterY - roiH / 2.0);
+                
+                // 시각화: INS 패턴 영역 (노란색)
+                cv::rectangle(displayImage, cv::Rect(finalRoiX, finalRoiY, roiW, roiH),
+                             cv::Scalar(0, 255, 255), 3);
+                cv::putText(displayImage, targetPattern->name.toStdString(), 
+                           cv::Point(finalRoiX, finalRoiY - 10),
+                           cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
+            } else {
+                // FID 매칭 실패 시 건너뜀
                 fidMatchFailCount++;
+                qDebug() << QString("[TRAIN] FID match failed - skip: %1 (score=%2%, threshold=%3%)")
+                    .arg(i).arg(maxVal * 100.0, 0, 'f', 1).arg(matchThreshold * 100.0, 0, 'f', 1);
+                
+                // 실패 이미지도 표시
+                cv::cvtColor(displayImage, displayImage, cv::COLOR_BGR2RGB);
+                QImage qImg(displayImage.data, displayImage.cols, displayImage.rows,
+                           displayImage.step, QImage::Format_RGB888);
+                previewImageLabel->setPixmap(QPixmap::fromImage(qImg.copy()));
+                QApplication::processEvents();
                 continue;
             }
-            
-            // 검색 영역 내 좌표를 전체 이미지 좌표로 변환
-            double fidMatchCenterX = fidRoiX + maxLoc.x + fidTemplate.cols / 2.0;
-            double fidMatchCenterY = fidRoiY + maxLoc.y + fidTemplate.rows / 2.0;
-            
-            double relativeX = insTeachingCenter.x() - fidTeachingCenter.x();
-            double relativeY = insTeachingCenter.y() - fidTeachingCenter.y();
-            
-            double newInsCenterX = fidMatchCenterX + relativeX;
-            double newInsCenterY = fidMatchCenterY + relativeY;
-            
-            finalRoiX = static_cast<int>(newInsCenterX - roiW / 2.0);
-            finalRoiY = static_cast<int>(newInsCenterY - roiH / 2.0);
+        } else {
+            // FID 매칭 없이 고정 좌표 사용 - INS 영역 표시
+            cv::rectangle(displayImage, cv::Rect(finalRoiX, finalRoiY, roiW, roiH),
+                         cv::Scalar(0, 255, 255), 3);
         }
         
-        // ROI 범위 체크
-        if (finalRoiX < 0 || finalRoiY < 0 || 
-            finalRoiX + roiW > image.cols || finalRoiY + roiH > image.rows) {
-            continue;
+        // 이미지를 previewImageLabel에 표시
+        cv::cvtColor(displayImage, displayImage, cv::COLOR_BGR2RGB);
+        QImage qImg(displayImage.data, displayImage.cols, displayImage.rows,
+                   displayImage.step, QImage::Format_RGB888);
+        previewImageLabel->setPixmap(QPixmap::fromImage(qImg.copy()));
+        QApplication::processEvents();
+        
+        // 경계 조정 (ROI 영역 체크 제거 - INS는 ROI와 무관하게 크롭)
+        // 이미지 범위를 벗어나면 경계에 맞춰 조정
+        if (finalRoiX < 0) finalRoiX = 0;
+        if (finalRoiY < 0) finalRoiY = 0;
+        if (finalRoiX + roiW > image.cols) {
+            if (image.cols >= roiW) {
+                finalRoiX = image.cols - roiW;
+            } else {
+                qDebug() << "[TRAIN] 이미지 너비가 ROI보다 작음 - 건너뜀:" << image.cols << "<" << roiW;
+                continue;
+            }
+        }
+        if (finalRoiY + roiH > image.rows) {
+            if (image.rows >= roiH) {
+                finalRoiY = image.rows - roiH;
+            } else {
+                qDebug() << "[TRAIN] 이미지 높이가 ROI보다 작음 - 건너뜀:" << image.rows << "<" << roiH;
+                continue;
+            }
         }
         
         // ROI 크롭 및 저장

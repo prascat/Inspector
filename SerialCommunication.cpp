@@ -39,10 +39,10 @@ bool SerialCommunication::connectToPort(const QString &portName, int baudRate)
     bool connected = serialPort->open(QIODevice::ReadWrite);
     
     if (connected) {
-        qDebug() << "시리얼 포트 연결 성공:" << portName << "at" << baudRate << "baud";
+        qDebug() << "[Serial] Port connected:" << portName << "at" << baudRate << "baud";
         emit connectionStatusChanged(true);
     } else {
-        qDebug() << "시리얼 포트 연결 실패:" << serialPort->errorString();
+        qDebug() << "[Serial] Connection failed:" << serialPort->errorString();
         emit errorOccurred(serialPort->errorString());
     }
     
@@ -190,7 +190,7 @@ bool SerialCommunication::autoConnectToAvailablePort(int baudRate)
                 qDebug() << "[Serial] 우선순위 포트 시도:" << portName << "(" << description << ")";
                 
                 if (connectToPort(portName, baudRate)) {
-                    qDebug() << "[Serial] 자동 연결 성공:" << portName;
+                    qDebug() << "[Serial] Auto-connect success:" << portName;
                     return true;
                 }
             }

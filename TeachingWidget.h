@@ -332,6 +332,7 @@ private:
     void updatePreviewFrames();
     void updateSinglePreview(int frameIndex);
     void updateSinglePreviewWithFrame(int frameIndex, const cv::Mat& frame);  // cameraFrames 접근 없이 프레임 직접 사용
+    void drawPreviewText(QPixmap& pixmap, int frameIndex, const QString& labelText);  // 프리뷰에 텍스트 그리기
     void initializeLanguageSystem();
     void saveImageAsync(const cv::Mat& frame);
     PatternInfo* findPatternById(const QUuid& patternId);
@@ -804,7 +805,7 @@ private:
     // 전체화면 모드 관련
     bool isFullScreenMode;
     QRect windowedGeometry;
-    QShortcut* fullscreenShortcut;
+    // QShortcut* fullscreenShortcut;  // Ctrl+F 단축키 제거됨
     
     // 레시피 메뉴
     QMenu* recipeMenu = nullptr;

@@ -123,10 +123,10 @@ void ClientDialog::setupUI()
     // 자동연결 체크박스 변경 시 즉시 재연결 시작/중단
     connect(autoConnectCheckBox, &QCheckBox::stateChanged, this, [this](int state) {
         if (state == Qt::Checked) {
-            qDebug() << "[자동연결] 체크됨 - 재연결 스레드 시작";
+            qDebug() << "[AutoConnect] Checked - Starting reconnect thread";
             startReconnectThread();
         } else {
-            qDebug() << "[자동연결] 해제됨 - 재연결 스레드 중단";
+            qDebug() << "[AutoConnect] Unchecked - Stopping reconnect thread";
             stopReconnectThread();
         }
     });
@@ -569,10 +569,13 @@ bool ClientDialog::sendProtocolMessage(MessageType type, const QByteArray& jsonD
     
     QString typeName;
     switch(type) {
-        case MessageType::INSPECTION_REQUEST: typeName = "INSPECTION_REQUEST"; break;
-        case MessageType::INSPECTION_RESPONSE: typeName = "INSPECTION_RESPONSE"; break;
-        case MessageType::HEARTBEAT_LEGACY: typeName = "HEARTBEAT_LEGACY"; break;
-        case MessageType::HEARTBEAT: typeName = "HEARTBEAT"; break;
+        case MessageType::RECIPE_ALL_REQUEST: typeName = "RECIPE_ALL_REQUEST"; break;
+        case MessageType::RECIPE_ALL_RESPONSE: typeName = "RECIPE_ALL_RESPONSE"; break;
+        case MessageType::RECIPE_READY: typeName = "RECIPE_READY"; break;
+        case MessageType::RECIPE_OK: typeName = "RECIPE_OK"; break;
+        case MessageType::RECIPE_EMPTY: typeName = "RECIPE_EMPTY"; break;
+        case MessageType::INSPECT_RESPONSE: typeName = "INSPECT_RESPONSE"; break;
+        case MessageType::HEARTBEAT_OK: typeName = "HEARTBEAT_OK"; break;
         case MessageType::ERROR: typeName = "ERROR"; break;
         default: typeName = "UNKNOWN"; break;
     }
@@ -596,7 +599,7 @@ bool ClientDialog::sendInspectionResult(const QJsonObject& result)
     
     qDebug().noquote() << "[Protocol] 검사 결과 전송:" << QString::fromUtf8(jsonData);
     
-    return sendProtocolMessage(MessageType::INSPECTION_RESPONSE, jsonData);
+    return sendProtocolMessage(MessageType::INSPECT_RESPONSE, jsonData);
 }
 
 // Heartbeat 전송 (레거시 타입 사용)
@@ -609,7 +612,7 @@ bool ClientDialog::sendHeartbeat()
     QJsonDocument doc(heartbeat);
     QByteArray jsonData = doc.toJson(QJsonDocument::Compact);
     
-    return sendProtocolMessage(MessageType::HEARTBEAT_LEGACY, jsonData);
+    return sendProtocolMessage(MessageType::HEARTBEAT_OK, jsonData);
 }
 
 // 수신 데이터 처리
@@ -653,11 +656,12 @@ void ClientDialog::processReceivedData()
         MessageType type = static_cast<MessageType>(header.messageType);
         
         switch (type) {
-        case MessageType::INSPECTION_REQUEST: {
+        case MessageType::RECIPE_READY: {
+            // Lims → Vision: Lims가 선택한 회로선택 Vision에 요청
             if (header.dataLength > 0) {
                 QJsonDocument doc = QJsonDocument::fromJson(jsonData);
                 if (!doc.isNull() && doc.isObject()) {
-                    handleInspectionRequest(doc.object());
+                    handleRecipeReady(doc.object());
                 } else {
                     qWarning() << "[Protocol] JSON 파싱 실패:" << QString::fromUtf8(jsonData);
                 }
@@ -665,9 +669,16 @@ void ClientDialog::processReceivedData()
             break;
         }
         
-        case MessageType::HEARTBEAT_LEGACY:
-        case MessageType::HEARTBEAT: {
-            handleHeartbeat();
+        case MessageType::RECIPE_ALL_RESPONSE: {
+            // Lims → Vision: JSON(회로명, 전선, 전선길이, 단자, 씰)
+            if (header.dataLength > 0) {
+                QJsonDocument doc = QJsonDocument::fromJson(jsonData);
+                if (!doc.isNull()) {
+                    handleRecipeAllResponse(doc);
+                } else {
+                    qWarning() << "[Protocol] JSON 파싱 실패:" << QString::fromUtf8(jsonData);
+                }
+            }
             break;
         }
         
@@ -700,20 +711,22 @@ bool ClientDialog::parseHeader(const QByteArray& headerData, ProtocolHeader& hea
     return true;
 }
 
-// 검사 요청 처리
-void ClientDialog::handleInspectionRequest(const QJsonObject& request)
+// 회로 준비 요청 처리 (Lims → Vision)
+void ClientDialog::handleRecipeReady(const QJsonObject& request)
 {
-    qDebug().noquote() << "[Protocol] 검사 요청 수신:" 
+    qDebug().noquote() << "[Protocol] 회로 준비 요청 수신:" 
                        << QJsonDocument(request).toJson(QJsonDocument::Compact);
     
-    emit inspectionRequestReceived(request);
+    // TODO: 레시피 로드 처리
+    // 성공 시: RECIPE_OK 전송
+    // 실패 시: RECIPE_EMPTY 전송
 }
 
-// Heartbeat 처리
-void ClientDialog::handleHeartbeat()
+// 회로 목록 응답 처리 (Lims → Vision)
+void ClientDialog::handleRecipeAllResponse(const QJsonDocument& response)
 {
-    qDebug() << "[Protocol] Heartbeat 수신";
+    qDebug().noquote() << "[Protocol] 회로 목록 수신:" 
+                       << response.toJson(QJsonDocument::Compact);
     
-    // Heartbeat 응답 (현재는 로그만, 필요시 응답 전송)
-    // sendHeartbeat();
+    // TODO: 회로 목록 처리
 }

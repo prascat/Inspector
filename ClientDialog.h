@@ -15,11 +15,14 @@
 
 // 메시지 타입
 enum class MessageType : uint32_t {
-    INSPECTION_REQUEST = 0x01,
-    INSPECTION_RESPONSE = 0x02,
-    HEARTBEAT_LEGACY = 0x03,
-    HEARTBEAT = 0x10,
-    ERROR = 0xFF
+    RECIPE_ALL_REQUEST = 0x01,   // Vision → Lims: 회로 목록 전체 요청
+    RECIPE_ALL_RESPONSE = 0x02,  // Lims → Vision: JSON(회로명, 전선, 전선길이, 단자, 씰)
+    RECIPE_READY = 0x03,         // Lims → Vision: Lims가 선택한 회로선택 Vision에 요청
+    RECIPE_OK = 0x04,            // Vision → Lims: Vision에서 동일한 회로 레시피 로드 성공
+    RECIPE_EMPTY = 0x05,         // Vision → Lims: Lims에 회로의 레시피가 Vision에 없음
+    INSPECT_RESPONSE = 0x06,     // Vision → Lims: Vision 검사결과 (해당 불량 카메라)
+    HEARTBEAT_OK = 0x07,         // Vision → Lims: 30초 주기
+    ERROR = 0xFF                 // 오류
 };
 
 // 프로토콜 헤더 (32바이트)
@@ -47,10 +50,12 @@ public:
     // 연결 관리
     void initialize();
     bool isServerConnected() const { return isConnected; }
+    bool isSocketConnected() const { return testSocket && testSocket->state() == QAbstractSocket::ConnectedState; }
 
     // 프로토콜 메시지 전송
     bool sendInspectionResult(const QJsonObject& result);
     bool sendHeartbeat();
+    bool sendProtocolMessage(MessageType type, const QByteArray& jsonData);
     
     // 레거시 메시지 전송 (하위 호환)
     bool sendMessage(const QString& message);
@@ -96,11 +101,10 @@ private:
     void updateLanguage();
     
     // 프로토콜 처리
-    bool sendProtocolMessage(MessageType type, const QByteArray& jsonData);
     void processReceivedData();
     bool parseHeader(const QByteArray& headerData, ProtocolHeader& header);
-    void handleInspectionRequest(const QJsonObject& request);
-    void handleHeartbeat();
+    void handleRecipeReady(const QJsonObject& request);
+    void handleRecipeAllResponse(const QJsonDocument& response);
 
     // UI 요소
     QLineEdit* ipEdit;

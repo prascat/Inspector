@@ -446,35 +446,24 @@ void CameraView::mousePressEvent(QMouseEvent *event)
         }
         else if (m_editMode == EditMode::Draw)
         {
-            // 패턴 클릭 체크
-            QUuid hitPatternId = hitTest(pos);
+            // DRAW 모드에서는 항상 새 패턴을 그릴 수 있어야 함
+            // 패턴 선택 해제 및 모든 패턴 표시
+            setSelectedPatternId(QUuid());
+            selectedInspectionPatternId = QUuid();  // FID/INS 필터링 해제
             
-            if (!hitPatternId.isNull())
+            // 검사 결과 모드가 아니면 모든 패턴 다시 그리기
+            if (!isInspectionMode)
             {
-                // 패턴 위를 클릭한 경우 - 패턴 선택
-                setSelectedPatternId(hitPatternId);
-                return;
+                viewport()->update();
             }
-            else
-            {
-                // 빈 공간 클릭 - 패턴 선택 해제 및 모든 패턴 표시
-                setSelectedPatternId(QUuid());
-                selectedInspectionPatternId = QUuid();  // FID/INS 필터링 해제
-                
-                // 검사 결과 모드가 아니면 모든 패턴 다시 그리기
-                if (!isInspectionMode)
-                {
-                    viewport()->update();
-                }
-                
-                // Draw 모드 패턴 그리기 시작
-                isDrawing = true;
-                startPoint = originalPos;
-                currentRect = QRect();
-                setCursor(Qt::ArrowCursor);
-                update();
-                return;
-            }
+            
+            // Draw 모드 패턴 그리기 시작
+            isDrawing = true;
+            startPoint = originalPos;
+            currentRect = QRect();
+            setCursor(Qt::ArrowCursor);
+            update();
+            return;
         }
         else
         {
@@ -1940,8 +1929,6 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
     // 프레임별 검사 결과 저장 (frameIndex가 유효하면 저장)
     if (targetFrameIndex >= 0 && targetFrameIndex < 4)
     {
-        frameResults[targetFrameIndex] = result;
-        
         // 해당 프레임의 패턴만 필터링하여 저장
         QList<PatternInfo> frameSpecificPatterns;
         for (const PatternInfo &pattern : patterns)
@@ -1951,9 +1938,6 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
                 frameSpecificPatterns.append(pattern);
             }
         }
-        framePatterns[targetFrameIndex] = frameSpecificPatterns;
-        hasFrameResult[targetFrameIndex] = true;
-        frameInspectionCount[targetFrameIndex]++;  // 검사 횟수 증가
         
         // ROI 영역 찾기
         QRectF roiRect(0, 0, 1920, 1200);
@@ -2050,7 +2034,34 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
                             
                             overlayPainter.end();
                             
-                            framePixmaps[targetFrameIndex] = QPixmap::fromImage(fullImageCopy);
+                            // 뮤텍스로 보호하여 framePixmaps 저장 및 플래그 설정
+                            {
+                                QMutexLocker locker(&frameResultMutex);
+                                frameResults[targetFrameIndex] = result;
+                                framePatterns[targetFrameIndex] = frameSpecificPatterns;
+                                framePixmaps[targetFrameIndex] = QPixmap::fromImage(fullImageCopy);
+                                hasFrameResult[targetFrameIndex] = true;
+                                frameInspectionCount[targetFrameIndex]++;
+                            }
+                            
+                            // 저장 완료 후 해당 프레임 영역만 업데이트
+                            if (isQuadViewMode) {
+                                QRect viewRect = viewport()->rect();
+                                int halfWidth = viewRect.width() / 2;
+                                int halfHeight = viewRect.height() / 2;
+                                
+                                QRect quadrants[4] = {
+                                    QRect(0, 0, halfWidth, halfHeight),
+                                    QRect(halfWidth, 0, halfWidth, halfHeight),
+                                    QRect(0, halfHeight, halfWidth, halfHeight),
+                                    QRect(halfWidth, halfHeight, halfWidth, halfHeight)
+                                };
+                                
+                                // 해당 프레임 영역만 업데이트
+                                if (targetFrameIndex >= 0 && targetFrameIndex < 4) {
+                                    viewport()->update(quadrants[targetFrameIndex]);
+                                }
+                            }
                         }
                     }
                 }
@@ -2070,13 +2081,6 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
     else
     {
         qDebug() << "[updateInspectionResult] 조건 실패 - targetFrameIndex가 범위 밖:" << targetFrameIndex;
-    }
-
-    // 4분할 뷰 모드에서는 viewport()->update() 호출 필요
-    if (isQuadViewMode) {
-        viewport()->update();
-    } else {
-        update();
     }
 }
 
@@ -3113,23 +3117,36 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
     // 두께 검사 결과는 박스 채우기로 표현 (아래 FRONT/REAR 박스 시각화에서 처리)
 
     // ===== 5. EDGE 박스 시각화 (심선 끝 절단면 품질 검사) =====
-    // EDGE 박스는 검사 결과와 무관하게 티칭 위치 그대로 표시
+    // EDGE 박스는 FID 매칭 후 조정된 위치 사용
     if (patternInfo)
     {
         QTransform t = transform();
         double currentScale = std::sqrt(t.m11() * t.m11() + t.m12() * t.m12());
 
-        // 티칭 모드와 동일하게 계산
-        QPointF center = patternInfo->rect.center();
+        // 조정된 위치 사용 (FID 매칭 반영)
+        QRectF adjustedRect;
+        if (result.adjustedRects.contains(patternId))
+        {
+            adjustedRect = result.adjustedRects[patternId];
+        }
+        else
+        {
+            adjustedRect = patternInfo->rect;
+        }
+        
+        QPointF center = adjustedRect.center();
         QPointF centerDisplay = sceneToViewport(painter, center);
-        QSizeF displaySize(patternInfo->rect.width() * currentScale, patternInfo->rect.height() * currentScale);
+        QSizeF displaySize(adjustedRect.width() * currentScale, adjustedRect.height() * currentScale);
         QRectF displayRect(centerDisplay.x() - displaySize.width() / 2,
                            centerDisplay.y() - displaySize.height() / 2,
                            displaySize.width(), displaySize.height());
 
+        // 부모 각도 사용 (FID 매칭 후 조정된 각도)
+        double adjustedAngle = result.parentAngles.value(patternId, patternInfo->angle);
+
         painter.save();
         painter.translate(centerDisplay);
-        painter.rotate(patternInfo->angle);
+        painter.rotate(adjustedAngle);
         painter.translate(-centerDisplay);
 
         // displayRect의 회전된 코너들
@@ -3149,8 +3166,8 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
             QPoint patternCenter((topLeft.x() + topRight.x() + bottomLeft.x() + bottomRight.x()) / 4,
                                  (topLeft.y() + topRight.y() + bottomLeft.y() + bottomRight.y()) / 4);
 
-            // EDGE 박스 위치 계산
-            double patternWidth = patternInfo->rect.width();
+            // EDGE 박스 위치 계산 (조정된 사각형 기준)
+            double patternWidth = adjustedRect.width();
             float baseEdgeOffsetX = -(patternWidth / 2.0f) + 30.0f;
             float totalEdgeOffsetX = baseEdgeOffsetX + patternInfo->edgeOffsetX;
 
@@ -4072,10 +4089,21 @@ void CameraView::paintEvent(QPaintEvent *event)
             // 배경 (검은색)
             painter.fillRect(rect, Qt::black);
             
-            // 검사 결과가 있으면 저장된 pixmap 보여주기 (오버레이 포함)
-            if (hasFrameResult[i] && !framePixmaps[i].isNull())
+            // 프레임 결과 복사 (뮤텍스 보호)
+            QPixmap pixmapCopy;
+            bool hasResult = false;
             {
-                QPixmap scaled = framePixmaps[i].scaled(rect.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                QMutexLocker locker(&frameResultMutex);
+                hasResult = hasFrameResult[i];
+                if (hasResult && !framePixmaps[i].isNull()) {
+                    pixmapCopy = framePixmaps[i];
+                }
+            }
+            
+            // 검사 결과가 있으면 저장된 pixmap 보여주기 (오버레이 포함)
+            if (hasResult && !pixmapCopy.isNull())
+            {
+                QPixmap scaled = pixmapCopy.scaled(rect.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
                 
                 // 중앙 정렬
                 int x = rect.x() + (rect.width() - scaled.width()) / 2;
@@ -4113,19 +4141,30 @@ void CameraView::paintEvent(QPaintEvent *event)
             QColor textColor;
             
             // 검사 결과가 있는지 확인 (레시피 유무와 무관)
-            if (hasFrameResult[i])
+            bool hasResultForText = false;
+            bool resultPassed = false;
+            int inspectionTime = 0;
+            {
+                QMutexLocker locker(&frameResultMutex);
+                hasResultForText = hasFrameResult[i];
+                if (hasResultForText) {
+                    resultPassed = frameResults[i].isPassed;
+                    inspectionTime = frameResults[i].inspectionTimeMs;
+                }
+            }
+            
+            if (hasResultForText)
             {
                 // 검사 결과가 있는 경우 - PASS(초록색) 또는 NG(빨간색)
-                const InspectionResult &result = frameResults[i];
-                textColor = result.isPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
+                textColor = resultPassed ? QColor(0, 255, 0) : QColor(255, 0, 0);
                 
                 // 결과 텍스트 생성 (STAGE 레이블 포함)
-                QString passNgText = result.isPassed ? "PASS" : "NG";
+                QString passNgText = resultPassed ? "PASS" : "NG";
                 
                 // 검사 시간 포함
-                if (result.inspectionTimeMs > 0)
+                if (inspectionTime > 0)
                 {
-                    resultText = QString("%1 (%2 - %3ms)").arg(stageLabel).arg(passNgText).arg(result.inspectionTimeMs);
+                    resultText = QString("%1 (%2 - %3ms)").arg(stageLabel).arg(passNgText).arg(inspectionTime);
                 }
                 else
                 {
@@ -5509,6 +5548,36 @@ void CameraView::drawTeachingModePatterns(QPainter &painter)
     if (isInspectionMode)
         return;
 
+    // 임시 패턴이 있으면 먼저 그리기 (학습/디버그용)
+    for (const PatternInfo &pattern : temporaryPatterns)
+    {
+        // Scene 좌표를 viewport 좌표로 변환
+        QPointF topLeft = mapFromScene(pattern.rect.topLeft());
+        QPointF bottomRight = mapFromScene(pattern.rect.bottomRight());
+        QRectF displayRect(topLeft, bottomRight);
+
+        // 회전 적용하여 박스 그리기
+        painter.save();
+        QPointF center = displayRect.center();
+        painter.translate(center);
+        painter.rotate(pattern.angle);
+        painter.translate(-center);
+
+        painter.setPen(QPen(pattern.color, 3)); // 두껍게
+        painter.drawRect(displayRect);
+        
+        // 패턴 이름 표시
+        painter.setPen(QPen(pattern.color));
+        QFont font = painter.font();
+        font.setPointSize(10);
+        font.setBold(true);
+        painter.setFont(font);
+        painter.drawText(displayRect.adjusted(5, 5, -5, -5), Qt::AlignTop | Qt::AlignLeft, pattern.name);
+
+        painter.restore();
+    }
+
+    // 일반 패턴 그리기
     for (const PatternInfo &pattern : patterns)
     {
         if (pattern.id == selectedPatternId)
@@ -6235,6 +6304,8 @@ void CameraView::saveInspectionResultForMode(int frameIndex, const InspectionRes
 {
     if (frameIndex >= 0 && frameIndex < 4)
     {
+        QMutexLocker locker(&frameResultMutex);  // 뮤텍스로 보호
+        
         frameResults[frameIndex] = result;
         framePixmaps[frameIndex] = frame;
         framePatterns[frameIndex] = patterns;

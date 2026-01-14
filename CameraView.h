@@ -17,6 +17,7 @@
 #include <QSlider>
 #include <QComboBox>
 #include <QDebug>
+#include <QMutex>
 #include <array>
 #include "CommonDefs.h"
 #include "ImageProcessor.h"
@@ -347,6 +348,25 @@ public:
 
     // 스케일링 관련 메서드
     void setScalingInfo(const QSize &origSize, const QSize &displaySize);
+    
+    // 디버그/학습용 임시 이미지 및 패턴 표시
+    void setDebugImage(const QImage &img)
+    {
+        // QImage를 QPixmap으로 변환하여 배경으로 설정
+        setBackgroundPixmap(QPixmap::fromImage(img));
+    }
+    
+    void setTemporaryPatterns(const QList<PatternInfo> &tempPatterns)
+    {
+        temporaryPatterns = tempPatterns;
+        viewport()->update();
+    }
+    
+    void clearTemporaryPatterns()
+    {
+        temporaryPatterns.clear();
+        viewport()->update();
+    }
 
     // 좌표 변환 함수 (내부적으로 QGraphicsView의 mapToScene/mapFromScene 사용)
     QPoint displayToOriginal(const QPoint &displayPos) const;
@@ -436,6 +456,7 @@ private:
     std::array<QList<PatternInfo>, 4> framePatterns;
     std::array<bool, 4> hasFrameResult = {false, false, false, false};
     std::array<int, 4> frameInspectionCount = {0, 0, 0, 0};  // 각 프레임별 검사 횟수 카운트
+    QMutex frameResultMutex;  // 프레임 결과 저장 동기화용 뮤텍스
     QUuid selectedInspectionPatternId; // 선택된 검사 결과 패턴 필터링
     
     // 4분할 뷰용 프레임 데이터 (고정 배열)
@@ -483,6 +504,7 @@ private:
 
     // 패턴 관련
     QList<PatternInfo> patterns;
+    QList<PatternInfo> temporaryPatterns; // 학습/디버그용 임시 패턴
     QRect currentRect;
     QPoint startPoint;
     QPoint dragEndPoint;

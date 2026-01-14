@@ -22,7 +22,7 @@ void cleanupSpinnaker() {
     if (cleaned) return;
     cleaned = true;
     
-    qDebug() << "[Cleanup] Spinnaker System 정리 시작";
+    qDebug() << "[Cleanup] Starting Spinnaker System cleanup";
     try {
         // System 인스턴스 획득 시도 - 이미 정리되었을 수 있음
         Spinnaker::SystemPtr system = nullptr;
@@ -30,7 +30,7 @@ void cleanupSpinnaker() {
             system = Spinnaker::System::GetInstance();
         } catch (const Spinnaker::Exception& e) {
             // System 인스턴스를 가져올 수 없으면 이미 정리된 것
-            qDebug() << "[Cleanup] Spinnaker System 이미 정리됨 또는 초기화 안됨";
+            qDebug() << "[Cleanup] Spinnaker System already cleaned or not initialized";
             return;
         }
         
@@ -54,23 +54,23 @@ void cleanupSpinnaker() {
                     camList.Clear();
                 }
             } catch (const Spinnaker::Exception& e) {
-                qWarning() << "[Cleanup] 카메라 목록 처리 중 예외:" << e.what();
+                qWarning() << "[Cleanup] Exception during camera list processing:" << e.what();
             }
             
             // System 인스턴스 해제
             try {
                 system->ReleaseInstance();
-                qDebug() << "[Cleanup] Spinnaker System 정리 완료";
+                qDebug() << "[Cleanup] Spinnaker System cleanup completed";
             } catch (const Spinnaker::Exception& e) {
-                qWarning() << "[Cleanup] System ReleaseInstance 실패:" << e.what();
+                qWarning() << "[Cleanup] System ReleaseInstance failed:" << e.what();
             }
         }
     } catch (const Spinnaker::Exception& e) {
-        qWarning() << "[Cleanup] Spinnaker 정리 중 예외:" << e.what();
+        qWarning() << "[Cleanup] Exception during Spinnaker cleanup:" << e.what();
     } catch (const std::exception& e) {
-        qWarning() << "[Cleanup] 표준 예외:" << e.what();
+        qWarning() << "[Cleanup] Standard exception:" << e.what();
     } catch (...) {
-        qWarning() << "[Cleanup] Spinnaker 정리 중 알 수 없는 예외";
+        qWarning() << "[Cleanup] Unknown exception during Spinnaker cleanup";
     }
 }
 
@@ -90,8 +90,8 @@ void signalHandler(int sig) {
         case SIGABRT: signalName = "SIGABRT"; break;
     }
     
-    fprintf(stderr, "\n[SignalHandler] 시그널 수신: %s (%d)\n", signalName, sig);
-    fprintf(stderr, "[SignalHandler] 정리 작업 시작...\n");
+    fprintf(stderr, "\n[SignalHandler] Signal received: %s (%d)\n", signalName, sig);
+    fprintf(stderr, "[SignalHandler] Starting cleanup...\n");
     
     // Spinnaker 정리
     cleanupSpinnaker();
@@ -101,7 +101,7 @@ void signalHandler(int sig) {
         ConfigManager::instance()->saveConfig();
     }
     
-    fprintf(stderr, "[SignalHandler] 정리 완료. 종료합니다.\n");
+    fprintf(stderr, "[SignalHandler] Cleanup completed. Exiting.\n");
     fflush(stderr);
     
     // 원래 시그널 동작 복원 후 재발생

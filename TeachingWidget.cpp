@@ -514,7 +514,7 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
 {
     // 로딩 프로그레스 다이얼로그 표시
     CustomMessageBox* loadingDialog = CustomMessageBox::showLoading(nullptr, "KM Inspector");
-    loadingDialog->updateProgress(5, "언어 시스템 초기화 중...");
+    loadingDialog->updateProgress(5, "Initializing language system...");
     
     // 언어 시스템을 가장 먼저 초기화
     initializeLanguageSystem();
@@ -522,7 +522,7 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     // cv::Mat 타입을 메타타입으로 등록 (시그널/슬롯에서 사용 가능)
     qRegisterMetaType<cv::Mat>("cv::Mat");
 
-    loadingDialog->updateProgress(10, "카메라 SDK 초기화 중...");
+    loadingDialog->updateProgress(10, "Initializing camera SDK...");
 
 #ifdef USE_SPINNAKER
     // Spinnaker SDK 초기화 시도
@@ -535,17 +535,17 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     }
 #endif
 
-    loadingDialog->updateProgress(20, "설정 로딩 중...");
+    loadingDialog->updateProgress(20, "Loading settings...");
     
     // 기본 초기화 및 설정
     initBasicSettings();
 
-    loadingDialog->updateProgress(30, "레시피 관리자 초기화 중...");
+    loadingDialog->updateProgress(30, "Initializing recipe manager...");
     
     // 레시피 관리자 초기화
     recipeManager = new RecipeManager();
 
-    loadingDialog->updateProgress(40, "UI 레이아웃 생성 중...");
+    loadingDialog->updateProgress(40, "Creating UI layout...");
     
     // 레이아웃 구성
     QVBoxLayout *mainLayout = createMainLayout();
@@ -556,7 +556,7 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     QVBoxLayout *cameraLayout = createCameraLayout();
     contentLayout->addLayout(cameraLayout, 1);
 
-    loadingDialog->updateProgress(50, "로그 시스템 초기화 중...");
+    loadingDialog->updateProgress(50, "Initializing log system...");
     
     // 로그 오버레이 생성 (화면 하단)
     setupLogOverlay();
@@ -564,7 +564,7 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     // 오른쪽 패널 오버레이 생성
     setupRightPanelOverlay();
 
-    loadingDialog->updateProgress(60, "패턴 테이블 설정 중...");
+    loadingDialog->updateProgress(60, "Setting up pattern table...");
     
     // 패턴 테이블 설정
     setupPatternTree();
@@ -578,7 +578,7 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     // 필터 다이얼로그 초기화
     filterDialog = new FilterDialog(cameraView, -1, this);
 
-    loadingDialog->updateProgress(70, "이벤트 연결 중...");
+    loadingDialog->updateProgress(70, "Connecting events...");
     
     // 이벤트 연결
     connectEvents();
@@ -601,7 +601,7 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     connect(LanguageManager::instance(), &LanguageManager::languageChanged,
             this, &TeachingWidget::updateUITexts, Qt::DirectConnection);
 
-    loadingDialog->updateProgress(80, "레시피 로드 준비 중...");
+    loadingDialog->updateProgress(80, "Preparing to load recipe...");
     
     // 프로그램 시작 시 최근 레시피 자동 로드 (CAM ON/OFF 모두)
     bool recipeLoaded = false;
@@ -616,8 +616,8 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
         QString recipeFilePath = QDir(checkManager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(recipeName));
         
         if (QFile::exists(recipeFilePath)) {
-            loadingDialog->updateProgress(85, "레시피 로딩 중...");
-            qDebug() << "[TeachingWidget] 프로그램 시작 시 레시피 자동 로드:" << recipeName << "camOff:" << camOff;
+            loadingDialog->updateProgress(85, "Loading recipe...");
+            qDebug() << "[TeachingWidget] Auto-loading recipe on startup:" << recipeName << "camOff:" << camOff;
             // 레시피 선택
             onRecipeSelected(recipeName);
             recipeLoaded = true;
@@ -625,7 +625,7 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
             // 레시피 로드 완료 확인
             if (cameraView) {
                 QList<PatternInfo> patterns = cameraView->getPatterns();
-                qDebug() << "[TeachingWidget] 레시피 로드 완료 - 패턴 수:" << patterns.size();
+            qDebug() << "[TeachingWidget] Recipe load completed - pattern count:" << patterns.size();
             }
             
             // 4분할 뷰 강제 업데이트
@@ -639,7 +639,7 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
         }
     }
     
-    loadingDialog->updateProgress(95, "UI 준비 중...");
+    loadingDialog->updateProgress(95, "Preparing UI...");
     
     // 로딩 다이얼로그 닫기
     loadingDialog->finishLoading();
@@ -648,24 +648,50 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
     isFullScreenMode = true;                       // 시작할 때 최대화 모드
     windowedGeometry = QRect(100, 100, 1200, 700); // 기본 윈도우 크기
 
-    // Ctrl+F로 전체화면 토글 단축키 설정 (Ubuntu F11 충돌 회피)
-    fullscreenShortcut = new QShortcut(QKeySequence("Ctrl+F"), this);
-    connect(fullscreenShortcut, &QShortcut::activated, this, &TeachingWidget::toggleFullScreenMode);
-
     // UI 텍스트 초기 갱신
     QTimer::singleShot(100, this, &TeachingWidget::updateUITexts);
 
     // 초기 UI 상태 설정 (TEACH OFF)
-    QTimer::singleShot(50, this, [this]() {
-        if (cameraView)
-            cameraView->setQuadViewMode(true);
+    QTimer::singleShot(500, this, [this]() {
+        // 프리뷰 4개를 2x2 그리드로 크게 배치 (viewport는 그리지 않음)
+        if (cameraView) {
+            cameraView->setQuadViewMode(false);  // viewport 그리기 비활성화
+            
+            // cameraView의 전체 영역을 사용
+            int viewWidth = cameraView->width();
+            int viewHeight = cameraView->height();
+            int halfWidth = viewWidth / 2;
+            int halfHeight = viewHeight / 2;
+            
+            qDebug() << "[INIT TEACH OFF] cameraView size:" << viewWidth << "x" << viewHeight;
+            
+            QRect previewRects[4] = {
+                QRect(0, 0, halfWidth, halfHeight),                     // 좌상: Frame 0
+                QRect(halfWidth, 0, halfWidth, halfHeight),             // 우상: Frame 1
+                QRect(0, halfHeight, halfWidth, halfHeight),            // 좌하: Frame 2
+                QRect(halfWidth, halfHeight, halfWidth, halfHeight)     // 우하: Frame 3
+            };
+            
+            for (int i = 0; i < 4; i++)
+            {
+                if (previewOverlayLabels[i]) {
+                    // setFixedSize() 제약 해제 후 새로운 크기로 재설정
+                    previewOverlayLabels[i]->setMinimumSize(QSize(0, 0));
+                    previewOverlayLabels[i]->setMaximumSize(QSize(16777215, 16777215));
+                    previewOverlayLabels[i]->setFixedSize(previewRects[i].size());
+                    previewOverlayLabels[i]->move(previewRects[i].topLeft());
+                    previewOverlayLabels[i]->updateGeometry();  // 크기 업데이트 강제
+                    previewOverlayLabels[i]->show();
+                    previewOverlayLabels[i]->raise();  // 최상위로 올리기
+                }
+            }
+            
+            // 크기 설정 후 프리뷰 이미지 그리기
+            QTimer::singleShot(100, this, &TeachingWidget::updatePreviewFrames);
+        }
+        
         if (rightPanelOverlay)
             rightPanelOverlay->hide();
-        for (int i = 0; i < 4; i++)
-        {
-            if (previewOverlayLabels[i])
-                previewOverlayLabels[i]->hide();
-        }
         if (logTextEdit && logTextEdit->parentWidget())
             logTextEdit->parentWidget()->hide();
         
@@ -697,20 +723,20 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
         bool autoConnect = config->getSerialAutoConnect();
         
         if (autoConnect && serialCommunication) {
-            qDebug() << "[TeachingWidget] 시리얼 통신 자동 연결 시도 시작";
+            qDebug() << "[TeachingWidget] Starting serial auto-connect";
             QString savedPort = config->getSerialPort();
             int savedBaudRate = config->getSerialBaudRate();
             
             if (!savedPort.isEmpty() && savedPort != "사용 가능한 포트 없음") {
                 // 표시 이름에서 실제 포트 이름 추출 (괄호 앞 부분)
                 QString actualPort = savedPort.split(" (").first();
-                qDebug() << "[TeachingWidget] 저장된 설정으로 연결 시도:" << actualPort << "@" << savedBaudRate;
+                qDebug() << "[TeachingWidget] Attempting connection with saved settings:" << actualPort << "@" << savedBaudRate;
                 
                 // 직접 연결 시도
                 if (serialCommunication->connectToPort(actualPort, savedBaudRate)) {
-                    qDebug() << "[TeachingWidget] 시리얼 통신 자동 연결 성공!";
+                    qDebug() << "[TeachingWidget] Serial auto-connect success!";
                 } else {
-                    qDebug() << "[TeachingWidget] 시리얼 통신 자동 연결 실패 - 수동으로 연결해주세요";
+                    qDebug() << "[TeachingWidget] Serial auto-connect failed - please connect manually";
                 }
             } else {
                 qDebug() << "[TeachingWidget] 저장된 시리얼 포트 설정이 없습니다";
@@ -934,9 +960,9 @@ void TeachingWidget::initBasicSettings()
     // InsProcessor 초기화 (검사 로직 담당)
     insProcessor = new InsProcessor(this);
     if (!insProcessor) {
-        qCritical() << "[initBasicSettings] InsProcessor 생성 실패!";
+        qCritical() << "[initBasicSettings] Failed to create InsProcessor!";
     } else {
-        qDebug() << "[initBasicSettings] InsProcessor 초기화 완료";
+        qDebug() << "[initBasicSettings] InsProcessor initialized";
     }
 
     // 시리얼 통신 객체 초기화
@@ -1010,12 +1036,12 @@ void TeachingWidget::initYoloModel()
     // 모델 파일 존재 확인
     QFileInfo modelFile(modelPath);
     if (!modelFile.exists()) {
-        qDebug() << "[SEG] 모델 파일을 찾을 수 없음:" << modelPath;
-        qDebug() << "[SEG] CRIMP BARREL 검사가 비활성화됩니다.";
+        qDebug() << "[SEG] Model file not found:" << modelPath;
+        qDebug() << "[SEG] CRIMP BARREL inspection will be disabled.";
         return;
     }
     
-    qDebug() << "[SEG] YOLO 모델 비활성화됨 (OpenVINO 제거)";
+    qDebug() << "[SEG] YOLO model disabled (OpenVINO removed)";;
     // CRIMP BARREL 검사는 더 이상 지원되지 않음
 }
 
@@ -2094,7 +2120,7 @@ void TeachingWidget::setupPreviewOverlay()
     for (int i = 0; i < 4; i++)
     {
         previewOverlayLabels[i] = new QLabel(cameraView);
-        previewOverlayLabels[i]->setFixedSize(previewWidth, previewHeight);
+        // 초기 크기 설정 제거 - 초기화 타이머에서 TEACH OFF 크기로 설정됨
         previewOverlayLabels[i]->setAlignment(Qt::AlignTop | Qt::AlignLeft);  // 왼쪽 상단 정렬
         previewOverlayLabels[i]->setText("  " + labels[i]);  // 초기 텍스트 설정 (여백 추가)
         // rgba 대신 rgb 사용 (파싱 오류 방지)
@@ -2108,11 +2134,10 @@ void TeachingWidget::setupPreviewOverlay()
             "}");
         previewOverlayLabels[i]->setWindowOpacity(0.8);
         previewOverlayLabels[i]->setCursor(Qt::PointingHandCursor);
-        previewOverlayLabels[i]->move(previewX, previewY);  // 초기 위치 설정
+        // 초기 위치 설정 제거 - 초기화 타이머에서 TEACH OFF 위치로 설정됨
+        previewOverlayLabels[i]->hide();  // 초기화 타이머에서 show()됨
         previewOverlayLabels[i]->raise();
         previewOverlayLabels[i]->installEventFilter(this);
-        
-        previewY += previewHeight + spacing;
     }
     
     // 하위 호환성을 위해 첫 번째를 기존 포인터로도 참조
@@ -8947,7 +8972,7 @@ void TeachingWidget::detectCameras()
                     QString lastRecipePath = ConfigManager::instance()->getLastRecipePath();
                     if (!lastRecipePath.isEmpty())
                     {
-                        qDebug() << "[detectCameras] 카메라 연결 후 레시피 자동 로드:" << lastRecipePath;
+                        qDebug() << "[detectCameras] Auto-loading recipe after camera connection:" << lastRecipePath;
                         QTimer::singleShot(100, this, [this, lastRecipePath]() {
                             onRecipeSelected(lastRecipePath);
                         });
@@ -9004,7 +9029,7 @@ void TeachingWidget::detectCameras()
     QApplication::processEvents();
 
     // 완료
-    progressDialog->setLabelText(QString("카메라 검색 완료 - %1개 카메라 발견").arg(connectedCameras));
+    progressDialog->setLabelText(QString("Camera search completed - %1 camera(s) found").arg(connectedCameras));
     progressDialog->setValue(100);
     QApplication::processEvents();
 
@@ -9485,6 +9510,98 @@ void TeachingWidget::receiveLogMessage(const QString &message)
     }
 }
 
+// 프리뷰 pixmap에 레이블, PASS/NG, 소요시간, 획득 수 텍스트 그리기
+void TeachingWidget::drawPreviewText(QPixmap& pixmap, int frameIndex, const QString& labelText)
+{
+    if (pixmap.isNull())
+        return;
+    
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    
+    // 폰트 설정
+    QFont font = painter.font();
+    font.setPointSize(24);
+    font.setBold(true);
+    painter.setFont(font);
+    
+    QFontMetrics fm(font);
+    
+    // 텍스트 부분들 구성
+    QString labelPart = labelText;  // 레이블 (흰색)
+    QString resultPart = "";  // PASS/NG (색상)
+    QString timePart = "";  // 소요시간 (흰색)
+    QString countPart = "";  // 획득 수 (흰색)
+    QColor resultColor = Qt::white;
+    
+    // 검사 결과가 있으면 PASS/NG와 소요시간 추가
+    if (cameraView && cameraView->hasModeResult(frameIndex))
+    {
+        const InspectionResult& result = cameraView->getFrameResult(frameIndex);
+        if (result.isPassed) {
+            resultPart = "PASS";
+            resultColor = QColor(0, 255, 0);  // 초록색
+        } else {
+            resultPart = "NG";
+            resultColor = QColor(255, 0, 0);  // 빨간색
+        }
+        // 소요시간 표시
+        if (result.inspectionTimeMs > 0) {
+            timePart = QString(" (%1ms)").arg(result.inspectionTimeMs);
+        }
+    }
+    
+    // 카메라별 획득 수 표시
+    int frameCount = serialFrameCount[frameIndex].load();
+    countPart = QString(" [%1]").arg(frameCount);
+    
+    // 전체 텍스트로 배경 크기 측정
+    QString fullText = labelPart + resultPart + timePart + countPart;
+    QRect textRect = fm.boundingRect(fullText);
+    int padding = 5;
+    
+    // 반투명 검은 배경 그리기
+    QRect bgRect(5, 5, textRect.width() + padding * 2, textRect.height() + padding * 2);
+    painter.fillRect(bgRect, QColor(0, 0, 0, 180));
+    
+    // 텍스트를 부분별로 그리기
+    int xPos = 10;
+    int yPos = 10 + textRect.height();
+    
+    // 레이블 (흰색)
+    painter.setPen(Qt::white);
+    painter.drawText(xPos, yPos, labelPart);
+    xPos += fm.horizontalAdvance(labelPart);
+    
+    // 하이픈 구분자 (흰색)
+    if (!resultPart.isEmpty()) {
+        QString separator = " - ";
+        painter.setPen(Qt::white);
+        painter.drawText(xPos, yPos, separator);
+        xPos += fm.horizontalAdvance(separator);
+    }
+    
+    // PASS/NG (색상)
+    if (!resultPart.isEmpty()) {
+        painter.setPen(resultColor);
+        painter.drawText(xPos, yPos, resultPart);
+        xPos += fm.horizontalAdvance(resultPart);
+    }
+    
+    // 소요시간 (흰색)
+    if (!timePart.isEmpty()) {
+        painter.setPen(Qt::white);
+        painter.drawText(xPos, yPos, timePart);
+        xPos += fm.horizontalAdvance(timePart);
+    }
+    
+    // 획득 수 (흰색)
+    painter.setPen(Qt::white);
+    painter.drawText(xPos, yPos, countPart);
+    
+    painter.end();
+}
+
 void TeachingWidget::updatePreviewFrames()
 {
     if (!previewOverlayLabel)
@@ -9507,7 +9624,10 @@ void TeachingWidget::updatePreviewFrames()
             {
                 const QPixmap& resultPixmap = cameraView->getFramePixmap(i);
                 if (!resultPixmap.isNull()) {
-                    pixmap = resultPixmap;
+                    pixmap = resultPixmap.copy();  // 복사본 생성
+                    
+                    // 텍스트 그리기
+                    drawPreviewText(pixmap, i, labels[i]);
                 } else {
                     // pixmap이 null이면 원본 프레임 사용
                     if (i < static_cast<int>(4))
@@ -9539,42 +9659,6 @@ void TeachingWidget::updatePreviewFrames()
                     previewFrame = cameraFrames[i].clone();
                 }
                 
-                // ★ cameraFrame에 직접 텍스트 오버레이 그리기
-                QString text = labels[i];
-                cv::Scalar textColor(255, 255, 255); // BGR - 흰색 (기본)
-                
-                // 검사 결과가 있으면 추가 표시
-                if (cameraView && cameraView->hasModeResult(i))
-                {
-                    const InspectionResult& result = cameraView->getFrameResult(i);
-                    if (result.isPassed) {
-                        text += " (PASS)";
-                        textColor = cv::Scalar(0, 255, 0); // BGR - 밝은 초록
-                    } else {
-                        text += " (NG)";
-                        textColor = cv::Scalar(0, 0, 255); // BGR - 빨강
-                    }
-                }
-                
-                // 카메라별 획득 수 표시
-                int frameCount = serialFrameCount[i].load();
-                text += QString(" [%1]").arg(frameCount);
-                
-                // 반투명 검은 배경 사각형
-                int baseline = 0;
-                cv::Size textSize = cv::getTextSize(text.toStdString(), cv::FONT_HERSHEY_SIMPLEX, 0.8, 2, &baseline);
-                cv::Rect bgRect(5, 5, textSize.width + 10, textSize.height + baseline + 10);
-                
-                // 배경 그리기 (검은색, 투명도 70%)
-                cv::Mat overlay = previewFrame.clone();
-                cv::rectangle(overlay, bgRect, cv::Scalar(0, 0, 0), -1);
-                cv::addWeighted(overlay, 0.7, previewFrame, 0.3, 0, previewFrame);
-                
-                // 텍스트 그리기
-                cv::putText(previewFrame, text.toStdString(), 
-                           cv::Point(10, 10 + textSize.height), 
-                           cv::FONT_HERSHEY_SIMPLEX, 0.8, textColor, 2);
-                
                 cv::cvtColor(previewFrame, previewFrame, cv::COLOR_BGR2RGB);
                 
                 // 메모리 안정성을 위해 연속 메모리 보장
@@ -9586,6 +9670,9 @@ void TeachingWidget::updatePreviewFrames()
                              static_cast<int>(previewFrame.step), QImage::Format_RGB888);
                 QImage safeCopy = image.copy();
                 pixmap = QPixmap::fromImage(safeCopy);
+                
+                // 텍스트 그리기
+                drawPreviewText(pixmap, i, labels[i]);
             }
             else
             {
@@ -9594,7 +9681,7 @@ void TeachingWidget::updatePreviewFrames()
                 pixmap.fill(Qt::black);
             }
 
-            // 레이블 크기에 맞춰 스케일링 (오버레이는 이미 cameraFrame에 그려짐)
+            // 레이블 크기에 맞춰 스케일링 (프리뷰를 꽉 채움)
             QSize labelSize = previewOverlayLabels[i]->size();
             if (labelSize.width() > 0 && labelSize.height() > 0)
             {
@@ -10002,7 +10089,7 @@ void TeachingWidget::startCamera()
     lastUsedFrameIndex = -1;
     totalTriggersReceived = 0;
     totalInspectionsExecuted = 0;
-    qDebug() << "[startCamera] 서버 프레임 인덱스 초기화 완료";
+    qDebug() << "[startCamera] Server frame index initialized";
 
     // CameraView에 TEACH OFF 상태 전달
     if (cameraView)
@@ -10943,6 +11030,39 @@ void TeachingWidget::updateCameraFrame()
 
 bool TeachingWidget::eventFilter(QObject *watched, QEvent *event)
 {
+    // cameraView 리사이즈 이벤트 처리
+    if (watched == cameraView && event->type() == QEvent::Resize)
+    {
+        // TEACH OFF 모드일 때만 프리뷰 크기 재조정
+        if (!teachingEnabled && cameraView)
+        {
+            int viewWidth = cameraView->width();
+            int viewHeight = cameraView->height();
+            int halfWidth = viewWidth / 2;
+            int halfHeight = viewHeight / 2;
+            
+            QRect previewRects[4] = {
+                QRect(0, 0, halfWidth, halfHeight),
+                QRect(halfWidth, 0, halfWidth, halfHeight),
+                QRect(0, halfHeight, halfWidth, halfHeight),
+                QRect(halfWidth, halfHeight, halfWidth, halfHeight)
+            };
+            
+            for (int i = 0; i < 4; i++)
+            {
+                if (previewOverlayLabels[i]) {
+                    previewOverlayLabels[i]->resize(previewRects[i].size());
+                    previewOverlayLabels[i]->move(previewRects[i].topLeft());
+                }
+            }
+        }
+        else if (teachingEnabled)
+        {
+            // TEACH ON 모드일 때는 updateStatusPanelPosition() 호출
+            updateStatusPanelPosition();
+        }
+    }
+    
     // 카메라 컨테이너 리사이즈 이벤트 처리
     if (watched->objectName() == "cameraContainer" && event->type() == QEvent::Resize)
     {
@@ -13143,19 +13263,7 @@ void TeachingWidget::saveRecipe()
     // ★ CAM ON 상태일 때: 모든 실제 카메라 정보 유지 (2대의 카메라 모두 저장)
     if (!camOff && cameraView)
     {
-        qDebug() << "[saveRecipe] CAM ON - 연결된 카메라" << cameraInfos.size() << "대의 정보 유지";
-        
-        // 각 카메라의 정보 출력
-        for (int i = 0; i < cameraInfos.size(); i++)
-        {
-            qDebug() << QString("[saveRecipe] 카메라 %1: %2 (UUID: %3)")
-                        .arg(i)
-                        .arg(cameraInfos[i].name)
-                        .arg(cameraInfos[i].uniqueId);
-        }
-        
-        // 패턴들의 cameraUuid는 이미 올바르게 설정되어 있으므로 변경하지 않음
-        qDebug() << "[saveRecipe] ✓ 총" << cameraView->getPatterns().size() << "개 패턴 저장";
+        qDebug() << "[saveRecipe] Saving recipe with" << cameraInfos.size() << "camera(s) and" << cameraView->getPatterns().size() << "pattern(s)";
     }
 
     for (int i = 0; i < cameraInfos.size(); i++)
@@ -13214,16 +13322,7 @@ void TeachingWidget::saveRecipe()
         }
     }
     
-    // 저장 전 cameraInfos 크기 확인
-    qDebug() << "[saveRecipe] 저장할 cameraInfos 개수:" << saveCameraInfos.size();
-    for (int i = 0; i < saveCameraInfos.size(); i++)
-    {
-        qDebug() << QString("[saveRecipe]   카메라 %1: %2 (UUID: %3, index: %4)")
-                    .arg(i)
-                    .arg(saveCameraInfos[i].name)
-                    .arg(saveCameraInfos[i].uniqueId)
-                    .arg(saveCameraInfos[i].index);
-    }
+    // Saving camera configurations
 
     // 기존 saveRecipe 함수 사용 (TeachingWidget 포인터 전달)
     if (manager.saveRecipe(recipeFileName, saveCameraInfos, cameraIndex, calibrationMap, cameraView, simulationImagePaths, -1, QStringList(), this))
@@ -13414,7 +13513,7 @@ bool TeachingWidget::initSpinnakerSDK()
         }
         
         // System 인스턴스 생성
-        qDebug() << "[initSpinnakerSDK] Spinnaker System 인스턴스 생성...";
+        qDebug() << "[initSpinnakerSDK] Creating Spinnaker System instance...";
         m_spinSystem = Spinnaker::System::GetInstance();
         
         if (!m_spinSystem)
@@ -13425,7 +13524,7 @@ bool TeachingWidget::initSpinnakerSDK()
 
         // 라이브러리 버전 출력 - 네임스페이스 추가
         const Spinnaker::LibraryVersion spinnakerLibraryVersion = m_spinSystem->GetLibraryVersion();
-        qDebug() << "[initSpinnakerSDK] Spinnaker SDK 초기화 성공 - 버전:" 
+        qDebug() << "[initSpinnakerSDK] Spinnaker SDK initialized successfully - version:" 
                  << spinnakerLibraryVersion.major << "." 
                  << spinnakerLibraryVersion.minor << "." 
                  << spinnakerLibraryVersion.type << "." 
@@ -15481,6 +15580,25 @@ double TeachingWidget::normalizeAngle(double angle)
 
 void TeachingWidget::newRecipe()
 {
+    // 서버 연결 확인 - 연결되어 있으면 레시피 목록 요청
+    ClientDialog* client = ClientDialog::instance();
+    if (client && client->isSocketConnected())
+    {
+        qDebug() << "[Recipe] 서버 연결됨 - 레시피 목록 요청 전송";
+        
+        QJsonObject request;
+        request["type"] = "recipe_all_request";
+        request["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+        
+        QJsonDocument doc(request);
+        QByteArray jsonData = doc.toJson(QJsonDocument::Compact);
+        
+        // RECIPE_ALL_REQUEST 전송
+        client->sendProtocolMessage(MessageType::RECIPE_ALL_REQUEST, jsonData);
+        
+        // TODO: 서버 응답 대기 후 레시피 선택 UI 표시
+        // 현재는 요청만 보내고 기존 로직 계속 진행
+    }
 
     // 저장되지 않은 변경사항 확인
     if (hasUnsavedChanges)
@@ -16389,18 +16507,32 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         ConfigManager::instance()->saveConfig();
         
         // weights 동기화: 레시피에 없는 패턴의 weights 폴더 삭제
+        // 모든 프레임을 순회하며 A-PC, A-PD 패턴 수집
         QString weightsDir = QCoreApplication::applicationDirPath() + "/recipes/" + recipeName + "/weights";
         QDir weightsDirObj(weightsDir);
         if (weightsDirObj.exists()) {
-            // 현재 레시피의 A-PC, A-PD 패턴 이름 목록
             QSet<QString> anomalyPatternNames;
-            for (const PatternInfo& pattern : cameraView->getPatterns()) {
-                if (pattern.type == PatternType::INS && 
-                    (pattern.inspectionMethod == InspectionMethod::A_PC ||
-                     pattern.inspectionMethod == InspectionMethod::A_PD)) {
-                    anomalyPatternNames.insert(pattern.name);
+            
+            // 현재 프레임 인덱스 저장
+            int currentFrameIdx = cameraView->getCurrentFrameIndex();
+            
+            // 모든 프레임을 순회하며 패턴 수집
+            for (int i = 0; i < 4; i++) {  // 4개 프레임 가정
+                cameraView->setCurrentFrameIndex(i);
+                QApplication::processEvents();  // UI 업데이트 대기
+                
+                QList<PatternInfo> framePatterns = cameraView->getPatterns();
+                for (const PatternInfo& pattern : framePatterns) {
+                    if (pattern.type == PatternType::INS && 
+                        (pattern.inspectionMethod == InspectionMethod::A_PC ||
+                         pattern.inspectionMethod == InspectionMethod::A_PD)) {
+                        anomalyPatternNames.insert(pattern.name);
+                    }
                 }
             }
+            
+            // 원래 프레임으로 복귀
+            cameraView->setCurrentFrameIndex(currentFrameIdx);
             
             // weights 폴더 내 서브폴더 검사
             QStringList weightsFolders = weightsDirObj.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
@@ -16409,7 +16541,7 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
                     // 레시피에 없는 패턴의 weights 폴더 삭제
                     QString folderPath = weightsDir + "/" + folderName;
                     QDir(folderPath).removeRecursively();
-                    qDebug() << "[RECIPE] 사용되지 않는 weights 삭제됨:" << folderName;
+                    qDebug() << "[RECIPE] Unused weights folder deleted:" << folderName;
                 }
             }
         }
@@ -16493,7 +16625,7 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
         }
         
         if (hasAIPatterns && insProcessor) {
-            qDebug() << "[onRecipeSelected] AI 패턴 발견 - 모델 워밍업 시작";
+            qDebug() << "[onRecipeSelected] AI pattern found - starting model warmup";
             try {
                 insProcessor->warmupAnomalyModels(allPatterns, recipeName);
             } catch (const std::exception& e) {
@@ -16712,9 +16844,29 @@ void TeachingWidget::onTeachModeToggled(bool checked)
         if (saveRecipeButton)
             saveRecipeButton->setEnabled(true);
         
-        // 단일 뷰 모드로 전환
-        if (cameraView)
+        // cameraView 표시 및 단일 뷰 모드로 전환
+        if (cameraView) {
             cameraView->setQuadViewMode(false);
+        }
+        
+        // 프리뷰들의 size를 원래 크기로 복원
+        for (int i = 0; i < 4; i++) {
+            if (previewOverlayLabels[i]) {
+                previewOverlayLabels[i]->setMinimumSize(QSize(0, 0));
+                previewOverlayLabels[i]->setMaximumSize(QSize(16777215, 16777215));
+                previewOverlayLabels[i]->setFixedSize(240, 180);  // 원래 크기로 복원
+            }
+        }
+        
+        // 프리뷰들을 원래 크기와 위치로 복원
+        updateStatusPanelPosition();
+        
+        // 강제로 위젯 업데이트
+        for (int i = 0; i < 4; i++) {
+            if (previewOverlayLabels[i]) {
+                previewOverlayLabels[i]->updateGeometry();
+            }
+        }
         
         // UI 요소들 표시
         if (rightPanelOverlay)
@@ -16751,18 +16903,40 @@ void TeachingWidget::onTeachModeToggled(bool checked)
         if (saveRecipeButton)
             saveRecipeButton->setEnabled(false);
         
-        // 4분할 뷰 모드로 전환
-        if (cameraView)
-            cameraView->setQuadViewMode(true);
+        // 프리뷰 4개를 2x2 그리드로 크게 배치 (viewport는 그리지 않음)
+        if (cameraView) {
+            cameraView->setQuadViewMode(false);  // viewport 그리기 비활성화
+        }
+        
+        // 프리뷰 4개를 2x2 그리드로 크게 배치
+        int viewWidth = cameraView ? cameraView->width() : 1280;
+        int viewHeight = cameraView ? cameraView->height() : 960;
+        int halfWidth = viewWidth / 2;
+        int halfHeight = viewHeight / 2;
+        
+        QRect previewRects[4] = {
+            QRect(0, 0, halfWidth, halfHeight),                     // 좌상: Frame 0
+            QRect(halfWidth, 0, halfWidth, halfHeight),             // 우상: Frame 1
+            QRect(0, halfHeight, halfWidth, halfHeight),            // 좌하: Frame 2
+            QRect(halfWidth, halfHeight, halfWidth, halfHeight)     // 우하: Frame 3
+        };
+        
+        for (int i = 0; i < 4; i++)
+        {
+            if (previewOverlayLabels[i]) {
+                // setFixedSize() 제약 해제 후 새로운 크기로 재설정
+                previewOverlayLabels[i]->setMinimumSize(QSize(0, 0));  // 최소 크기 제약 해제
+                previewOverlayLabels[i]->setMaximumSize(QSize(16777215, 16777215));  // 최대 크기 제약 해제
+                previewOverlayLabels[i]->setFixedSize(previewRects[i].size());  // 새로운 크기로 고정
+                previewOverlayLabels[i]->move(previewRects[i].topLeft());
+                previewOverlayLabels[i]->show();
+                previewOverlayLabels[i]->raise();  // 최상위로 올리기
+            }
+        }
         
         // UI 요소들 숨김
         if (rightPanelOverlay)
             rightPanelOverlay->hide();
-        for (int i = 0; i < 4; i++)
-        {
-            if (previewOverlayLabels[i])
-                previewOverlayLabels[i]->hide();
-        }
         if (logTextEdit)
             logTextEdit->parentWidget()->hide();
         
@@ -16780,6 +16954,15 @@ void TeachingWidget::onTeachModeToggled(bool checked)
         
         // TEACH OFF 전환 시 미리보기 4개 갱신 (카메라별 획득 수 표시)
         updatePreviewFrames();
+        
+        // 프리뷰를 다시 2x2 크기로 설정 (혹시 모를 크기 변경 대비)
+        for (int i = 0; i < 4; i++)
+        {
+            if (previewOverlayLabels[i]) {
+                previewOverlayLabels[i]->setGeometry(previewRects[i]);
+                previewOverlayLabels[i]->raise();
+            }
+        }
     }
 
     // 티칭 관련 버튼들 활성화/비활성화

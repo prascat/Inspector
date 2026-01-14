@@ -326,10 +326,6 @@ bool RecipeManager::saveRecipe(const QString& fileName,
                     xml.writeAttribute("height", QString::number(frameImage.rows));
                     xml.writeCharacters(imageBase64);
                     xml.writeEndElement(); // TeachingImage
-                    
-                    qDebug() << QString("카메라 %1 이미지 저장 (frameIndex=%2, 크기: %3 chars, 해상도: %4x%5)")
-                                .arg(camIdx).arg(frameIndex).arg(imageBase64.size())
-                                .arg(frameImage.cols).arg(frameImage.rows);
                 }
             } else {
                 // STRIP/CRIMP 이미지가 없으면 기존 방식으로 저장
@@ -352,10 +348,6 @@ bool RecipeManager::saveRecipe(const QString& fileName,
                         QByteArray imageData(reinterpret_cast<const char*>(buffer.data()), buffer.size());
                         QString teachingImageBase64 = imageData.toBase64();
                         xml.writeAttribute("teachingImage", teachingImageBase64);
-                        
-                        qDebug() << QString("카메라 '%1'의 프레임을 Base64로 저장 (크기: %2 chars, 해상도: %3x%4)")
-                                    .arg(actualCameraInfos[camIdx].uniqueId).arg(teachingImageBase64.size())
-                                    .arg(currentImage.cols).arg(currentImage.rows);
                     } else {
                         // 인코딩 실패시 기본 파일명으로 저장
                         QString teachingImageName = QString("%1.jpg").arg(actualCameraInfos[camIdx].uniqueId);
@@ -1147,7 +1139,7 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                                 cv::Mat clonedImage = teachingImage.clone();
                                 if (!clonedImage.empty() && clonedImage.data) {
                                     teachingWidget->cameraFrames[imageIndex] = std::move(clonedImage);
-                                    qDebug() << QString("[RecipeManager] imageIndex %1에 티칭 이미지 저장: %2x%3")
+                                    qDebug() << QString("[RecipeManager] Teaching image saved at imageIndex %1: %2x%3")
                                                 .arg(imageIndex).arg(teachingImage.cols).arg(teachingImage.rows);
                                 } else {
                                     qWarning() << QString("[RecipeManager] imageIndex %1: clone 실패").arg(imageIndex);

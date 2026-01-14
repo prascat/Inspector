@@ -53,21 +53,21 @@ struct InspectionResult {
     QMap<QUuid, bool> insResults;          // INS 검사 결과 (패턴 ID -> 통과 여부)
     QMap<QUuid, double> matchScores;       // 매칭 점수 (패턴 ID -> 점수)
     QMap<QUuid, double> insScores;         // INS 검사 점수 (패턴 ID -> 점수)
-    QMap<QUuid, cv::Point> locations;      // 검출 위치 (패턴 ID -> 위치)
-    QMap<QUuid, double> angles;            // 검출 각도 (패턴 ID -> 각도)
-    QMap<QUuid, QRectF> adjustedRects;      // 조정된 검사 영역 (패턴 ID -> 영역) - QRectF로 변경
+    QMap<QUuid, cv::Point> locations;      // 검출 위치 (원본 이미지 기준 절대좌표, 픽셀)
+    QMap<QUuid, double> angles;            // 검출 각도 (도 단위)
+    QMap<QUuid, QRectF> adjustedRects;      // 조정된 검사 영역 (원본 이미지 기준 절대좌표)
     
     // 부모 FID 관련 추가 멤버 변수
-    QMap<QUuid, cv::Point> parentOffsets;  // 부모 FID 위치 오프셋 (패턴 ID -> 오프셋)
-    QMap<QUuid, double> parentAngles;      // 부모 FID 회전 각도 (패턴 ID -> 각도)
+    QMap<QUuid, cv::Point> parentOffsets;  // 부모 FID 위치 오프셋 (원본 이미지 기준 절대좌표, 픽셀)
+    QMap<QUuid, double> parentAngles;      // 부모 FID 회전 각도 (도 단위)
 
     QMap<QUuid, cv::Mat> insProcessedImages;  // 처리된 결과 이미지 (패턴 ID -> 결과 이미지)
     QMap<QUuid, int> insMethodTypes;          // 검사 방법 타입 (패턴 ID -> 검사 방법)
     
     // STRIP 두께 검사 전용 측정 위치 정보
-    QMap<QUuid, cv::Point> stripThicknessCenters;  // 두께 측정 중심점 (패턴 ID -> 중심점)
-    QMap<QUuid, std::pair<cv::Point, cv::Point>> stripThicknessLines; // 두께 측정선 (패턴 ID -> (좌측점, 우측점))
-    QMap<QUuid, std::vector<std::pair<cv::Point, cv::Point>>> stripThicknessDetails; // 좌우 두께 측정 상세 좌표 (패턴 ID -> [(상점,하점), (상점,하점)])
+    QMap<QUuid, cv::Point> stripThicknessCenters;  // 두께 측정 중심점 (원본 이미지 기준 절대좌표, 픽셀)
+    QMap<QUuid, std::pair<cv::Point, cv::Point>> stripThicknessLines; // 두께 측정선 (원본 이미지 기준 절대좌표, 픽셀)
+    QMap<QUuid, std::vector<std::pair<cv::Point, cv::Point>>> stripThicknessDetails; // 좌우 두께 측정 상세 좌표 (원본 이미지 기준 절대좌표, 픽셀)
     
     // STRIP 목 부분 절단 품질 측정 결과
     QMap<QUuid, double> stripNeckAvgWidths;     // 평균 목 폭 (패턴 ID -> 평균 폭)
@@ -89,58 +89,58 @@ struct InspectionResult {
     QMap<QUuid, int> stripRearMeasuredThicknessAvg; // REAR 측정된 평균 두께 (패턴 ID -> 평균 두께)
     QMap<QUuid, bool> stripRearThicknessMeasured;   // REAR 두께 측정 완료 여부 (패턴 ID -> 측정 여부)
     
-    // STRIP 박스 위치 정보 (패턴 중심 기준 상대좌표)
-    QMap<QUuid, QPointF> stripFrontBoxCenter;       // FRONT 박스 중심 상대좌표 (패턴 중심 기준)
-    QMap<QUuid, QSizeF> stripFrontBoxSize;          // FRONT 박스 크기 (width, height)
-    QMap<QUuid, QPointF> stripRearBoxCenter;        // REAR 박스 중심 상대좌표 (패턴 중심 기준)
-    QMap<QUuid, QSizeF> stripRearBoxSize;           // REAR 박스 크기 (width, height)
+    // STRIP 박스 위치 정보
+    QMap<QUuid, QPointF> stripFrontBoxCenter;       // FRONT 박스 중심 (패턴 중심 기준 상대좌표, 픽셀)
+    QMap<QUuid, QSizeF> stripFrontBoxSize;          // FRONT 박스 크기 (width, height, 픽셀)
+    QMap<QUuid, QPointF> stripRearBoxCenter;        // REAR 박스 중심 (패턴 중심 기준 상대좌표, 픽셀)
+    QMap<QUuid, QSizeF> stripRearBoxSize;           // REAR 박스 크기 (width, height, 픽셀)
     
     // STRIP 두께 측정 포인트들 (검은색 구간의 시작-끝점 쌍)
-    // 절대좌표로 저장 (원본 이미지 기준)
+    // 모두 원본 이미지 기준 절대좌표 (픽셀)
     // 2개씩 쌍으로 저장: [라인1시작, 라인1끝, 라인2시작, 라인2끝, ...]
-    QMap<QUuid, QList<QPoint>> stripFrontThicknessPoints;  // FRONT 두께 측정 라인들 (전체 스캔 라인 - 녹색)
-    QMap<QUuid, QList<QPoint>> stripRearThicknessPoints;   // REAR 두께 측정 라인들 (전체 스캔 라인 - 녹색)
-    QMap<QUuid, QList<QPoint>> stripFrontBlackRegionPoints;  // FRONT 검은색 검출 구간만 (빨간색)
-    QMap<QUuid, QList<QPoint>> stripRearBlackRegionPoints;   // REAR 검은색 검출 구간만 (빨간색)
+    QMap<QUuid, QList<QPoint>> stripFrontThicknessPoints;  // FRONT 두께 측정 라인들 (전체 스캔 라인 - 녹색, 절대좌표)
+    QMap<QUuid, QList<QPoint>> stripRearThicknessPoints;   // REAR 두께 측정 라인들 (전체 스캔 라인 - 녹색, 절대좌표)
+    QMap<QUuid, QList<QPoint>> stripFrontBlackRegionPoints;  // FRONT 검은색 검출 구간만 (빨간색, 절대좌표)
+    QMap<QUuid, QList<QPoint>> stripRearBlackRegionPoints;   // REAR 검은색 검출 구간만 (빨간색, 절대좌표)
     
-    // STRIP 스캔 라인 정보 (디버그/시각화용)
-    QMap<QUuid, QList<QPair<QPoint, QPoint>>> stripFrontScanLines;  // FRONT 모든 스캔 라인 (시작점, 끝점)
-    QMap<QUuid, QList<QPair<QPoint, QPoint>>> stripRearScanLines;   // REAR 모든 스캔 라인 (시작점, 끝점)
+    // STRIP 스캔 라인 정보 (디버그/시각화용, 원본 이미지 기준 절대좌표)
+    QMap<QUuid, QList<QPair<QPoint, QPoint>>> stripFrontScanLines;  // FRONT 모든 스캔 라인 (시작점, 끝점, 절대좌표)
+    QMap<QUuid, QList<QPair<QPoint, QPoint>>> stripRearScanLines;   // REAR 모든 스캔 라인 (시작점, 끝점, 절대좌표)
     
-    // STRIP 실제 측정 지점 (절대좌표 - 검사 로그의 실제 검출된 위치)
+    // STRIP 실제 측정 지점 (원본 이미지 기준 절대좌표, 픽셀)
     QMap<QUuid, QPoint> stripStartPoint;            // STRIP 측정 시작점 (절대좌표)
     QMap<QUuid, QPoint> stripMaxGradientPoint;      // STRIP 최대 Gradient 지점 (절대좌표)
     QMap<QUuid, int> stripMeasuredThicknessLeft;   // 측정된 좌측 두께 (픽셀)
     QMap<QUuid, int> stripMeasuredThicknessRight;  // 측정된 우측 두께 (픽셀)
     
     // EDGE 검사 결과 (심선 끝 절단면 품질)
-    QMap<QUuid, bool> edgeResults;                  // EDGE 검사 통과 여부 (패턴 ID -> 통과 여부)
-    QMap<QUuid, int> edgeIrregularityCount;         // 불규칙성 개수 (패턴 ID -> 개수)
-    QMap<QUuid, double> edgeMaxDeviation;           // 최대 편차 mm (패턴 ID -> 편차)
-    QMap<QUuid, double> edgeMinDeviation;           // 최소 편차 mm (패턴 ID -> 편차)
-    QMap<QUuid, double> edgeAvgDeviation;           // 평균 편차 mm (패턴 ID -> 편차)
-    QMap<QUuid, QPointF> edgeBoxCenter;             // EDGE 박스 중심 상대좌표 (패턴 중심 기준)
-    QMap<QUuid, QSizeF> edgeBoxSize;                // EDGE 박스 크기 (width, height)
-    QMap<QUuid, bool> edgeMeasured;                 // EDGE 측정 완료 여부 (패턴 ID -> 측정 여부)
-    QMap<QUuid, QList<QPoint>> edgeAbsolutePoints; // EDGE 절대좌표 포인트들 (패턴 ID -> Qt 포인트 배열)
-    QMap<QUuid, QList<double>> edgePointDistances; // EDGE 각 포인트의 거리 mm (패턴 ID -> 거리 배열)
-    QMap<QUuid, int> edgeAverageX;                  // 절단면 평균 X 위치 (패턴 ID -> X 좌표)
-    QMap<QUuid, double> edgeRegressionSlope;        // EDGE 선형 회귀 기울기 m (패턴 ID -> 기울기)
-    QMap<QUuid, double> edgeRegressionIntercept;    // EDGE 선형 회귀 절편 b (패턴 ID -> 절편)
+    QMap<QUuid, bool> edgeResults;                  // EDGE 검사 통과 여부
+    QMap<QUuid, int> edgeIrregularityCount;         // 불규칙성 개수 (edgeDistanceMax 초과한 점 개수)
+    QMap<QUuid, double> edgeMaxDeviation;           // 최대 편차 mm (기준선에서 가장 먼 거리)
+    QMap<QUuid, double> edgeMinDeviation;           // 최소 편차 mm (기준선에서 가장 가까운 거리)
+    QMap<QUuid, double> edgeAvgDeviation;           // 평균 편차 mm (기준선에서 평균 거리)
+    QMap<QUuid, QPointF> edgeBoxCenter;             // EDGE 박스 중심 (패턴 중심 기준 상대좌표, 픽셀)
+    QMap<QUuid, QSizeF> edgeBoxSize;                // EDGE 박스 크기 (width, height, 픽셀)
+    QMap<QUuid, bool> edgeMeasured;                 // EDGE 측정 완료 여부
+    QMap<QUuid, QList<QPoint>> edgeAbsolutePoints; // EDGE 포인트들 (원본 이미지 기준 절대좌표, 픽셀)
+    QMap<QUuid, QList<double>> edgePointDistances; // EDGE 각 포인트의 기준선 거리 (mm)
+    QMap<QUuid, int> edgeAverageX;                  // 절단면 평균 X 위치 (원본 이미지 기준 절대좌표, 픽셀)
+    QMap<QUuid, double> edgeRegressionSlope;        // EDGE 회귀선 기울기 m (y = mx + b)
+    QMap<QUuid, double> edgeRegressionIntercept;    // EDGE 회귀선 절편 b (y = mx + b)
     
-    // STRIP 4개 컨투어 포인트 (절대좌표)
-    QMap<QUuid, QPoint> stripPoint1;               // STRIP Point 1 (패턴 ID -> 절대좌표)
-    QMap<QUuid, QPoint> stripPoint2;               // STRIP Point 2 (패턴 ID -> 절대좌표)
-    QMap<QUuid, QPoint> stripPoint3;               // STRIP Point 3 (패턴 ID -> 절대좌표)
-    QMap<QUuid, QPoint> stripPoint4;               // STRIP Point 4 (패턴 ID -> 절대좌표)
-    QMap<QUuid, bool> stripPointsValid;            // 4개 포인트 유효성 (패턴 ID -> 유효 여부)
+    // STRIP 4개 컨투어 포인트 (원본 이미지 기준 절대좌표, 픽셀)
+    QMap<QUuid, QPoint> stripPoint1;               // STRIP Point 1 (절대좌표)
+    QMap<QUuid, QPoint> stripPoint2;               // STRIP Point 2 (절대좌표)
+    QMap<QUuid, QPoint> stripPoint3;               // STRIP Point 3 (절대좌표)
+    QMap<QUuid, QPoint> stripPoint4;               // STRIP Point 4 (절대좌표)
+    QMap<QUuid, bool> stripPointsValid;            // 4개 포인트 유효성
     
     // STRIP 길이 검사 결과
-    QMap<QUuid, bool> stripLengthResults;          // STRIP 길이 검사 통과 여부 (패턴 ID -> 통과 여부)
-    QMap<QUuid, double> stripMeasuredLength;       // 측정된 STRIP 길이 (패턴 ID -> 길이, mm 또는 px)
-    QMap<QUuid, double> stripMeasuredLengthPx;     // 측정된 STRIP 길이 픽셀값 원본 (패턴 ID -> 픽셀)
-    QMap<QUuid, QPoint> stripLengthStartPoint;     // 길이 측정 시작점 (EDGE 평균선 중점)
-    QMap<QUuid, QPoint> stripLengthEndPoint;       // 길이 측정 끝점 (P3,P4 중점)
+    QMap<QUuid, bool> stripLengthResults;          // STRIP 길이 검사 통과 여부
+    QMap<QUuid, double> stripMeasuredLength;       // 측정된 STRIP 길이 (mm 또는 px)
+    QMap<QUuid, double> stripMeasuredLengthPx;     // 측정된 STRIP 길이 픽셀값 원본 (캘리브레이션 전, 픽셀)
+    QMap<QUuid, QPoint> stripLengthStartPoint;     // 길이 측정 시작점 (EDGE 평균선 중점, 절대좌표)
+    QMap<QUuid, QPoint> stripLengthEndPoint;       // 길이 측정 끝점 (P3,P4 중점, 절대좌표)
     
     // STRIP 세부 검사 결과 로그용 (출력 순서 제어)
     QString stripPatternName;                      // STRIP 패턴 이름
@@ -158,20 +158,20 @@ struct InspectionResult {
     QMap<QUuid, bool> barrelRightResults;          // BARREL RIGHT 검사 통과 여부
     QMap<QUuid, double> barrelLeftMeasuredLength;  // BARREL LEFT 측정된 길이 (mm)
     QMap<QUuid, double> barrelRightMeasuredLength; // BARREL RIGHT 측정된 길이 (mm)
-    QMap<QUuid, QPointF> barrelLeftBoxCenter;      // BARREL LEFT 박스 중심 (절대좌표)
-    QMap<QUuid, QPointF> barrelRightBoxCenter;     // BARREL RIGHT 박스 중심 (절대좌표)
-    QMap<QUuid, QSizeF> barrelLeftBoxSize;         // BARREL LEFT 박스 크기
-    QMap<QUuid, QSizeF> barrelRightBoxSize;        // BARREL RIGHT 박스 크기
+    QMap<QUuid, QPointF> barrelLeftBoxCenter;      // BARREL LEFT 박스 중심 (원본 이미지 기준 절대좌표, 픽셀)
+    QMap<QUuid, QPointF> barrelRightBoxCenter;     // BARREL RIGHT 박스 중심 (원본 이미지 기준 절대좌표, 픽셀)
+    QMap<QUuid, QSizeF> barrelLeftBoxSize;         // BARREL LEFT 박스 크기 (픽셀)
+    QMap<QUuid, QSizeF> barrelRightBoxSize;        // BARREL RIGHT 박스 크기 (픽셀)
     QMap<QUuid, cv::Mat> barrelLeftMask;           // BARREL LEFT 세그멘테이션 마스크
     QMap<QUuid, cv::Mat> barrelRightMask;          // BARREL RIGHT 세그멘테이션 마스크
-    QMap<QUuid, std::vector<cv::Point>> barrelLeftContour;   // BARREL LEFT 외곽선
-    QMap<QUuid, std::vector<cv::Point>> barrelRightContour;  // BARREL RIGHT 외곽선
+    QMap<QUuid, std::vector<cv::Point>> barrelLeftContour;   // BARREL LEFT 외곽선 (박스 내 상대좌표)
+    QMap<QUuid, std::vector<cv::Point>> barrelRightContour;  // BARREL RIGHT 외곽선 (박스 내 상대좌표)
     QMap<QUuid, int> barrelLeftContourWidth;    // BARREL LEFT 컨투어 너비 (픽셀)
     QMap<QUuid, int> barrelLeftContourHeight;   // BARREL LEFT 컨투어 높이 (픽셀)
     QMap<QUuid, int> barrelRightContourWidth;   // BARREL RIGHT 컨투어 너비 (픽셀)
     QMap<QUuid, int> barrelRightContourHeight;  // BARREL RIGHT 컨투어 높이 (픽셀)
-    QMap<QUuid, QRectF> barrelLeftBoxRect;      // BARREL LEFT 검사 박스 (절대좌표)
-    QMap<QUuid, QRectF> barrelRightBoxRect;     // BARREL RIGHT 검사 박스 (절대좌표)
+    QMap<QUuid, QRectF> barrelLeftBoxRect;      // BARREL LEFT 검사 박스 (원본 이미지 기준 절대좌표)
+    QMap<QUuid, QRectF> barrelRightBoxRect;     // BARREL RIGHT 검사 박스 (원본 이미지 기준 절대좌표)
     
     // CRIMP BARREL 세부 결과 로그용
     QString barrelLeftResult;                      // BARREL LEFT 결과 (PASS/NG)

@@ -34,12 +34,12 @@ namespace {
 
 InsProcessor::InsProcessor(QObject *parent) : QObject(parent)
 {
-    logDebug("InsProcessor 초기화됨");
+    logDebug("InsProcessor initialized");
 }
 
 InsProcessor::~InsProcessor()
 {
-    logDebug("InsProcessor 소멸됨");
+    logDebug("InsProcessor destroyed");
 }
 
 void InsProcessor::warmupAnomalyModels(const QList<PatternInfo>& patterns, const QString& recipeName)
@@ -75,11 +75,11 @@ void InsProcessor::warmupAnomalyModels(const QList<PatternInfo>& patterns, const
     }
     
     if (modelSizes.isEmpty()) {
-        logDebug("워밍업할 AI 모델이 없습니다.");
+        logDebug("No AI models to warm up");
         return;
     }
     
-    logDebug(QString("%1개 AI 모델 초기화 시작...").arg(modelSizes.size()));
+    logDebug(QString("Starting initialization of %1 AI models...").arg(modelSizes.size()));
     
     int loadedCount = 0;
     for (auto it = modelSizes.begin(); it != modelSizes.end(); ++it) {
@@ -89,13 +89,13 @@ void InsProcessor::warmupAnomalyModels(const QList<PatternInfo>& patterns, const
         try {
             // 모델 파일 존재 확인
             if (!QFile::exists(modelPath)) {
-                logDebug(QString("모델 파일이 존재하지 않음: %1").arg(modelPath));
+                logDebug(QString("Model file does not exist: %1").arg(modelPath));
                 continue;
             }
             
             // 패턴 크기 유효성 검증
             if (patternSize.width() <= 0 || patternSize.height() <= 0) {
-                logDebug(QString("잘못된 패턴 크기: %1x%2").arg(patternSize.width()).arg(patternSize.height()));
+                logDebug(QString("Invalid pattern size: %1x%2").arg(patternSize.width()).arg(patternSize.height()));
                 continue;
             }
             
@@ -139,18 +139,18 @@ void InsProcessor::warmupAnomalyModels(const QList<PatternInfo>& patterns, const
                 }
                 
                 loadedCount++;
-                logDebug(QString("%1 (%2x%3) 완료").arg(modelPath.section('/', -1)).arg(patternSize.width()).arg(patternSize.height()));
+                logDebug(QString("%1 (%2x%3) completed").arg(modelPath.section('/', -1)).arg(patternSize.width()).arg(patternSize.height()));
             } else {
-                logDebug(QString("모델 초기화 실패: %1").arg(modelPath));
+                logDebug(QString("Model initialization failed: %1").arg(modelPath));
             }
         } catch (const std::exception& e) {
-            logDebug(QString("모델 워밍업 중 예외 발생: %1 - %2").arg(modelPath).arg(e.what()));
+            logDebug(QString("Exception during model warmup: %1 - %2").arg(modelPath).arg(e.what()));
         } catch (...) {
-            logDebug(QString("모델 워밍업 중 알 수 없는 오류: %1").arg(modelPath));
+            logDebug(QString("Unknown error during model warmup: %1").arg(modelPath));
         }
     }
     
-    logDebug(QString("완료: %1/%2개 모델 준비됨").arg(loadedCount).arg(modelSizes.size()));
+    logDebug(QString("Completed: %1/%2 models ready").arg(loadedCount).arg(modelSizes.size()));
 }
 
 InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QList<PatternInfo> &patterns, const QString& cameraName)
@@ -159,7 +159,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
 
     if (image.empty() || patterns.isEmpty())
     {
-        logDebug("검사 실패: 이미지가 비어있거나 패턴이 없음");
+        logDebug("Inspection failed: image is empty or no patterns");
         return result;
     }
 
@@ -197,7 +197,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     {
         if (!pattern.enabled)
         {
-            logDebug(QString("패턴 '%1' 비활성화됨 - 검사 건너뜀").arg(pattern.name));
+            logDebug(QString("Pattern '%1' disabled - skip inspection").arg(pattern.name));
             continue;
         }
 
@@ -216,7 +216,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             break;
 
         case PatternType::FIL:
-            logDebug(QString("필터 패턴 발견 (무시됨): '%1'").arg(pattern.name));
+            logDebug(QString("Filter pattern found (ignored): '%1'").arg(pattern.name));
             break;
         }
     }
@@ -230,7 +230,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
     {
         // ROI가 없으면 전체 이미지 영역을 활성 영역으로 간주
         activeRoiRects.append(QRect(0, 0, image.cols, image.rows));
-        logDebug("활성화된 ROI 패턴이 없음, 전체 영역 검사");
+        logDebug("No active ROI patterns, inspect entire area");
     }
     else
     {
@@ -332,7 +332,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
             // 매칭 검사가 활성화된 경우에만 수행
             if (!pattern.runInspection)
             {
-                logDebug(QString("FID 패턴 '%1': 검사 비활성화됨, 건너뜀").arg(pattern.name));
+                logDebug(QString("FID pattern '%1': inspection disabled, skip").arg(pattern.name));
                 continue;
             }
 
@@ -342,14 +342,14 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                 static_cast<int>(pattern.rect.center().y()));
             if (!isInGroupROI(pattern.id, patternCenter, true))  // true = FID 패턴
             {
-                logDebug(QString("FID 패턴 '%1': ROI 영역 외부에 있어 매칭에서 제외됨").arg(pattern.name));
+                logDebug(QString("FID pattern '%1': outside ROI, excluded from matching").arg(pattern.name));
                 continue;
             }
 
             // 기존 ROI 검사도 유지 (하위 호환성)
             if (!isInROI(patternCenter))
             {
-                logDebug(QString("FID 패턴 '%1': ROI 영역 외부에 있어 검사에서 제외됨").arg(pattern.name));
+                logDebug(QString("FID pattern '%1': outside ROI, excluded from inspection").arg(pattern.name));
                 continue;
             }
 
@@ -4064,7 +4064,7 @@ bool InsProcessor::checkStrip(const cv::Mat &image, const PatternInfo &pattern, 
         int leftThickness = 0, rightThickness = 0;
 
         // 두께 측정 상세 좌표를 저장할 변수들 (전체 함수 scope에서 사용)
-        cv::Point leftTopPoint, leftBottomPoint, rightTopPoint, rightBottomPoint;
+        cv::Point leftTopPoint(0, 0), leftBottomPoint(0, 0), rightTopPoint(0, 0), rightBottomPoint(0, 0);
 
         // 포인트 저장 변수들
         std::vector<cv::Point> frontThicknessPoints, rearThicknessPoints;
@@ -4400,13 +4400,56 @@ bool InsProcessor::checkStrip(const cv::Mat &image, const PatternInfo &pattern, 
         // 모든 검사 항목을 AND 연산으로 최종 판정
         bool allTestsPassed = isPassed && stripLengthPassed && frontThicknessPassed && rearThicknessPassed && edgeTestPassed;
 
-        // qDebug() << "[STRIP 최종 판정]" << pattern.name
-        //          << "isPassed:" << isPassed
-        //          << "stripLength:" << stripLengthPassed
-        //          << "front:" << frontThicknessPassed
-        //          << "rear:" << rearThicknessPassed
-        //          << "edge:" << edgeTestPassed
-        //          << "→ allTestsPassed:" << allTestsPassed;
+        // 각 항목의 측정값과 범위 정리
+        QString lengthInfo = QString("%1/%2-%3mm")
+            .arg(QString::number(stripMeasuredLength, 'f', 2))
+            .arg(QString::number(pattern.stripLengthMin, 'f', 2))
+            .arg(QString::number(pattern.stripLengthMax, 'f', 2));
+        
+        QString frontInfo = "N/A";
+        if (measuredAvgThickness > 0 && pattern.stripLengthCalibrationPx > 0) {
+            double avgMm = measuredAvgThickness * thicknessPixelToMm;
+            frontInfo = QString("%1/%2-%3mm")
+                .arg(QString::number(avgMm, 'f', 2))
+                .arg(QString::number(pattern.stripThicknessMin, 'f', 2))
+                .arg(QString::number(pattern.stripThicknessMax, 'f', 2));
+        }
+        
+        QString rearInfo = "N/A";
+        if (rearMeasuredAvgThickness > 0 && pattern.stripLengthCalibrationPx > 0) {
+            double avgMm = rearMeasuredAvgThickness * thicknessPixelToMm;
+            rearInfo = QString("%1/%2-%3mm")
+                .arg(QString::number(avgMm, 'f', 2))
+                .arg(QString::number(pattern.stripRearThicknessMin, 'f', 2))
+                .arg(QString::number(pattern.stripRearThicknessMax, 'f', 2));
+        }
+        
+        QString edgeInfo = QString("%1/%2")
+            .arg(result.edgeIrregularityCount[pattern.id])
+            .arg(pattern.edgeMaxOutliers);
+
+        // 터미널 색상 출력 (ANSI)
+        fprintf(stderr, "\033[36m[STRIP]\033[0m %s | LENGTH: %s %s | FRONT: %s %s | REAR: %s %s | EDGE: %s %s → %s\n",
+                pattern.name.toUtf8().constData(),
+                stripLengthPassed ? "\033[32mOK\033[0m" : "\033[31mNG\033[0m",
+                lengthInfo.toUtf8().constData(),
+                frontThicknessPassed ? "\033[32mOK\033[0m" : "\033[31mNG\033[0m",
+                frontInfo.toUtf8().constData(),
+                rearThicknessPassed ? "\033[32mOK\033[0m" : "\033[31mNG\033[0m",
+                rearInfo.toUtf8().constData(),
+                edgeTestPassed ? "\033[32mOK\033[0m" : "\033[31mNG\033[0m",
+                edgeInfo.toUtf8().constData(),
+                allTestsPassed ? "\033[32mPASS\033[0m" : "\033[31mNG\033[0m");
+        
+        // 로그창 색상 출력 (font color 태그)
+        QString logMsg = QString("<font color='#00CED1'>[STRIP]</font> %1 | LENGTH: <font color='%2'>%3</font> %4 | FRONT: <font color='%5'>%6</font> %7 | REAR: <font color='%8'>%9</font> %10 | EDGE: <font color='%11'>%12</font> %13 → <font color='%14'>%15</font>")
+            .arg(pattern.name)
+            .arg(stripLengthPassed ? "#00FF00" : "#FF0000").arg(stripLengthPassed ? "OK" : "NG").arg(lengthInfo)
+            .arg(frontThicknessPassed ? "#00FF00" : "#FF0000").arg(frontThicknessPassed ? "OK" : "NG").arg(frontInfo)
+            .arg(rearThicknessPassed ? "#00FF00" : "#FF0000").arg(rearThicknessPassed ? "OK" : "NG").arg(rearInfo)
+            .arg(edgeTestPassed ? "#00FF00" : "#FF0000").arg(edgeTestPassed ? "OK" : "NG").arg(edgeInfo)
+            .arg(allTestsPassed ? "#00FF00" : "#FF0000").arg(allTestsPassed ? "PASS" : "NG");
+        logDebug(logMsg);
 
         if (allTestsPassed)
         {
@@ -4502,72 +4545,101 @@ bool InsProcessor::checkStrip(const cv::Mat &image, const PatternInfo &pattern, 
                 pixelToMm = pattern.stripLengthConversionMm / pattern.stripLengthCalibrationPx;
             }
 
-            // 3. 각 포인트와 평균선 사이의 거리 계산 (mm 변환)
+            // 3. Robust 회귀선 계산 (시작/끝 %만큼 제거 후 계산)
             double maxDistancePx = 0.0;
             double minX = absoluteEdgePoints[0].x();
             double maxX = absoluteEdgePoints[0].x();
 
-            // OpenCV fitLine을 사용하여 EDGE 포인트들에 최적의 직선 맞추기
-            std::vector<cv::Point2f> points;
-            for (const QPoint &pt : absoluteEdgePoints)
-            {
-                points.push_back(cv::Point2f(pt.x(), pt.y()));
-            }
-
-            cv::Vec4f lineParams;
-            cv::fitLine(points, lineParams, cv::DIST_L2, 0, 0.01, 0.01);
-
-            // lineParams: [vx, vy, x0, y0]
-            // vx, vy: 직선의 방향 벡터 (정규화됨)
-            // x0, y0: 직선이 지나는 점
-            float vx = lineParams[0];
-            float vy = lineParams[1];
-            float x0 = lineParams[2];
-            float y0 = lineParams[3];
-
-            // y = mx + b 형태로 변환
             double m = 0.0, b = 0.0;
-            if (std::abs(vx) > 0.001)
+            
+            if (absoluteEdgePoints.size() >= 2)
             {
-                m = vy / vx;     // 기울기
-                b = y0 - m * x0; // y절편
-            }
-            else
-            {
-                // 완전 수직선인 경우
-                m = 1e6; // 매우 큰 기울기
-                b = 0;
+                // 시작/끝 %만큼 제외
+                int totalPoints = absoluteEdgePoints.size();
+                int startRemove = static_cast<int>(totalPoints * pattern.edgeStartPercent / 100.0);
+                int endRemove = static_cast<int>(totalPoints * pattern.edgeEndPercent / 100.0);
+                
+                int startIdx = startRemove;
+                int endIdx = totalPoints - endRemove - 1;
+                
+                if (startIdx < endIdx && startIdx >= 0 && endIdx < totalPoints)
+                {
+                    // 시작부와 끝부 각각 10개 점의 median 계산
+                    int sampleSize = std::min(10, (endIdx - startIdx + 1) / 4);  // 최대 10개, 최소 전체의 1/4
+                    sampleSize = std::max(sampleSize, 1);
+                    
+                    // 시작부 샘플 수집 및 median 계산
+                    std::vector<double> startXs, startYs;
+                    for (int i = startIdx; i < startIdx + sampleSize && i <= endIdx; i++)
+                    {
+                        startXs.push_back(absoluteEdgePoints[i].x());
+                        startYs.push_back(absoluteEdgePoints[i].y());
+                    }
+                    std::sort(startXs.begin(), startXs.end());
+                    std::sort(startYs.begin(), startYs.end());
+                    double startMedianX = startXs[startXs.size() / 2];
+                    double startMedianY = startYs[startYs.size() / 2];
+                    
+                    // 끝부 샘플 수집 및 median 계산
+                    std::vector<double> endXs, endYs;
+                    for (int i = std::max(endIdx - sampleSize + 1, startIdx); i <= endIdx; i++)
+                    {
+                        endXs.push_back(absoluteEdgePoints[i].x());
+                        endYs.push_back(absoluteEdgePoints[i].y());
+                    }
+                    std::sort(endXs.begin(), endXs.end());
+                    std::sort(endYs.begin(), endYs.end());
+                    double endMedianX = endXs[endXs.size() / 2];
+                    double endMedianY = endYs[endYs.size() / 2];
+                    
+                    // Median 점들로 직선 계산 (y = mx + b)
+                    double dx = endMedianX - startMedianX;
+                    double dy = endMedianY - startMedianY;
+                    
+                    if (std::abs(dx) > 0.001)
+                    {
+                        m = dy / dx;
+                        b = startMedianY - m * startMedianX;
+                    }
+                    else
+                    {
+                        m = 1e6;
+                        b = 0;
+                    }
+                }
             }
 
+            // 최종 회귀선 기준으로 모든 원본 포인트의 거리와 통계 계산
             double minDistancePx = std::numeric_limits<double>::max();
             double sumDistancePx = 0.0;
-            QList<double> pointDistancesMm; // 각 포인트별 거리 mm 저장
-
+            QList<double> pointDistancesMm;
+            edgeOutlierCount = 0;
+            
             for (int i = 0; i < absoluteEdgePoints.size(); i++)
             {
                 const QPoint &pt = absoluteEdgePoints[i];
                 minX = std::min(minX, static_cast<double>(pt.x()));
                 maxX = std::max(maxX, static_cast<double>(pt.x()));
 
-                // 점 (px, py)와 직선 mx - y + b = 0 사이의 거리
-                // 거리 = |m*px - py + b| / sqrt(m^2 + 1)
+                // 최종 회귀선(정상 포인트 기반)과의 거리 계산
                 double numerator = std::abs(m * pt.x() - pt.y() + b);
                 double denominator = std::sqrt(m * m + 1.0);
                 double distancePx = numerator / denominator;
+                double distanceMm = distancePx * pixelToMm;
 
                 maxDistancePx = std::max(maxDistancePx, distancePx);
                 minDistancePx = std::min(minDistancePx, distancePx);
                 sumDistancePx += distancePx;
-
-                // mm로 변환하여 저장
-                double distanceMm = distancePx * pixelToMm;
+                
+                // CameraView에서 색상 판단에 사용할 거리 저장
                 pointDistancesMm.append(distanceMm);
-
-                // 최대 허용 거리와 비교
+                
+                // 이상치 카운트
                 if (distanceMm > pattern.edgeDistanceMax)
                 {
                     edgeOutlierCount++;
                 }
+                
             }
 
             // 편차를 mm로 변환
@@ -4576,7 +4648,7 @@ bool InsProcessor::checkStrip(const cv::Mat &image, const PatternInfo &pattern, 
             edgeMinDeviationMm = minDistancePx * pixelToMm;
             edgeAvgDeviationMm = avgDistancePx * pixelToMm;
 
-            // 각 포인트별 거리와 선형 회귀 정보 저장
+            // 각 포인트별 거리와 선형 회귀 정보 저장 (정상 포인트 기반 회귀선)
             result.edgePointDistances[pattern.id] = pointDistancesMm;
             result.edgeRegressionSlope[pattern.id] = m;
             result.edgeRegressionIntercept[pattern.id] = b;

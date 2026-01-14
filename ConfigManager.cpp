@@ -56,12 +56,12 @@ bool ConfigManager::loadConfig() {
     
     QFile file(configPath);
     if (!file.exists()) {
-        qDebug() << "[ConfigManager] 설정 파일이 없습니다. 기본값 사용:" << configPath;
+        qDebug() << "[ConfigManager] No config file found, using defaults:" << configPath;
         return true; // 파일이 없어도 기본값으로 정상 작동
     }
     
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        qDebug() << "[ConfigManager] 설정 파일 열기 실패:" << configPath;
+        qDebug() << "[ConfigManager] Failed to open config file:" << configPath;
         return false;
     }
     
@@ -81,42 +81,42 @@ bool ConfigManager::loadConfig() {
         while (xml.readNextStartElement()) {
             if (xml.name() == QLatin1String("Language")) {
                 m_language = xml.readElementText();
-                qDebug() << "[ConfigManager] 언어 설정 로드됨:" << qPrintable(m_language);
+                qDebug() << "[ConfigManager] Language loaded:" << qPrintable(m_language);
             } else if (xml.name() == QLatin1String("AutoSave")) {
                 QString value = xml.readElementText();
                 m_autoSave = (value.toLower() == "true");
-                qDebug() << "[ConfigManager] 자동저장 설정 로드됨:" << m_autoSave;
+                qDebug() << "[ConfigManager] AutoSave loaded:" << m_autoSave;
             } else if (xml.name() == QLatin1String("LastRecipePath")) {
                 m_lastRecipePath = xml.readElementText();
-                qDebug() << "[ConfigManager] 마지막 레시피 경로 로드됨:" << qPrintable(m_lastRecipePath);
+                qDebug() << "[ConfigManager] Last recipe path loaded:" << qPrintable(m_lastRecipePath);
             } else if (xml.name() == QLatin1String("SerialPort")) {
                 m_serialPort = xml.readElementText();
-                qDebug() << "[ConfigManager] 시리얼 포트 로드됨:" << qPrintable(m_serialPort);
+                qDebug() << "[ConfigManager] Serial port loaded:" << qPrintable(m_serialPort);
             } else if (xml.name() == QLatin1String("SerialBaudRate")) {
                 m_serialBaudRate = xml.readElementText().toInt();
-                qDebug() << "[ConfigManager] 시리얼 보드레이트 로드됨:" << m_serialBaudRate;
+                qDebug() << "[ConfigManager] Serial baud rate loaded:" << m_serialBaudRate;
             } else if (xml.name() == QLatin1String("SerialAutoConnect")) {
                 QString value = xml.readElementText();
                 m_serialAutoConnect = (value.toLower() == "true");
-                qDebug() << "[ConfigManager] 시리얼 자동 연결 설정 로드됨:" << m_serialAutoConnect;
+                qDebug() << "[ConfigManager] Serial auto-connect loaded:" << m_serialAutoConnect;
             } else if (xml.name() == QLatin1String("ServerIp")) {
                 m_serverIp = xml.readElementText();
-                qDebug() << "[ConfigManager] 서버 IP 로드됨:" << qPrintable(m_serverIp);
+                qDebug() << "[ConfigManager] Server IP loaded:" << qPrintable(m_serverIp);
             } else if (xml.name() == QLatin1String("ServerPort")) {
                 m_serverPort = xml.readElementText().toInt();
-                qDebug() << "[ConfigManager] 서버 포트 로드됨:" << m_serverPort;
+                qDebug() << "[ConfigManager] Server port loaded:" << m_serverPort;
             } else if (xml.name() == QLatin1String("AutoConnect")) {
                 QString value = xml.readElementText();
                 m_autoConnect = (value.toLower() == "true");
-                qDebug() << "[ConfigManager] 자동 연결 설정 로드됨:" << m_autoConnect;
+                qDebug() << "[ConfigManager] Auto-connect loaded:" << m_autoConnect;
             } else if (xml.name() == QLatin1String("ReconnectInterval")) {
                 m_reconnectInterval = xml.readElementText().toInt();
                 if (m_reconnectInterval < 1) m_reconnectInterval = 10;
-                qDebug() << "[ConfigManager] 재연결 간격 로드됨:" << m_reconnectInterval << "초";
+                qDebug() << "[ConfigManager] Reconnect interval loaded:" << m_reconnectInterval << "sec";
             } else if (xml.name() == QLatin1String("HeartbeatInterval")) {
                 m_heartbeatInterval = xml.readElementText().toInt();
                 if (m_heartbeatInterval < 5) m_heartbeatInterval = 30;
-                qDebug() << "[ConfigManager] Heartbeat 주기 로드됨:" << m_heartbeatInterval << "초";
+                qDebug() << "[ConfigManager] Heartbeat interval loaded:" << m_heartbeatInterval << "sec";
             } else if (xml.name() == QLatin1String("CameraAutoConnect")) {
                 QString value = xml.readElementText();
                 m_cameraAutoConnect = (value.toLower() == "true");
@@ -153,19 +153,19 @@ bool ConfigManager::loadConfig() {
         }
         
     } catch (const QString& error) {
-        qDebug() << "[ConfigManager] 설정 파일 로드 중 오류:" << error;
+        qDebug() << "[ConfigManager] Error loading config file:" << error;
         file.close();
         return false;
     }
     
     if (xml.hasError()) {
-        qDebug() << "[ConfigManager] XML 파싱 오류:" << xml.errorString();
+        qDebug() << "[ConfigManager] XML parsing error:" << xml.errorString();
         file.close();
         return false;
     }
     
     file.close();
-    qDebug() << "[ConfigManager] 설정 파일 로드 완료";
+    qDebug() << "[ConfigManager] Config file loaded successfully";
     return true;
 }
 

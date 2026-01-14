@@ -379,7 +379,7 @@ void CustomMessageBox::finishLoading() {
         progressBar->setValue(100);
     }
     if (statusLabel) {
-        statusLabel->setText("완료!");
+        statusLabel->setText("Completed!");
     }
     QApplication::processEvents();
     QThread::msleep(200);
