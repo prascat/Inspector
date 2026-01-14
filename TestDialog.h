@@ -13,6 +13,7 @@
 #include <QDir>
 #include <QRadioButton>
 #include <QButtonGroup>
+#include <QComboBox>
 #include <QMouseEvent>
 #include <QCloseEvent>
 #include <opencv2/opencv.hpp>
@@ -35,7 +36,7 @@ public:
     explicit TestDialog(TeachingWidget *parent = nullptr);
     ~TestDialog();
     
-    void syncStripCrimpMode(int mode);  // 외부에서 모드 동기화용
+    void syncInspectionArea(int area);  // 외부에서 검사 영역 동기화용
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -49,7 +50,7 @@ private slots:
     void onImageSelected(QListWidgetItem *item);
     void onRunTest();
     void onClearResults();
-    void onStripCrimpModeChanged(int mode);
+    void onInspectionAreaChanged(int index);
     void onSaveResults();
     void onResultTableClicked(int row, int column);
 
@@ -81,15 +82,13 @@ private:
     QPushButton *clearButton;
     QPushButton *closeButton;
     QLabel *statusLabel;
-    QRadioButton *stripRadio;
-    QRadioButton *crimpRadio;
+    QComboBox *areaComboBox;
     
     // Data
     QStringList imagePathList;
-    int currentStripCrimpMode; // 0: STRIP, 1: CRIMP
-    QList<TestResultRow> stripResults;  // STRIP 모드 결과
-    QList<TestResultRow> crimpResults;  // CRIMP 모드 결과
-    QStringList currentPatternNames;    // 현재 모드의 패턴명 리스트
+    int currentInspectionArea; // 0: FRONT-STRIP, 1: FRONT-CRIMP, 2: REAR-STRIP, 3: REAR-CRIMP
+    QList<TestResultRow> areaResults[4];  // 각 영역별 결과
+    QStringList currentPatternNames;    // 현재 영역의 패턴명 리스트
     
     // Mouse drag
     QPoint dragPosition;

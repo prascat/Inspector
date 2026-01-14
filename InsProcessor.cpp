@@ -455,10 +455,14 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
         auto anomalyBatchStart = std::chrono::high_resolution_clock::now();
         int anomalyGroupCount = anomalyGroupsAPC.size() + anomalyGroupsAPD.size();
         
-#ifdef USE_TENSORRT
-        // ===== A-PC TensorRT 멀티모델 병렬 처리 =====
+        // 변수 선언을 ifdef 밖에서 (밖에서 사용하기 위해)
         auto apcBatchStart = std::chrono::high_resolution_clock::now();
         int apcPatternCount = 0;
+        auto apdBatchStart = std::chrono::high_resolution_clock::now();
+        int apdPatternCount = 0;
+        
+#ifdef USE_TENSORRT
+        // ===== A-PC TensorRT 멀티모델 병렬 처리 =====
         if (anomalyGroupsAPC.size() >= 1) {
             // 모든 모델 로드
             QMap<QString, std::vector<cv::Mat>> modelImages;
@@ -726,8 +730,7 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
         }
         
         // ===== A-PD TensorRT 멀티모델 병렬 처리 =====
-        auto apdBatchStart = std::chrono::high_resolution_clock::now();
-        int apdPatternCount = 0;
+        apdBatchStart = std::chrono::high_resolution_clock::now();
         if (anomalyGroupsAPD.size() >= 1) {
             // 모든 모델 로드
             QMap<QString, std::vector<cv::Mat>> modelImages;
@@ -985,6 +988,435 @@ InspectionResult InsProcessor::performInspection(const cv::Mat &image, const QLi
                                 .arg(pattern.name).arg(resultColor).arg(insResultText)
                                 .arg(roiAnomalyScore, 0, 'f', 2).arg(pattern.passThreshold, 0, 'f', 2).arg(avgPatternTime));
                         }
+                    }
+                }
+            }
+        }
+#elif defined(USE_ONNX)
+        // ===== A-PC ONNX 배치 처리 =====
+        if (anomalyGroupsAPC.size() >= 1) {
+            for (auto groupIt = anomalyGroupsAPC.begin(); groupIt != anomalyGroupsAPC.end(); ++groupIt) {
+                const QString& modelPath = groupIt.key();
+                const QList<PatternInfo>& group = groupIt.value();
+                
+                if (group.isEmpty()) continue;
+                
+                // 모델 로드
+                if (!initPatchCoreModel(modelPath)) {
+                    logDebug(QString("ANOMALY: 모델 로드 실패 - %1").arg(modelPath));
+                    for (const PatternInfo& pattern : group) {
+                        result.insResults[pattern.id] = false;
+                        result.insScores[pattern.id] = 0.0;
+                        result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
+                        result.isPassed = false;
+                    }
+                    continue;
+                }
+                
+                // 각 패턴별로 순차 처리
+                for (const PatternInfo &pattern : group) {
+                    QRect adjustedRect = QRect(
+                        static_cast<int>(pattern.rect.x()),
+                        static_cast<int>(pattern.rect.y()),
+                        static_cast<int>(pattern.rect.width()),
+                        static_cast<int>(pattern.rect.height()));
+                    
+                    // 부모 FID 정보 확인 및 위치 조정 (동일한 로직)
+                    if (!pattern.parentId.isNull())
+                    {
+                        if (result.fidResults.contains(pattern.parentId))
+                        {
+                            if (!result.fidResults[pattern.parentId])
+                            {
+                                result.insResults[pattern.id] = false;
+                                result.insScores[pattern.id] = 0.0;
+                                result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
+                                result.isPassed = false;
+                                continue;
+                            }
+                            
+                            double fidScore = result.matchScores.value(pattern.parentId, 0.0);
+                            if (fidScore < 0.999 && result.locations.contains(pattern.parentId))
+                            {
+                                cv::Point fidLoc = result.locations[pattern.parentId];
+                                double fidAngle = result.angles[pattern.parentId];
+                                
+                                QPoint originalFidCenter;
+                                for (const PatternInfo &fid : fidPatterns)
+                                {
+                                    if (fid.id == pattern.parentId)
+                                    {
+                                        originalFidCenter = QPoint(
+                                            static_cast<int>(fid.rect.center().x()),
+                                            static_cast<int>(fid.rect.center().y()));
+                                        break;
+                                    }
+                                }
+                                
+                                cv::Point parentOffset(
+                                    fidLoc.x - originalFidCenter.x(),
+                                    fidLoc.y - originalFidCenter.y());
+                                
+                                double parentFidTeachingAngle = 0.0;
+                                for (const PatternInfo &p : patterns)
+                                {
+                                    if (p.id == pattern.parentId)
+                                    {
+                                        parentFidTeachingAngle = p.angle;
+                                        break;
+                                    }
+                                }
+                                double fidAngleDiff = fidAngle - parentFidTeachingAngle;
+                                
+                                QPointF insOriginalCenter = pattern.rect.center();
+                                QPointF relativePos(
+                                    insOriginalCenter.x() - originalFidCenter.x(),
+                                    insOriginalCenter.y() - originalFidCenter.y());
+                                
+                                double rad = fidAngleDiff * M_PI / 180.0;
+                                double rotatedX = relativePos.x() * cos(rad) - relativePos.y() * sin(rad);
+                                double rotatedY = relativePos.x() * sin(rad) + relativePos.y() * cos(rad);
+                                
+                                int newCenterX = static_cast<int>(std::lround(fidLoc.x + rotatedX));
+                                int newCenterY = static_cast<int>(std::lround(fidLoc.y + rotatedY));
+                                
+                                adjustedRect = QRect(
+                                    newCenterX - pattern.rect.width() / 2,
+                                    newCenterY - pattern.rect.height() / 2,
+                                    pattern.rect.width(),
+                                    pattern.rect.height());
+                            }
+                        }
+                    }
+                    
+                    // 경계 조정
+                    if (adjustedRect.x() < 0 || adjustedRect.y() < 0 ||
+                        adjustedRect.x() + adjustedRect.width() > image.cols ||
+                        adjustedRect.y() + adjustedRect.height() > image.rows) {
+                        int x = std::max(0, adjustedRect.x());
+                        int y = std::max(0, adjustedRect.y());
+                        int width = std::min(image.cols - x, adjustedRect.width());
+                        int height = std::min(image.rows - y, adjustedRect.height());
+                        if (width < 10 || height < 10) {
+                            result.insResults[pattern.id] = false;
+                            result.insScores[pattern.id] = 0.0;
+                            result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
+                            result.isPassed = false;
+                            continue;
+                        }
+                        adjustedRect = QRect(x, y, width, height);
+                    }
+                    
+                    cv::Rect roiRect(adjustedRect.x(), adjustedRect.y(), adjustedRect.width(), adjustedRect.height());
+                    cv::Mat roiImage = image(roiRect).clone();
+                    result.adjustedRects[pattern.id] = adjustedRect;
+                    
+                    // ONNX 추론
+                    auto inferenceStart = std::chrono::high_resolution_clock::now();
+                    float anomalyScore = 0.0f;
+                    cv::Mat anomalyMap;
+                    
+                    bool inferenceSuccess = ImageProcessor::runPatchCoreONNXInference(
+                        modelPath, roiImage, anomalyScore, anomalyMap, pattern.passThreshold);
+                    
+                    auto inferenceEnd = std::chrono::high_resolution_clock::now();
+                    auto patternTime = std::chrono::duration_cast<std::chrono::milliseconds>(inferenceEnd - inferenceStart).count();
+                    
+                    if (!inferenceSuccess) {
+                        result.insResults[pattern.id] = false;
+                        result.insScores[pattern.id] = 0.0;
+                        result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
+                        result.isPassed = false;
+                        continue;
+                    }
+                    
+                    float roiAnomalyScore = std::max(0.0f, std::min(100.0f, anomalyScore));
+                    
+                    // Threshold 처리
+                    cv::Mat binaryMask;
+                    cv::threshold(anomalyMap, binaryMask, pattern.passThreshold, 255, cv::THRESH_BINARY);
+                    binaryMask.convertTo(binaryMask, CV_8U);
+                    
+                    std::vector<std::vector<cv::Point>> contours;
+                    cv::findContours(binaryMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+                    
+                    bool hasDefect = false;
+                    std::vector<std::vector<cv::Point>> defectContours;
+                    int adjustedX = adjustedRect.x();
+                    int adjustedY = adjustedRect.y();
+                    
+                    for (const auto& contour : contours) {
+                        int blobSize = static_cast<int>(cv::contourArea(contour));
+                        cv::Rect bbox = cv::boundingRect(contour);
+                        
+                        bool sizeCheck = (blobSize >= pattern.anomalyMinBlobSize);
+                        bool widthCheck = (bbox.width >= pattern.anomalyMinDefectWidth);
+                        bool heightCheck = (bbox.height >= pattern.anomalyMinDefectHeight);
+                        
+                        if (sizeCheck || (widthCheck && heightCheck)) {
+                            hasDefect = true;
+                            std::vector<cv::Point> absoluteContour;
+                            for (const auto& pt : contour) {
+                                absoluteContour.push_back(cv::Point(pt.x + adjustedX, pt.y + adjustedY));
+                            }
+                            defectContours.push_back(absoluteContour);
+                        }
+                    }
+                    
+                    result.insScores[pattern.id] = static_cast<double>(roiAnomalyScore);
+                    result.insResults[pattern.id] = !hasDefect;
+                    result.insMethodTypes[pattern.id] = InspectionMethod::A_PC;
+                    result.anomalyDefectContours[pattern.id] = defectContours;
+                    result.anomalyRawMap[pattern.id] = anomalyMap.clone();
+                    
+                    // 히트맵 생성
+                    cv::Mat normalized;
+                    anomalyMap.convertTo(normalized, CV_8U, 255.0 / 100.0);
+                    cv::Mat colorHeatmap;
+                    cv::applyColorMap(normalized, colorHeatmap, cv::COLORMAP_JET);
+                    result.anomalyHeatmap[pattern.id] = colorHeatmap.clone();
+                    result.anomalyHeatmapRect[pattern.id] = pattern.rect;
+                    
+                    result.isPassed = result.isPassed && !hasDefect;
+                    apcPatternCount++;
+                    
+                    QString insResultText = !hasDefect ? "PASS" : "NG";
+                    QString resultColor = !hasDefect ? "<font color='#00FF00'>" : "<font color='#FF0000'>";
+                    int defectCount = defectContours.size();
+                    
+                    if (defectCount > 0)
+                    {
+                        int maxW = 0, maxH = 0;
+                        for (const auto& contour : defectContours)
+                        {
+                            cv::Rect bbox = cv::boundingRect(contour);
+                            if (bbox.width > maxW) maxW = bbox.width;
+                            if (bbox.height > maxH) maxH = bbox.height;
+                        }
+                        logDebug(QString("  └─ <font color='#8BCB8B'>%1(A-PC)</font>: W:%2 H:%3 Detects:%4 (score=%5, thr=%6) [%7ms]")
+                            .arg(pattern.name).arg(maxW).arg(maxH).arg(defectCount)
+                            .arg(roiAnomalyScore, 0, 'f', 2).arg(pattern.passThreshold, 0, 'f', 2).arg(patternTime));
+                    }
+                    else
+                    {
+                        logDebug(QString("  └─ <font color='#8BCB8B'>%1(A-PC)</font>: %2%3</font> (score=%4, thr=%5) [%6ms]")
+                            .arg(pattern.name).arg(resultColor).arg(insResultText)
+                            .arg(roiAnomalyScore, 0, 'f', 2).arg(pattern.passThreshold, 0, 'f', 2).arg(patternTime));
+                    }
+                }
+            }
+        }
+        
+        // ===== A-PD ONNX 순차 처리 =====
+        apdBatchStart = std::chrono::high_resolution_clock::now();
+        if (anomalyGroupsAPD.size() >= 1) {
+            for (auto groupIt = anomalyGroupsAPD.begin(); groupIt != anomalyGroupsAPD.end(); ++groupIt) {
+                const QString& modelPath = groupIt.key();
+                const QList<PatternInfo>& group = groupIt.value();
+                
+                if (group.isEmpty()) continue;
+                
+                // PaDiM 모델 로드
+                if (!ImageProcessor::initPaDiMONNX(modelPath)) {
+                    logDebug(QString("A-PD: 모델 로드 실패 - %1").arg(modelPath));
+                    for (const PatternInfo& pattern : group) {
+                        result.insResults[pattern.id] = false;
+                        result.insScores[pattern.id] = 0.0;
+                        result.insMethodTypes[pattern.id] = InspectionMethod::A_PD;
+                        result.isPassed = false;
+                    }
+                    continue;
+                }
+                
+                // 각 패턴별로 순차 처리
+                for (const PatternInfo &pattern : group) {
+                    QRect adjustedRect = QRect(
+                        static_cast<int>(pattern.rect.x()),
+                        static_cast<int>(pattern.rect.y()),
+                        static_cast<int>(pattern.rect.width()),
+                        static_cast<int>(pattern.rect.height()));
+                    
+                    // 부모 FID 정보 확인 및 위치 조정 (동일한 로직)
+                    if (!pattern.parentId.isNull())
+                    {
+                        if (result.fidResults.contains(pattern.parentId))
+                        {
+                            if (!result.fidResults[pattern.parentId])
+                            {
+                                result.insResults[pattern.id] = false;
+                                result.insScores[pattern.id] = 0.0;
+                                result.insMethodTypes[pattern.id] = InspectionMethod::A_PD;
+                                result.isPassed = false;
+                                continue;
+                            }
+                            
+                            double fidScore = result.matchScores.value(pattern.parentId, 0.0);
+                            if (fidScore < 0.999 && result.locations.contains(pattern.parentId))
+                            {
+                                cv::Point fidLoc = result.locations[pattern.parentId];
+                                double fidAngle = result.angles[pattern.parentId];
+                                
+                                QPoint originalFidCenter;
+                                for (const PatternInfo &fid : fidPatterns)
+                                {
+                                    if (fid.id == pattern.parentId)
+                                    {
+                                        originalFidCenter = QPoint(
+                                            static_cast<int>(fid.rect.center().x()),
+                                            static_cast<int>(fid.rect.center().y()));
+                                        break;
+                                    }
+                                }
+                                
+                                cv::Point parentOffset(
+                                    fidLoc.x - originalFidCenter.x(),
+                                    fidLoc.y - originalFidCenter.y());
+                                
+                                double parentFidTeachingAngle = 0.0;
+                                for (const PatternInfo &p : patterns)
+                                {
+                                    if (p.id == pattern.parentId)
+                                    {
+                                        parentFidTeachingAngle = p.angle;
+                                        break;
+                                    }
+                                }
+                                double fidAngleDiff = fidAngle - parentFidTeachingAngle;
+                                
+                                QPointF insOriginalCenter = pattern.rect.center();
+                                QPointF relativePos(
+                                    insOriginalCenter.x() - originalFidCenter.x(),
+                                    insOriginalCenter.y() - originalFidCenter.y());
+                                
+                                double rad = fidAngleDiff * M_PI / 180.0;
+                                double rotatedX = relativePos.x() * cos(rad) - relativePos.y() * sin(rad);
+                                double rotatedY = relativePos.x() * sin(rad) + relativePos.y() * cos(rad);
+                                
+                                int newCenterX = static_cast<int>(std::lround(fidLoc.x + rotatedX));
+                                int newCenterY = static_cast<int>(std::lround(fidLoc.y + rotatedY));
+                                
+                                adjustedRect = QRect(
+                                    newCenterX - pattern.rect.width() / 2,
+                                    newCenterY - pattern.rect.height() / 2,
+                                    pattern.rect.width(),
+                                    pattern.rect.height());
+                            }
+                        }
+                    }
+                    
+                    // 경계 조정
+                    if (adjustedRect.x() < 0 || adjustedRect.y() < 0 ||
+                        adjustedRect.x() + adjustedRect.width() > image.cols ||
+                        adjustedRect.y() + adjustedRect.height() > image.rows) {
+                        int x = std::max(0, adjustedRect.x());
+                        int y = std::max(0, adjustedRect.y());
+                        int width = std::min(image.cols - x, adjustedRect.width());
+                        int height = std::min(image.rows - y, adjustedRect.height());
+                        if (width < 10 || height < 10) {
+                            result.insResults[pattern.id] = false;
+                            result.insScores[pattern.id] = 0.0;
+                            result.insMethodTypes[pattern.id] = InspectionMethod::A_PD;
+                            result.isPassed = false;
+                            continue;
+                        }
+                        adjustedRect = QRect(x, y, width, height);
+                    }
+                    
+                    cv::Rect roiRect(adjustedRect.x(), adjustedRect.y(), adjustedRect.width(), adjustedRect.height());
+                    cv::Mat roiImage = image(roiRect).clone();
+                    result.adjustedRects[pattern.id] = adjustedRect;
+                    
+                    // ONNX 추론
+                    auto inferenceStart = std::chrono::high_resolution_clock::now();
+                    float anomalyScore = 0.0f;
+                    cv::Mat anomalyMap;
+                    
+                    bool inferenceSuccess = ImageProcessor::runPaDiMONNXInference(
+                        modelPath, roiImage, anomalyScore, anomalyMap, pattern.passThreshold);
+                    
+                    auto inferenceEnd = std::chrono::high_resolution_clock::now();
+                    auto patternTime = std::chrono::duration_cast<std::chrono::milliseconds>(inferenceEnd - inferenceStart).count();
+                    
+                    if (!inferenceSuccess) {
+                        result.insResults[pattern.id] = false;
+                        result.insScores[pattern.id] = 0.0;
+                        result.insMethodTypes[pattern.id] = InspectionMethod::A_PD;
+                        result.isPassed = false;
+                        continue;
+                    }
+                    
+                    float roiAnomalyScore = std::max(0.0f, std::min(100.0f, anomalyScore));
+                    
+                    // Threshold 처리
+                    cv::Mat binaryMask;
+                    cv::threshold(anomalyMap, binaryMask, pattern.passThreshold, 255, cv::THRESH_BINARY);
+                    binaryMask.convertTo(binaryMask, CV_8U);
+                    
+                    std::vector<std::vector<cv::Point>> contours;
+                    cv::findContours(binaryMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+                    
+                    bool hasDefect = false;
+                    std::vector<std::vector<cv::Point>> defectContours;
+                    int adjustedX = adjustedRect.x();
+                    int adjustedY = adjustedRect.y();
+                    
+                    for (const auto& contour : contours) {
+                        int blobSize = static_cast<int>(cv::contourArea(contour));
+                        cv::Rect bbox = cv::boundingRect(contour);
+                        
+                        bool sizeCheck = (blobSize >= pattern.anomalyMinBlobSize);
+                        bool widthCheck = (bbox.width >= pattern.anomalyMinDefectWidth);
+                        bool heightCheck = (bbox.height >= pattern.anomalyMinDefectHeight);
+                        
+                        if (sizeCheck || (widthCheck && heightCheck)) {
+                            hasDefect = true;
+                            std::vector<cv::Point> absoluteContour;
+                            for (const auto& pt : contour) {
+                                absoluteContour.push_back(cv::Point(pt.x + adjustedX, pt.y + adjustedY));
+                            }
+                            defectContours.push_back(absoluteContour);
+                        }
+                    }
+                    
+                    result.insScores[pattern.id] = static_cast<double>(roiAnomalyScore);
+                    result.insResults[pattern.id] = !hasDefect;
+                    result.insMethodTypes[pattern.id] = InspectionMethod::A_PD;
+                    result.anomalyDefectContours[pattern.id] = defectContours;
+                    result.anomalyRawMap[pattern.id] = anomalyMap.clone();
+                    
+                    // 히트맵 생성
+                    cv::Mat normalized;
+                    anomalyMap.convertTo(normalized, CV_8U, 255.0 / 100.0);
+                    cv::Mat colorHeatmap;
+                    cv::applyColorMap(normalized, colorHeatmap, cv::COLORMAP_JET);
+                    result.anomalyHeatmap[pattern.id] = colorHeatmap.clone();
+                    result.anomalyHeatmapRect[pattern.id] = pattern.rect;
+                    
+                    result.isPassed = result.isPassed && !hasDefect;
+                    apdPatternCount++;
+                    
+                    QString insResultText = !hasDefect ? "PASS" : "NG";
+                    QString resultColor = !hasDefect ? "<font color='#00FF00'>" : "<font color='#FF0000'>";
+                    int defectCount = defectContours.size();
+                    
+                    if (defectCount > 0)
+                    {
+                        int maxW = 0, maxH = 0;
+                        for (const auto& contour : defectContours)
+                        {
+                            cv::Rect bbox = cv::boundingRect(contour);
+                            if (bbox.width > maxW) maxW = bbox.width;
+                            if (bbox.height > maxH) maxH = bbox.height;
+                        }
+                        logDebug(QString("  └─ <font color='#8BCB8B'>%1(A-PD)</font>: W:%2 H:%3 Detects:%4 (score=%5, thr=%6) [%7ms]")
+                            .arg(pattern.name).arg(maxW).arg(maxH).arg(defectCount)
+                            .arg(roiAnomalyScore, 0, 'f', 2).arg(pattern.passThreshold, 0, 'f', 2).arg(patternTime));
+                    }
+                    else
+                    {
+                        logDebug(QString("  └─ <font color='#8BCB8B'>%1(A-PD)</font>: %2%3</font> (score=%4, thr=%5) [%6ms]")
+                            .arg(pattern.name).arg(resultColor).arg(insResultText)
+                            .arg(roiAnomalyScore, 0, 'f', 2).arg(pattern.passThreshold, 0, 'f', 2).arg(patternTime));
                     }
                 }
             }
@@ -3071,12 +3503,15 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     
     auto anomalyStart = std::chrono::high_resolution_clock::now();
     
+    bool inferenceSuccess = false;
+    
+#ifdef USE_TENSORRT
     QMap<QString, std::vector<cv::Mat>> modelImages;
     modelImages[fullModelPath] = {roiImage};
     QMap<QString, std::vector<float>> modelScores;
     QMap<QString, std::vector<cv::Mat>> modelMaps;
     
-    bool inferenceSuccess = ImageProcessor::runPatchCoreTensorRTMultiModelInference(modelImages, modelScores, modelMaps);
+    inferenceSuccess = ImageProcessor::runPatchCoreTensorRTMultiModelInference(modelImages, modelScores, modelMaps);
     
     if (inferenceSuccess && modelScores.contains(fullModelPath) && !modelScores[fullModelPath].empty()) {
         anomalyScore = modelScores[fullModelPath][0];
@@ -3084,6 +3519,19 @@ bool InsProcessor::checkAnomaly(const cv::Mat &image, const PatternInfo &pattern
     } else {
         inferenceSuccess = false;
     }
+#elif defined(USE_ONNX)
+    // ONNX Runtime 사용
+    inferenceSuccess = ImageProcessor::runPatchCoreONNXInference(
+        fullModelPath,
+        roiImage,
+        anomalyScore,
+        anomalyMap,
+        pattern.passThreshold
+    );
+#else
+    // TensorRT와 ONNX가 모두 비활성화된 경우
+    inferenceSuccess = false;
+#endif
     
     auto anomalyEnd = std::chrono::high_resolution_clock::now();
     auto anomalyDuration = std::chrono::duration_cast<std::chrono::milliseconds>(anomalyEnd - anomalyStart).count();

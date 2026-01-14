@@ -2083,7 +2083,7 @@ void TeachingWidget::setupPreviewOverlay()
     // 메인 화면 오른쪽에 4개 미리보기 레이블 생성 (세로 배치)
     const int previewWidth = 240;
     const int previewHeight = 180;
-    const QStringList labels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
+    const QStringList labels = {"FRONT - STRIP", "FRONT - CRIMP", "REAR - STRIP", "REAR - CRIMP"};
     
     int rightMargin = 10;
     int topMargin = 70;
@@ -7995,7 +7995,7 @@ void TeachingWidget::updatePropertyPanel(PatternInfo *pattern, const FilterInfo 
             }
             
             // 프레임 인덱스에 맞는 레이블 추가
-            QStringList frameLabels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
+            QStringList frameLabels = {"FRONT - STRIP", "FRONT - CRIMP", "REAR - STRIP", "REAR - CRIMP"};
             if (pattern->frameIndex >= 0 && pattern->frameIndex < 4) {
                 typeText += " | " + frameLabels[pattern->frameIndex];
             }
@@ -9491,7 +9491,7 @@ void TeachingWidget::updatePreviewFrames()
         return;
 
     // 4개 미리보기 모두 업데이트
-    const QStringList labels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
+    const QStringList labels = {"FRONT - STRIP", "FRONT - CRIMP", "REAR - STRIP", "REAR - CRIMP"};
     
     for (int i = 0; i < 4; i++)
     {
@@ -9642,7 +9642,7 @@ void TeachingWidget::updateSinglePreviewWithFrame(int frameIndex, const cv::Mat&
     // ★ 프레임 갱신 카운트 증가
     frameUpdateCount[frameIndex]++;
     
-    const QStringList labels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
+    const QStringList labels = {"FRONT - STRIP", "FRONT - CRIMP", "REAR - STRIP", "REAR - CRIMP"};
     
     try
     {
@@ -10763,7 +10763,11 @@ void TeachingWidget::showModelManagement()
             if (success) {
                 qDebug() << "[TRAIN] 학습 완료됨. 모델 리로딩 시작...";
                 // 기존 모델 해제
+#ifdef USE_TENSORRT
                 ImageProcessor::releasePatchCoreTensorRT();
+#elif defined(USE_ONNX)
+                ImageProcessor::releasePatchCoreONNX();
+#endif
                 qDebug() << "[TRAIN] 모델 리로딩 완료. 새로 학습된 모델을 사용할 수 있습니다.";
                 
                 // results 폴더 정리 (학습 중 생성된 임시 파일들)
@@ -14251,9 +14255,15 @@ TeachingWidget::~TeachingWidget()
 
     // 11. ANOMALY 모델 해제
     qDebug() << "[~TeachingWidget] ANOMALY 모델 해제 시작";
+#ifdef USE_TENSORRT
     if (ImageProcessor::isTensorRTPatchCoreLoaded()) {
         ImageProcessor::releasePatchCoreTensorRT();
     }
+#elif defined(USE_ONNX)
+    if (ImageProcessor::isONNXPatchCoreLoaded()) {
+        ImageProcessor::releasePatchCoreONNX();
+    }
+#endif
     qDebug() << "[~TeachingWidget] ANOMALY 모델 해제 완료";
     
     // 12. OpenCV 전역 리소스 해제 (생략 - mutex 문제 가능성)
@@ -16597,14 +16607,21 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
                     pattern.inspectionMethod == InspectionMethod::A_PC)
                 {
                     QString appDir = QCoreApplication::applicationDirPath();
-                    // 패턴 이름 기반으로 모델 경로 구성: weights/{패턴명}/{패턴명}.xml
+                    // 패턴 이름 기반으로 모델 경로 구성: weights/{패턴명}/{패턴명}.xml or .onnx
+#ifdef USE_TENSORRT
                     QString fullModelPath = appDir + "/weights/" + pattern.name + "/" + pattern.name + ".xml";
-                    
                     if (QFile::exists(fullModelPath))
                     {
                         ImageProcessor::initPatchCoreTensorRT(fullModelPath, "CPU");
-                        // break 제거 - 모든 ANOMALY 패턴의 모델을 로드
                     }
+#elif defined(USE_ONNX)
+                    QString fullModelPath = appDir + "/weights/" + pattern.name + "/" + pattern.name + ".onnx";
+                    if (QFile::exists(fullModelPath))
+                    {
+                        ImageProcessor::initPatchCoreONNX(fullModelPath);
+                    }
+#endif
+                    // break 제거 - 모든 ANOMALY 패턴의 모델을 로드
                 }
             }
         }
@@ -17200,14 +17217,25 @@ void TeachingWidget::trainAnomalyPattern(const QString& patternName)
         
         if (exitStatus == QProcess::NormalExit && exitCode == 0) {
             // 기존 모델 해제 (새로 학습된 모델 강제 재로드를 위해)
+            QString fullModelPath;
+#ifdef USE_TENSORRT
             ImageProcessor::releasePatchCoreTensorRT();
+            fullModelPath = QCoreApplication::applicationDirPath() + QString("/weights/%1/%1.xml").arg(pattern.name);
+#elif defined(USE_ONNX)
+            ImageProcessor::releasePatchCoreONNX();
+            fullModelPath = QCoreApplication::applicationDirPath() + QString("/weights/%1/%1.onnx").arg(pattern.name);
+#endif
             
             // 학습된 모델을 즉시 메모리에 적재 (정규화 통계도 자동 로드됨)
-            QString fullModelPath = QCoreApplication::applicationDirPath() + QString("/weights/%1/%1.xml").arg(pattern.name);
-            
             qDebug() << "[ANOMALY TRAIN] Training completed in" << totalTimeStr << "- Loading model:" << fullModelPath;
             
+#ifdef USE_TENSORRT
             if (ImageProcessor::initPatchCoreTensorRT(fullModelPath)) {
+#elif defined(USE_ONNX)
+            if (ImageProcessor::initPatchCoreONNX(fullModelPath)) {
+#else
+            if (false) {
+#endif
                 qDebug() << "[ANOMALY TRAIN] Model loaded successfully!";
                 CustomMessageBox msgBox(this, CustomMessageBox::Information, "Training Complete",
                     QString("Model training completed and loaded.\nPattern: %1\nPath: %2\nTime: %3")

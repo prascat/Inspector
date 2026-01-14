@@ -17,7 +17,7 @@
 TestDialog::TestDialog(TeachingWidget *parent)
     : QDialog(parent)
     , teachingWidget(parent)
-    , currentStripCrimpMode(0) // 기본값: STRIP
+    , currentInspectionArea(0) // 기본값: FRONT-STRIP
     , isDragging(false)
 {
     setWindowTitle("테스트 검사");
@@ -26,14 +26,9 @@ TestDialog::TestDialog(TeachingWidget *parent)
     
     setupUI();
     
-    // STRIP/CRIMP 모드 동기화
-    if (teachingWidget) {
-        currentStripCrimpMode = 0; // 기본값
-        if (currentStripCrimpMode == 0) {
-            stripRadio->setChecked(true);
-        } else {
-            crimpRadio->setChecked(true);
-        }
+    // 검사 영역 초기화
+    if (teachingWidget && areaComboBox) {
+        areaComboBox->setCurrentIndex(0);
     }
 }
 
@@ -41,23 +36,17 @@ TestDialog::~TestDialog()
 {
 }
 
-void TestDialog::syncStripCrimpMode(int mode)
+void TestDialog::syncInspectionArea(int area)
 {
-    currentStripCrimpMode = mode;
+    if (area < 0 || area > 3) return;
     
-    // 라디오 버튼 업데이트 (시그널 발생 방지)
-    if (stripRadio && crimpRadio) {
-        stripRadio->blockSignals(true);
-        crimpRadio->blockSignals(true);
-        
-        if (mode == 0) {
-            stripRadio->setChecked(true);
-        } else {
-            crimpRadio->setChecked(true);
-        }
-        
-        stripRadio->blockSignals(false);
-        crimpRadio->blockSignals(false);
+    currentInspectionArea = area;
+    
+    // 콤보박스 업데이트 (시그널 발생 방지)
+    if (areaComboBox) {
+        areaComboBox->blockSignals(true);
+        areaComboBox->setCurrentIndex(area);
+        areaComboBox->blockSignals(false);
     }
 }
 
@@ -67,39 +56,48 @@ void TestDialog::setupUI()
     mainLayout->setSpacing(10);
     mainLayout->setContentsMargins(15, 15, 15, 15);
     
-    // 상단 모드 선택 및 버튼
+    // 상단 검사 영역 선택 및 버튼
     QHBoxLayout *topLayout = new QHBoxLayout();
     
-    // STRIP/CRIMP 라디오 버튼
-    QLabel *modeTitle = new QLabel("검사 모드:", this);
-    modeTitle->setStyleSheet("QLabel { color: #ffffff; font-size: 14px; font-weight: bold; }");
-    topLayout->addWidget(modeTitle);
+    // 검사 영역 콤보박스
+    QLabel *areaTitle = new QLabel("검사 영역:", this);
+    areaTitle->setStyleSheet("QLabel { color: #ffffff; font-size: 14px; font-weight: bold; }");
+    topLayout->addWidget(areaTitle);
     
-    stripRadio = new QRadioButton("STRIP", this);
-    stripRadio->setStyleSheet("QRadioButton { color: #ffffff; font-size: 13px; }");
-    stripRadio->setChecked(true);
-    topLayout->addWidget(stripRadio);
+    areaComboBox = new QComboBox(this);
+    areaComboBox->addItem("FRONT - STRIP");  // 0
+    areaComboBox->addItem("FRONT - CRIMP");  // 1
+    areaComboBox->addItem("REAR - STRIP");   // 2
+    areaComboBox->addItem("REAR - CRIMP");   // 3
+    areaComboBox->setStyleSheet(
+        "QComboBox { "
+        "    color: #ffffff; "
+        "    background-color: #2d2d2d; "
+        "    border: 1px solid #555555; "
+        "    padding: 5px; "
+        "    font-size: 13px; "
+        "    min-width: 150px; "
+        "} "
+        "QComboBox::drop-down { "
+        "    border: none; "
+        "} "
+        "QComboBox::down-arrow { "
+        "    image: url(noimg); "
+        "    border-left: 5px solid transparent; "
+        "    border-right: 5px solid transparent; "
+        "    border-top: 5px solid #ffffff; "
+        "} "
+        "QComboBox QAbstractItemView { "
+        "    color: #ffffff; "
+        "    background-color: #2d2d2d; "
+        "    selection-background-color: #4a4a4a; "
+        "    border: 1px solid #555555; "
+        "}"
+    );
+    topLayout->addWidget(areaComboBox);
     
-    crimpRadio = new QRadioButton("CRIMP", this);
-    crimpRadio->setStyleSheet("QRadioButton { color: #ffffff; font-size: 13px; }");
-    topLayout->addWidget(crimpRadio);
-    
-    // 라디오 버튼 그룹
-    QButtonGroup *modeGroup = new QButtonGroup(this);
-    modeGroup->addButton(stripRadio, 0);
-    modeGroup->addButton(crimpRadio, 1);
-    
-    connect(stripRadio, &QRadioButton::toggled, this, [this](bool checked) {
-        if (checked) {
-            onStripCrimpModeChanged(0);
-        }
-    });
-    
-    connect(crimpRadio, &QRadioButton::toggled, this, [this](bool checked) {
-        if (checked) {
-            onStripCrimpModeChanged(1);
-        }
-    });
+    connect(areaComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), 
+            this, &TestDialog::onInspectionAreaChanged);
     
     topLayout->addStretch();
     
@@ -305,14 +303,8 @@ void TestDialog::onImageSelected(QListWidgetItem *item)
     if (teachingWidget) {
         cv::Mat image = cv::imread(imagePath.toStdString());
         if (!image.empty()) {
-            // 현재 모드에 맞게 cameraFrame 업데이트
-            if (currentStripCrimpMode == 0) {
-                // STRIP 모드
-                teachingWidget->setCameraFrame(0, image);
-            } else {
-                // CRIMP 모드
-                teachingWidget->setCameraFrame(1, image);
-            }
+            // 현재 영역에 맞게 cameraFrame 업데이트
+            teachingWidget->setCameraFrame(currentInspectionArea, image);
         }
     }
 }
@@ -331,11 +323,12 @@ void TestDialog::onRunTest()
     
     // 검사 시작 전 기존 결과 모두 클리어
     resultTableWidget->setRowCount(0);
-    stripResults.clear();
-    crimpResults.clear();
+    for (int i = 0; i < 4; i++) {
+        areaResults[i].clear();
+    }
     
-    // 현재 선택된 라디오 버튼 모드 사용
-    // currentStripCrimpMode는 이미 라디오 버튼 토글로 업데이트됨
+    // 현재 선택된 콤보박스 영역 사용
+    // currentInspectionArea는 이미 콤보박스로 업데이트됨
     
     int totalImages = imagePathList.size();
     int processedImages = 0;
@@ -362,8 +355,7 @@ void TestDialog::runInspectionOnImage(const QString &imagePath)
     }
     
     // TeachingWidget의 cameraFrames에 이미지 설정
-    int imageIndex = (currentStripCrimpMode == 0) ? 0 : 1;
-    teachingWidget->setCameraFrame(imageIndex, image);
+    teachingWidget->setCameraFrame(currentInspectionArea, image);
     
     // RUN 버튼을 물리적으로 클릭 (FID 검출 및 패턴 회전 처리 포함)
     teachingWidget->triggerRunButton();
@@ -438,12 +430,8 @@ void TestDialog::runInspectionOnImage(const QString &imagePath)
         resultRow.patternResults[pattern->name] = resultText;
     }
     
-    // 현재 모드의 결과 리스트에 추가
-    if (currentStripCrimpMode == 0) {
-        stripResults.append(resultRow);
-    } else {
-        crimpResults.append(resultRow);
-    }
+    // 현재 영역의 결과 리스트에 추가
+    areaResults[currentInspectionArea].append(resultRow);
     
     // 검사 완료 후 RUN 버튼 다시 끄기 (STOP 상태로 만들기)
     teachingWidget->triggerRunButton();
@@ -499,26 +487,24 @@ void TestDialog::onClearResults()
 {
     resultTableWidget->setRowCount(0);
     
-    // 현재 모드의 저장된 결과도 클리어
-    if (currentStripCrimpMode == 0) {
-        stripResults.clear();
-    } else {
-        crimpResults.clear();
-    }
+    // 현재 영역의 저장된 결과도 클리어
+    areaResults[currentInspectionArea].clear();
     
     statusLabel->setText("결과 지워짐");
 }
 
-void TestDialog::onStripCrimpModeChanged(int mode)
+void TestDialog::onInspectionAreaChanged(int index)
 {
-    currentStripCrimpMode = mode;
+    if (index < 0 || index > 3) return;
     
-    // TeachingWidget의 setStripCrimpMode 호출 (레시피 자동 변경)
+    currentInspectionArea = index;
+    
+    // TeachingWidget의 카메라 프레임 인덱스 변경 (0,1,2,3)
     if (teachingWidget) {
-        // setStripCrimpMode 제거됨
+        // 필요하면 TeachingWidget에 영역 변경 알림
     }
     
-    // 모드 변경 시 테이블 재구성 (INS 패턴이 모드별로 다름)
+    // 영역 변경 시 테이블 재구성 (INS 패턴이 영역별로 다름)
     rebuildResultTable();
 }
 
@@ -552,7 +538,7 @@ void TestDialog::rebuildResultTable()
     QList<PatternInfo> patterns = cameraView->getPatterns();
     
     qDebug() << "[TestDialog] rebuildResultTable - 전체 패턴 수:" << patterns.size() 
-             << "현재 모드:" << currentStripCrimpMode;
+             << "현재 영역:" << currentInspectionArea;
     
     // INS 패턴 필터링
     QStringList insPatternNames;
@@ -598,7 +584,7 @@ void TestDialog::rebuildResultTable()
     
     resultTableWidget->horizontalHeader()->setStretchLastSection(true);
     
-    qDebug() << "[TestDialog] 테이블 재구성 완료 - 현재 모드:" << (currentStripCrimpMode == 0 ? "STRIP" : "CRIMP")
+    qDebug() << "[TestDialog] 테이블 재구성 완료 - 현재 영역:" << currentInspectionArea
              << ", INS 패턴 수:" << insPatternNames.size() << ", 총 컬럼:" << totalColumns;
 }
 
@@ -684,8 +670,7 @@ void TestDialog::onResultTableClicked(int row, int column)
     }
     
     // TeachingWidget의 cameraFrames에 이미지 설정
-    int imageIndex = (currentStripCrimpMode == 0) ? 0 : 1;
-    teachingWidget->setCameraFrame(imageIndex, image);
+    teachingWidget->setCameraFrame(currentInspectionArea, image);
     
     // RUN 버튼을 물리적으로 클릭 (검사 실행)
     teachingWidget->triggerRunButton();
@@ -722,7 +707,12 @@ void TestDialog::closeEvent(QCloseEvent *event)
 
 bool TestDialog::hasUnsavedResults() const
 {
-    return !stripResults.isEmpty() || !crimpResults.isEmpty();
+    for (int i = 0; i < 4; i++) {
+        if (!areaResults[i].isEmpty()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void TestDialog::onSaveResults()
@@ -796,8 +786,9 @@ void TestDialog::onSaveResults()
         }
         
         // 저장 성공 시 결과 클리어
-        stripResults.clear();
-        crimpResults.clear();
+        for (int i = 0; i < 4; i++) {
+            areaResults[i].clear();
+        }
         
         CustomMessageBox msgBox(this);
         msgBox.setIcon(CustomMessageBox::Information);
@@ -831,29 +822,20 @@ void TestDialog::saveResultsToTxt(const QString &filePath)
     out << "===============================================\n";
     out << "생성 일시: " << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss") << "\n\n";
     
-    // STRIP 결과
-    if (!stripResults.isEmpty()) {
-        out << "[ STRIP 모드 검사 결과 ]\n";
-        out << "-----------------------------------------------\n";
-        
-        for (const TestResultRow &row : stripResults) {
-            out << "시간: " << row.timestamp << " | 이미지: " << row.imageName << "\n";
-            for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
-                out << "  - " << it.key() << ": " << it.value() << "\n";
-            }
-            out << "\n";
-        }
-    }
+    // 각 영역별 결과
+    const QStringList areaNames = {"FRONT - STRIP", "FRONT - CRIMP", "REAR - STRIP", "REAR - CRIMP"};
     
-    // CRIMP 결과
-    if (!crimpResults.isEmpty()) {
-        out << "[ CRIMP 모드 검사 결과 ]\n";
-        out << "-----------------------------------------------\n";
-        
-        for (const TestResultRow &row : crimpResults) {
-            out << "시간: " << row.timestamp << " | 이미지: " << row.imageName << "\n";
-            for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
-                out << "  - " << it.key() << ": " << it.value() << "\n";
+    for (int area = 0; area < 4; area++) {
+        if (!areaResults[area].isEmpty()) {
+            out << "[ " << areaNames[area] << " 검사 결과 ]\n";
+            out << "-----------------------------------------------\n";
+            
+            for (const TestResultRow &row : areaResults[area]) {
+                out << "시간: " << row.timestamp << " | 이미지: " << row.imageName << "\n";
+                for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
+                    out << "  - " << it.key() << ": " << it.value() << "\n";
+                }
+                out << "\n";
             }
             out << "\n";
         }
@@ -877,44 +859,28 @@ void TestDialog::saveResultsToXml(const QString &filePath)
     xml.writeStartElement("TestResults");
     xml.writeAttribute("generatedAt", QDateTime::currentDateTime().toString(Qt::ISODate));
     
-    // STRIP 결과
-    if (!stripResults.isEmpty()) {
-        xml.writeStartElement("StripMode");
-        for (const TestResultRow &row : stripResults) {
-            xml.writeStartElement("Result");
-            xml.writeAttribute("timestamp", row.timestamp);
-            xml.writeAttribute("image", row.imageName);
-            
-            for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
-                xml.writeStartElement("Pattern");
-                xml.writeAttribute("name", it.key());
-                xml.writeAttribute("result", it.value());
-                xml.writeEndElement();
-            }
-            
-            xml.writeEndElement(); // Result
-        }
-        xml.writeEndElement(); // StripMode
-    }
+    // 각 영역별 결과
+    const QStringList areaNames = {"FrontStrip", "FrontCrimp", "RearStrip", "RearCrimp"};
     
-    // CRIMP 결과
-    if (!crimpResults.isEmpty()) {
-        xml.writeStartElement("CrimpMode");
-        for (const TestResultRow &row : crimpResults) {
-            xml.writeStartElement("Result");
-            xml.writeAttribute("timestamp", row.timestamp);
-            xml.writeAttribute("image", row.imageName);
-            
-            for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
-                xml.writeStartElement("Pattern");
-                xml.writeAttribute("name", it.key());
-                xml.writeAttribute("result", it.value());
-                xml.writeEndElement();
+    for (int area = 0; area < 4; area++) {
+        if (!areaResults[area].isEmpty()) {
+            xml.writeStartElement(areaNames[area]);
+            for (const TestResultRow &row : areaResults[area]) {
+                xml.writeStartElement("Result");
+                xml.writeAttribute("timestamp", row.timestamp);
+                xml.writeAttribute("image", row.imageName);
+                
+                for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
+                    xml.writeStartElement("Pattern");
+                    xml.writeAttribute("name", it.key());
+                    xml.writeAttribute("result", it.value());
+                    xml.writeEndElement();
+                }
+                
+                xml.writeEndElement(); // Result
             }
-            
-            xml.writeEndElement(); // Result
+            xml.writeEndElement(); // Area
         }
-        xml.writeEndElement(); // CrimpMode
     }
     
     xml.writeEndElement(); // TestResults
@@ -932,42 +898,27 @@ void TestDialog::saveResultsToJson(const QString &filePath)
     QJsonObject root;
     root["generatedAt"] = QDateTime::currentDateTime().toString(Qt::ISODate);
     
-    // STRIP 결과
-    if (!stripResults.isEmpty()) {
-        QJsonArray stripArray;
-        for (const TestResultRow &row : stripResults) {
-            QJsonObject resultObj;
-            resultObj["timestamp"] = row.timestamp;
-            resultObj["image"] = row.imageName;
-            
-            QJsonObject patternsObj;
-            for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
-                patternsObj[it.key()] = it.value();
-            }
-            resultObj["patterns"] = patternsObj;
-            
-            stripArray.append(resultObj);
-        }
-        root["stripMode"] = stripArray;
-    }
+    // 각 영역별 결과
+    const QStringList areaNames = {"frontStrip", "frontCrimp", "rearStrip", "rearCrimp"};
     
-    // CRIMP 결과
-    if (!crimpResults.isEmpty()) {
-        QJsonArray crimpArray;
-        for (const TestResultRow &row : crimpResults) {
-            QJsonObject resultObj;
-            resultObj["timestamp"] = row.timestamp;
-            resultObj["image"] = row.imageName;
-            
-            QJsonObject patternsObj;
-            for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
-                patternsObj[it.key()] = it.value();
+    for (int area = 0; area < 4; area++) {
+        if (!areaResults[area].isEmpty()) {
+            QJsonArray areaArray;
+            for (const TestResultRow &row : areaResults[area]) {
+                QJsonObject resultObj;
+                resultObj["timestamp"] = row.timestamp;
+                resultObj["image"] = row.imageName;
+                
+                QJsonObject patternsObj;
+                for (auto it = row.patternResults.begin(); it != row.patternResults.end(); ++it) {
+                    patternsObj[it.key()] = it.value();
+                }
+                resultObj["patterns"] = patternsObj;
+                
+                areaArray.append(resultObj);
             }
-            resultObj["patterns"] = patternsObj;
-            
-            crimpArray.append(resultObj);
+            root[areaNames[area]] = areaArray;
         }
-        root["crimpMode"] = crimpArray;
     }
     
     QJsonDocument doc(root);

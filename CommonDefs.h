@@ -44,7 +44,7 @@
 #define LABEL_FONT_WEIGHT QFont::Bold
 
 // 프레임별 스테이지 레이블 (4분할 화면용)
-const QStringList FRAME_LABELS = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
+const QStringList FRAME_LABELS = {"FRONT - STRIP", "FRONT - CRIMP", "REAR - STRIP", "REAR - CRIMP"};
 
 struct InspectionResult {
     bool isPassed = false;
