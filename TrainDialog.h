@@ -59,6 +59,7 @@ private slots:
     void onPatternSelectionChanged();
     void onPadimPatternSelectionChanged();
     void onStartAutoTrainClicked();
+    void onMatchingTestClicked();
     void onImageItemClicked(QListWidgetItem* item);
     void onTrainOutputReady();
     void onTrainFinished(int exitCode, QProcess::ExitStatus exitStatus);
@@ -84,6 +85,11 @@ private:
     void updateTrainingStatus();  // weights 폴더 체크하여 학습 여부 갱신
     QString getTotalTimeString() const;  // 총 경과 시간 문자열 반환
     QString getPatternProgressString() const;  // 패턴 진행률 문자열 반환 [1/3]
+    
+    // 패턴 매칭 공통 함수
+    bool performPatternMatching(const cv::Mat& image, PatternInfo* targetPattern,
+                                int& finalRoiX, int& finalRoiY, double& matchScore,
+                                cv::Mat* visualizationImage = nullptr);
 
     QTabWidget *modelTabWidget;
     
@@ -105,6 +111,7 @@ private:
     QPushButton *addImagesButton;
     QPushButton *deleteSelectedImageButton;
     QPushButton *autoTrainButton;
+    QPushButton *matchingTestButton;
     QLabel *imageCountLabel;
     
     // 이미지 미리보기 리스트
@@ -121,6 +128,7 @@ private:
     
     // 공용 캡처된 이미지 저장 (모든 패턴이 공유)
     QVector<cv::Mat> commonImages;
+    QVector<int> imageFrameIndexes;  // 각 이미지의 프레임 인덱스 (0~3)
     
     // 현재 선택된 패턴 이름
     QString currentSelectedPattern;

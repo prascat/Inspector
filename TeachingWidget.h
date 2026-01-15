@@ -235,6 +235,9 @@ public:
     int getCameraIndex() const { return cameraIndex; }
     const std::array<cv::Mat, 4>& getCameraFrames() const { return cameraFrames; }
     
+    // 강제 camOff (프로그램 종료 시 사용)
+    void forceCamOff();
+    
     // 패턴 업데이트 중 UI 업데이트 방지
     void setUpdatingPattern(bool updating) { isUpdatingPattern = updating; }
     bool getUpdatingPattern() const { return isUpdatingPattern; }
@@ -290,6 +293,7 @@ private slots:
 
     void showServerSettings();
     void showSerialSettings();
+    void showCameraSettings();
     void showModelManagement();
     void showTestDialog();
     void openGeneralSettings() {
@@ -394,6 +398,7 @@ private:
     QAction* aboutAction = nullptr;
     QAction* serverSettingsAction = nullptr;
     QAction* serialSettingsAction = nullptr;
+    QAction* cameraSettingsAction = nullptr;
     QAction* modelManagementAction = nullptr;
     QAction* testDialogAction = nullptr;
     

@@ -4,6 +4,7 @@
 
 #include "LanguageSettingsDialog.h"
 #include "SerialSettingsDialog.h"
+#include "CameraSettingsDialog.h"
 #include "ClientDialog.h"
 #include "SerialCommunication.h"
 #include "LanguageManager.h"
@@ -414,20 +415,13 @@ void CameraGrabberThread::run()
         // ★ 중요: 트리거 모드에서는 frameGrabbed 신호를 발생시키지 않음 (triggerSignalReceived만 사용)
         if (grabbed && !frame.empty() && !isTriggerMode)
         {
-            // **라이브 모드에서도 프레임 인덱스 사용 (트리거와 동일)**
+            // **라이브 모드에서는 cameraFrames 저장 안 함 (트리거 모드에서만 저장)**
+            // 미리보기 업데이트만 수행
             if (m_cameraIndex >= 0 && m_cameraIndex < 2)
             {
                 cv::Mat frameCopy = frame.clone();
                 int baseFrameIndex = m_cameraIndex * 2;
                 
-                {
-                    QMutexLocker locker(&parent->cameraFramesMutex);
-                    // 카메라 0 → 프레임 0, 1 / 카메라 1 → 프레임 2, 3
-                    parent->cameraFrames[baseFrameIndex] = frameCopy.clone();     // STRIP
-                    parent->cameraFrames[baseFrameIndex + 1] = frameCopy.clone(); // CRIMP
-                }
-                
-                // 미리보기 업데이트 (레시피 없어도 표시)
                 QMetaObject::invokeMethod(parent, [parent, baseFrameIndex, frameCopy]() {
                     if (parent->previewOverlayLabels[baseFrameIndex]) {
                         parent->updateSinglePreviewWithFrame(baseFrameIndex, frameCopy);
@@ -1102,6 +1096,9 @@ QVBoxLayout *TeachingWidget::createMainLayout()
 
     serverSettingsAction = settingsMenu->addAction(TR("SERVER_SETTINGS"));
     serverSettingsAction->setEnabled(true);
+    
+    cameraSettingsAction = settingsMenu->addAction("카메라 설정");
+    cameraSettingsAction->setEnabled(true);
 
     languageSettingsAction = settingsMenu->addAction(TR("LANGUAGE_SETTINGS"));
     languageSettingsAction->setEnabled(true);
@@ -1129,6 +1126,7 @@ QVBoxLayout *TeachingWidget::createMainLayout()
     connect(serverSettingsAction, &QAction::triggered, this, &TeachingWidget::showServerSettings);
     connect(languageSettingsAction, &QAction::triggered, this, &TeachingWidget::openLanguageSettings);
     connect(serialSettingsAction, &QAction::triggered, this, &TeachingWidget::showSerialSettings);
+    connect(cameraSettingsAction, &QAction::triggered, this, &TeachingWidget::showCameraSettings);
     connect(aboutAction, &QAction::triggered, this, &TeachingWidget::showAboutDialog);
     connect(modelManagementAction, &QAction::triggered, this, &TeachingWidget::showModelManagement);
     connect(testDialogAction, &QAction::triggered, this, &TeachingWidget::showTestDialog);
@@ -7174,6 +7172,9 @@ void TeachingWidget::connectPropertyPanelEvents()
                                     pattern->stripRearThicknessMin = value;
                                     cameraView->updatePatternById(patternId, *pattern);
                                     cameraView->update();
+                                    if (cameraView->viewport()) {
+                                        cameraView->viewport()->update();
+                                    }
                                 }
                             }
                         }
@@ -7203,6 +7204,9 @@ void TeachingWidget::connectPropertyPanelEvents()
                                     pattern->stripRearThicknessMax = value;
                                     cameraView->updatePatternById(patternId, *pattern);
                                     cameraView->update();
+                                    if (cameraView->viewport()) {
+                                        cameraView->viewport()->update();
+                                    }
                                 }
                             }
                         }
@@ -9720,9 +9724,14 @@ void TeachingWidget::updateSinglePreviewWithFrame(int frameIndex, const cv::Mat&
         return;
     }
     
+    // Widget이 숨겨지거나 삭제 중이면 무시
+    if (this->isHidden() || !this->isVisible()) {
+        return;
+    }
+    
     // QPointer로 레이블 안전성 체크
     QPointer<QLabel> safeLabel = previewOverlayLabels[frameIndex];
-    if (!safeLabel || previewFrame.empty()) {
+    if (!safeLabel || safeLabel->isHidden() || previewFrame.empty()) {
         return;
     }
     
@@ -9737,7 +9746,7 @@ void TeachingWidget::updateSinglePreviewWithFrame(int frameIndex, const cv::Mat&
         QString text = labels[frameIndex];
         
         // 패턴(레시피)이 있는지 확인
-        bool hasRecipe = cameraView && !cameraView->getPatterns().isEmpty();
+        bool hasRecipe = cameraView && !cameraView->isHidden() && !cameraView->getPatterns().isEmpty();
         
         // 작업용 프레임 생성 (const 문제 해결)
         cv::Mat workFrame = previewFrame.clone();
@@ -9771,25 +9780,29 @@ void TeachingWidget::updateSinglePreviewWithFrame(int frameIndex, const cv::Mat&
                    cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 255, 255), 2);
         
         // 검사 결과가 있고 레시피가 있으면 결과 텍스트 추가 (색상 있음)
-        if (hasRecipe && cameraView && cameraView->hasModeResult(frameIndex))
+        if (hasRecipe && cameraView && !cameraView->isHidden() && cameraView->hasModeResult(frameIndex))
         {
-            const InspectionResult& result = cameraView->getFrameResult(frameIndex);
-            QString resultText;
-            cv::Scalar resultColor;
-            
-            if (result.isPassed) {
-                resultText = " (PASS)";
-                resultColor = cv::Scalar(0, 255, 0); // BGR - 밝은 초록
-            } else {
-                resultText = " (NG)";
-                resultColor = cv::Scalar(0, 0, 255); // BGR - 빨강
+            try {
+                const InspectionResult& result = cameraView->getFrameResult(frameIndex);
+                QString resultText;
+                cv::Scalar resultColor;
+                
+                if (result.isPassed) {
+                    resultText = " (PASS)";
+                    resultColor = cv::Scalar(0, 255, 0); // BGR - 밝은 초록
+                } else {
+                    resultText = " (NG)";
+                    resultColor = cv::Scalar(0, 0, 255); // BGR - 빨강
+                }
+                
+                // 결과 텍스트 위치 계산 (기본 텍스트 오른쪽에 추가)
+                int resultX = 10 + textSize.width;
+                cv::putText(workFrame, resultText.toStdString(), 
+                           cv::Point(resultX, 10 + textSize.height), 
+                           cv::FONT_HERSHEY_SIMPLEX, 0.8, resultColor, 2);
+            } catch (const std::exception& e) {
+                qDebug() << "[updateSinglePreviewWithFrame] Result text failed:" << e.what();
             }
-            
-            // 결과 텍스트 위치 계산 (기본 텍스트 오른쪽에 추가)
-            int resultX = 10 + textSize.width;
-            cv::putText(workFrame, resultText.toStdString(), 
-                       cv::Point(resultX, 10 + textSize.height), 
-                       cv::FONT_HERSHEY_SIMPLEX, 0.8, resultColor, 2);
         }
         
         // 카운트 텍스트 그리기 (오른쪽 상단)
@@ -9911,9 +9924,14 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int triggerCa
 {
     auto triggerStartTime = std::chrono::high_resolution_clock::now();
     
+    // Widget이 숨겨지거나 삭제 중이면 무시
+    if (this->isHidden() || !this->isVisible()) {
+        return;
+    }
+    
     if (frame.empty() || triggerCameraIndex < 0)
     {
-        qDebug() << "[onTriggerSignalReceived] 프레임 empty 또는 유효하지 않은 카메라 인덱스";
+        qDebug() << "[onTriggerSignalReceived] Frame empty or invalid camera index";
         return;
     }
     
@@ -9956,47 +9974,63 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int triggerCa
     // **4분할 화면 갱신은 검사 완료 후에만 수행 (processNextInspection 내부에서)**
 
     // **패턴이 없으면 프레임만 4분할에 표시 (검사 스킵)**
-    if (!cameraView)
+    if (!cameraView || cameraView->isHidden())
     {
-        qDebug() << "[onTriggerSignalReceived] cameraView 없음 - 프레임 표시만 진행";
+        qDebug() << "[onTriggerSignalReceived] CameraView not ready - skip processing";
+        frameProcessing[frameIdx] = false;
         triggerProcessing = false;
         return;
     }
 
-    // ★★★ 하드웨어 트리거 들어오면 무조건 해당 프레임에 이미지 저장
-    {
+    // ★★★ 하드웨어 트리거 들어오면 설정에 따라 이미지 저장
+    if (ConfigManager::instance()->getSaveTriggerImages()) {
         QMutexLocker locker(&cameraFramesMutex);
         cameraFrames[frameIdx] = frameForInspection.clone();
         frameUpdatedFlags[frameIdx] = true;
     }
     
-    // 메인 카메라뷰 무조건 업데이트
-    if (cameraView)
+    // 메인 카메라뷰 무조건 업데이트 - UI 준비 확인
+    if (cameraView && !cameraView->isHidden())
     {
-        QImage qImage(frameForInspection.data, frameForInspection.cols, frameForInspection.rows, 
-                      frameForInspection.step, QImage::Format_BGR888);
-        QPixmap pixmap = QPixmap::fromImage(qImage);
-        
-        QMetaObject::invokeMethod(cameraView, [this, pixmap]() {
-            if (cameraView) {
-                cameraView->setBackgroundPixmap(pixmap);
-                cameraView->viewport()->update();
-            }
-        }, Qt::QueuedConnection);
+        try {
+            QImage qImage(frameForInspection.data, frameForInspection.cols, frameForInspection.rows, 
+                          frameForInspection.step, QImage::Format_BGR888);
+            QPixmap pixmap = QPixmap::fromImage(qImage);
+            
+            QMetaObject::invokeMethod(cameraView, [this, pixmap]() {
+                if (cameraView && !cameraView->isHidden()) {
+                    cameraView->setBackgroundPixmap(pixmap);
+                    cameraView->viewport()->update();
+                }
+            }, Qt::QueuedConnection);
+        } catch (const std::exception& e) {
+            qDebug() << "[onTriggerSignalReceived] CameraView update failed:" << e.what();
+        }
     }
     
-    // 4분할 화면에서 해당 프레임만 즉시 갱신
-    if (cameraView && cameraView->getQuadViewMode())
+    // 4분할 화면에서 해당 프레임만 즉시 갱신 - UI 준비 확인
+    if (cameraView && !cameraView->isHidden() && cameraView->getQuadViewMode())
     {
-        QMutexLocker locker(&cameraFramesMutex);
-        cameraView->setQuadFrames(cameraFrames);  // 배열 전체 전달하지만 frameIdx만 변경됨
-        cameraView->viewport()->update();
+        try {
+            QMutexLocker locker(&cameraFramesMutex);
+            cameraView->setQuadFrames(cameraFrames);  // 배열 전체 전달하지만 frameIdx만 변경됨
+            cameraView->viewport()->update();
+        } catch (const std::exception& e) {
+            qDebug() << "[onTriggerSignalReceived] Quad view update failed:" << e.what();
+        }
     }
     
     // ★★★ TEACH ON 상태일 때 해당 프레임의 미리보기 무조건 업데이트 (레시피 유무와 무관)
-    if (teachingEnabled && frameIdx >= 0 && frameIdx < 4 && previewOverlayLabels[frameIdx])
+    if (teachingEnabled && frameIdx >= 0 && frameIdx < 4)
     {
-        updateSinglePreviewWithFrame(frameIdx, frameForInspection);
+        QPointer<QLabel> safeLabel = previewOverlayLabels[frameIdx];
+        if (safeLabel && !safeLabel->isHidden()) {
+            try {
+                updateSinglePreviewWithFrame(frameIdx, frameForInspection);
+            } catch (const std::exception& e) {
+                qDebug() << "[onTriggerSignalReceived] Preview update failed:" << e.what();
+            }
+        }
     }
     
     // 해당 프레임의 패턴 리스트 사용 (미리 분리된 리스트)
@@ -10016,32 +10050,54 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int triggerCa
     currentDisplayFrameIndex = frameIdx;
     
     // ★ CameraView의 currentFrameIndex도 업데이트 (패턴 렌더링용)
-    if (cameraView) {
-        cameraView->setCurrentFrameIndex(frameIdx);
+    if (cameraView && !cameraView->isHidden()) {
+        try {
+            cameraView->setCurrentFrameIndex(frameIdx);
+        } catch (const std::exception& e) {
+            qDebug() << "[onTriggerSignalReceived] setCurrentFrameIndex failed:" << e.what();
+        }
     }
     
-    bool passed = runInspect(frameForInspection, triggerCameraIndex, false, frameIdx);
+    bool passed = false;
+    try {
+        passed = runInspect(frameForInspection, triggerCameraIndex, false, frameIdx);
+    } catch (const std::exception& e) {
+        qDebug() << "[onTriggerSignalReceived] runInspect failed:" << e.what();
+        frameProcessing[frameIdx] = false;
+        triggerProcessing = false;
+        return;
+    }
     
     // ★★★ 검사 완료 후 4분할 화면에 결과 저장 (카운트 업데이트)
-    if (cameraView && cameraView->getQuadViewMode()) {
-        // framePatternLists에서 현재 프레임의 패턴 가져오기
-        const QList<PatternInfo>& framePatterns = framePatternLists[frameIdx];
-        QString cameraName = (triggerCameraIndex >= 0 && triggerCameraIndex < cameraInfos.size()) ? cameraInfos[triggerCameraIndex].serialNumber : "";
-        
-        // 검사 결과 재획득
-        InspectionResult quadResult = insProcessor->performInspection(frameForInspection, framePatterns, cameraName);
-        
-        QImage qImage(frameForInspection.data, frameForInspection.cols, frameForInspection.rows, 
-                      frameForInspection.step, QImage::Format_BGR888);
-        QPixmap pixmap = QPixmap::fromImage(qImage);
-        cameraView->saveInspectionResultForMode(frameIdx, quadResult, pixmap);
+    if (cameraView && !cameraView->isHidden() && cameraView->getQuadViewMode()) {
+        try {
+            // framePatternLists에서 현재 프레임의 패턴 가져오기
+            const QList<PatternInfo>& framePatterns = framePatternLists[frameIdx];
+            QString cameraName = (triggerCameraIndex >= 0 && triggerCameraIndex < cameraInfos.size()) ? cameraInfos[triggerCameraIndex].serialNumber : "";
+            
+            // 검사 결과 재획득
+            InspectionResult quadResult = insProcessor->performInspection(frameForInspection, framePatterns, cameraName);
+            
+            QImage qImage(frameForInspection.data, frameForInspection.cols, frameForInspection.rows, 
+                          frameForInspection.step, QImage::Format_BGR888);
+            QPixmap pixmap = QPixmap::fromImage(qImage);
+            cameraView->saveInspectionResultForMode(frameIdx, quadResult, pixmap);
+        } catch (const std::exception& e) {
+            qDebug() << "[onTriggerSignalReceived] Result save failed:" << e.what();
+        }
     }
     
     // ★ 검사 후 패턴 트리 업데이트 및 화면 갱신 (UI 스레드에서 실행)
     QMetaObject::invokeMethod(this, [this]() {
-        updatePatternTree();
-        if (cameraView) {
-            cameraView->viewport()->update();
+        if (this && !this->isHidden()) {
+            try {
+                updatePatternTree();
+                if (cameraView && !cameraView->isHidden()) {
+                    cameraView->viewport()->update();
+                }
+            } catch (const std::exception& e) {
+                qDebug() << "[onTriggerSignalReceived] Pattern tree update failed:" << e.what();
+            }
         }
     }, Qt::QueuedConnection);
     
@@ -10076,9 +10132,83 @@ void TeachingWidget::startCamera()
     if (!camOff) {
         qDebug() << "[startCamera] 카메라가 이미 실행 중 - 먼저 중지합니다";
         stopCamera();
-        QThread::msleep(800);  // ★★★ 딜레이 증가 (USB 하드웨어 리셋 대기)
+        QThread::msleep(1500);  // ★★★ 딜레이 대폭 증가 (Spinnaker System 완전 해제 대기)
         qDebug() << "[startCamera] stopCamera 완료 후 대기 완료";
     }
+
+#ifdef USE_SPINNAKER
+    // ★★★ [핵심] Spinnaker System 완전히 새로 초기화
+    if (m_useSpinnaker) {
+        qDebug() << "[startCamera] Checking Spinnaker System...";
+        
+        // System이 없거나 손상된 경우 재초기화
+        bool needReinit = false;
+        if (m_spinSystem == nullptr) {
+            qDebug() << "[startCamera] System is nullptr - need initialization";
+            needReinit = true;
+        } else {
+            // System 유효성 검증
+            try {
+                Spinnaker::CameraList testList = m_spinSystem->GetCameras();
+                testList.Clear();
+                qDebug() << "[startCamera] System is valid - reusing";
+            } catch (...) {
+                qDebug() << "[startCamera] System is invalid - need reinitialization";
+                needReinit = true;
+            }
+        }
+        
+        if (needReinit) {
+            qDebug() << "[startCamera] Spinnaker System 재초기화 시작...";
+            
+            // 기존 System 완전히 정리
+            if (m_spinSystem != nullptr) {
+                try {
+                    qDebug() << "[startCamera] 기존 Spinnaker System 해제 중...";
+                    m_spinSystem->ReleaseInstance();
+                    m_spinSystem = nullptr;
+                    QThread::msleep(500);
+                } catch (...) {
+                    qDebug() << "[startCamera] 기존 System 해제 실패 (무시)";
+                    m_spinSystem = nullptr;
+                }
+            }
+            
+            // Spinnaker SDK 재초기화
+            if (!initSpinnakerSDK()) {
+                qDebug() << "[startCamera] ✖ Spinnaker SDK 재초기화 실패";
+                CustomMessageBox msgBox(this);
+                msgBox.setIcon(CustomMessageBox::Critical);
+                msgBox.setTitle("카메라 오류");
+                msgBox.setMessage("Spinnaker SDK 초기화에 실패했습니다.\n\n해결 방법:\n1. 프로그램을 완전히 종료 후 재시작\n2. USB 케이블 재연결\n3. 시스템 재부팅");
+                msgBox.setButtons(QMessageBox::Ok);
+                msgBox.exec();
+                
+                camOff = true;
+                if (cameraView) cameraView->setTeachOff(true);
+                updateCameraButtonState(false);
+                return;
+            }
+            
+            QThread::msleep(500);  // ★★★ SDK 초기화 안정화 대기 증가
+            qDebug() << "[startCamera] ✓ Spinnaker System 재초기화 완료";
+        }
+    } else {
+        // Spinnaker 사용 불가 상태
+        qDebug() << "[startCamera] ✖ Spinnaker is disabled - cannot start camera";
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Warning);
+        msgBox.setTitle("카메라 사용 불가");
+        msgBox.setMessage("Spinnaker SDK가 비활성화되어 있습니다.\n프로그램을 재시작해주세요.");
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
+        
+        camOff = true;
+        if (cameraView) cameraView->setTeachOff(true);
+        updateCameraButtonState(false);
+        return;
+    }
+#endif
 
     // ★ CAM ON 상태로 변경
     camOff = false;
@@ -10239,6 +10369,27 @@ void TeachingWidget::startCamera()
     updatePatternTree();
 }
 
+// ★ 강제 camOff (프로그램 종료 시 호출)
+void TeachingWidget::forceCamOff()
+{
+    qDebug() << "[forceCamOff] Forcing camera shutdown...";
+    
+    if (camOff) {
+        qDebug() << "[forceCamOff] Already in camOff state";
+        return;
+    }
+    
+    // stopCamera()를 직접 호출 (모든 카메라 정리 로직 포함)
+    try {
+        stopCamera();
+        qDebug() << "[forceCamOff] stopCamera() completed successfully";
+    } catch (...) {
+        qDebug() << "[forceCamOff] Exception during stopCamera() - ignoring";
+        // 예외 발생 시에도 camOff 상태는 true로 설정
+        camOff = true;
+    }
+}
+
 void TeachingWidget::updateCameraButtonState(bool isStarted)
 {
     if (!startCameraButton)
@@ -10282,33 +10433,33 @@ void TeachingWidget::stopCamera()
     for (auto& frame : cameraFrames) {
         frame.release();
     }
-    qDebug() << "[stopCamera] cameraFrames 초기화 완료";
+    qDebug() << "[stopCamera] cameraFrames cleared";
 
     // UI 요소들 비활성화 제거됨
 
     // 1. 멀티 카메라 스레드 중지
-    qDebug() << "[stopCamera] 카메라 스레드 중지 시작...";
+    // qDebug() << "[stopCamera] Stopping camera threads...";
     for (int i = cameraThreads.size() - 1; i >= 0; i--)
     {
         if (cameraThreads[i] && cameraThreads[i]->isRunning())
         {
-            qDebug() << "[stopCamera] 스레드" << i << "중지 중...";
+            // qDebug() << "[stopCamera] Thread" << i << "stopping...";
             cameraThreads[i]->stopGrabbing();
             
             // 최대 3초 대기
             if (!cameraThreads[i]->wait(3000))
             {
-                qDebug() << "[stopCamera] 스레드" << i << "강제 종료";
+                qDebug() << "[stopCamera] Thread" << i << "forcefully terminated";
                 cameraThreads[i]->terminate();
                 cameraThreads[i]->wait(1000);
             }
             
             delete cameraThreads[i];
-            qDebug() << "[stopCamera] 스레드" << i << "중지 완료";
+            qDebug() << "[stopCamera] Thread" << i << "stopped";
         }
     }
     cameraThreads.clear();
-    QThread::msleep(100);  // 스레드 완전 종료 대기;
+    QThread::msleep(200);  // ★★★ 스레드 완전 종료 대기 증가
 
     // 2. UI 업데이트 스레드 중지
     if (uiUpdateThread && uiUpdateThread->isRunning())
@@ -10319,7 +10470,7 @@ void TeachingWidget::stopCamera()
 
 #ifdef USE_SPINNAKER
     // 3. Spinnaker 카메라 정리
-    qDebug() << "[stopCamera] Spinnaker 카메라 정리 시작...";
+    qDebug() << "[stopCamera] Spinnaker cleanup started...";
     if (m_useSpinnaker)
     {
         try
@@ -10327,11 +10478,11 @@ void TeachingWidget::stopCamera()
             // 역순으로 카메라 정리
             for (int i = m_spinCameras.size() - 1; i >= 0; i--)
             {
-                qDebug() << "[stopCamera] Spinnaker 카메라" << i << "정리 중...";
+                // qDebug() << "[stopCamera] Cleaning up Spinnaker camera" << i;
                 
                 if (!m_spinCameras[i])
                 {
-                    qDebug() << "[stopCamera] 카메라" << i << "이미 nullptr";
+                    qDebug() << "[stopCamera] Camera" << i << "already nullptr";
                     continue;
                 }
 
@@ -10340,15 +10491,15 @@ void TeachingWidget::stopCamera()
                     // 현재 스트리밍 중이면 중지
                     if (m_spinCameras[i]->IsValid() && m_spinCameras[i]->IsStreaming())
                     {
-                        qDebug() << "[stopCamera] 카메라" << i << "스트리밍 중지 중...";
+                        // qDebug() << "[stopCamera] Camera" << i << "stopping stream...";
                         m_spinCameras[i]->EndAcquisition();
-                        QThread::msleep(100);
-                        qDebug() << "[stopCamera] 카메라" << i << "스트리밍 중지 완료";
+                        QThread::msleep(200);  // ★★★ 대기 시간 증가
+                        qDebug() << "[stopCamera] Camera" << i << "streaming stopped";
                     }
                 }
                 catch (Spinnaker::Exception &e)
                 {
-                    qDebug() << "[stopCamera] 카메라" << i << "EndAcquisition 실패:" << e.what();
+                    qDebug() << "[stopCamera] Camera" << i << "EndAcquisition failed:" << e.what();
                 }
 
                 try
@@ -10356,44 +10507,61 @@ void TeachingWidget::stopCamera()
                     // 카메라 초기화 해제
                     if (m_spinCameras[i]->IsValid() && m_spinCameras[i]->IsInitialized())
                     {
-                        qDebug() << "[stopCamera] 카메라" << i << "DeInit 중...";
+                        // qDebug() << "[stopCamera] Camera" << i << "DeInit in progress...";
                         m_spinCameras[i]->DeInit();
-                        QThread::msleep(100);  // ★ 딜레이 증가 (하드웨어 리셋 대기)
-                        qDebug() << "[stopCamera] 카메라" << i << "DeInit 완료";
+                        QThread::msleep(200);  // ★★★ 대기 시간 증가
+                        qDebug() << "[stopCamera] Camera" << i << "DeInit completed";
                     }
                 }
                 catch (Spinnaker::Exception &e)
                 {
-                    qDebug() << "[stopCamera] 카메라" << i << "DeInit 실패:" << e.what();
+                    qDebug() << "[stopCamera] Camera" << i << "DeInit failed:" << e.what();
                 }
 
                 // ★★★ [중요] DeInit 후 명시적으로 nullptr 설정 (참조 카운트 감소)
-                qDebug() << "[stopCamera] 카메라" << i << "참조 해제 (nullptr)";
+                qDebug() << "[stopCamera] Camera" << i << "released (nullptr)";
                 m_spinCameras[i] = nullptr;
-                QThread::msleep(50);  // ★ 포인터 소멸 대기
+                QThread::msleep(100);  // ★★★ 포인터 소멸 대기 증가
             }
             // ★★★ [중요] 벡터 clear로 모든 스마트 포인터 참조 해제
             m_spinCameras.clear();
-            QThread::msleep(300);  // ★ 모든 포인터 소멸 대기 (증가)
+            QThread::msleep(500);  // ★★★ 모든 포인터 소멸 대기 증가
 
             // ★★★ [중요] CameraList도 명시적으로 Clear (참조 카운트 정리)
             if (m_spinCamList.GetSize() > 0)
             {
-                qDebug() << "[stopCamera] 카메라 리스트 Clear 중...";
+                // qDebug() << "[stopCamera] Clearing camera list...";
                 m_spinCamList.Clear();
-                QThread::msleep(300);  // ★ Clear 완료 대기 (증가)
-                qDebug() << "[stopCamera] 카메라 리스트 Clear 완료";
+                QThread::msleep(500);  // ★★★ Clear 완료 대기 증가
+                qDebug() << "[stopCamera] Camera list cleared";
             }
             
-            qDebug() << "[stopCamera] Spinnaker 카메라 정리 완료";
+            // ★★★ [핵심] Spinnaker System 완전 해제 (재시작을 위해)
+            if (m_spinSystem != nullptr)
+            {
+                // qDebug() << "[stopCamera] Releasing Spinnaker System Instance...";
+                try {
+                    m_spinSystem->ReleaseInstance();
+                    QThread::msleep(500);  // ★★★ System 해제 대기
+                    qDebug() << "[stopCamera] Spinnaker System ReleaseInstance completed";
+                } catch (Spinnaker::Exception &e) {
+                    qDebug() << "[stopCamera] System ReleaseInstance failed:" << e.what();
+                } catch (...) {
+                    qDebug() << "[stopCamera] System ReleaseInstance unknown exception";
+                }
+                m_spinSystem = nullptr;
+                QThread::msleep(300);  // ★★★ System 포인터 소멸 대기
+            }
+            
+            qDebug() << "[stopCamera] Spinnaker cleanup completed (System included)";
         }
         catch (Spinnaker::Exception &e)
         {
-            qDebug() << "[stopCamera] Spinnaker 정리 중 예외:" << e.what();
+            qDebug() << "[stopCamera] Spinnaker cleanup exception:" << e.what();
         }
         catch (...)
         {
-            qDebug() << "[stopCamera] Spinnaker 정리 중 알 수 없는 예외";
+            qDebug() << "[stopCamera] Spinnaker cleanup unknown exception";
         }
     }
 #endif
@@ -10414,7 +10582,7 @@ void TeachingWidget::stopCamera()
             previewOverlayLabels[i]->setText("");
         }
     }
-    qDebug() << "[stopCamera] 4분할 미리보기 초기화 완료";
+    qDebug() << "[stopCamera] 4-split preview cleared";
 
     // 6. 메인 카메라 뷰 초기화
     if (cameraView)
@@ -10749,6 +10917,39 @@ void TeachingWidget::showServerSettings()
 {
     // 서버 설정 다이얼로그 표시
     ClientDialog::instance(this)->exec();
+}
+
+void TeachingWidget::showCameraSettings()
+{
+#ifdef USE_SPINNAKER
+    // 카메라가 초기화되지 않았으면 경고
+    if (m_spinCameras.empty())
+    {
+        CustomMessageBox msgBox(this);
+        msgBox.setIcon(CustomMessageBox::Warning);
+        msgBox.setTitle("경고");
+        msgBox.setMessage("연결된 카메라가 없습니다.");
+        msgBox.setButtons(QMessageBox::Ok);
+        msgBox.exec();
+        return;
+    }
+    
+    // 카메라 설정 다이얼로그 생성
+    CameraSettingsDialog* cameraSettingsDialog = new CameraSettingsDialog(this);
+    cameraSettingsDialog->setCameras(m_spinCameras);
+    
+    // 다이얼로그 표시
+    cameraSettingsDialog->exec();
+    
+    delete cameraSettingsDialog;
+#else
+    CustomMessageBox msgBox(this);
+    msgBox.setIcon(CustomMessageBox::Warning);
+    msgBox.setTitle("경고");
+    msgBox.setMessage("Spinnaker SDK가 비활성화되어 있습니다.");
+    msgBox.setButtons(QMessageBox::Ok);
+    msgBox.exec();
+#endif
 }
 
 void TeachingWidget::showSerialSettings()
@@ -13482,63 +13683,114 @@ bool TeachingWidget::initSpinnakerSDK()
 {
     try
     {
-        // 기존 인스턴스가 있으면 유효성 검증
-        if (m_spinSystem != nullptr)
-        {
-            try {
-                // System 유효성 검증 시도
-                Spinnaker::CameraList testList = m_spinSystem->GetCameras();
-                testList.Clear();
-                qDebug() << "[initSpinnakerSDK] ✓ 기존 Spinnaker System 인스턴스 재사용 (유효성 확인 완료)";
-                m_spinCameras.clear();
-                return true;
-            } catch (Spinnaker::Exception &e) {
-                qDebug() << "[initSpinnakerSDK] 기존 System 손상 감지:" << e.what() << "- 강제 재생성";
-                // 손상된 인스턴스 정리 시도
-                m_spinCameras.clear();
-                m_spinCamList.Clear();
+        // ★★★ [핵심 수정] 기존 인스턴스 강제 정리 후 재시도
+        qDebug() << "[initSpinnakerSDK] Attempting to initialize Spinnaker System...";
+        
+        // 1차: 기존 System 강제 해제 시도 (비정상 종료 후 남은 자원 정리)
+        try {
+            qDebug() << "[initSpinnakerSDK] Step 1: Forcing ReleaseInstance on any existing system...";
+            Spinnaker::SystemPtr tempSystem = Spinnaker::System::GetInstance();
+            if (tempSystem) {
+                tempSystem->ReleaseInstance();
+                qDebug() << "[initSpinnakerSDK] Step 1: Successfully released existing instance";
+            }
+            QThread::msleep(1000);  // ★★★ 충분한 대기 시간
+        } catch (Spinnaker::Exception &e) {
+            qDebug() << "[initSpinnakerSDK] Step 1: ReleaseInstance exception:" << e.what();
+            qDebug() << "[initSpinnakerSDK] Step 1: Error code:" << e.GetError() << "(checking for -1012)";
+            
+            // ★★★ -1012 에러면 공유 메모리 정리 (근본 해결)
+            if (e.GetError() == -1012) {
+                qDebug() << "[initSpinnakerSDK] Step 1: Detected -1012 - cleaning shared memory...";
                 
-                // ReleaseInstance 호출하여 완전히 정리
-                try {
-                    if (m_spinSystem) {
-                        m_spinSystem->ReleaseInstance();
-                    }
-                    m_spinSystem = nullptr;
-                    QThread::msleep(500); // 시스템 정리 대기
-                } catch (...) {
-                    qDebug() << "[initSpinnakerSDK] ReleaseInstance 실패 (무시)";
-                    m_spinSystem = nullptr;
+                // 공유 메모리 세그먼트 정리
+                system("ipcs -m | grep $USER | awk '{print $2}' | xargs -r -I {} ipcrm -m {} 2>/dev/null");
+                
+                // 세마포어 정리
+                system("ipcs -s | grep $USER | awk '{print $2}' | xargs -r -I {} ipcrm -s {} 2>/dev/null");
+                
+                QThread::msleep(500);
+                qDebug() << "[initSpinnakerSDK] Step 1: Shared memory cleanup completed";
+            }
+        } catch (...) {
+            qDebug() << "[initSpinnakerSDK] Step 1: ReleaseInstance unknown exception (ignored)";
+        }
+        
+        // 2차: 깨끗한 상태에서 새로 획득
+        m_spinSystem = nullptr;
+        m_spinCameras.clear();
+        m_spinCamList.Clear();
+        
+        qDebug() << "[initSpinnakerSDK] Step 2: Getting fresh System instance...";
+        
+        // 재시도 로직 추가 (최대 3회)
+        int retryCount = 0;
+        const int maxRetries = 3;
+        bool getInstanceSuccess = false;
+        std::string lastErrorMsg;
+        int lastErrorCode = -1;
+        
+        while (retryCount < maxRetries) {
+            try {
+                m_spinSystem = Spinnaker::System::GetInstance();
+                if (m_spinSystem) {
+                    qDebug() << "[initSpinnakerSDK] Step 2: System instance acquired successfully";
+                    getInstanceSuccess = true;
+                    break;
+                }
+            } catch (Spinnaker::Exception &e) {
+                lastErrorMsg = e.what();
+                lastErrorCode = e.GetError();
+                retryCount++;
+                qDebug() << "[initSpinnakerSDK] Step 2: GetInstance attempt" << retryCount << "failed:" << e.what();
+                
+                // ★★★ -1012 에러가 계속되면 더 강력한 정리
+                if (e.GetError() == -1012 && retryCount < maxRetries) {
+                    qDebug() << "[initSpinnakerSDK] Step 2: -1012 persists - cleaning IPC resources...";
+                    
+                    // 공유 메모리 및 세마포어 재정리
+                    system("ipcs -m | grep $USER | awk '{print $2}' | xargs -r -I {} ipcrm -m {} 2>/dev/null");
+                    system("ipcs -s | grep $USER | awk '{print $2}' | xargs -r -I {} ipcrm -s {} 2>/dev/null");
+                    
+                    QThread::msleep(1000 * retryCount);  // 점진적 대기
+                    qDebug() << "[initSpinnakerSDK] Step 2: IPC cleanup completed, retrying...";
+                } else if (retryCount < maxRetries) {
+                    qDebug() << "[initSpinnakerSDK] Step 2: Waiting before retry...";
+                    QThread::msleep(1000 * retryCount);
                 }
             }
         }
         
-        // System 인스턴스 생성
-        qDebug() << "[initSpinnakerSDK] Creating Spinnaker System instance...";
-        m_spinSystem = Spinnaker::System::GetInstance();
-        
-        if (!m_spinSystem)
+        if (!getInstanceSuccess || !m_spinSystem)
         {
-            qDebug() << "[initSpinnakerSDK] Spinnaker System 인스턴스가 nullptr입니다.";
+            qDebug() << "[initSpinnakerSDK] ✖ FAILED: System instance is nullptr after" << maxRetries << "attempts";
+            qDebug() << "[initSpinnakerSDK] ✖ Last error:" << QString::fromStdString(lastErrorMsg) << "Code:" << lastErrorCode;
+            qDebug() << "[initSpinnakerSDK] ⚠ 자동 해결 실패. 수동 조치:";
+            qDebug() << "[initSpinnakerSDK]   1. 터미널: ipcs -m | grep $USER (공유 메모리 확인)";
+            qDebug() << "[initSpinnakerSDK]   2. 터미널: ipcrm -m <shmid> (각 ID 삭제)";
+            qDebug() << "[initSpinnakerSDK]   3. USB 케이블 재연결";
+            m_useSpinnaker = false;
             return false;
         }
 
-        // 라이브러리 버전 출력 - 네임스페이스 추가
+        // 라이브러리 버전 출력
         const Spinnaker::LibraryVersion spinnakerLibraryVersion = m_spinSystem->GetLibraryVersion();
-        qDebug() << "[initSpinnakerSDK] Spinnaker SDK initialized successfully - version:" 
+        qDebug() << "[initSpinnakerSDK] ✓ SUCCESS: Spinnaker SDK initialized - version:" 
                  << spinnakerLibraryVersion.major << "." 
                  << spinnakerLibraryVersion.minor << "." 
                  << spinnakerLibraryVersion.type << "." 
                  << spinnakerLibraryVersion.build;
-
+        
+        m_useSpinnaker = true;
         return true;
     }
     catch (Spinnaker::Exception &e)
     {
-        qDebug() << "[initSpinnakerSDK] Spinnaker 예외:" << e.what() 
-                 << "코드:" << e.GetError();
-        qDebug() << "[initSpinnakerSDK] Spinnaker 카메라 없이 시뮬레이션 모드로 동작합니다.";
+        qDebug() << "[initSpinnakerSDK] ✖ Spinnaker Exception:" << e.what() 
+                 << "Code:" << e.GetError();
+        qDebug() << "[initSpinnakerSDK] ⚠ Spinnaker 카메라 없이 시뮬레이션 모드로 동작합니다.";
         m_spinSystem = nullptr;
-        m_useSpinnaker = false;  // ★★★ Spinnaker 사용 비활성화
+        m_useSpinnaker = false;
         return false;
     }
     catch (std::exception &e)
@@ -14238,6 +14490,9 @@ cv::Mat TeachingWidget::grabFrameFromSpinnakerCamera(Spinnaker::CameraPtr &camer
 TeachingWidget::~TeachingWidget()
 {
     qDebug() << "[~TeachingWidget] 소멸자 시작";
+    
+    // -1. 가장 먼저 camOff 상태로 전환 (카메라 리소스 정리)
+    forceCamOff();
     
     // 0. CameraView에 포인터 해제 알림 (제일 먼저!)
     if (cameraView) {

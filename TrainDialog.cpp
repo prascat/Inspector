@@ -115,6 +115,17 @@ void TrainDialog::setupUI()
     );
     leftLayout->addWidget(autoTrainButton);
     
+    matchingTestButton = new QPushButton("매칭 테스트", this);
+    matchingTestButton->setMinimumHeight(40);
+    matchingTestButton->setEnabled(false);
+    matchingTestButton->setStyleSheet(
+        "QPushButton { background-color: #1976d2; color: #ffffff; border: 1px solid #0d47a1; }"
+        "QPushButton:hover { background-color: #2196f3; }"
+        "QPushButton:pressed { background-color: #0d47a1; }"
+        "QPushButton:disabled { background-color: #555555; color: #999999; }"
+    );
+    leftLayout->addWidget(matchingTestButton);
+    
     closeButton = new QPushButton("닫기", this);
     closeButton->setMinimumHeight(40);
     closeButton->setStyleSheet(
@@ -179,7 +190,7 @@ void TrainDialog::setupUI()
     selectAllCheckBox->setStyleSheet(
         "QCheckBox::indicator:checked { background-color: #4CAF50; border: 2px solid #4CAF50; }"
         "QCheckBox::indicator:unchecked { background-color: white; border: 2px solid #CCCCCC; }"
-        "QCheckBox::indicator:indeterminate { background-color: #81C784; border: 2px solid #4CAF50; }"
+        "QCheckBox::indicator:indeterminate { background-color: #CCCCCC; border: 2px solid #999999; }"
         "QCheckBox::indicator { width: 18px; height: 18px; }"
     );
     selectAllCheckBox->move(15, 5);
@@ -242,7 +253,7 @@ void TrainDialog::setupUI()
     padimSelectAllCheckBox->setStyleSheet(
         "QCheckBox::indicator:checked { background-color: #4CAF50; border: 2px solid #4CAF50; }"
         "QCheckBox::indicator:unchecked { background-color: white; border: 2px solid #CCCCCC; }"
-        "QCheckBox::indicator:indeterminate { background-color: #81C784; border: 2px solid #4CAF50; }"
+        "QCheckBox::indicator:indeterminate { background-color: #CCCCCC; border: 2px solid #999999; }"
         "QCheckBox::indicator { width: 18px; height: 18px; }"
     );
     padimSelectAllCheckBox->move(15, 5);
@@ -310,6 +321,7 @@ void TrainDialog::setupUI()
 
     // 시그널 연결
     if (autoTrainButton) connect(autoTrainButton, &QPushButton::clicked, this, &TrainDialog::onStartAutoTrainClicked);
+    if (matchingTestButton) connect(matchingTestButton, &QPushButton::clicked, this, &TrainDialog::onMatchingTestClicked);
     if (closeButton) connect(closeButton, &QPushButton::clicked, this, &TrainDialog::onCloseClicked);
     if (clearImagesButton) connect(clearImagesButton, &QPushButton::clicked, this, &TrainDialog::onClearImagesClicked);
     if (addImagesButton) connect(addImagesButton, &QPushButton::clicked, this, &TrainDialog::onAddImagesClicked);
@@ -525,10 +537,11 @@ void TrainDialog::setCurrentRecipeName(const QString& recipeName)
     currentRecipeName = recipeName;
 }
 
-void TrainDialog::addCapturedImage(const cv::Mat& image, int stripCrimpMode)
+void TrainDialog::addCapturedImage(const cv::Mat& image, int cameraIndex)
 {
     // 공용 이미지 리스트에 추가
     commonImages.append(image.clone());
+    imageFrameIndexes.append(cameraIndex);
     
     // UI 업데이트
     updateImageGrid();
@@ -617,6 +630,7 @@ void TrainDialog::onClearImagesClicked()
     
     if (msgBox.exec() == QMessageBox::Yes) {
         commonImages.clear();
+        imageFrameIndexes.clear();
         updateImageGrid();
         imageCountLabel->setText("이미지 개수: 0");
         
@@ -786,6 +800,8 @@ void TrainDialog::updatePadimTeachingImagePreview()
 
 void TrainDialog::onStartAutoTrainClicked()
 {
+    qDebug() << "[onStartAutoTrainClicked] 시작";
+    
     // 체크된 패턴 목록 수집 (A-PC와 A-PD 모두)
     QStringList checkedPatterns;
     
@@ -793,6 +809,7 @@ void TrainDialog::onStartAutoTrainClicked()
     for (auto it = patternCheckBoxes.begin(); it != patternCheckBoxes.end(); ++it) {
         if (it.value()->isChecked()) {
             checkedPatterns.append(it.key());
+            qDebug() << "[onStartAutoTrainClicked] A-PC 체크됨:" << it.key();
         }
     }
     
@@ -800,8 +817,11 @@ void TrainDialog::onStartAutoTrainClicked()
     for (auto it = padimPatternCheckBoxes.begin(); it != padimPatternCheckBoxes.end(); ++it) {
         if (it.value()->isChecked()) {
             checkedPatterns.append(it.key());
+            qDebug() << "[onStartAutoTrainClicked] A-PD 체크됨:" << it.key();
         }
     }
+    
+    qDebug() << "[onStartAutoTrainClicked] 체크된 패턴 수:" << checkedPatterns.size();
     
     if (checkedPatterns.isEmpty()) {
         CustomMessageBox msgBox(this, CustomMessageBox::Warning, "경고",
@@ -912,10 +932,337 @@ void TrainDialog::onCloseClicked()
     close();
 }
 
+// 패턴 매칭 공통 함수 (FID 기반 위치 계산)
+bool TrainDialog::performPatternMatching(const cv::Mat& image, PatternInfo* targetPattern,
+                                         int& finalRoiX, int& finalRoiY, double& matchScore,
+                                         cv::Mat* visualizationImage)
+{
+    if (!targetPattern || image.empty()) {
+        return false;
+    }
+    
+    // ROI 정보
+    int roiX = static_cast<int>(targetPattern->rect.x());
+    int roiY = static_cast<int>(targetPattern->rect.y());
+    int roiW = static_cast<int>(targetPattern->rect.width());
+    int roiH = static_cast<int>(targetPattern->rect.height());
+    
+    // 초기값은 티칭 위치
+    finalRoiX = roiX;
+    finalRoiY = roiY;
+    matchScore = 1.0;
+    
+    // 부모 FID 패턴 찾기
+    PatternInfo* parentFidPattern = nullptr;
+    if (!targetPattern->parentId.isNull()) {
+        for (PatternInfo* pattern : allPatterns) {
+            if (pattern->id == targetPattern->parentId && 
+                pattern->type == PatternType::FID &&
+                pattern->frameIndex == targetPattern->frameIndex) {
+                parentFidPattern = pattern;
+                break;
+            }
+        }
+    }
+    
+    // FID 매칭이 필요없는 경우 (부모 FID가 없거나 템플릿이 없음)
+    if (!parentFidPattern || parentFidPattern->matchTemplate.isNull()) {
+        if (visualizationImage) {
+            // INS 영역만 표시 (시각화)
+            cv::rectangle(*visualizationImage, cv::Rect(finalRoiX, finalRoiY, roiW, roiH),
+                         cv::Scalar(0, 255, 255), 3);
+        }
+        return true;  // FID 없이 고정 좌표 사용
+    }
+    
+    // FID 템플릿 변환
+    QImage tempImg = parentFidPattern->matchTemplate.convertToFormat(QImage::Format_RGB888);
+    cv::Mat fidTemplate = cv::Mat(tempImg.height(), tempImg.width(), CV_8UC3,
+                          const_cast<uchar*>(tempImg.bits()), tempImg.bytesPerLine()).clone();
+    cv::cvtColor(fidTemplate, fidTemplate, cv::COLOR_RGB2BGR);
+    
+    // 마스크가 있으면 변환
+    cv::Mat fidMask;
+    if (!parentFidPattern->matchTemplateMask.isNull()) {
+        QImage maskImg = parentFidPattern->matchTemplateMask.convertToFormat(QImage::Format_Grayscale8);
+        fidMask = cv::Mat(maskImg.height(), maskImg.width(), CV_8UC1,
+                          const_cast<uchar*>(maskImg.bits()), maskImg.bytesPerLine()).clone();
+    }
+    
+    // FID 패턴의 중심이 포함된 ROI 찾기
+    cv::Rect searchROI;
+    QPoint fidCenter = QPoint(
+        static_cast<int>(parentFidPattern->rect.center().x()),
+        static_cast<int>(parentFidPattern->rect.center().y()));
+    
+    for (PatternInfo* p : allPatterns) {
+        if (p->type == PatternType::ROI && 
+            p->enabled && 
+            p->frameIndex == targetPattern->frameIndex) {
+            if (p->rect.contains(fidCenter)) {
+                searchROI = cv::Rect(
+                    static_cast<int>(p->rect.x()),
+                    static_cast<int>(p->rect.y()),
+                    static_cast<int>(p->rect.width()),
+                    static_cast<int>(p->rect.height())
+                );
+                break;
+            }
+        }
+    }
+    
+    // ROI를 못 찾으면 FID 패턴 주변 영역 사용
+    if (searchROI.area() == 0) {
+        int margin = std::max(static_cast<int>(parentFidPattern->rect.width()), 
+                             static_cast<int>(parentFidPattern->rect.height()));
+        searchROI = cv::Rect(
+            std::max(0, static_cast<int>(parentFidPattern->rect.x()) - margin),
+            std::max(0, static_cast<int>(parentFidPattern->rect.y()) - margin),
+            std::min(image.cols - std::max(0, static_cast<int>(parentFidPattern->rect.x()) - margin),
+                    static_cast<int>(parentFidPattern->rect.width()) + 2 * margin),
+            std::min(image.rows - std::max(0, static_cast<int>(parentFidPattern->rect.y()) - margin),
+                    static_cast<int>(parentFidPattern->rect.height()) + 2 * margin));
+    }
+    
+    int fidRoiX = searchROI.x;
+    int fidRoiY = searchROI.y;
+    int fidRoiW = searchROI.width;
+    int fidRoiH = searchROI.height;
+    
+    // 이미지 범위 체크
+    if (fidRoiX < 0) fidRoiX = 0;
+    if (fidRoiY < 0) fidRoiY = 0;
+    if (fidRoiX + fidRoiW > image.cols) fidRoiW = image.cols - fidRoiX;
+    if (fidRoiY + fidRoiH > image.rows) fidRoiH = image.rows - fidRoiY;
+    
+    // 검색 영역 추출
+    cv::Mat searchRegion = image(cv::Rect(fidRoiX, fidRoiY, fidRoiW, fidRoiH));
+    
+    // 템플릿 크기 검증
+    if (fidTemplate.cols > searchRegion.cols || fidTemplate.rows > searchRegion.rows) {
+        qDebug() << "[MATCHING] FID template too large";
+        return false;
+    }
+    
+    // grayscale로 변환하여 매칭
+    cv::Mat searchGray, templateGray;
+    if (searchRegion.channels() == 3) {
+        cv::cvtColor(searchRegion, searchGray, cv::COLOR_BGR2GRAY);
+    } else {
+        searchGray = searchRegion;
+    }
+    
+    if (fidTemplate.channels() == 3) {
+        cv::cvtColor(fidTemplate, templateGray, cv::COLOR_BGR2GRAY);
+    } else {
+        templateGray = fidTemplate;
+    }
+    
+    cv::Mat result;
+    int matchMethod = (parentFidPattern->fidMatchMethod == 0) ? cv::TM_CCOEFF_NORMED : cv::TM_CCORR_NORMED;
+    double matchThreshold = parentFidPattern->matchThreshold / 100.0;
+    
+    if (!fidMask.empty()) {
+        cv::matchTemplate(searchGray, templateGray, result, matchMethod, fidMask);
+    } else {
+        cv::matchTemplate(searchGray, templateGray, result, matchMethod);
+    }
+    
+    double minVal, maxVal;
+    cv::Point minLoc, maxLoc;
+    cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
+    
+    matchScore = maxVal;
+    
+    // 시각화
+    if (visualizationImage) {
+        // ROI 패턴 찾기 (FID가 포함된 ROI의 색상 사용)
+        PatternInfo* roiPattern = nullptr;
+        for (PatternInfo* p : allPatterns) {
+            if (p->type == PatternType::ROI && 
+                p->enabled && 
+                p->frameIndex == targetPattern->frameIndex) {
+                if (p->rect.contains(fidCenter)) {
+                    roiPattern = p;
+                    break;
+                }
+            }
+        }
+        
+        // 검색 영역 (ROI 패턴 색상)
+        cv::Scalar roiColor = roiPattern ? 
+            cv::Scalar(roiPattern->color.blue(), roiPattern->color.green(), roiPattern->color.red()) :
+            cv::Scalar(255, 0, 0);
+        cv::rectangle(*visualizationImage, cv::Rect(fidRoiX, fidRoiY, fidRoiW, fidRoiH), roiColor, 3);
+        
+        // FID 매칭 위치 (FID 패턴 색상 또는 회색=실패)
+        int matchX = fidRoiX + maxLoc.x;
+        int matchY = fidRoiY + maxLoc.y;
+        cv::Scalar fidColor = (maxVal >= matchThreshold) ? 
+            cv::Scalar(parentFidPattern->color.blue(), parentFidPattern->color.green(), parentFidPattern->color.red()) :
+            cv::Scalar(128, 128, 128);
+        cv::rectangle(*visualizationImage, cv::Rect(matchX, matchY, fidTemplate.cols, fidTemplate.rows), fidColor, 3);
+        
+        // 매칭 점수 텍스트
+        QString scoreText = QString("FID: %1%").arg(maxVal * 100.0, 0, 'f', 1);
+        cv::putText(*visualizationImage, scoreText.toStdString(), cv::Point(matchX, matchY - 10),
+                   cv::FONT_HERSHEY_SIMPLEX, 0.7, fidColor, 2);
+    }
+    
+    // FID 매칭 성공 시 INS 패턴 위치 계산
+    if (maxVal >= matchThreshold) {
+        double fidMatchCenterX = fidRoiX + maxLoc.x + fidTemplate.cols / 2.0;
+        double fidMatchCenterY = fidRoiY + maxLoc.y + fidTemplate.rows / 2.0;
+        
+        QPointF fidTeachingCenter = parentFidPattern->rect.center();
+        QPointF insTeachingCenter(targetPattern->rect.x() + roiW / 2.0, 
+                                  targetPattern->rect.y() + roiH / 2.0);
+        
+        double relativeX = insTeachingCenter.x() - fidTeachingCenter.x();
+        double relativeY = insTeachingCenter.y() - fidTeachingCenter.y();
+        
+        double newInsCenterX = fidMatchCenterX + relativeX;
+        double newInsCenterY = fidMatchCenterY + relativeY;
+        
+        finalRoiX = static_cast<int>(newInsCenterX - roiW / 2.0);
+        finalRoiY = static_cast<int>(newInsCenterY - roiH / 2.0);
+        
+        // INS 패턴 영역 시각화
+        if (visualizationImage) {
+            cv::Scalar insColor = cv::Scalar(targetPattern->color.blue(), 
+                                            targetPattern->color.green(), 
+                                            targetPattern->color.red());
+            cv::rectangle(*visualizationImage, cv::Rect(finalRoiX, finalRoiY, roiW, roiH), insColor, 3);
+            
+            QString insText = QString("%1 (%2%)").arg(targetPattern->name).arg(maxVal * 100.0, 0, 'f', 1);
+            cv::putText(*visualizationImage, insText.toStdString(), 
+                       cv::Point(finalRoiX, finalRoiY - 10),
+                       cv::FONT_HERSHEY_SIMPLEX, 0.7, insColor, 2);
+        }
+        
+        return true;
+    } else {
+        // FID 매칭 실패
+        if (visualizationImage) {
+            cv::Scalar insColor = cv::Scalar(128, 128, 128);
+            cv::rectangle(*visualizationImage, cv::Rect(finalRoiX, finalRoiY, roiW, roiH), insColor, 3);
+            
+            QString insText = QString("%1 (FAIL)").arg(targetPattern->name);
+            cv::putText(*visualizationImage, insText.toStdString(), 
+                       cv::Point(finalRoiX, finalRoiY - 10),
+                       cv::FONT_HERSHEY_SIMPLEX, 0.7, insColor, 2);
+        }
+        return false;
+    }
+}
+
+void TrainDialog::onMatchingTestClicked()
+{
+    // 선택된 이미지 가져오기
+    QListWidgetItem* item = imageListWidget->currentItem();
+    if (!item) {
+        CustomMessageBox msgBox(this, CustomMessageBox::Warning, "경고",
+            "테스트할 이미지를 선택하세요.");
+        msgBox.exec();
+        return;
+    }
+    
+    int imageIndex = item->data(Qt::UserRole).toInt();
+    if (imageIndex < 0 || imageIndex >= commonImages.size()) {
+        return;
+    }
+    
+    cv::Mat testImage = commonImages[imageIndex].clone();
+    if (testImage.empty()) {
+        return;
+    }
+    
+    // 선택된 이미지의 프레임 인덱스 확인
+    int imageFrameIndex = (imageIndex < imageFrameIndexes.size()) ? imageFrameIndexes[imageIndex] : -1;
+    
+    // 현재 선택된 탭에 따라 체크된 패턴 가져오기
+    QStringList checkedPatterns;
+    if (modelTabWidget->currentIndex() == 0) {
+        // A-PC 탭
+        for (auto it = patternCheckBoxes.begin(); it != patternCheckBoxes.end(); ++it) {
+            if (it.value()->isChecked()) {
+                checkedPatterns.append(it.key());
+            }
+        }
+    } else {
+        // A-PD 탭
+        for (auto it = padimPatternCheckBoxes.begin(); it != padimPatternCheckBoxes.end(); ++it) {
+            if (it.value()->isChecked()) {
+                checkedPatterns.append(it.key());
+            }
+        }
+    }
+    
+    if (checkedPatterns.isEmpty()) {
+        CustomMessageBox msgBox(this, CustomMessageBox::Warning, "경고",
+            "테스트할 패턴을 선택하세요 (체크박스).");
+        msgBox.exec();
+        return;
+    }
+    
+    // 시각화용 이미지
+    cv::Mat displayImage = testImage.clone();
+    
+    // 모든 체크된 패턴에 대해 매칭 테스트
+    for (const QString& patternName : checkedPatterns) {
+        // 해당 패턴 찾기
+        PatternInfo* targetPattern = nullptr;
+        for (PatternInfo* pattern : anomalyPatterns) {
+            if (pattern->name == patternName) {
+                targetPattern = pattern;
+                break;
+            }
+        }
+        
+        if (!targetPattern) {
+            continue;
+        }
+        
+        // 패턴의 프레임 인덱스가 선택된 이미지의 프레임과 다르면 건너뛰기
+        if (imageFrameIndex >= 0 && targetPattern->frameIndex != imageFrameIndex) {
+            qDebug() << "[MATCHING TEST] 패턴" << patternName << "프레임" << targetPattern->frameIndex 
+                     << "!= 이미지 프레임" << imageFrameIndex << "- 건너뛰기";
+            continue;
+        }
+        
+        // 공통 매칭 함수 사용
+        int finalRoiX, finalRoiY;
+        double matchScore;
+        bool matchSuccess = performPatternMatching(testImage, targetPattern, 
+                                                   finalRoiX, finalRoiY, matchScore,
+                                                   &displayImage);  // 시각화 포함
+        
+        qDebug() << "[MATCHING TEST]" << patternName << "- Success:" << matchSuccess 
+                 << "Score:" << matchScore << "Pos:" << finalRoiX << finalRoiY;
+    }
+    
+    // 결과 이미지를 미리보기에 표시
+    cv::cvtColor(displayImage, displayImage, cv::COLOR_BGR2RGB);
+    QImage qImg(displayImage.data, displayImage.cols, displayImage.rows,
+               displayImage.step, QImage::Format_RGB888);
+    
+    if (previewImageLabel) {
+        QPixmap pixmap = QPixmap::fromImage(qImg.copy());
+        if (previewImageLabel->width() > 0 && previewImageLabel->height() > 0) {
+            QPixmap scaled = pixmap.scaled(previewImageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            previewImageLabel->setPixmap(scaled);
+        } else {
+            previewImageLabel->setPixmap(pixmap);
+        }
+    }
+}
+
+
 void TrainDialog::onImageItemClicked(QListWidgetItem* item)
 {
     if (!item) {
         if (deleteSelectedImageButton) deleteSelectedImageButton->setEnabled(false);
+        if (matchingTestButton) matchingTestButton->setEnabled(false);
         if (previewImageLabel) {
             previewImageLabel->clear();
             previewImageLabel->setText("이미지를 선택하세요");
@@ -924,6 +1271,9 @@ void TrainDialog::onImageItemClicked(QListWidgetItem* item)
     }
     
     if (deleteSelectedImageButton) deleteSelectedImageButton->setEnabled(true);
+    
+    // 매칭 테스트 버튼 활성화 (이미지가 선택되면)
+    if (matchingTestButton) matchingTestButton->setEnabled(true);
     
     int index = item->data(Qt::UserRole).toInt();
     
@@ -986,6 +1336,7 @@ void TrainDialog::onDeleteSelectedImageClicked()
     
     // 공용 이미지 삭제
     commonImages.removeAt(index);
+    imageFrameIndexes.removeAt(index);
     
     // UI 업데이트 (스크롤 위치 유지)
     updateImageGrid(false);
@@ -1261,14 +1612,16 @@ void TrainDialog::trainPattern(const QString& patternName)
         return;
     }
     
-    // 공용 이미지 가져오기
-    if (commonImages.isEmpty()) {
-        qWarning() << "[TRAIN] 공용 학습 이미지가 없음";
+    // 모든 이미지 사용 (프레임 필터링 제거 - 어차피 매칭으로 패턴 찾음)
+    QVector<cv::Mat> patternImages = commonImages;
+    
+    qDebug() << "[TRAIN] 패턴" << patternName << "이미지 개수:" << patternImages.size();
+    
+    if (patternImages.isEmpty()) {
+        qWarning() << "[TRAIN] 패턴" << patternName << "에 맞는 학습 이미지가 없음";
         trainNextPattern();
         return;
     }
-    
-    qDebug() << "[TRAIN] 패턴" << patternName << "공용 이미지 개수:" << commonImages.size();
     
     // 임시 폴더 생성
     tempTrainingDir = QCoreApplication::applicationDirPath() + QString("/data/train/temp_%1_%2")
@@ -1333,170 +1686,39 @@ void TrainDialog::trainPattern(const QString& patternName)
     trainingTimer = new QElapsedTimer();
     trainingTimer->start();
     
-    updateTrainingProgress(QString("%1 Extracting ROI '%2'... (0/%3)%4")
-        .arg(getPatternProgressString()).arg(patternName).arg(commonImages.size()).arg(getTotalTimeString()));
+    // ROI 추출 중에도 프로그레스바 표시
+    updateTrainingProgress(QString("%1 Extracting ROI for '%2'...%3")
+        .arg(getPatternProgressString()).arg(patternName).arg(getTotalTimeString()));
     
     int croppedCount = 0;
     int fidMatchFailCount = 0;
     
-    // 트레이닝 오버레이 숨기기 (이미지 표시를 위해)
-    if (trainingOverlay) {
-        trainingOverlay->hide();
-    }
-    
-    for (int i = 0; i < commonImages.size(); ++i) {
-        cv::Mat image = commonImages[i];
+    for (int i = 0; i < patternImages.size(); ++i) {
+        cv::Mat image = patternImages[i];
         if (image.empty()) continue;
         
-        // BGR을 RGB로 변환하여 표시용 이미지 생성
+        // 표시용 이미지
         cv::Mat displayImage = image.clone();
         
-        int finalRoiX = roiX, finalRoiY = roiY;
+        // 공통 매칭 함수 사용
+        int finalRoiX, finalRoiY;
+        double matchScore;
+        bool matchSuccess = performPatternMatching(image, targetPattern, 
+                                                   finalRoiX, finalRoiY, matchScore,
+                                                   &displayImage);  // 시각화 포함
         
-        if (useFidMatching && !fidTemplate.empty()) {
-            // 부모 ROI 전체 영역에서 FID 패턴 검색 (실시간 검사와 동일)
-            // FID 패턴의 중심이 포함된 ROI 찾기 (실시간 코드와 동일)
-            cv::Rect searchROI;
-            QPoint fidCenter = QPoint(
-                static_cast<int>(parentFidPattern->rect.center().x()),
-                static_cast<int>(parentFidPattern->rect.center().y()));
+        if (!matchSuccess) {
+            fidMatchFailCount++;
+            qDebug() << QString("[TRAIN] FID match failed - skip: %1 (score=%2%)")
+                .arg(i).arg(matchScore * 100.0, 0, 'f', 1);
             
-            for (PatternInfo* p : allPatterns) {
-                if (p->type == PatternType::ROI && p->enabled) {
-                    // FID 패턴이 이 ROI 내부에 있는지 확인 (중심점 기준)
-                    if (p->rect.contains(fidCenter)) {
-                        searchROI = cv::Rect(
-                            static_cast<int>(p->rect.x()),
-                            static_cast<int>(p->rect.y()),
-                            static_cast<int>(p->rect.width()),
-                            static_cast<int>(p->rect.height())
-                        );
-                        break; // 첫 번째로 찾은 포함하는 ROI 사용
-                    }
-                }
-            }
-            
-            // ROI를 못 찾으면 FID 패턴 주변 영역 사용 (실시간 코드와 동일)
-            if (searchROI.area() == 0) {
-                int margin = std::max(static_cast<int>(parentFidPattern->rect.width()), 
-                                     static_cast<int>(parentFidPattern->rect.height()));
-                searchROI = cv::Rect(
-                    std::max(0, static_cast<int>(parentFidPattern->rect.x()) - margin),
-                    std::max(0, static_cast<int>(parentFidPattern->rect.y()) - margin),
-                    std::min(image.cols - std::max(0, static_cast<int>(parentFidPattern->rect.x()) - margin),
-                            static_cast<int>(parentFidPattern->rect.width()) + 2 * margin),
-                    std::min(image.rows - std::max(0, static_cast<int>(parentFidPattern->rect.y()) - margin),
-                            static_cast<int>(parentFidPattern->rect.height()) + 2 * margin));
-            }
-            
-            int fidRoiX = searchROI.x;
-            int fidRoiY = searchROI.y;
-            int fidRoiW = searchROI.width;
-            int fidRoiH = searchROI.height;
-            
-            // 이미지 범위 체크
-            if (fidRoiX < 0) fidRoiX = 0;
-            if (fidRoiY < 0) fidRoiY = 0;
-            if (fidRoiX + fidRoiW > image.cols) fidRoiW = image.cols - fidRoiX;
-            if (fidRoiY + fidRoiH > image.rows) fidRoiH = image.rows - fidRoiY;
-            
-            // 검색 영역 추출
-            cv::Mat searchRegion = image(cv::Rect(fidRoiX, fidRoiY, fidRoiW, fidRoiH));
-            
-            // 템플릿 크기 검증
-            if (fidTemplate.cols > searchRegion.cols || fidTemplate.rows > searchRegion.rows) {
-                fidMatchFailCount++;
-                qDebug() << QString("[TRAIN] FID template too large - skip: %1 (template:%2x%3, search:%4x%5)")
-                    .arg(i).arg(fidTemplate.cols).arg(fidTemplate.rows).arg(searchRegion.cols).arg(searchRegion.rows);
-                continue;
-            }
-            
-            // 색상 채널 맞추기 (grayscale로 변환하여 매칭)
-            cv::Mat searchGray, templateGray;
-            if (searchRegion.channels() == 3) {
-                cv::cvtColor(searchRegion, searchGray, cv::COLOR_BGR2GRAY);
-            } else {
-                searchGray = searchRegion;
-            }
-            
-            if (fidTemplate.channels() == 3) {
-                cv::cvtColor(fidTemplate, templateGray, cv::COLOR_BGR2GRAY);
-            } else {
-                templateGray = fidTemplate;
-            }
-            
-            cv::Mat result;
-            // 레시피의 FID 패턴 설정 사용
-            int matchMethod = (parentFidPattern->fidMatchMethod == 0) ? cv::TM_CCOEFF_NORMED : cv::TM_CCORR_NORMED;
-            double matchThreshold = parentFidPattern->matchThreshold / 100.0;  // 퍼센트를 0~1로 변환
-            
-            if (!fidMask.empty()) {
-                cv::matchTemplate(searchGray, templateGray, result, matchMethod, fidMask);
-            } else {
-                cv::matchTemplate(searchGray, templateGray, result, matchMethod);
-            }
-            
-            double minVal, maxVal;
-            cv::Point minLoc, maxLoc;
-            cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
-            
-            // 시각화: 검색 영역 (파란색)
-            cv::rectangle(displayImage, cv::Rect(fidRoiX, fidRoiY, fidRoiW, fidRoiH), 
-                         cv::Scalar(255, 0, 0), 3);
-            
-            // 시각화: FID 매칭 위치 (녹색=성공, 빨간색=실패)
-            int matchX = fidRoiX + maxLoc.x;
-            int matchY = fidRoiY + maxLoc.y;
-            cv::Scalar matchColor = (maxVal >= matchThreshold) ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 0, 255);
-            cv::rectangle(displayImage, cv::Rect(matchX, matchY, fidTemplate.cols, fidTemplate.rows),
-                         matchColor, 3);
-            
-            // 매칭 점수 텍스트
-            QString scoreText = QString("FID: %1%").arg(maxVal * 100.0, 0, 'f', 1);
-            cv::putText(displayImage, scoreText.toStdString(), cv::Point(matchX, matchY - 10),
-                       cv::FONT_HERSHEY_SIMPLEX, 0.7, matchColor, 2);
-            
-            // FID 매칭 성공 시 상대 좌표로 계산하여 INS 패턴 영역 align
-            if (maxVal >= matchThreshold) {
-                // 검색 영역 내 좌표를 전체 이미지 좌표로 변환
-                double fidMatchCenterX = fidRoiX + maxLoc.x + fidTemplate.cols / 2.0;
-                double fidMatchCenterY = fidRoiY + maxLoc.y + fidTemplate.rows / 2.0;
-                
-                // 티칭 시의 상대 좌표 계산
-                double relativeX = insTeachingCenter.x() - fidTeachingCenter.x();
-                double relativeY = insTeachingCenter.y() - fidTeachingCenter.y();
-                
-                // FID 매칭 위치 기준으로 INS 패턴 위치 계산 (align)
-                double newInsCenterX = fidMatchCenterX + relativeX;
-                double newInsCenterY = fidMatchCenterY + relativeY;
-                
-                finalRoiX = static_cast<int>(newInsCenterX - roiW / 2.0);
-                finalRoiY = static_cast<int>(newInsCenterY - roiH / 2.0);
-                
-                // 시각화: INS 패턴 영역 (노란색)
-                cv::rectangle(displayImage, cv::Rect(finalRoiX, finalRoiY, roiW, roiH),
-                             cv::Scalar(0, 255, 255), 3);
-                cv::putText(displayImage, targetPattern->name.toStdString(), 
-                           cv::Point(finalRoiX, finalRoiY - 10),
-                           cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
-            } else {
-                // FID 매칭 실패 시 건너뜀
-                fidMatchFailCount++;
-                qDebug() << QString("[TRAIN] FID match failed - skip: %1 (score=%2%, threshold=%3%)")
-                    .arg(i).arg(maxVal * 100.0, 0, 'f', 1).arg(matchThreshold * 100.0, 0, 'f', 1);
-                
-                // 실패 이미지도 표시
-                cv::cvtColor(displayImage, displayImage, cv::COLOR_BGR2RGB);
-                QImage qImg(displayImage.data, displayImage.cols, displayImage.rows,
-                           displayImage.step, QImage::Format_RGB888);
-                previewImageLabel->setPixmap(QPixmap::fromImage(qImg.copy()));
-                QApplication::processEvents();
-                continue;
-            }
-        } else {
-            // FID 매칭 없이 고정 좌표 사용 - INS 영역 표시
-            cv::rectangle(displayImage, cv::Rect(finalRoiX, finalRoiY, roiW, roiH),
-                         cv::Scalar(0, 255, 255), 3);
+            // 실패 이미지도 표시
+            cv::cvtColor(displayImage, displayImage, cv::COLOR_BGR2RGB);
+            QImage qImg(displayImage.data, displayImage.cols, displayImage.rows,
+                       displayImage.step, QImage::Format_RGB888);
+            previewImageLabel->setPixmap(QPixmap::fromImage(qImg.copy()));
+            QApplication::processEvents();
+            continue;
         }
         
         // 이미지를 previewImageLabel에 표시
@@ -1612,6 +1834,7 @@ void TrainDialog::trainPattern(const QString& patternName)
     QString modelType = (targetPattern->inspectionMethod == InspectionMethod::A_PC) ? "PatchCore" : "PaDiM";
     qDebug() << "[TRAIN] 로컬 학습 시작 (" << modelType << "):" << trainScript << args;
     
+    // 학습 시작 진행률 업데이트
     updateTrainingProgress(QString("%1 Training model '%2'...%3")
         .arg(getPatternProgressString()).arg(patternName).arg(getTotalTimeString()));
     

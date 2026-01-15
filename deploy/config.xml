@@ -12,6 +12,7 @@
     <ReconnectInterval>10</ReconnectInterval>
     <HeartbeatInterval>30</HeartbeatInterval>
     <CameraAutoConnect>false</CameraAutoConnect>
-    <PropertyPanel x="145" y="121" width="433" height="600" collapsed="false" expandedHeight="600"/>
-    <LogPanel x="0" y="502" width="800" height="500" collapsed="false"/>
+    <SaveTriggerImages>false</SaveTriggerImages>
+    <PropertyPanel x="19" y="110" width="425" height="600" collapsed="false" expandedHeight="600"/>
+    <LogPanel x="3" y="569" width="800" height="421" collapsed="false"/>
 </Config>

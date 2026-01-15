@@ -59,6 +59,10 @@ public:
     bool getCameraAutoConnect() const;
     void setCameraAutoConnect(bool enable);
     
+    // 트리거 영상 저장 설정
+    bool getSaveTriggerImages() const;
+    void setSaveTriggerImages(bool enable);
+    
     // 프로퍼티 패널 설정
     QRect getPropertyPanelGeometry() const;
     void setPropertyPanelGeometry(const QRect& geometry);
@@ -99,6 +103,7 @@ private:
     int m_reconnectInterval;
     int m_heartbeatInterval;
     bool m_cameraAutoConnect;
+    bool m_saveTriggerImages;
     
     // 프로퍼티 패널 설정
     QRect m_propertyPanelGeometry;

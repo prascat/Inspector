@@ -91,34 +91,6 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Xml Network SerialPort)
 # OpenCV 패키지 찾기
 find_package(OpenCV REQUIRED)
 
-# OpenVINO 패키지 찾기 (Python 설치 경로 사용)
-set(OPENVINO_BASE_DIR "/home/km/.local/lib/python3.10/site-packages/openvino")
-set(OpenVINO_DIR "${OPENVINO_BASE_DIR}/cmake")
-
-if(EXISTS "${OpenVINO_DIR}")
-    find_package(OpenVINO QUIET COMPONENTS Runtime)
-    if(OpenVINO_FOUND)
-        message(STATUS "Found OpenVINO: ${OpenVINO_VERSION}")
-        message(STATUS "  CMake Dir: ${OpenVINO_DIR}")
-        message(STATUS "  Include: ${OPENVINO_BASE_DIR}/include")
-        message(STATUS "  Libs: ${OPENVINO_BASE_DIR}/libs")
-        
-        # 헤더 및 라이브러리 경로 추가
-        include_directories(${OPENVINO_BASE_DIR}/include)
-        link_directories(${OPENVINO_BASE_DIR}/libs)
-        
-        # 런타임 경로 설정
-        set(CMAKE_INSTALL_RPATH "${OPENVINO_BASE_DIR}/libs")
-        set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-        
-        add_definitions(-DUSE_OPENVINO)
-    else()
-        message(WARNING "OpenVINO CMake config found but package import failed.")
-    endif()
-else()
-    message(WARNING "OpenVINO not found. YOLO segmentation will be disabled.")
-endif()
-
 # 헤더 파일 경로 추가
 include_directories(${OpenCV_INCLUDE_DIRS})
 
@@ -245,6 +217,7 @@ add_executable(Inspector
     LanguageManager.cpp
     LanguageSettingsDialog.cpp
     SerialSettingsDialog.cpp
+    CameraSettingsDialog.cpp
     ClientDialog.cpp
     TestDialog.cpp
     RecipeManager.cpp
@@ -255,7 +228,7 @@ add_executable(Inspector
     TrainDialog.cpp
 )
 
-# Qt6, OpenCV, OpenVINO 및 추가 라이브러리 연결
+# Qt6, OpenCV 및 추가 라이브러리 연결
 target_link_libraries(Inspector 
     PRIVATE
     Qt6::Widgets 
@@ -265,11 +238,6 @@ target_link_libraries(Inspector
     ${OpenCV_LIBS}
     ${EXTRA_LIBS}
 )
-
-# OpenVINO 링크 (조건부)
-if(OpenVINO_FOUND)
-    target_link_libraries(Inspector PRIVATE openvino::runtime)
-endif()
 
 # TensorRT 링크 (JETSON 전용)
 if(USE_TENSORRT)

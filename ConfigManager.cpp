@@ -30,6 +30,7 @@ ConfigManager::ConfigManager(QObject* parent) : QObject(parent) {
     m_reconnectInterval = 10;  // 기본 재연결 간격 10초
     m_heartbeatInterval = 30;  // 기본 Heartbeat 주기 30초
     m_cameraAutoConnect = false;  // 기본 카메라 자동 연결 비활성화
+    m_saveTriggerImages = true;  // 기본 트리거 영상 저장 활성화
     
     // 프로퍼티 패널 기본값
     m_propertyPanelGeometry = QRect(0, 0, 400, 600);
@@ -120,6 +121,10 @@ bool ConfigManager::loadConfig() {
             } else if (xml.name() == QLatin1String("CameraAutoConnect")) {
                 QString value = xml.readElementText();
                 m_cameraAutoConnect = (value.toLower() == "true");
+            } else if (xml.name() == QLatin1String("SaveTriggerImages")) {
+                QString value = xml.readElementText();
+                m_saveTriggerImages = (value.toLower() == "true");
+                qDebug() << "[ConfigManager] Save trigger images loaded:" << m_saveTriggerImages;
             } else if (xml.name() == QLatin1String("PropertyPanel")) {
                 // 프로퍼티 패널 설정
                 QXmlStreamAttributes attrs = xml.attributes();
@@ -211,6 +216,9 @@ bool ConfigManager::saveConfig() {
     
     // 카메라 자동 연결 설정 저장
     xml.writeTextElement("CameraAutoConnect", m_cameraAutoConnect ? "true" : "false");
+    
+    // 트리거 영상 저장 설정 저장
+    xml.writeTextElement("SaveTriggerImages", m_saveTriggerImages ? "true" : "false");
     
     // 프로퍼티 패널 설정 저장
     xml.writeStartElement("PropertyPanel");
@@ -441,6 +449,18 @@ bool ConfigManager::getLogPanelCollapsed() const {
 void ConfigManager::setLogPanelCollapsed(bool collapsed) {
     if (m_logPanelCollapsed != collapsed) {
         m_logPanelCollapsed = collapsed;
+        saveConfig();
+    }
+}
+
+// 트리거 영상 저장 설정
+bool ConfigManager::getSaveTriggerImages() const {
+    return m_saveTriggerImages;
+}
+
+void ConfigManager::setSaveTriggerImages(bool enable) {
+    if (m_saveTriggerImages != enable) {
+        m_saveTriggerImages = enable;
         saveConfig();
     }
 }
