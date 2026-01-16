@@ -218,8 +218,8 @@ struct PatternInfo {
     QColor color;
     bool enabled = true;
     PatternType type = PatternType::ROI;
-    QString cameraUuid;  // 카메라 UUID를 저장하기 위한 필드
-    int frameIndex = 0;  // 프레임 인덱스 (0~3)
+    // QString cameraUuid;  // [REMOVED] 더 이상 사용하지 않음 - imageIndex만 사용
+    int frameIndex = 0;  // 프레임 인덱스 (0~3) - 이미지 인덱스
     
     // 회전 각도(도 단위) 추가
     double angle = 0.0;

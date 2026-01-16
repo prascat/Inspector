@@ -13,6 +13,6 @@
     <HeartbeatInterval>30</HeartbeatInterval>
     <CameraAutoConnect>false</CameraAutoConnect>
     <SaveTriggerImages>false</SaveTriggerImages>
-    <PropertyPanel x="19" y="110" width="425" height="600" collapsed="false" expandedHeight="600"/>
+    <PropertyPanel x="19" y="110" width="426" height="600" collapsed="false" expandedHeight="600"/>
     <LogPanel x="3" y="569" width="800" height="421" collapsed="false"/>
 </Config>

@@ -113,10 +113,8 @@ bool RecipeManager::saveRecipe(const QString& fileName,
     // ★ 디버그: 저장하려는 카메라 정보 출력
     qDebug() << "[RecipeManager] === saveRecipe - Camera Info List ===";
     for (int i = 0; i < actualCameraInfos.size(); i++) {
-        qDebug() << QString("[RecipeManager] Camera[%1]: UUID=%2, Serial=%3, Index=%4")
+        qDebug() << QString("[RecipeManager] Camera[%1]: Index=%2")
                     .arg(i)
-                    .arg(actualCameraInfos[i].uniqueId)
-                    .arg(actualCameraInfos[i].serialNumber)
                     .arg(actualCameraInfos[i].imageIndex);
     }
     qDebug() << "[RecipeManager] =====================================";
@@ -267,9 +265,9 @@ bool RecipeManager::saveRecipe(const QString& fileName,
     
     int savedCameraCount = 0;
     
-    
-    // 모든 연결된 카메라에 대해 레시피 저장 (최대 2대)
-    for (int camIdx = 0; camIdx < actualCameraInfos.size(); camIdx++) {
+    // cameraFrames 개수만큼 반복 (4개 프레임: 0,1,2,3)
+    int totalFrames = teachingWidget ? teachingWidget->cameraFrames.size() : actualCameraInfos.size();
+    for (int camIdx = 0; camIdx < totalFrames; camIdx++) {
         
         QList<PatternInfo> allPatterns;
         int patternCount = 0;
@@ -278,20 +276,22 @@ bool RecipeManager::saveRecipe(const QString& fileName,
         if (cameraView != nullptr) {
             allPatterns = cameraView->getPatterns();
             
-            // 이 카메라에 할당된 패턴 수 확인
+            // 이 카메라(imageIndex)에 할당된 패턴 수 확인
             for (const PatternInfo& pattern : allPatterns) {
-                if (pattern.cameraUuid == actualCameraInfos[camIdx].uniqueId) {
+                if (pattern.frameIndex == actualCameraInfos[camIdx].imageIndex) {
                     patternCount++;
-                } else {
                 }
             }
         }
         
         // 시뮬레이션 카메라는 패턴이 없어도 저장
-        bool isSimulationCamera = (actualCameraInfos[camIdx].locationId == "SIMULATION" || 
+        bool isSimulationCamera = false;
+        if (camIdx < actualCameraInfos.size()) {
+            isSimulationCamera = (actualCameraInfos[camIdx].locationId == "SIMULATION" || 
                                   actualCameraInfos[camIdx].serialNumber == "SIM_SERIAL" ||
                                   actualCameraInfos[camIdx].uniqueId.startsWith("SIM_") ||
                                   actualCameraInfos[camIdx].uniqueId.isEmpty());
+        }
         
         // 현재 선택된 카메라는 패턴이 없어도 저장
         bool isCurrentCamera = (camIdx == currentCameraIndex);
@@ -299,21 +299,18 @@ bool RecipeManager::saveRecipe(const QString& fileName,
         // 티칭 이미지가 있는지 확인 (frameIndex = camIdx 직접 매핑)
         bool hasTeachingImages = false;
         if (teachingWidget) {
-            int frameIndex = camIdx;  // 프레임 번호를 카메라 인덱스와 1:1 매핑
-            hasTeachingImages = (frameIndex < static_cast<int>(teachingWidget->cameraFrames.size()) &&
-                                !teachingWidget->cameraFrames[frameIndex].empty());
+            hasTeachingImages = (camIdx < static_cast<int>(teachingWidget->cameraFrames.size()) &&
+                                !teachingWidget->cameraFrames[camIdx].empty());
         }
         
         if (patternCount == 0 && !isSimulationCamera && !isCurrentCamera && !hasTeachingImages) {
-            qDebug() << QString("카메라 '%1' 건너뜀 (패턴 없음, 티칭 이미지 없음)").arg(actualCameraInfos[camIdx].uniqueId);
+            qDebug() << QString("프레임 %1 건너뜀 (패턴 없음, 티칭 이미지 없음)").arg(camIdx);
             continue;
         }
         
-        // 카메라 정보 저장
+        // 카메라 정보 저장 (imageIndex = camIdx 직접 사용)
         xml.writeStartElement("Camera");
-        xml.writeAttribute("uuid", actualCameraInfos[camIdx].uniqueId);
-        xml.writeAttribute("serialNumber", actualCameraInfos[camIdx].serialNumber);
-        xml.writeAttribute("imageIndex", QString::number(actualCameraInfos[camIdx].imageIndex));
+        xml.writeAttribute("imageIndex", QString::number(camIdx));  // camIdx를 직접 사용 (0,1,2,3)
         
         // 먼저 width, height 속성 추가 (이미지 크기 정보)
         cv::Mat sizeCheckImage;
@@ -352,7 +349,6 @@ bool RecipeManager::saveRecipe(const QString& fileName,
                     
                     xml.writeStartElement("TeachingImage");
                     xml.writeAttribute("imageIndex", QString::number(frameIndex));
-                    xml.writeAttribute("name", QString("Frame_%1").arg(frameIndex));
                     xml.writeAttribute("width", QString::number(frameImage.cols));
                     xml.writeAttribute("height", QString::number(frameImage.rows));
                     xml.writeCharacters(imageBase64);
@@ -399,19 +395,15 @@ bool RecipeManager::saveRecipe(const QString& fileName,
         }
         
         
-        // 캘리브레이션 정보 저장
-        QString currentCameraUuid = actualCameraInfos[camIdx].uniqueId;
+        // 캘리브레이션 정보 저장 (imageIndex = camIdx)
+        int currentImageIndex = camIdx;  // camIdx를 직접 사용
         CalibrationInfo calibInfo;
-        if (calibrationMap.contains(currentCameraUuid)) {
-            calibInfo = calibrationMap[currentCameraUuid];
-        }
+        // calibrationMap은 더 이상 UUID 키를 사용하지 않음 - 필요시 imageIndex로 변경 필요
         
-        if (calibInfo.isCalibrated) {
-            writeCalibrationInfo(xml, calibInfo);
+        // 카메라 설정 저장 (actualCameraInfos 범위 확인)
+        if (camIdx < actualCameraInfos.size()) {
+            writeCameraSettings(xml, actualCameraInfos[camIdx]);
         }
-        
-        // 카메라 설정 저장
-        writeCameraSettings(xml, actualCameraInfos[camIdx]);
         
         // 패턴 저장 시작
         xml.writeStartElement("Patterns");
@@ -421,14 +413,14 @@ bool RecipeManager::saveRecipe(const QString& fileName,
             
             QList<QUuid> processedPatterns;
             
-            // 1. ROI 패턴들 저장
-            writeROIPatterns(xml, allPatterns, currentCameraUuid, processedPatterns);
+            // 1. ROI 패턴들 저장 (imageIndex 기준)
+            writeROIPatterns(xml, allPatterns, currentImageIndex, processedPatterns);
             
-            // 2. FID 패턴들 저장
-            writeFIDPatterns(xml, allPatterns, currentCameraUuid, processedPatterns);
+            // 2. FID 패턴들 저장 (imageIndex 기준)
+            writeFIDPatterns(xml, allPatterns, currentImageIndex, processedPatterns);
             
-            // 3. 독립 패턴들 저장
-            writeIndependentPatterns(xml, allPatterns, currentCameraUuid, processedPatterns);
+            // 3. 독립 패턴들 저장 (imageIndex 기준)
+            writeIndependentPatterns(xml, allPatterns, currentImageIndex, processedPatterns);
             
         } else {
         }
@@ -619,44 +611,21 @@ void RecipeManager::writeCameraSettings(QXmlStreamWriter& xml, const CameraInfo&
         xml.writeCharacters("-1");
         xml.writeEndElement();
         
-        xml.writeStartElement("deviceId");
-        xml.writeCharacters("SIMULATION");
-        xml.writeEndElement();
-        
-        xml.writeStartElement("uniqueId");
-        xml.writeCharacters(cameraInfo.uniqueId);
-        xml.writeEndElement();
-        
-        // serialNumber에 저장된 JSON 데이터를 simulationData로 저장
-        if (!cameraInfo.serialNumber.isEmpty() && cameraInfo.serialNumber != "SIM_SERIAL") {
-            xml.writeStartElement("simulationData");
-            xml.writeCharacters(cameraInfo.serialNumber);
-            xml.writeEndElement();
-        }
+        // simulationData는 필요시 저장 (현재 사용 안함)
     } else {
-        // 실제 카메라 (Spinnaker 또는 OpenCV)
+        // 실제 카메라 (Spinnaker SDK)
         // videoDeviceIndex 제거됨 (Spinnaker SDK만 사용)
-        
-        xml.writeStartElement("deviceId");
-        xml.writeCharacters(cameraInfo.uniqueId);  // Spinnaker UUID 또는 OpenCV device ID
-        xml.writeEndElement();
-        
-        xml.writeStartElement("uniqueId");
-        xml.writeCharacters(cameraInfo.uniqueId);
-        xml.writeEndElement();
-        
-        // OpenCV capture 제거됨 (Spinnaker SDK만 사용)
         // 카메라 설정은 Spinnaker UserSet으로 관리됨
     }
 }
 
 void RecipeManager::writeROIPatterns(QXmlStreamWriter& xml, const QList<PatternInfo>& allPatterns, 
-                                    const QString& cameraUuid, QList<QUuid>& processedPatterns) {
+                                    int imageIndex, QList<QUuid>& processedPatterns) {
     int roiCount = 0;
     
     for (const PatternInfo& pattern : allPatterns) {
         
-        if (pattern.cameraUuid == cameraUuid && 
+        if (pattern.frameIndex == imageIndex && 
             pattern.type == PatternType::ROI && 
             pattern.parentId.isNull() &&
             !processedPatterns.contains(pattern.id)) {
@@ -680,12 +649,12 @@ void RecipeManager::writeROIPatterns(QXmlStreamWriter& xml, const QList<PatternI
 }
 
 void RecipeManager::writeFIDPatterns(QXmlStreamWriter& xml, const QList<PatternInfo>& allPatterns, 
-                                    const QString& cameraUuid, QList<QUuid>& processedPatterns) {
+                                    int imageIndex, QList<QUuid>& processedPatterns) {
     int fidCount = 0;
     
     for (const PatternInfo& pattern : allPatterns) {
         
-        if (pattern.cameraUuid == cameraUuid && 
+        if (pattern.frameIndex == imageIndex && 
             pattern.type == PatternType::FID && 
             pattern.parentId.isNull() &&
             !processedPatterns.contains(pattern.id)) {
@@ -709,12 +678,12 @@ void RecipeManager::writeFIDPatterns(QXmlStreamWriter& xml, const QList<PatternI
 }
 
 void RecipeManager::writeIndependentPatterns(QXmlStreamWriter& xml, const QList<PatternInfo>& allPatterns, 
-                                           const QString& cameraUuid, QList<QUuid>& processedPatterns) {
+                                           int imageIndex, QList<QUuid>& processedPatterns) {
     int independentCount = 0;
     
     for (const PatternInfo& pattern : allPatterns) {
         
-        if (pattern.cameraUuid == cameraUuid && 
+        if (pattern.frameIndex == imageIndex && 
             pattern.parentId.isNull() &&
             !processedPatterns.contains(pattern.id)) {
             
@@ -1015,19 +984,13 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                                      QString& loadedCameraNames,
                                      std::function<void(const QStringList&)> trainingImageCallback,
                                      TeachingWidget* teachingWidget) {
-    QString cameraUuid = xml.attributes().value("uuid").toString();
     QString imageIndexAttr = xml.attributes().value("imageIndex").toString();
     int imageIndex = imageIndexAttr.isEmpty() ? 0 : imageIndexAttr.toInt();
     
-    if (cameraUuid.isEmpty()) {
-        xml.skipCurrentElement();
-        return false;
-    }
-    
-    // 해당 카메라가 로드하려는 카메라 목록에 있는지 확인하고 CameraInfo 찾기
+    // imageIndex로 CameraInfo 찾기
     CameraInfo* currentCameraInfo = nullptr;
     for (CameraInfo& info : cameraInfos) {
-        if (info.uniqueId == cameraUuid) {
+        if (info.imageIndex == imageIndex) {
             currentCameraInfo = &info;
             break;
         }
@@ -1035,37 +998,11 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
     
     // 카메라가 없으면 레시피에서 카메라 정보를 생성해서 추가
     if (!currentCameraInfo) {
-        // serialNumber 우선, 없으면 name(구버전 호환성), 그것도 없으면 기본값
-        QString cameraSerial = xml.attributes().value("serialNumber").toString();
-        if (cameraSerial.isEmpty()) {
-            cameraSerial = xml.attributes().value("name").toString(); // 구버전 호환
-        }
-        if (cameraSerial.isEmpty()) {
-            cameraSerial = QString("Camera_%1").arg(cameraUuid);
-        }
-        
         CameraInfo newCameraInfo;
-        newCameraInfo.uniqueId = cameraUuid;
-        newCameraInfo.serialNumber = cameraSerial;
-        newCameraInfo.imageIndex = imageIndex;  // 이미지 인덱스 설정
-        
-        // 인덱스 설정 - cameraInfos의 현재 크기를 사용
+        newCameraInfo.imageIndex = imageIndex;
         newCameraInfo.index = cameraInfos.size();
-        // videoDeviceIndex 제거됨
-        
-        // 시뮬레이션 모드 체크 - cameraInfos가 비어있다면 시뮬레이션 모드
-        if (cameraInfos.isEmpty()) {
-            newCameraInfo.isConnected = true;   // camOff 모드에서는 연결된 것으로 표시
-            newCameraInfo.serialNumber = QString::number(newCameraInfo.index);
-            
-            // 레시피에서 시뮬레이션 데이터 읽기
-            QString simulationData = xml.attributes().value("simulationData").toString();
-            if (!simulationData.isEmpty()) {
-                newCameraInfo.serialNumber = simulationData;
-            }
-        } else {
-            newCameraInfo.isConnected = false;  // 라이브 모드에서는 실제 연결 상태에 따라
-        }
+        newCameraInfo.isConnected = true;   // camOff 모드에서는 연결된 것으로 표시
+        newCameraInfo.name = QString("Frame_%1").arg(imageIndex);
         
         cameraInfos.append(newCameraInfo);
         currentCameraInfo = &cameraInfos.last();
@@ -1102,10 +1039,10 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                                 .arg(originalWidth).arg(originalHeight);
                 }
                 
-                // 해당 카메라의 인덱스 찾기
+                // 해당 카메라의 인덱스 찾기 (imageIndex 기준)
                 int cameraIdx = -1;
                 for (int i = 0; i < cameraInfos.size(); ++i) {
-                    if (cameraInfos[i].uniqueId == cameraUuid) {
+                    if (cameraInfos[i].imageIndex == imageIndex) {
                         cameraIdx = i;
                         break;
                     }
@@ -1121,8 +1058,8 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
                             cv::Mat clonedImage = teachingImage.clone();
                             if (!clonedImage.empty() && clonedImage.data) {
                                 teachingWidget->cameraFrames[cameraIdx] = std::move(clonedImage);
-                                qDebug() << QString("카메라 '%1' (인덱스 %2) base64 티칭 이미지를 cameraFrames에 직접 설정: %3x%4")
-                                            .arg(cameraUuid).arg(cameraIdx).arg(teachingImage.cols).arg(teachingImage.rows);
+                                qDebug() << QString("카메라 (imageIndex %1, 배열인덱스 %2) base64 티칭 이미지를 cameraFrames에 직접 설정: %3x%4")
+                                            .arg(imageIndex).arg(cameraIdx).arg(teachingImage.cols).arg(teachingImage.rows);
                             } else {
                                 qWarning() << QString("[RecipeManager] 카메라 %1: clone 실패").arg(cameraIdx);
                             }
@@ -1140,7 +1077,6 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
             if (xml.name() == QLatin1String("TeachingImage")) {
                 // 새 형식: TeachingImage 요소로 이미지 읽기
                 int imageIndex = xml.attributes().value("imageIndex").toInt();
-                QString imageName = xml.attributes().value("name").toString();
                 int width = xml.attributes().value("width").toInt();
                 int height = xml.attributes().value("height").toInt();
                 QString base64Data = xml.readElementText();
@@ -1192,14 +1128,14 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
             }
             else if (xml.name() == QLatin1String("Calibration")) {
                 CalibrationInfo calibInfo = readCalibrationInfo(xml);
-                calibrationMap[cameraUuid] = calibInfo;
+                calibrationMap[QString::number(imageIndex)] = calibInfo;  // imageIndex를 키로 사용
             }
             else if (xml.name() == QLatin1String("Patterns")) {
                 // Patterns 컨테이너 내부의 Pattern들 읽기
                 while (xml.readNextStartElement()) {
                     if (xml.name() == QLatin1String("Pattern")) {
-                        // **부모 패턴 읽기**
-                        PatternInfo pattern = readPattern(xml, cameraUuid);
+                        // **부모 패턴 읽기** (imageIndex 전달)
+                        PatternInfo pattern = readPattern(xml, imageIndex);
                         
                         if (!pattern.id.isNull()) {
                             // **부모 패턴을 CameraView에 추가**
@@ -1310,7 +1246,7 @@ bool RecipeManager::readCameraSection(QXmlStreamReader& xml,
     }
     
     if (cameraPatternCount > 0) {
-        loadedCameraNames += QString("- 카메라 %1: %2개 패턴\n").arg(cameraUuid).arg(cameraPatternCount);
+        loadedCameraNames += QString("- Frame %1: %2개 패턴\n").arg(imageIndex).arg(cameraPatternCount);
     }
     
     return true;
@@ -1334,14 +1270,14 @@ CalibrationInfo RecipeManager::readCalibrationInfo(QXmlStreamReader& xml) {
 
 // 새로운 함수 추가 - 자식 패턴들을 읽어서 별도로 저장
 
-QStringList RecipeManager::readChildPatterns(QXmlStreamReader& xml, const QString& cameraUuid, 
+QStringList RecipeManager::readChildPatterns(QXmlStreamReader& xml, int imageIndex, 
                                            const QUuid& parentId) {
     QStringList childIds;
     
     while (xml.readNextStartElement()) {
         if (xml.name() == QLatin1String("Pattern")) {
             // **자식 패턴을 재귀적으로 읽기**
-            PatternInfo childPattern = readPattern(xml, cameraUuid);
+            PatternInfo childPattern = readPattern(xml, imageIndex);
             
             if (!childPattern.id.isNull()) {
                 // **부모 ID 설정**
@@ -1364,13 +1300,13 @@ QStringList RecipeManager::readChildPatterns(QXmlStreamReader& xml, const QStrin
 
 // readPattern() 함수 완전 수정 - 자식 패턴들도 읽어오기
 
-PatternInfo RecipeManager::readPattern(QXmlStreamReader& xml, const QString& cameraUuid) {
+PatternInfo RecipeManager::readPattern(QXmlStreamReader& xml, int imageIndex) {
     PatternInfo pattern;
     
     try {
         pattern.id = QUuid(xml.attributes().value("id").toString());
         pattern.name = xml.attributes().value("name").toString();
-        pattern.cameraUuid = cameraUuid;
+        pattern.frameIndex = imageIndex;  // cameraUuid 대신 frameIndex 사용
         
         QString typeStr = xml.attributes().value("type").toString();
         if (typeStr == "ROI") pattern.type = PatternType::ROI;
@@ -1423,7 +1359,7 @@ PatternInfo RecipeManager::readPattern(QXmlStreamReader& xml, const QString& cam
             }
             else if (xml.name() == QLatin1String("ChildPatterns") || xml.name() == QLatin1String("Children")) {
                 // **자식 패턴들 읽기 - 여기가 핵심!**
-                QStringList childIdStrings = readChildPatterns(xml, cameraUuid, pattern.id);
+                QStringList childIdStrings = readChildPatterns(xml, imageIndex, pattern.id);
                 for (const QString& childIdStr : childIdStrings) {
                     pattern.childIds.append(QUuid(childIdStr));
                 }
@@ -2209,33 +2145,28 @@ bool RecipeManager::saveRecipeByName(const QString& recipeName, const QVector<Pa
         }
     }
     
-    // 카메라 UUID별로 패턴들을 그룹화
-    QMap<QString, QVector<PatternInfo>> cameraPatterns;
+    // frameIndex별로 패턴들을 그룹화
+    QMap<int, QVector<PatternInfo>> framePatterns;
     for (const PatternInfo& pattern : patterns) {
-        QString cameraUuid = pattern.cameraUuid.isEmpty() ? "default" : pattern.cameraUuid;
-        cameraPatterns[cameraUuid].append(pattern);
-        existingCameras.insert(cameraUuid); // 패턴이 있는 카메라도 추가
+        int frameIndex = pattern.frameIndex;
+        framePatterns[frameIndex].append(pattern);
     }
     
-    // 모든 카메라(기존 + 새로운)를 저장
-    for (const QString& cameraUuid : existingCameras) {
-        const QVector<PatternInfo>& cameraPatternList = cameraPatterns.value(cameraUuid); // 패턴이 없으면 빈 벡터
+    // 모든 프레임(기존 + 새로운)을 저장
+    QSet<int> allFrames;
+    for (const auto& frameIndex : framePatterns.keys()) {
+        allFrames.insert(frameIndex);
+    }
+    
+    for (int frameIndex : allFrames) {
+        const QVector<PatternInfo>& framePatternList = framePatterns.value(frameIndex); // 패턴이 없으면 빈 벡터
         
         xml.writeStartElement("Camera");
-        xml.writeAttribute("uuid", cameraUuid);
-        xml.writeAttribute("serialNumber", cameraUuid); // UUID를 serialNumber로 사용
-        
-        // 카메라별 티칭 이미지 정보 추가
-        QString teachingImageName = QString("%1.jpg").arg(cameraUuid);
-        xml.writeAttribute("teachingImage", teachingImageName);
-        // 주의: 이 함수에서는 base64 처리하지 않음 (패턴만 저장하는 용도)
-        
-        // 디버그: 레시피에 카메라별 티칭 이미지 정보 저장
-        qDebug() << QString("레시피에 카메라 '%1'의 티칭 이미지 '%2' 저장").arg(cameraUuid).arg(teachingImageName);
+        xml.writeAttribute("imageIndex", QString::number(frameIndex));
         
         xml.writeStartElement("Patterns");
         
-        for (const PatternInfo& pattern : cameraPatternList) {
+        for (const PatternInfo& pattern : framePatternList) {
             writePatternHeader(xml, pattern);
             writePatternRect(xml, pattern);
             
@@ -2312,7 +2243,8 @@ bool RecipeManager::loadRecipeByName(const QString& recipeName, QVector<PatternI
                 // 각 카메라별 레시피 읽기
                 while (xml.readNextStartElement()) {
                     if (xml.name() == QLatin1String("Camera")) {
-                        QString cameraUuid = xml.attributes().value("uuid").toString();
+                        QString imageIndexAttr = xml.attributes().value("imageIndex").toString();
+                        int imageIndex = imageIndexAttr.isEmpty() ? 0 : imageIndexAttr.toInt();
                         
                         // 카메라 내부의 Patterns 태그 찾기
                         while (xml.readNextStartElement()) {
@@ -2320,7 +2252,7 @@ bool RecipeManager::loadRecipeByName(const QString& recipeName, QVector<PatternI
                                 // Patterns 내부의 Pattern들 처리
                                 while (xml.readNextStartElement()) {
                                     if (xml.name() == QLatin1String("Pattern")) {
-                                        PatternInfo pattern = readPattern(xml, cameraUuid);
+                                        PatternInfo pattern = readPattern(xml, imageIndex);
                                         if (!pattern.id.isNull()) {
                                             patterns.append(pattern);
                                         }

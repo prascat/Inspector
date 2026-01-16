@@ -246,15 +246,15 @@ void FilterDialog::onFilterCheckStateChanged(int state) {
                 // 필터 패턴의 정보 가져오기
                 PatternInfo* pattern = cameraView->getPatternById(patternId);
                 if (pattern) {
-                    // 현재 카메라의 UUID 가져오기
-                    QString currentCameraUuid = pattern->cameraUuid;
+                    // 현재 프레임 인덱스 가져오기
+                    int currentFrameIndex = pattern->frameIndex;
                     
                     // FIL 패턴인 경우: 겹치는 INS 패턴들의 템플릿 갱신
                     if (pattern->type == PatternType::FIL) {
                         const QList<PatternInfo>& allPatterns = cameraView->getPatterns();
                         for (const PatternInfo& insPattern : allPatterns) {
                             if (insPattern.type == PatternType::INS && 
-                                insPattern.cameraUuid == currentCameraUuid &&
+                                insPattern.frameIndex == currentFrameIndex &&
                                 insPattern.rect.intersects(pattern->rect)) {
                                 PatternInfo* insPatternPtr = cameraView->getPatternById(insPattern.id);
                                 if (insPatternPtr) {
@@ -285,15 +285,15 @@ void FilterDialog::onFilterCheckStateChanged(int state) {
                 // 필터 패턴의 정보 가져오기
                 PatternInfo* pattern = cameraView->getPatternById(patternId);
                 if (pattern) {
-                    // 현재 카메라의 UUID 가져오기
-                    QString currentCameraUuid = pattern->cameraUuid;
+                    // 현재 프레임 인덱스 가져오기
+                    int currentFrameIndex = pattern->frameIndex;
                     
                     // FIL 패턴인 경우: 겹치는 INS 패턴들의 템플릿 갱신
                     if (pattern->type == PatternType::FIL) {
                         const QList<PatternInfo>& allPatterns = cameraView->getPatterns();
                         for (const PatternInfo& insPattern : allPatterns) {
                             if (insPattern.type == PatternType::INS && 
-                                insPattern.cameraUuid == currentCameraUuid &&
+                                insPattern.frameIndex == currentFrameIndex &&
                                 insPattern.rect.intersects(pattern->rect)) {
                                 PatternInfo* insPatternPtr = cameraView->getPatternById(insPattern.id);
                                 if (insPatternPtr) {
@@ -821,15 +821,15 @@ void FilterDialog::updateFilterParam(int filterType, const QString& paramName, i
         if (auto teachingWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
             PatternInfo* pattern = cameraView->getPatternById(patternId);
             if (pattern && pattern->type == PatternType::FIL) {
-                // 현재 카메라의 UUID 가져오기
-                QString currentCameraUuid = pattern->cameraUuid;
+                // 현재 프레임 인덱스 가져오기
+                int currentFrameIndex = pattern->frameIndex;
                 
                 // 모든 INS 패턴 찾기
                 const QList<PatternInfo>& allPatterns = cameraView->getPatterns();
                 for (const PatternInfo& insPattern : allPatterns) {
-                    // 현재 카메라에 있는 INS 패턴 중 마스크 영역과 겹치는 패턴만 처리
+                    // 현재 프레임에 있는 INS 패턴 중 마스크 영역과 겹치는 패턴만 처리
                     if (insPattern.type == PatternType::INS && 
-                        insPattern.cameraUuid == currentCameraUuid &&
+                        insPattern.frameIndex == currentFrameIndex &&
                         insPattern.rect.intersects(pattern->rect)) {
                         // 해당 INS 패턴의 템플릿 이미지 갱신 (여기가 중요!)
                         PatternInfo* insPatternPtr = cameraView->getPatternById(insPattern.id);
@@ -1004,15 +1004,15 @@ void FilterDialog::onApplyClicked() {
                 // 먼저 화면 갱신
                 parentWidget->updateCameraFrame();
                 
-                // 현재 카메라의 UUID 가져오기
-                QString currentCameraUuid = pattern->cameraUuid;
+                // 현재 프레임 인덱스 가져오기
+                int currentFrameIndex = pattern->frameIndex;
                 
                 // 모든 INS 패턴 찾기
                 const QList<PatternInfo>& allPatterns = cameraView->getPatterns();
                 for (const PatternInfo& insPattern : allPatterns) {
-                    // 현재 카메라에 있는 INS 패턴 중 마스크 영역과 겹치는 패턴만 처리
+                    // 현재 프레임에 있는 INS 패턴 중 마스크 영역과 겹치는 패턴만 처리
                     if (insPattern.type == PatternType::INS &&
-                        insPattern.cameraUuid == currentCameraUuid &&
+                        insPattern.frameIndex == currentFrameIndex &&
                         insPattern.rect.intersects(pattern->rect)) {
                         // 해당 INS 패턴의 템플릿 이미지 갱신
                         PatternInfo* insPatternPtr = cameraView->getPatternById(insPattern.id);

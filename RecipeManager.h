@@ -124,19 +124,19 @@ private:
     QString circuitSealSide0;
     QString circuitSealSide1;
     
-    QStringList readChildPatterns(QXmlStreamReader& xml, const QString& cameraUuid, 
+    QStringList readChildPatterns(QXmlStreamReader& xml, int imageIndex, 
         const QUuid& parentId);
     // === 저장 관련 함수들 ===
     void writeCalibrationInfo(QXmlStreamWriter& xml, const CalibrationInfo& calibInfo);
     void writeCameraSettings(QXmlStreamWriter& xml, const CameraInfo& cameraInfo);
     
-    // 패턴 저장
+    // 패턴 저장 (imageIndex 기준)
     void writeROIPatterns(QXmlStreamWriter& xml, const QList<PatternInfo>& allPatterns, 
-                         const QString& cameraUuid, QList<QUuid>& processedPatterns);
+                         int imageIndex, QList<QUuid>& processedPatterns);
     void writeFIDPatterns(QXmlStreamWriter& xml, const QList<PatternInfo>& allPatterns, 
-                         const QString& cameraUuid, QList<QUuid>& processedPatterns);
+                         int imageIndex, QList<QUuid>& processedPatterns);
     void writeIndependentPatterns(QXmlStreamWriter& xml, const QList<PatternInfo>& allPatterns, 
-                                 const QString& cameraUuid, QList<QUuid>& processedPatterns);
+                                 int imageIndex, QList<QUuid>& processedPatterns);
     
     // 패턴 세부 정보 저장
     void writePatternHeader(QXmlStreamWriter& xml, const PatternInfo& pattern);
@@ -163,7 +163,7 @@ private:
                           TeachingWidget* teachingWidget = nullptr);
     
     CalibrationInfo readCalibrationInfo(QXmlStreamReader& xml);
-    PatternInfo readPattern(QXmlStreamReader& xml, const QString& cameraUuid);
+    PatternInfo readPattern(QXmlStreamReader& xml, int imageIndex);
     void readPatternRect(QXmlStreamReader& xml, PatternInfo& pattern);
     void readPatternDetails(QXmlStreamReader& xml, PatternInfo& pattern);
     void readROIDetails(QXmlStreamReader& xml, PatternInfo& pattern);

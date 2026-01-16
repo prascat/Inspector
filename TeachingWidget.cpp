@@ -5919,60 +5919,34 @@ void TeachingWidget::updateFidTemplateImage(PatternInfo *pattern, const QRectF &
     // 패턴이 회전되어 있는지 확인
     if (std::abs(pattern->angle) > 0.1)
     {
-        // ★ 회전된 경우: 마스킹된 이미지 생성 (INS와 동일)
+        // FID 패턴은 회전 매칭을 사용하므로, 템플릿은 회전하지 않고 0도 상태로 저장
+        // 회전 영역을 실제로 잘라내기 위해 회전 변환 적용
         cv::Point2f center(newRect.x() + newRect.width() / 2.0f,
                           newRect.y() + newRect.height() / 2.0f);
 
         double width = newRect.width();
         double height = newRect.height();
 
-        // 회전된 사각형의 bounding box 크기 계산
-        int bboxWidth, bboxHeight;
-        calculateRotatedBoundingBox(width, height, pattern->angle, bboxWidth, bboxHeight);
-
-        // ROI 영역 계산 (중심점 기준)
-        cv::Rect bboxRoi(
-            static_cast<int>(center.x - bboxWidth / 2.0),
-            static_cast<int>(center.y - bboxHeight / 2.0),
-            bboxWidth,
-            bboxHeight);
-
+        // 이미지를 회전시켜 0도로 만듦
+        cv::Mat rotMatrix = cv::getRotationMatrix2D(center, -pattern->angle, 1.0);
+        cv::Mat rotatedImage;
+        cv::warpAffine(sourceFrame, rotatedImage, rotMatrix, sourceFrame.size());
+        
+        // 회전 후 정사각형 영역 추출 (이제 0도 상태)
+        cv::Rect roi(
+            static_cast<int>(center.x - width / 2.0),
+            static_cast<int>(center.y - height / 2.0),
+            static_cast<int>(width),
+            static_cast<int>(height));
+        
         // 이미지 경계와 교집합 구하기
-        cv::Rect imageBounds(0, 0, sourceFrame.cols, sourceFrame.rows);
-        cv::Rect validRoi = bboxRoi & imageBounds;
-
+        cv::Rect imageBounds(0, 0, rotatedImage.cols, rotatedImage.rows);
+        cv::Rect validRoi = roi & imageBounds;
+        
         if (validRoi.width > 0 && validRoi.height > 0)
         {
-            // bounding box 크기의 결과 이미지 생성 (검은색 배경)
-            cv::Mat templateRegion = cv::Mat::zeros(bboxHeight, bboxWidth, sourceFrame.type());
-            cv::Mat maskRegion = cv::Mat::zeros(bboxHeight, bboxWidth, CV_8UC1);
-
-            // 유효한 영역만 복사
-            int offsetX = validRoi.x - bboxRoi.x;
-            int offsetY = validRoi.y - bboxRoi.y;
-
-            cv::Mat validImage = sourceFrame(validRoi);
-            cv::Rect resultRect(offsetX, offsetY, validRoi.width, validRoi.height);
-            validImage.copyTo(templateRegion(resultRect));
-
-            // ★ 회전된 사각형 영역을 마스크로 생성
-            cv::Point2f rectCenter(bboxWidth / 2.0f, bboxHeight / 2.0f);
-            cv::RotatedRect rotatedRect(rectCenter, cv::Size2f(width, height), pattern->angle);
-            
-            cv::Point2f vertices[4];
-            rotatedRect.points(vertices);
-            std::vector<cv::Point> contour;
-            for (int i = 0; i < 4; i++) {
-                contour.push_back(cv::Point(static_cast<int>(vertices[i].x), static_cast<int>(vertices[i].y)));
-            }
-            cv::fillConvexPoly(maskRegion, contour, cv::Scalar(255));
-
-            // ★ 마스크를 이미지에 적용 (배경을 검은색으로)
-            cv::Mat maskedImage;
-            templateRegion.copyTo(maskedImage, maskRegion);
-
-            roiMat = maskedImage.clone();
-            maskMat = maskRegion.clone();
+            roiMat = rotatedImage(validRoi).clone();
+            maskMat = cv::Mat(validRoi.height, validRoi.width, CV_8UC1, cv::Scalar(255));
         }
         else
         {
@@ -9921,17 +9895,18 @@ void TeachingWidget::onRecipeReadyReceived(const QJsonObject& request)
     QString requestedSealSide0 = requestedSeals["side0"].toString();
     QString requestedSealSide1 = requestedSeals["side1"].toString();
     
-    // 모든 레시피를 순회하면서 회로 정보가 일치하는 레시피 찾기
+    // 1단계: 이름으로 레시피 찾기 (최우선)
     RecipeManager manager;
     QStringList availableRecipes = manager.getAvailableRecipes();
     
     QString matchedRecipe;
     bool recipeFound = false;
     
-    for (const QString& recipeName : availableRecipes) {
-        RecipeManager::RecipeCircuitInfo storedInfo = manager.getRecipeCircuitInfo(recipeName);
+    // 먼저 요청된 이름과 일치하는 레시피가 있는지 확인
+    if (availableRecipes.contains(requestedName)) {
+        // 이름이 일치하면, 회로 정보도 일치하는지 확인
+        RecipeManager::RecipeCircuitInfo storedInfo = manager.getRecipeCircuitInfo(requestedName);
         
-        // 회로 정보가 모두 일치하는지 확인
         bool infoMatches = (storedInfo.length == requestedLength &&
                            storedInfo.wire == requestedWire &&
                            storedInfo.terminalSide0 == requestedTerminalSide0 &&
@@ -9940,12 +9915,14 @@ void TeachingWidget::onRecipeReadyReceived(const QJsonObject& request)
                            storedInfo.sealSide1 == requestedSealSide1);
         
         if (infoMatches) {
-            matchedRecipe = recipeName;
+            matchedRecipe = requestedName;
             recipeFound = true;
-            qDebug() << "[Recipe] 회로 정보 일치하는 레시피 발견:" << recipeName
-                     << "(요청된 이름:" << requestedName << ")";
-            break;
+            qDebug() << "[Recipe] 이름 및 회로 정보 일치하는 레시피 발견:" << requestedName;
+        } else {
+            qDebug() << "[Recipe] 이름은 일치하지만 회로 정보가 다름:" << requestedName;
         }
+    } else {
+        qDebug() << "[Recipe] 요청된 이름의 레시피가 없음:" << requestedName;
     }
     
     if (recipeFound) {
@@ -9964,9 +9941,10 @@ void TeachingWidget::onRecipeReadyReceived(const QJsonObject& request)
             client->sendProtocolMessage(MessageType::RECIPE_OK, doc.toJson(QJsonDocument::Compact));
         }
     } else {
-        // 회로 정보가 일치하는 레시피가 없으면 메시지 표시
-        qWarning() << "[Recipe] 회로 정보가 일치하는 레시피가 없습니다";
+        // 요청된 이름의 레시피가 없거나 회로 정보가 일치하지 않음
+        qWarning() << "[Recipe] 요청된 레시피를 찾을 수 없거나 회로 정보가 일치하지 않습니다";
         qDebug() << "[Recipe] 요청된 회로 정보:" 
+                 << "name=" << requestedName
                  << "length=" << requestedLength
                  << "wire=" << requestedWire
                  << "terminal_side0=" << requestedTerminalSide0
@@ -9974,7 +9952,7 @@ void TeachingWidget::onRecipeReadyReceived(const QJsonObject& request)
                  << "seal_side0=" << requestedSealSide0
                  << "seal_side1=" << requestedSealSide1;
         
-        QString message = QString("회로 정보가 일치하는 레시피가 없습니다\n\n요청된 이름: %1\n길이: %2\n전선: %3\n단자(Side0): %4\n단자(Side1): %5\n씰(Side0): %6\n씰(Side1): %7")
+        QString message = QString("요청된 레시피를 찾을 수 없습니다\n\n요청된 이름: %1\n길이: %2\n전선: %3\n단자(Side0): %4\n단자(Side1): %5\n씰(Side0): %6\n씰(Side1): %7")
             .arg(requestedName)
             .arg(requestedLength)
             .arg(requestedWire)
@@ -14816,23 +14794,7 @@ void TeachingWidget::addPattern()
         int viewFrameIndex = cameraView ? cameraView->getCurrentFrameIndex() : currentDisplayFrameIndex;
         pattern.frameIndex = viewFrameIndex;
         
-        // 카메라 UUID는 cameraInfos에서 프레임 순서대로 가져오기
-        if (viewFrameIndex >= 0 && viewFrameIndex < cameraInfos.size())
-        {
-            pattern.cameraUuid = cameraInfos[viewFrameIndex].uniqueId;
-        }
-        else
-        {
-            pattern.cameraUuid = QString("FRAME_%1").arg(viewFrameIndex);
-        }
-        
         qDebug() << "[TeachingWidget::addPattern] frameIndex:" << pattern.frameIndex;
-
-        // currentCameraUuid가 비어있으면 자동 설정
-        if (cameraView && cameraView->getCurrentCameraUuid().isEmpty())
-        {
-            cameraView->setCurrentCameraUuid(pattern.cameraUuid);
-        }
 
         // 타입별 색상 설정 (UIColors 클래스 사용)
         switch (currentPatternType)

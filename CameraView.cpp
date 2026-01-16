@@ -927,7 +927,6 @@ void CameraView::showContextMenu(const QPoint &pos)
                 fidPattern.rect = pattern->rect; // ROI와 동일한 크기와 위치
                 fidPattern.color = UIColors::FIDUCIAL_COLOR;
                 fidPattern.enabled = true;
-                fidPattern.cameraUuid = pattern->cameraUuid;
                 fidPattern.runInspection = true;
                 fidPattern.fidMatchMethod = 0;
                 fidPattern.matchThreshold = 75.0;  // 75%
@@ -982,13 +981,13 @@ void CameraView::showContextMenu(const QPoint &pos)
         QAction *fidGroupAction = nullptr;
         if (pattern->type == PatternType::FID && pattern->childIds.isEmpty())
         {
-            // 현재 FID와 같은 영역에 있는 INS 패턴들 찾기
+            // 현재 FID와 같은 frameIndex에 있는 INS 패턴들 찾기
             QList<QUuid> nearbyInsPatterns;
             for (const auto &patternInfo : patterns)
             {
                 if (patternInfo.type == PatternType::INS &&
                     patternInfo.parentId.isNull() &&
-                    patternInfo.cameraUuid == pattern->cameraUuid)
+                    patternInfo.frameIndex == pattern->frameIndex)
                 {
                     nearbyInsPatterns.append(patternInfo.id);
                 }
@@ -1081,13 +1080,13 @@ void CameraView::showContextMenu(const QPoint &pos)
         }
         else if (selectedAction == fidGroupAction)
         {
-            // FID와 INS 패턴들을 그룹화
+            // FID와 INS 패턴들을 그룹화 (frameIndex 기준)
             QList<QUuid> ungroupedInsPatterns;
             for (const auto &patternInfo : patterns)
             {
                 if (patternInfo.type == PatternType::INS &&
                     patternInfo.parentId.isNull() &&
-                    patternInfo.cameraUuid == pattern->cameraUuid)
+                    patternInfo.frameIndex == pattern->frameIndex)
                 {
                     ungroupedInsPatterns.append(patternInfo.id);
                 }
@@ -1154,12 +1153,10 @@ void CameraView::showContextMenu(const QPoint &pos)
                 newPattern.rect = currentRect;
                 newPattern.color = UIColors::ROI_COLOR;
                 newPattern.enabled = true;
-                newPattern.cameraUuid = currentCameraUuid;
                 newPattern.frameIndex = currentFrameIndex;
                 
                 qDebug() << "[ROI패턴생성] currentFrameIndex:" << currentFrameIndex 
-                         << "frameLabel:" << frameLabel 
-                         << "cameraUuid:" << currentCameraUuid
+                         << "frameLabel:" << frameLabel
                          << "newPattern.frameIndex:" << newPattern.frameIndex;
 
                 addPattern(newPattern);
@@ -1182,7 +1179,6 @@ void CameraView::showContextMenu(const QPoint &pos)
                 newPattern.rect = currentRect;
                 newPattern.color = UIColors::FIDUCIAL_COLOR;
                 newPattern.enabled = true;
-                newPattern.cameraUuid = currentCameraUuid;
                 newPattern.runInspection = true;
                 newPattern.fidMatchMethod = 0;
                 newPattern.matchThreshold = 75.0; // 75%
@@ -1210,12 +1206,11 @@ void CameraView::showContextMenu(const QPoint &pos)
                 // 프레임 인덱스에 맞는 레이블 추가
                 QStringList frameLabels = {"STAGE 1 - STRIP", "STAGE 1 - CRIMP", "STAGE 2 - STRIP", "STAGE 2 - CRIMP"};
                 QString frameLabel = (currentFrameIndex >= 0 && currentFrameIndex < 4) ? frameLabels[currentFrameIndex] : "";
-                qDebug() << "[INS패턴생성] currentFrameIndex:" << currentFrameIndex << "frameLabel:" << frameLabel << "cameraUuid:" << currentCameraUuid;
+                qDebug() << "[INS패턴생성] currentFrameIndex:" << currentFrameIndex << "frameLabel:" << frameLabel;
                 newPattern.name = QString("INS_%1 [%2]").arg(newPattern.id.toString().left(8)).arg(frameLabel);
                 newPattern.rect = currentRect;
                 newPattern.color = UIColors::INSPECTION_COLOR;
                 newPattern.enabled = true;
-                newPattern.cameraUuid = currentCameraUuid;
                 newPattern.runInspection = true;
                 newPattern.inspectionMethod = InspectionMethod::DIFF;
                 newPattern.passThreshold = 80.0; // 80%
@@ -2017,13 +2012,6 @@ void CameraView::updateInspectionResult(bool passed, const InspectionResult &res
                             currentFrameIndex = targetFrameIndex;
                             patterns = frameSpecificPatterns;
                             
-                            // targetFrameIndex에 해당하는 카메라 UUID 설정
-                            if (!patterns.isEmpty() && !patterns[0].cameraUuid.isEmpty()) {
-                                currentCameraUuid = patterns[0].cameraUuid;
-                            } else {
-                                currentCameraUuid.clear(); // 모든 카메라 허용
-                            }
-                            
                             // 검사 결과 그리기 (targetFrameIndex 명시적 전달)
                             drawInspectionResults(overlayPainter, result, targetFrameIndex);
                             
@@ -2556,7 +2544,7 @@ void CameraView::drawINSStripVisualization(QPainter &painter, const InspectionRe
 
             for (const PatternInfo &p : patterns)
             {
-                if (p.type == PatternType::ROI && p.cameraUuid == currentCameraUuid)
+                if (p.type == PatternType::ROI && p.frameIndex == currentFrameIndex)
                 {
                     roiPatternTopLeftScene = p.rect.topLeft();
                     roiWidth = p.rect.width();
@@ -5214,16 +5202,6 @@ void CameraView::applyFiltersToImage(cv::Mat &image)
             continue;
         }
 
-        // 현재 카메라에 해당하는 패턴만 처리
-        bool patternVisible = (currentCameraUuid.isEmpty() ||
-                               pattern.cameraUuid == currentCameraUuid ||
-                               pattern.cameraUuid.isEmpty());
-
-        if (!patternVisible)
-        {
-            continue;
-        }
-
         // 비활성화된 패턴 무시
         if (!pattern.enabled)
         {
@@ -5585,7 +5563,7 @@ void CameraView::drawTeachingModePatterns(QPainter &painter)
         if (!pattern.enabled)
             continue;
 
-        // 현재 프레임의 패턴만 표시
+        // 현재 프레임의 패턴만 표시 (imageIndex 기준)
         if (pattern.frameIndex != currentFrameIndex)
             continue;
 

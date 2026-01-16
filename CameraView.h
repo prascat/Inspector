@@ -209,19 +209,15 @@ public:
         return currentCameraName;
     }
 
-    // 모든 패턴의 cameraUuid를 현재 카메라로 업데이트 (레시피 로드 후 호출)
+    // 모든 패턴 활성화 (레시피 로드 후 호출)
     void updateAllPatternsCameraUuid()
     {
-        if (!currentCameraUuid.isEmpty())
+        for (PatternInfo &pattern : patterns)
         {
-            for (PatternInfo &pattern : patterns)
-            {
-                pattern.cameraUuid = currentCameraUuid;
-                // 레시피 로드 후 모든 패턴을 활성화
-                pattern.enabled = true;
-            }
-            viewport()->update();
+            // 레시피 로드 후 모든 패턴을 활성화
+            pattern.enabled = true;
         }
+        viewport()->update();
     }
 
     bool updatePatternById(const QUuid &id, const PatternInfo &pattern);
