@@ -110,6 +110,17 @@ bool RecipeManager::saveRecipe(const QString& fileName,
     
     QVector<CameraInfo> actualCameraInfos = cameraInfos;
     
+    // ★ 디버그: 저장하려는 카메라 정보 출력
+    qDebug() << "[RecipeManager] === saveRecipe - Camera Info List ===";
+    for (int i = 0; i < actualCameraInfos.size(); i++) {
+        qDebug() << QString("[RecipeManager] Camera[%1]: UUID=%2, Serial=%3, Index=%4")
+                    .arg(i)
+                    .arg(actualCameraInfos[i].uniqueId)
+                    .arg(actualCameraInfos[i].serialNumber)
+                    .arg(actualCameraInfos[i].imageIndex);
+    }
+    qDebug() << "[RecipeManager] =====================================";
+    
     // 시뮬레이션 모드 감지 (cameraInfos가 비어있고 cameraView에 현재 카메라 UUID가 있는 경우)
     if (actualCameraInfos.isEmpty() && cameraView && !cameraView->getCurrentCameraUuid().isEmpty()) {
         QString currentUuid = cameraView->getCurrentCameraUuid();
@@ -230,6 +241,26 @@ bool RecipeManager::saveRecipe(const QString& fileName,
     xml.writeAttribute("name", recipeName);
     xml.writeAttribute("version", "1.0");
     xml.writeAttribute("createdTime", QDateTime::currentDateTime().toString(Qt::ISODate));
+    
+    // 회로 정보 추가 (서버에서 받은 정보)
+    if (circuitLength > 0) {
+        xml.writeAttribute("length", QString::number(circuitLength));
+    }
+    if (!circuitWire.isEmpty()) {
+        xml.writeAttribute("wire", circuitWire);
+    }
+    if (!circuitTerminalSide0.isEmpty()) {
+        xml.writeAttribute("terminal_side0", circuitTerminalSide0);
+    }
+    if (!circuitTerminalSide1.isEmpty()) {
+        xml.writeAttribute("terminal_side1", circuitTerminalSide1);
+    }
+    if (!circuitSealSide0.isEmpty()) {
+        xml.writeAttribute("seal_side0", circuitSealSide0);
+    }
+    if (!circuitSealSide1.isEmpty()) {
+        xml.writeAttribute("seal_side1", circuitSealSide1);
+    }
     
     // 카메라들 컨테이너
     xml.writeStartElement("Cameras");
@@ -543,8 +574,6 @@ bool RecipeManager::loadRecipe(const QString& fileName,
     }
     
     // base64 티칭 이미지가 로드된 경우 trainingImageCallback 호출
-    // (현재 모드에 맞는 이미지는 위에서 이미 설정하고 콜백 호출했으므로 여기서는 건너뜀)
-    /*
     if (trainingImageCallback && teachingWidget && !teachingWidget->cameraFrames.empty()) {
         QStringList imagePaths;
         // 더미 경로를 생성해서 콜백 호출 (실제 파일은 없지만 cameraFrames에 이미지가 있음)
@@ -559,7 +588,6 @@ bool RecipeManager::loadRecipe(const QString& fileName,
             trainingImageCallback(imagePaths);
         }
     }
-    */
     
     // 패턴이 없어도 티칭 이미지가 로드되었으면 성공으로 간주
     bool hasTeachingImages = teachingWidget && !teachingWidget->cameraFrames.empty();
@@ -2714,4 +2742,53 @@ bool RecipeManager::loadMainCameraImage(const QString& recipeName, cv::Mat& outI
     }
     
     return true;
+}
+
+RecipeManager::RecipeCircuitInfo RecipeManager::getRecipeCircuitInfo(const QString& recipeName) {
+    RecipeCircuitInfo info;
+    info.name = recipeName;
+    
+    QString recipeDir = getRecipesDirectory();
+    QString filePath = recipeDir + "/" + recipeName + "/" + recipeName + ".xml";
+    
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return info;
+    }
+    
+    QXmlStreamReader xml(&file);
+    
+    while (!xml.atEnd() && !xml.hasError()) {
+        QXmlStreamReader::TokenType token = xml.readNext();
+        
+        if (token == QXmlStreamReader::StartElement) {
+            if (xml.name().toString() == "Recipe") {
+                QXmlStreamAttributes attributes = xml.attributes();
+                
+                if (attributes.hasAttribute("length")) {
+                    info.length = attributes.value("length").toInt();
+                }
+                if (attributes.hasAttribute("wire")) {
+                    info.wire = attributes.value("wire").toString();
+                }
+                if (attributes.hasAttribute("terminal_side0")) {
+                    info.terminalSide0 = attributes.value("terminal_side0").toString();
+                }
+                if (attributes.hasAttribute("terminal_side1")) {
+                    info.terminalSide1 = attributes.value("terminal_side1").toString();
+                }
+                if (attributes.hasAttribute("seal_side0")) {
+                    info.sealSide0 = attributes.value("seal_side0").toString();
+                }
+                if (attributes.hasAttribute("seal_side1")) {
+                    info.sealSide1 = attributes.value("seal_side1").toString();
+                }
+                
+                break;  // Recipe 엘리먼트 찾았으면 종료
+            }
+        }
+    }
+    
+    file.close();
+    return info;
 }

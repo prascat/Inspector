@@ -72,14 +72,57 @@ public:
     // 기존 레시피에서 메인 카메라 티칭 이미지 불러오기
     bool loadMainCameraImage(const QString& recipeName, cv::Mat& outImage, QString& outCameraName);
     
+    // 레시피 회로 정보 읽기
+    struct RecipeCircuitInfo {
+        QString name;
+        int length = 0;
+        QString wire;
+        QString terminalSide0;
+        QString terminalSide1;
+        QString sealSide0;
+        QString sealSide1;
+    };
+    RecipeCircuitInfo getRecipeCircuitInfo(const QString& recipeName);
+    
 private:
     // 헬퍼 함수들
     QString copyImageToRecipeFolder(const QString& originalPath, const QString& recipeName);
     QStringList copyImagesToRecipeFolder(const QStringList& imagePaths, const QString& recipeName);
     
+public:
+    // 회로 정보 설정 함수
+    void setCircuitInfo(int length, const QString& wire,
+                       const QString& terminalSide0, const QString& terminalSide1,
+                       const QString& sealSide0, const QString& sealSide1) {
+        circuitLength = length;
+        circuitWire = wire;
+        circuitTerminalSide0 = terminalSide0;
+        circuitTerminalSide1 = terminalSide1;
+        circuitSealSide0 = sealSide0;
+        circuitSealSide1 = sealSide1;
+    }
+    
+    // 회로 정보 초기화
+    void clearCircuitInfo() {
+        circuitLength = 0;
+        circuitWire.clear();
+        circuitTerminalSide0.clear();
+        circuitTerminalSide1.clear();
+        circuitSealSide0.clear();
+        circuitSealSide1.clear();
+    }
+
 private:
     QString lastError;
     QList<PatternInfo> tempChildPatterns; // **임시 자식 패턴 저장용**
+    
+    // 서버에서 받은 회로 정보 (레시피 저장 시 XML에 저장)
+    int circuitLength = 0;
+    QString circuitWire;
+    QString circuitTerminalSide0;
+    QString circuitTerminalSide1;
+    QString circuitSealSide0;
+    QString circuitSealSide1;
     
     QStringList readChildPatterns(QXmlStreamReader& xml, const QString& cameraUuid, 
         const QUuid& parentId);

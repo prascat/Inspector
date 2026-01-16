@@ -26,6 +26,8 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QListWidget>
+#include <QTableWidget>
+#include <QHeaderView>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPushButton>
@@ -709,6 +711,10 @@ TeachingWidget::TeachingWidget(int cameraIndex, const QString &cameraStatus, QWi
         // 검사 요청 시그널 연결
         connect(ClientDialog::instance(), &ClientDialog::inspectionRequestReceived,
                 this, &TeachingWidget::onInspectionRequestReceived);
+        
+        // 레시피 준비 요청 시그널 연결
+        connect(ClientDialog::instance(), &ClientDialog::recipeReadyReceived,
+                this, &TeachingWidget::onRecipeReadyReceived);
     });
 
     // 시리얼 통신 자동 연결 (저장된 설정 확인)
@@ -1091,14 +1097,14 @@ QVBoxLayout *TeachingWidget::createMainLayout()
     settingsMenu = menuBar->addMenu(TR("SETTINGS_MENU"));
     settingsMenu->setEnabled(true);
 
+    cameraSettingsAction = settingsMenu->addAction("카메라 설정");
+    cameraSettingsAction->setEnabled(true);
+
     serialSettingsAction = settingsMenu->addAction(TR("SERIAL_SETTINGS"));
     serialSettingsAction->setEnabled(true);
 
     serverSettingsAction = settingsMenu->addAction(TR("SERVER_SETTINGS"));
     serverSettingsAction->setEnabled(true);
-    
-    cameraSettingsAction = settingsMenu->addAction("카메라 설정");
-    cameraSettingsAction->setEnabled(true);
 
     languageSettingsAction = settingsMenu->addAction(TR("LANGUAGE_SETTINGS"));
     languageSettingsAction->setEnabled(true);
@@ -1660,15 +1666,19 @@ void TeachingWidget::connectButtonEvents(QPushButton *modeToggleButton, QPushBut
             startCamera();
             
             // TEACH 모드에서만 편집 버튼들 활성화
-            if (this->saveRecipeButton) this->saveRecipeButton->setEnabled(true);
-            if (this->addFilterButton) this->addFilterButton->setEnabled(true); 
+            if (teachingEnabled) {
+                if (this->saveRecipeButton) this->saveRecipeButton->setEnabled(true);
+                if (this->addFilterButton) this->addFilterButton->setEnabled(true);
+            }
         } else {
             // 카메라 중지 (CAM OFF) 
             stopCamera();
             
-            // 편집 버튼들 비활성화
-            if (this->saveRecipeButton) this->saveRecipeButton->setEnabled(false);
-            if (this->addFilterButton) this->addFilterButton->setEnabled(false);
+            // TEACH OFF 모드일 때만 편집 버튼들 비활성화
+            if (!teachingEnabled) {
+                if (this->saveRecipeButton) this->saveRecipeButton->setEnabled(false);
+                if (this->addFilterButton) this->addFilterButton->setEnabled(false);
+            }
         } });
 
     // 패턴 타입 버튼 그룹 이벤트
@@ -9894,6 +9904,100 @@ void TeachingWidget::onInspectionRequestReceived(const QJsonObject& request)
     // request_id, inspection_type, parameters 등 처리
 }
 
+// 서버 레시피 준비 요청 처리
+void TeachingWidget::onRecipeReadyReceived(const QJsonObject& request)
+{
+    qDebug().noquote() << "[Recipe] 레시피 준비 요청 수신:" << QJsonDocument(request).toJson(QJsonDocument::Compact);
+    
+    QString requestedName = request["name"].toString();
+    int requestedLength = request["length"].toInt();
+    QString requestedWire = request["wire"].toString();
+    
+    QJsonObject requestedTerminals = request["terminals"].toObject();
+    QString requestedTerminalSide0 = requestedTerminals["side0"].toString();
+    QString requestedTerminalSide1 = requestedTerminals["side1"].toString();
+    
+    QJsonObject requestedSeals = request["seals"].toObject();
+    QString requestedSealSide0 = requestedSeals["side0"].toString();
+    QString requestedSealSide1 = requestedSeals["side1"].toString();
+    
+    // 모든 레시피를 순회하면서 회로 정보가 일치하는 레시피 찾기
+    RecipeManager manager;
+    QStringList availableRecipes = manager.getAvailableRecipes();
+    
+    QString matchedRecipe;
+    bool recipeFound = false;
+    
+    for (const QString& recipeName : availableRecipes) {
+        RecipeManager::RecipeCircuitInfo storedInfo = manager.getRecipeCircuitInfo(recipeName);
+        
+        // 회로 정보가 모두 일치하는지 확인
+        bool infoMatches = (storedInfo.length == requestedLength &&
+                           storedInfo.wire == requestedWire &&
+                           storedInfo.terminalSide0 == requestedTerminalSide0 &&
+                           storedInfo.terminalSide1 == requestedTerminalSide1 &&
+                           storedInfo.sealSide0 == requestedSealSide0 &&
+                           storedInfo.sealSide1 == requestedSealSide1);
+        
+        if (infoMatches) {
+            matchedRecipe = recipeName;
+            recipeFound = true;
+            qDebug() << "[Recipe] 회로 정보 일치하는 레시피 발견:" << recipeName
+                     << "(요청된 이름:" << requestedName << ")";
+            break;
+        }
+    }
+    
+    if (recipeFound) {
+        qDebug() << "[Recipe] 레시피 자동 로드:" << matchedRecipe;
+        onRecipeSelected(matchedRecipe);  // 레시피 관리의 불러오기 기능과 동일
+        
+        // 성공 응답 전송
+        ClientDialog* client = ClientDialog::instance();
+        if (client) {
+            QJsonObject response;
+            response["type"] = "recipe_ok";
+            response["name"] = matchedRecipe;
+            response["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+            
+            QJsonDocument doc(response);
+            client->sendProtocolMessage(MessageType::RECIPE_OK, doc.toJson(QJsonDocument::Compact));
+        }
+    } else {
+        // 회로 정보가 일치하는 레시피가 없으면 메시지 표시
+        qWarning() << "[Recipe] 회로 정보가 일치하는 레시피가 없습니다";
+        qDebug() << "[Recipe] 요청된 회로 정보:" 
+                 << "length=" << requestedLength
+                 << "wire=" << requestedWire
+                 << "terminal_side0=" << requestedTerminalSide0
+                 << "terminal_side1=" << requestedTerminalSide1
+                 << "seal_side0=" << requestedSealSide0
+                 << "seal_side1=" << requestedSealSide1;
+        
+        QString message = QString("회로 정보가 일치하는 레시피가 없습니다\n\n요청된 이름: %1\n길이: %2\n전선: %3\n단자(Side0): %4\n단자(Side1): %5\n씰(Side0): %6\n씰(Side1): %7")
+            .arg(requestedName)
+            .arg(requestedLength)
+            .arg(requestedWire)
+            .arg(requestedTerminalSide0)
+            .arg(requestedTerminalSide1)
+            .arg(requestedSealSide0)
+            .arg(requestedSealSide1);
+        CustomMessageBox(this, CustomMessageBox::Warning, "레시피 없음", message).exec();
+        
+        // 실패 응답 전송
+        ClientDialog* client = ClientDialog::instance();
+        if (client) {
+            QJsonObject response;
+            response["type"] = "recipe_empty";
+            response["name"] = requestedName;
+            response["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+            
+            QJsonDocument doc(response);
+            client->sendProtocolMessage(MessageType::RECIPE_EMPTY, doc.toJson(QJsonDocument::Compact));
+        }
+    }
+}
+
 // 프레임 인덱스 수신 처리 (시리얼 통신 - 레거시)
 void TeachingWidget::onFrameIndexReceived(int frameIndex)
 {
@@ -9982,11 +10086,13 @@ void TeachingWidget::onTriggerSignalReceived(const cv::Mat &frame, int triggerCa
         return;
     }
 
-    // ★★★ 하드웨어 트리거 들어오면 설정에 따라 이미지 저장
-    if (ConfigManager::instance()->getSaveTriggerImages()) {
+    // ★★★ 하드웨어 트리거 들어오면 항상 cameraFrames에 저장 (레시피 생성 시 사용)
+    {
         QMutexLocker locker(&cameraFramesMutex);
         cameraFrames[frameIdx] = frameForInspection.clone();
         frameUpdatedFlags[frameIdx] = true;
+        qDebug() << QString("[onTriggerSignalReceived] Frame[%1] cameraFrames에 저장 완료 (%2x%3)")
+                    .arg(frameIdx).arg(frameForInspection.cols).arg(frameForInspection.rows);
     }
     
     // 메인 카메라뷰 무조건 업데이트 - UI 준비 확인
@@ -10372,20 +10478,13 @@ void TeachingWidget::startCamera()
 // ★ 강제 camOff (프로그램 종료 시 호출)
 void TeachingWidget::forceCamOff()
 {
-    qDebug() << "[forceCamOff] Forcing camera shutdown...";
-    
     if (camOff) {
-        qDebug() << "[forceCamOff] Already in camOff state";
         return;
     }
     
-    // stopCamera()를 직접 호출 (모든 카메라 정리 로직 포함)
     try {
         stopCamera();
-        qDebug() << "[forceCamOff] stopCamera() completed successfully";
     } catch (...) {
-        qDebug() << "[forceCamOff] Exception during stopCamera() - ignoring";
-        // 예외 발생 시에도 camOff 상태는 true로 설정
         camOff = true;
     }
 }
@@ -13475,11 +13574,11 @@ void TeachingWidget::saveRecipe()
     CameraView::EditMode currentMode = cameraView->getEditMode();
     bool currentModeToggleState = modeToggleButton->isChecked();
 
-    // 개별 레시피 파일로 저장
-    RecipeManager manager;
+    // 개별 레시피 파일로 저장 (멤버 변수 recipeManager 사용 - 회로 정보가 저장되어 있음)
+    // RecipeManager manager;  // ← 이렇게 하면 새 인스턴스라 회로 정보가 없음!
 
     // 레시피 파일 경로 생성
-    QString recipeFileName = QDir(manager.getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(currentRecipeName));
+    QString recipeFileName = QDir(recipeManager->getRecipesDirectory()).absoluteFilePath(QString("%1/%1.xml").arg(currentRecipeName));
 
     // 빈 시뮬레이션 이미지 패스와 빈 캘리브레이션 맵 (필요시 나중에 추가)
     QStringList simulationImagePaths;
@@ -13509,7 +13608,7 @@ void TeachingWidget::saveRecipe()
             {
                 CameraInfo virtualCam;
                 virtualCam.index = frameIdx;
-                virtualCam.name = QString("Camera_%1").arg(frameIdx);
+                virtualCam.name = QString::number(frameIdx);
                 virtualCam.uniqueId = QString("CAM_%1_UUID").arg(frameIdx);
                 virtualCam.serialNumber = QString("SERIAL_%1").arg(frameIdx);
                 virtualCam.locationId = QString("VIRTUAL_%1").arg(frameIdx);
@@ -13526,7 +13625,7 @@ void TeachingWidget::saveRecipe()
     // Saving camera configurations
 
     // 기존 saveRecipe 함수 사용 (TeachingWidget 포인터 전달)
-    if (manager.saveRecipe(recipeFileName, saveCameraInfos, cameraIndex, calibrationMap, cameraView, simulationImagePaths, -1, QStringList(), this))
+    if (recipeManager->saveRecipe(recipeFileName, saveCameraInfos, cameraIndex, calibrationMap, cameraView, simulationImagePaths, -1, QStringList(), this))
     {
 
         hasUnsavedChanges = false;
@@ -13551,7 +13650,7 @@ void TeachingWidget::saveRecipe()
         CustomMessageBox msgBoxCritical(this);
         msgBoxCritical.setIcon(CustomMessageBox::Critical);
         msgBoxCritical.setTitle("레시피 저장 실패");
-        msgBoxCritical.setMessage(QString("레시피 저장에 실패했습니다:\n%1").arg(manager.getLastError()));
+        msgBoxCritical.setMessage(QString("레시피 저장에 실패했습니다:\n%1").arg(recipeManager->getLastError()));
         msgBoxCritical.setButtons(QMessageBox::Ok);
         msgBoxCritical.exec();
     }
@@ -13683,106 +13782,37 @@ bool TeachingWidget::initSpinnakerSDK()
 {
     try
     {
-        // ★★★ [핵심 수정] 기존 인스턴스 강제 정리 후 재시도
         qDebug() << "[initSpinnakerSDK] Attempting to initialize Spinnaker System...";
         
-        // 1차: 기존 System 강제 해제 시도 (비정상 종료 후 남은 자원 정리)
+        // 간단히 GetInstance 시도
         try {
-            qDebug() << "[initSpinnakerSDK] Step 1: Forcing ReleaseInstance on any existing system...";
-            Spinnaker::SystemPtr tempSystem = Spinnaker::System::GetInstance();
-            if (tempSystem) {
-                tempSystem->ReleaseInstance();
-                qDebug() << "[initSpinnakerSDK] Step 1: Successfully released existing instance";
+            m_spinSystem = Spinnaker::System::GetInstance();
+            if (m_spinSystem) {
+                // 라이브러리 버전 출력
+                const Spinnaker::LibraryVersion spinnakerLibraryVersion = m_spinSystem->GetLibraryVersion();
+                qDebug() << "[initSpinnakerSDK] ✓ SUCCESS: Spinnaker SDK initialized - version:" 
+                         << spinnakerLibraryVersion.major << "." 
+                         << spinnakerLibraryVersion.minor << "." 
+                         << spinnakerLibraryVersion.type << "." 
+                         << spinnakerLibraryVersion.build;
+                
+                m_useSpinnaker = true;
+                return true;
             }
-            QThread::msleep(1000);  // ★★★ 충분한 대기 시간
         } catch (Spinnaker::Exception &e) {
-            qDebug() << "[initSpinnakerSDK] Step 1: ReleaseInstance exception:" << e.what();
-            qDebug() << "[initSpinnakerSDK] Step 1: Error code:" << e.GetError() << "(checking for -1012)";
+            qDebug() << "[initSpinnakerSDK] ✖ FAILED:" << e.what() << "Code:" << e.GetError();
             
-            // ★★★ -1012 에러면 공유 메모리 정리 (근본 해결)
+            // -1012 에러는 환경 변수 문제이므로 재시도 불필요
             if (e.GetError() == -1012) {
-                qDebug() << "[initSpinnakerSDK] Step 1: Detected -1012 - cleaning shared memory...";
-                
-                // 공유 메모리 세그먼트 정리
-                system("ipcs -m | grep $USER | awk '{print $2}' | xargs -r -I {} ipcrm -m {} 2>/dev/null");
-                
-                // 세마포어 정리
-                system("ipcs -s | grep $USER | awk '{print $2}' | xargs -r -I {} ipcrm -s {} 2>/dev/null");
-                
-                QThread::msleep(500);
-                qDebug() << "[initSpinnakerSDK] Step 1: Shared memory cleanup completed";
+                qDebug() << "[initSpinnakerSDK] ⚠ 환경 변수 문제 - 재시도 없이 시뮬레이션 모드로 전환";
             }
-        } catch (...) {
-            qDebug() << "[initSpinnakerSDK] Step 1: ReleaseInstance unknown exception (ignored)";
         }
         
-        // 2차: 깨끗한 상태에서 새로 획득
+        // 실패 시 시뮬레이션 모드
+        qDebug() << "[initSpinnakerSDK] ⚠ Spinnaker 카메라 없이 시뮬레이션 모드로 동작합니다.";
         m_spinSystem = nullptr;
-        m_spinCameras.clear();
-        m_spinCamList.Clear();
-        
-        qDebug() << "[initSpinnakerSDK] Step 2: Getting fresh System instance...";
-        
-        // 재시도 로직 추가 (최대 3회)
-        int retryCount = 0;
-        const int maxRetries = 3;
-        bool getInstanceSuccess = false;
-        std::string lastErrorMsg;
-        int lastErrorCode = -1;
-        
-        while (retryCount < maxRetries) {
-            try {
-                m_spinSystem = Spinnaker::System::GetInstance();
-                if (m_spinSystem) {
-                    qDebug() << "[initSpinnakerSDK] Step 2: System instance acquired successfully";
-                    getInstanceSuccess = true;
-                    break;
-                }
-            } catch (Spinnaker::Exception &e) {
-                lastErrorMsg = e.what();
-                lastErrorCode = e.GetError();
-                retryCount++;
-                qDebug() << "[initSpinnakerSDK] Step 2: GetInstance attempt" << retryCount << "failed:" << e.what();
-                
-                // ★★★ -1012 에러가 계속되면 더 강력한 정리
-                if (e.GetError() == -1012 && retryCount < maxRetries) {
-                    qDebug() << "[initSpinnakerSDK] Step 2: -1012 persists - cleaning IPC resources...";
-                    
-                    // 공유 메모리 및 세마포어 재정리
-                    system("ipcs -m | grep $USER | awk '{print $2}' | xargs -r -I {} ipcrm -m {} 2>/dev/null");
-                    system("ipcs -s | grep $USER | awk '{print $2}' | xargs -r -I {} ipcrm -s {} 2>/dev/null");
-                    
-                    QThread::msleep(1000 * retryCount);  // 점진적 대기
-                    qDebug() << "[initSpinnakerSDK] Step 2: IPC cleanup completed, retrying...";
-                } else if (retryCount < maxRetries) {
-                    qDebug() << "[initSpinnakerSDK] Step 2: Waiting before retry...";
-                    QThread::msleep(1000 * retryCount);
-                }
-            }
-        }
-        
-        if (!getInstanceSuccess || !m_spinSystem)
-        {
-            qDebug() << "[initSpinnakerSDK] ✖ FAILED: System instance is nullptr after" << maxRetries << "attempts";
-            qDebug() << "[initSpinnakerSDK] ✖ Last error:" << QString::fromStdString(lastErrorMsg) << "Code:" << lastErrorCode;
-            qDebug() << "[initSpinnakerSDK] ⚠ 자동 해결 실패. 수동 조치:";
-            qDebug() << "[initSpinnakerSDK]   1. 터미널: ipcs -m | grep $USER (공유 메모리 확인)";
-            qDebug() << "[initSpinnakerSDK]   2. 터미널: ipcrm -m <shmid> (각 ID 삭제)";
-            qDebug() << "[initSpinnakerSDK]   3. USB 케이블 재연결";
-            m_useSpinnaker = false;
-            return false;
-        }
-
-        // 라이브러리 버전 출력
-        const Spinnaker::LibraryVersion spinnakerLibraryVersion = m_spinSystem->GetLibraryVersion();
-        qDebug() << "[initSpinnakerSDK] ✓ SUCCESS: Spinnaker SDK initialized - version:" 
-                 << spinnakerLibraryVersion.major << "." 
-                 << spinnakerLibraryVersion.minor << "." 
-                 << spinnakerLibraryVersion.type << "." 
-                 << spinnakerLibraryVersion.build;
-        
-        m_useSpinnaker = true;
-        return true;
+        m_useSpinnaker = false;
+        return false;
     }
     catch (Spinnaker::Exception &e)
     {
@@ -13798,7 +13828,7 @@ bool TeachingWidget::initSpinnakerSDK()
         qDebug() << "[initSpinnakerSDK] 표준 예외:" << e.what();
         qDebug() << "[initSpinnakerSDK] Spinnaker 카메라 없이 시뮬레이션 모드로 동작합니다.";
         m_spinSystem = nullptr;
-        m_useSpinnaker = false;  // ★★★ Spinnaker 사용 비활성화
+        m_useSpinnaker = false;
         return false;
     }
     catch (...)
@@ -13806,7 +13836,7 @@ bool TeachingWidget::initSpinnakerSDK()
         qDebug() << "[initSpinnakerSDK] 알 수 없는 예외 발생";
         qDebug() << "[initSpinnakerSDK] Spinnaker 카메라 없이 시뮬레이션 모드로 동작합니다.";
         m_spinSystem = nullptr;
-        m_useSpinnaker = false;  // ★★★ Spinnaker 사용 비활성화
+        m_useSpinnaker = false;
         return false;
     }
 }
@@ -15841,6 +15871,37 @@ void TeachingWidget::newRecipe()
     {
         qDebug() << "[Recipe] 서버 연결됨 - 레시피 목록 요청 전송";
         
+        // 서버 응답 대기용 로딩 다이얼로그
+        CustomMessageBox* waitDialog = CustomMessageBox::showLoading(this, "레시피 목록 요청");
+        waitDialog->updateProgress(0, "서버에서 레시피 목록을 가져오는 중...");
+        waitDialog->show();
+        
+        QJsonArray receivedRecipes;
+        bool received = false;
+        
+        // ★★★ 시그널 연결을 메시지 전송 **전에** 먼저 해야 함
+        QMetaObject::Connection conn = connect(client, &ClientDialog::recipeListReceived, 
+            [&receivedRecipes, &received, waitDialog](const QJsonArray& recipes) {
+                qDebug() << "[Recipe] 시그널 수신 - 레시피" << recipes.size() << "개";
+                receivedRecipes = recipes;
+                received = true;
+                waitDialog->finishLoading();
+                waitDialog->close();
+            });
+        
+        // 타임아웃 타이머 (5초)
+        QTimer timeoutTimer;
+        timeoutTimer.setSingleShot(true);
+        connect(&timeoutTimer, &QTimer::timeout, [waitDialog, &received]() {
+            if (!received) {
+                qDebug() << "[Recipe] 타임아웃 - 응답 없음";
+                waitDialog->finishLoading();
+                waitDialog->close();
+            }
+        });
+        timeoutTimer.start(5000);
+        
+        // 메시지 전송 (시그널 연결 후)
         QJsonObject request;
         request["type"] = "recipe_all_request";
         request["timestamp"] = QDateTime::currentMSecsSinceEpoch();
@@ -15848,11 +15909,100 @@ void TeachingWidget::newRecipe()
         QJsonDocument doc(request);
         QByteArray jsonData = doc.toJson(QJsonDocument::Compact);
         
-        // RECIPE_ALL_REQUEST 전송
         client->sendProtocolMessage(MessageType::RECIPE_ALL_REQUEST, jsonData);
         
-        // TODO: 서버 응답 대기 후 레시피 선택 UI 표시
-        // 현재는 요청만 보내고 기존 로직 계속 진행
+        // 이벤트 루프 대기
+        waitDialog->exec();
+        
+        disconnect(conn);
+        timeoutTimer.stop();
+        delete waitDialog;
+        
+        // 응답 받았으면 레시피 선택 다이얼로그 표시
+        if (received && !receivedRecipes.isEmpty()) {
+            qDebug() << "[Recipe] 서버에서" << receivedRecipes.size() << "개의 레시피 수신";
+            
+            // 테이블 데이터 준비
+            QStringList headers = {"Name", "Length", "Wire", "Terminal(Side0)", "Terminal(Side1)", "Seal(Side0)", "Seal(Side1)"};
+            QList<QStringList> rows;
+            
+            for (const QJsonValue& val : receivedRecipes) {
+                if (val.isObject()) {
+                    QJsonObject recipe = val.toObject();
+                    QString name = recipe["name"].toString();
+                    int length = recipe["length"].toInt();
+                    QString wire = recipe["wire"].toString();
+                    
+                    QJsonObject terminals = recipe["terminals"].toObject();
+                    QString terminalSide0 = terminals["side0"].toString();
+                    QString terminalSide1 = terminals["side1"].toString();
+                    
+                    QJsonObject seals = recipe["seals"].toObject();
+                    QString sealSide0 = seals["side0"].toString();
+                    QString sealSide1 = seals["side1"].toString();
+                    
+                    QStringList rowData;
+                    rowData << name
+                            << (length > 0 ? QString::number(length) : "")
+                            << wire
+                            << terminalSide0
+                            << terminalSide1
+                            << sealSide0
+                            << sealSide1;
+                    rows.append(rowData);
+                }
+            }
+            
+            // CustomMessageBox 테이블 다이얼로그 사용
+            QJsonArray jsonDataCopy = receivedRecipes;  // 복사본 생성
+            int selectedRow = CustomMessageBox::showTableSelectionDialog(
+                this,
+                "서버 레시피 선택",
+                "서버에서 가져온 회로 정보 목록:",
+                headers,
+                rows,
+                &jsonDataCopy
+            );
+            
+            if (selectedRow >= 0 && selectedRow < receivedRecipes.size()) {
+                QJsonObject selectedRecipe = receivedRecipes[selectedRow].toObject();
+                QString recipeName = selectedRecipe["name"].toString();
+                qDebug() << "[Recipe] 서버 레시피 선택:" << recipeName;
+                
+                // 회로 정보 저장 (RecipeManager에 전달)
+                int length = selectedRecipe["length"].toInt();
+                QString wire = selectedRecipe["wire"].toString();
+                
+                QJsonObject terminals = selectedRecipe["terminals"].toObject();
+                QString terminalSide0 = terminals["side0"].toString();
+                QString terminalSide1 = terminals["side1"].toString();
+                
+                QJsonObject seals = selectedRecipe["seals"].toObject();
+                QString sealSide0 = seals["side0"].toString();
+                QString sealSide1 = seals["side1"].toString();
+                
+                qDebug() << "[Recipe] 회로 정보 저장:" 
+                         << "length=" << length
+                         << "wire=" << wire
+                         << "terminal_side0=" << terminalSide0
+                         << "terminal_side1=" << terminalSide1
+                         << "seal_side0=" << sealSide0
+                         << "seal_side1=" << sealSide1;
+                
+                // RecipeManager에 회로 정보 설정
+                recipeManager->setCircuitInfo(length, wire, terminalSide0, terminalSide1, sealSide0, sealSide1);
+                
+                // 선택된 이름으로 새 레시피 생성 계속 진행
+                createNewRecipeWithName(recipeName);
+                return;
+            } else {
+                qDebug() << "[Recipe] 서버 레시피 선택 취소";
+                return;
+            }
+        } else {
+            qDebug() << "[Recipe] 서버 응답 없음 또는 타임아웃 - 수동 입력으로 진행";
+            // 타임아웃이나 빈 목록이면 기존 로직으로 진행
+        }
     }
 
     // 저장되지 않은 변경사항 확인
@@ -15919,67 +16069,61 @@ void TeachingWidget::newRecipe()
         }
     }
 
-    // **두 번째 선택: "이미지 찾기" vs "레시피로 읽기"**
-
-    CustomMessageBox msgBox(this);
-    msgBox.setTitle("새 레시피 생성");
-    msgBox.setMessage("영상을 어디서 가져오시겠습니까?");
-    msgBox.setButtons(QMessageBox::NoButton); // 기본 버튼 없음
-
-    // 커스텀 버튼 생성
-    QPushButton *imageButton = new QPushButton("이미지 찾기");
-    QPushButton *recipeButton = new QPushButton("레시피로 읽기");
-    QPushButton *cancelButton = new QPushButton("취소");
-
-    // 버튼을 대화상자 레이아웃에 추가
-    QHBoxLayout *buttonLayout = new QHBoxLayout();
-    buttonLayout->addWidget(imageButton);
-    buttonLayout->addWidget(recipeButton);
-    buttonLayout->addWidget(cancelButton);
-
-    QVBoxLayout *mainLayout = qobject_cast<QVBoxLayout *>(msgBox.layout());
-    if (mainLayout)
+    // **두 번째 선택: "이미지 찾기" vs "레시피로 읽기" vs "현재 이미지"**
+    CustomMessageBox::ImageSourceChoice choice = CustomMessageBox::showImageSourceDialog(this);
+    
+    if (choice == CustomMessageBox::ChoiceCancelled)
     {
-        mainLayout->addLayout(buttonLayout);
-    }
-
-    bool useImage = false;
-    bool useRecipe = false;
-    QPushButton *clickedBtn = nullptr;
-
-    connect(imageButton, &QPushButton::clicked, [&]()
-            {
-        clickedBtn = imageButton;
-        msgBox.accept(); });
-    connect(recipeButton, &QPushButton::clicked, [&]()
-            {
-        clickedBtn = recipeButton;
-        msgBox.accept(); });
-    connect(cancelButton, &QPushButton::clicked, [&]()
-            {
-        clickedBtn = cancelButton;
-        msgBox.reject(); });
-
-    int result = msgBox.exec();
-
-    if (clickedBtn == imageButton)
-    {
-
-        useImage = true;
-    }
-    else if (clickedBtn == recipeButton)
-    {
-
-        useRecipe = true;
-    }
-    else
-    {
-
         return; // 취소
     }
 
-    // **세 번째: 이미지 찾기 또는 레시피로 읽기**
-    if (useImage)
+    // **세 번째: 이미지 찾기 또는 레시피로 읽기 또는 현재 이미지**
+    if (choice == CustomMessageBox::ChoiceCurrentImage)
+    {
+        // 현재 카메라 프레임 사용 (0,1,2,3) - 검사 시 트리거로 저장된 프레임
+        qDebug() << "[Recipe] 현재 이미지 사용 선택";
+        
+        // 트리거로 저장된 cameraFrames[0,1,2,3] 확인
+        bool allFramesValid = true;
+        for (int i = 0; i < 4; i++)
+        {
+            if (cameraFrames[i].empty())
+            {
+                allFramesValid = false;
+                qDebug() << "[Recipe] 카메라" << i << "프레임 없음";
+                break;
+            }
+            else
+            {
+                qDebug() << "[Recipe] 카메라" << i << "프레임 있음:" 
+                         << cameraFrames[i].cols << "x" << cameraFrames[i].rows;
+            }
+        }
+        
+        if (!allFramesValid)
+        {
+            CustomMessageBox(this, CustomMessageBox::Warning, "현재 이미지 없음",
+                             "현재 카메라 이미지가 없습니다. 검사를 한 번 실행해주세요.")
+                .exec();
+            return;
+        }
+        
+        qDebug() << "[Recipe] 모든 카메라 프레임 확인 완료";
+        
+        // 현재 카메라 정보도 그대로 사용
+        if (cameraView)
+        {
+            QString cameraName = cameraView->getCurrentCameraName();
+            if (cameraName.isEmpty())
+            {
+                cameraView->setCurrentCameraName(recipeName);
+                cameraView->setCurrentCameraUuid(recipeName);
+            }
+        }
+        
+        qDebug() << "[Recipe] 현재 이미지로 새 레시피 생성 준비 완료";
+    }
+    else if (choice == CustomMessageBox::ChoiceImageFile)
     {
         // 이미지 파일 선택
         QString imageFile = QFileDialog::getOpenFileName(this,
@@ -16044,7 +16188,7 @@ void TeachingWidget::newRecipe()
         cameraInfos.append(virtualCamera);
         cameraIndex = 0;
     }
-    else if (useRecipe)
+    else if (choice == CustomMessageBox::ChoiceRecipe)
     {
         // 기존 레시피 목록 표시
         QStringList availableRecipes = recipeManager->getAvailableRecipes();
@@ -16152,6 +16296,339 @@ void TeachingWidget::newRecipe()
 
     // 윈도우 타이틀 업데이트
     setWindowTitle(QString("KM Inspector - %1").arg(recipeName));
+}
+
+// 서버에서 선택한 레시피 이름으로 새 레시피 생성
+void TeachingWidget::createNewRecipeWithName(const QString& recipeName)
+{
+    qDebug() << "[Recipe] 서버 레시피로 새 레시피 생성:" << recipeName;
+    
+    // 저장되지 않은 변경사항 확인
+    if (hasUnsavedChanges)
+    {
+        CustomMessageBox msgBox(this, CustomMessageBox::Question, "새 레시피",
+                                "저장되지 않은 변경사항이 있습니다. 새 레시피를 생성하시겠습니까?");
+        msgBox.setButtons(QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+        int reply = msgBox.exec();
+
+        if (reply == QMessageBox::Cancel)
+        {
+            return;
+        }
+        else if (reply == QMessageBox::Yes)
+        {
+            saveRecipe();
+        }
+    }
+
+    // 중복 이름 확인
+    QStringList existingRecipes = recipeManager->getAvailableRecipes();
+    if (existingRecipes.contains(recipeName))
+    {
+        CustomMessageBox msgBox(this, CustomMessageBox::Question, "레시피 이름 중복",
+                                QString("'%1' 레시피가 이미 존재합니다. 덮어쓰시겠습니까?").arg(recipeName));
+        msgBox.setButtons(QMessageBox::Yes | QMessageBox::No);
+        int reply = msgBox.exec();
+
+        if (reply != QMessageBox::Yes)
+        {
+            return;
+        }
+    }
+
+    // **영상 선택: "이미지 찾기" vs "레시피로 읽기" vs "현재 이미지"**
+    CustomMessageBox::ImageSourceChoice choice = CustomMessageBox::showImageSourceDialog(this);
+    
+    qDebug() << "[Recipe] createNewRecipeWithName 선택 결과:" << choice;
+    
+    if (choice == CustomMessageBox::ChoiceCancelled)
+    {
+        return; // 취소
+    }
+
+    // **영상 소스에 따른 처리**
+    if (choice == CustomMessageBox::ChoiceCurrentImage)
+    {
+        // 현재 카메라 프레임 사용 (0,1,2,3) - 검사 시 트리거로 저장된 프레임
+        qDebug() << "[Recipe] createNewRecipeWithName - 현재 이미지 사용 선택";
+        
+        // 트리거로 저장된 cameraFrames[0,1,2,3] 확인
+        bool allFramesValid = true;
+        qDebug() << "[Recipe] ===== cameraFrames 상태 확인 시작 =====";
+        for (int i = 0; i < 4; i++)
+        {
+            qDebug() << "[Recipe] cameraFrames[" << i << "] empty:" << cameraFrames[i].empty() 
+                     << ", size:" << cameraFrames[i].cols << "x" << cameraFrames[i].rows
+                     << ", data:" << (cameraFrames[i].data ? "OK" : "NULL");
+            
+            if (cameraFrames[i].empty())
+            {
+                allFramesValid = false;
+                qDebug() << "[Recipe] 카메라" << i << "프레임 없음";
+            }
+            else
+            {
+                qDebug() << "[Recipe] 카메라" << i << "프레임 있음:" 
+                         << cameraFrames[i].cols << "x" << cameraFrames[i].rows;
+            }
+        }
+        qDebug() << "[Recipe] ===== cameraFrames 상태 확인 완료 =====" << "allFramesValid:" << allFramesValid;
+        
+        if (!allFramesValid)
+        {
+            CustomMessageBox(this, CustomMessageBox::Warning, "현재 이미지 없음",
+                             "현재 카메라 이미지가 없습니다. 검사를 한 번 실행해주세요.")
+                .exec();
+            return;
+        }
+        
+        qDebug() << "[Recipe] 모든 카메라 프레임 확인 완료 - 사용 가능";
+        
+        // 현재 카메라 정보도 그대로 사용
+        if (cameraView)
+        {
+            QString cameraName = cameraView->getCurrentCameraName();
+            qDebug() << "[Recipe] 현재 카메라 이름:" << cameraName;
+            if (cameraName.isEmpty())
+            {
+                cameraView->setCurrentCameraName(recipeName);
+                cameraView->setCurrentCameraUuid(recipeName);
+                qDebug() << "[Recipe] 카메라 이름을 레시피 이름으로 설정:" << recipeName;
+            }
+        }
+        
+        qDebug() << "[Recipe] createNewRecipeWithName - 현재 이미지로 새 레시피 생성 준비 완료";
+    }
+    else if (choice == CustomMessageBox::ChoiceImageFile)
+    {
+        // 이미지 파일 선택 (CustomFileDialog 사용)
+        QString imageFile = CustomFileDialog::getOpenFileName(this,
+                                                         "티칭용 이미지 선택",
+                                                         "",
+                                                         "이미지 파일 (*.jpg *.jpeg *.png *.bmp *.tiff *.tif)");
+
+        if (imageFile.isEmpty())
+        {
+            CustomMessageBox(this, CustomMessageBox::Information, "알림",
+                             "이미지가 선택되지 않았습니다.")
+                .exec();
+            return;
+        }
+
+        QPixmap pixmap(imageFile);
+        if (pixmap.isNull() || !cameraView)
+        {
+            CustomMessageBox(this, CustomMessageBox::Warning, "이미지 로드 실패",
+                             "선택한 이미지를 로드할 수 없습니다.")
+                .exec();
+            return;
+        }
+
+        cameraView->setBackgroundImage(pixmap);
+
+        cv::Mat loadedImage;
+        QImage qImage = pixmap.toImage();
+        if (qImage.format() != QImage::Format_RGB888)
+        {
+            qImage = qImage.convertToFormat(QImage::Format_RGB888);
+        }
+        loadedImage = cv::Mat(qImage.height(), qImage.width(), CV_8UC3,
+                              (void *)qImage.constBits(), qImage.bytesPerLine())
+                          .clone();
+        cv::cvtColor(loadedImage, loadedImage, cv::COLOR_RGB2BGR);
+
+        if (4 <= static_cast<size_t>(cameraIndex))
+        {
+        }
+        cameraFrames[cameraIndex] = loadedImage.clone();
+
+        QString cameraName = recipeName;
+        cameraView->setCurrentCameraName(cameraName);
+        cameraView->setCurrentCameraUuid(cameraName);
+
+        CameraInfo virtualCamera;
+        virtualCamera.name = cameraName;
+        virtualCamera.uniqueId = cameraName;
+        virtualCamera.index = 0;
+        virtualCamera.isConnected = true;
+        virtualCamera.serialNumber = "0";
+
+        cameraInfos.clear();
+        cameraInfos.append(virtualCamera);
+        cameraIndex = 0;
+    }
+    else if (choice == CustomMessageBox::ChoiceRecipe)
+    {
+        QStringList availableRecipes = recipeManager->getAvailableRecipes();
+
+        if (availableRecipes.isEmpty())
+        {
+            CustomMessageBox(this, CustomMessageBox::Warning, "레시피 없음",
+                             "저장된 레시피가 없습니다.").exec();
+            return;
+        }
+
+        // 테이블 데이터 준비
+        QStringList headers = {"Name", "Length", "Wire", "Terminal(Side0)", "Terminal(Side1)", "Seal(Side0)", "Seal(Side1)"};
+        QList<QStringList> rows;
+        
+        for (const QString& recipeName : availableRecipes) {
+            RecipeManager::RecipeCircuitInfo info = recipeManager->getRecipeCircuitInfo(recipeName);
+            
+            QStringList rowData;
+            rowData << recipeName
+                    << (info.length > 0 ? QString::number(info.length) : "")
+                    << info.wire
+                    << info.terminalSide0
+                    << info.terminalSide1
+                    << info.sealSide0
+                    << info.sealSide1;
+            rows.append(rowData);
+        }
+        
+        // CustomMessageBox 테이블 다이얼로그 사용
+        int selectedRow = CustomMessageBox::showTableSelectionDialog(
+            this,
+            "레시피로 읽기",
+            "영상을 가져올 레시피를 선택하세요:",
+            headers,
+            rows,
+            nullptr
+        );
+        
+        if (selectedRow < 0 || selectedRow >= availableRecipes.size())
+        {
+            return;
+        }
+        
+        QString sourceRecipe = availableRecipes[selectedRow];
+
+        // 레시피 XML 파일에서 티칭 이미지 읽기
+        QString recipeDir = QString("%1/recipes/%2").arg(QCoreApplication::applicationDirPath()).arg(sourceRecipe);
+        QString xmlPath = recipeDir + "/" + sourceRecipe + ".xml";
+        
+        if (!QFile::exists(xmlPath))
+        {
+            CustomMessageBox(this, CustomMessageBox::Warning, "레시피 없음",
+                             "선택한 레시피 파일이 없습니다.")
+                .exec();
+            return;
+        }
+
+        // XML에서 티칭 이미지들 읽기 (0,1,2,3 프레임)
+        QFile xmlFile(xmlPath);
+        if (!xmlFile.open(QIODevice::ReadOnly))
+        {
+            CustomMessageBox(this, CustomMessageBox::Warning, "파일 열기 실패",
+                             "레시피 파일을 열 수 없습니다.")
+                .exec();
+            return;
+        }
+
+        QXmlStreamReader xml(&xmlFile);
+        bool foundImage = false;
+        
+        while (!xml.atEnd() && !xml.hasError())
+        {
+            xml.readNext();
+            if (xml.isStartElement() && xml.name() == QLatin1String("TeachingImage"))
+            {
+                int imageIndex = xml.attributes().value("imageIndex").toInt();
+                int width = xml.attributes().value("width").toInt();
+                int height = xml.attributes().value("height").toInt();
+                QString base64Data = xml.readElementText();
+                
+                if (!base64Data.isEmpty() && imageIndex >= 0 && imageIndex < 4)
+                {
+                    // base64 디코딩
+                    QByteArray imageData = QByteArray::fromBase64(base64Data.toLatin1());
+                    std::vector<uchar> buffer(imageData.begin(), imageData.end());
+                    cv::Mat teachingImage = cv::imdecode(buffer, cv::IMREAD_COLOR);
+                    
+                    if (!teachingImage.empty())
+                    {
+                        // 이미지 크기 복원
+                        if (width > 0 && height > 0 && (teachingImage.cols != width || teachingImage.rows != height))
+                        {
+                            cv::resize(teachingImage, teachingImage, cv::Size(width, height));
+                        }
+                        
+                        // cameraFrames에 저장
+                        cameraFrames[imageIndex] = teachingImage.clone();
+                        foundImage = true;
+                        
+                        qDebug() << "[Recipe] Loaded teaching image" << imageIndex << ":" << teachingImage.cols << "x" << teachingImage.rows;
+                        
+                        // 첫 번째 이미지를 화면에 표시
+                        if (imageIndex == 0 && cameraView)
+                        {
+                            cv::Mat displayImage;
+                            cv::cvtColor(teachingImage, displayImage, cv::COLOR_BGR2RGB);
+                            QImage qImage(displayImage.data, displayImage.cols, displayImage.rows,
+                                        displayImage.step, QImage::Format_RGB888);
+                            QPixmap pixmap = QPixmap::fromImage(qImage.copy());
+                            cameraView->setBackgroundImage(pixmap);
+                        }
+                    }
+                }
+            }
+        }
+        
+        xmlFile.close();
+        
+        if (!foundImage)
+        {
+            CustomMessageBox(this, CustomMessageBox::Warning, "이미지 없음",
+                             "선택한 레시피에 저장된 이미지가 없습니다.")
+                .exec();
+            return;
+        }
+
+        QString cameraName = sourceRecipe;
+
+        if (cameraView)
+        {
+            cameraView->setCurrentCameraName(cameraName);
+            cameraView->setCurrentCameraUuid(cameraName);
+        }
+
+        if (cameraInfos.empty() || cameraIndex >= cameraInfos.size())
+        {
+            CameraInfo virtualCamera;
+            virtualCamera.name = cameraName;
+            virtualCamera.uniqueId = cameraName;
+            virtualCamera.index = 0;
+            virtualCamera.isConnected = false;
+
+            if (cameraInfos.empty())
+            {
+                cameraInfos.append(virtualCamera);
+            }
+            else
+            {
+                cameraInfos[cameraIndex] = virtualCamera;
+            }
+        }
+    }
+
+    // 기존 패턴 클리어
+    if (cameraView)
+    {
+        cameraView->clearPatterns();
+    }
+    if (patternTree)
+    {
+        patternTree->clear();
+    }
+
+    // 새 레시피 상태로 설정
+    currentRecipeName = recipeName;
+    hasUnsavedChanges = true;
+
+    // 윈도우 타이틀 업데이트
+    setWindowTitle(QString("KM Inspector - %1").arg(recipeName));
+    
+    qDebug() << "[Recipe] 새 레시피 생성 완료:" << recipeName;
 }
 
 void TeachingWidget::loadTeachingImage()
@@ -16357,17 +16834,63 @@ void TeachingWidget::manageRecipes()
     QDialog dialog(this);
     dialog.setWindowTitle("레시피 관리");
     dialog.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
-    dialog.setMinimumSize(400, 300);
+    dialog.setMinimumSize(1000, 400);
+    dialog.setStyleSheet(CustomMessageBox::getTableDialogStyleSheet());
 
     QVBoxLayout *layout = new QVBoxLayout(&dialog);
+    layout->setSpacing(15);
+    layout->setContentsMargins(20, 20, 20, 20);
 
-    // 레시피 목록
-    QLabel *label = new QLabel("저장된 레시피 목록:");
+    // 레시피 목록 타이틀
+    QLabel *label = new QLabel("레시피 관리");
+    label->setStyleSheet("font-size: 18px; font-weight: bold; color: #FFFFFF;");
     layout->addWidget(label);
+    
+    QLabel *infoLabel = new QLabel("저장된 레시피 목록:");
+    infoLabel->setStyleSheet("color: #CCCCCC; font-size: 14px;");
+    layout->addWidget(infoLabel);
 
-    QListWidget *recipeList = new QListWidget(&dialog);
-    recipeList->addItems(availableRecipes);
-    layout->addWidget(recipeList);
+    // QTableWidget 생성
+    QTableWidget *recipeTable = new QTableWidget(&dialog);
+    recipeTable->setColumnCount(7);
+    recipeTable->setHorizontalHeaderLabels({"Name", "Length", "Wire", "Terminal(Side0)", "Terminal(Side1)", "Seal(Side0)", "Seal(Side1)"});
+    
+    // 테이블 스타일 설정
+    recipeTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    recipeTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    recipeTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    recipeTable->verticalHeader()->setVisible(false);
+    
+    // 레시피 정보 로드 및 테이블에 추가
+    recipeTable->setRowCount(availableRecipes.size());
+    for (int i = 0; i < availableRecipes.size(); i++) {
+        QString recipeName = availableRecipes[i];
+        RecipeManager::RecipeCircuitInfo info = manager.getRecipeCircuitInfo(recipeName);
+        
+        recipeTable->setItem(i, 0, new QTableWidgetItem(recipeName));
+        recipeTable->setItem(i, 1, new QTableWidgetItem(info.length > 0 ? QString::number(info.length) : ""));
+        recipeTable->setItem(i, 2, new QTableWidgetItem(info.wire));
+        recipeTable->setItem(i, 3, new QTableWidgetItem(info.terminalSide0));
+        recipeTable->setItem(i, 4, new QTableWidgetItem(info.terminalSide1));
+        recipeTable->setItem(i, 5, new QTableWidgetItem(info.sealSide0));
+        recipeTable->setItem(i, 6, new QTableWidgetItem(info.sealSide1));
+    }
+    
+    // 컬럼 너비를 내용에 맞게 자동 조정
+    recipeTable->resizeColumnsToContents();
+    
+    // 모든 컬럼을 대화형으로 설정하여 사용자가 조정할 수 있도록 함
+    for (int i = 0; i < 6; i++) {
+        recipeTable->horizontalHeader()->setSectionResizeMode(i, QHeaderView::Interactive);
+        // 최소 너비 설정 (내용 + 여유 공간)
+        int width = recipeTable->horizontalHeader()->sectionSize(i);
+        recipeTable->horizontalHeader()->resizeSection(i, width + 20);
+    }
+    
+    // 마지막 컬럼은 남은 공간을 채우도록 설정
+    recipeTable->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Stretch);
+    
+    layout->addWidget(recipeTable);
 
     // 버튼들
     QHBoxLayout *buttonLayout = new QHBoxLayout();
@@ -16377,6 +16900,9 @@ void TeachingWidget::manageRecipes()
     QPushButton *deleteButton = new QPushButton("삭제");
     QPushButton *renameButton = new QPushButton("이름 변경");
     QPushButton *closeButton = new QPushButton("닫기");
+    
+    deleteButton->setObjectName("deleteButton");
+    closeButton->setObjectName("closeButton");
 
     buttonLayout->addWidget(loadButton);
     buttonLayout->addWidget(copyButton);
@@ -16390,31 +16916,31 @@ void TeachingWidget::manageRecipes()
     // 버튼 활성화 상태 관리
     auto updateButtonState = [&]()
     {
-        bool hasSelection = recipeList->currentItem() != nullptr;
+        bool hasSelection = recipeTable->currentRow() >= 0;
         loadButton->setEnabled(hasSelection);
         copyButton->setEnabled(hasSelection);
         deleteButton->setEnabled(hasSelection);
         renameButton->setEnabled(hasSelection);
     };
 
-    connect(recipeList, &QListWidget::itemSelectionChanged, updateButtonState);
+    connect(recipeTable, &QTableWidget::itemSelectionChanged, updateButtonState);
     updateButtonState();
 
     // 버튼 이벤트 연결
     connect(loadButton, &QPushButton::clicked, [&]()
             {
-        QListWidgetItem* item = recipeList->currentItem();
-        if (item) {
-            QString recipeName = item->text();
+        int row = recipeTable->currentRow();
+        if (row >= 0) {
+            QString recipeName = recipeTable->item(row, 0)->text();
             dialog.accept();
             onRecipeSelected(recipeName);
         } });
 
     connect(deleteButton, &QPushButton::clicked, [&]()
             {
-        QListWidgetItem* item = recipeList->currentItem();
-        if (item) {
-            QString recipeName = item->text();
+        int row = recipeTable->currentRow();
+        if (row >= 0) {
+            QString recipeName = recipeTable->item(row, 0)->text();
             CustomMessageBox msgBox(&dialog, CustomMessageBox::Question, "레시피 삭제",
                 QString("'%1' 레시피를 삭제하시겠습니까?").arg(recipeName));
             msgBox.setButtons(QMessageBox::Yes | QMessageBox::No);
@@ -16422,7 +16948,7 @@ void TeachingWidget::manageRecipes()
             
             if (reply == QMessageBox::Yes) {
                 if (manager.deleteRecipe(recipeName)) {
-                    delete item;
+                    recipeTable->removeRow(row);
                     
                     // 현재 삭제된 레시피가 로드되어 있다면 티칭위젯 초기화
                     if (currentRecipeName == recipeName) {
@@ -16476,9 +17002,9 @@ void TeachingWidget::manageRecipes()
 
     connect(renameButton, &QPushButton::clicked, [&]()
             {
-        QListWidgetItem* item = recipeList->currentItem();
-        if (item) {
-            QString oldName = item->text();
+        int row = recipeTable->currentRow();
+        if (row >= 0) {
+            QString oldName = recipeTable->item(row, 0)->text();
             CustomMessageBox msgBox(&dialog);
             msgBox.setTitle("레시피 이름 변경");
             msgBox.setMessage("새 레시피 이름을 입력하세요:");
@@ -16489,7 +17015,7 @@ void TeachingWidget::manageRecipes()
                 QString newName = msgBox.getInputText();
                 if (!newName.isEmpty() && newName != oldName) {
                     if (manager.renameRecipe(oldName, newName)) {
-                        item->setText(newName);
+                        recipeTable->item(row, 0)->setText(newName);
                         
                         // 현재 로드된 레시피가 변경된 레시피라면 이름 업데이트
                         if (currentRecipeName == oldName) {
@@ -16508,9 +17034,9 @@ void TeachingWidget::manageRecipes()
 
     connect(copyButton, &QPushButton::clicked, [&]()
             {
-        QListWidgetItem* item = recipeList->currentItem();
-        if (item) {
-            QString sourceName = item->text();
+        int row = recipeTable->currentRow();
+        if (row >= 0) {
+            QString sourceName = recipeTable->item(row, 0)->text();
             
             // 레시피의 카메라 이름 가져오기
             QString recipeCameraName = manager.getRecipeCameraName(sourceName);
@@ -16551,7 +17077,19 @@ void TeachingWidget::manageRecipes()
                 QString newName = msgBox.getInputText();
                 if (!newName.isEmpty() && newName != sourceName) {
                     if (manager.copyRecipe(sourceName, newName, needsCameraChange ? targetCameraName : QString())) {
-                        recipeList->addItem(newName);
+                        // 테이블에 새 행 추가
+                        int newRow = recipeTable->rowCount();
+                        recipeTable->insertRow(newRow);
+                        
+                        // 새 레시피 정보 로드 및 표시
+                        RecipeManager::RecipeCircuitInfo info = manager.getRecipeCircuitInfo(newName);
+                        recipeTable->setItem(newRow, 0, new QTableWidgetItem(newName));
+                        recipeTable->setItem(newRow, 1, new QTableWidgetItem(info.length > 0 ? QString::number(info.length) : ""));
+                        recipeTable->setItem(newRow, 2, new QTableWidgetItem(info.wire));
+                        recipeTable->setItem(newRow, 3, new QTableWidgetItem(info.terminalSide0));
+                        recipeTable->setItem(newRow, 4, new QTableWidgetItem(info.terminalSide1));
+                        recipeTable->setItem(newRow, 5, new QTableWidgetItem(info.sealSide0));
+                        recipeTable->setItem(newRow, 6, new QTableWidgetItem(info.sealSide1));
                         
                         QString message = QString("'%1'에서 '%2'로 복사되었습니다.").arg(sourceName, newName);
                         if (needsCameraChange) {
@@ -16753,6 +17291,24 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
     {
         currentRecipeName = recipeName;
         hasUnsavedChanges = false;
+
+        // 레시피 로드 성공 시 circuit info도 recipeManager에 설정
+        RecipeManager::RecipeCircuitInfo circuitInfo = manager.getRecipeCircuitInfo(recipeName);
+        recipeManager->setCircuitInfo(
+            circuitInfo.length,
+            circuitInfo.wire,
+            circuitInfo.terminalSide0,
+            circuitInfo.terminalSide1,
+            circuitInfo.sealSide0,
+            circuitInfo.sealSide1
+        );
+        qDebug() << "[loadRecipe] Circuit info 로드됨:" 
+                 << "length=" << circuitInfo.length
+                 << "wire=" << circuitInfo.wire
+                 << "terminal_side0=" << circuitInfo.terminalSide0
+                 << "terminal_side1=" << circuitInfo.terminalSide1
+                 << "seal_side0=" << circuitInfo.sealSide0
+                 << "seal_side1=" << circuitInfo.sealSide1;
 
         // 윈도우 타이틀 업데이트
         setWindowTitle(QString("KM Inspector - %1").arg(recipeName));
@@ -17056,16 +17612,8 @@ void TeachingWidget::onRecipeSelected(const QString &recipeName)
     {
         QString errorMsg = manager.getLastError();
         
-        // 레시피가 존재하지 않는 경우에는 메시지 박스를 표시하지 않음 (자동 로드 시)
-        if (!errorMsg.contains("존재하지 않습니다") && !errorMsg.contains("does not exist"))
-        {
-            CustomMessageBox(this, CustomMessageBox::Critical, "레시피 불러오기 실패",
-                             QString("레시피 불러오기에 실패했습니다:\n%1").arg(errorMsg))
-                .exec();
-        }
-        else
-        {
-        }
+        // 레시피 불러오기 실패 시 메시지박스 제거 (자동 로드 시)
+        // 메시지박스 표시 안 함
 
         // ★ 레시피 로드 실패해도 스레드 재개
         if (wasThreadsPaused)

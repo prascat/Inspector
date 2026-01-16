@@ -80,6 +80,8 @@ public:
 signals:
     void settingsChanged();
     void inspectionRequestReceived(const QJsonObject& request);
+    void recipeListReceived(const QJsonArray& recipes);  // 서버에서 레시피 목록 수신
+    void recipeReadyReceived(const QJsonObject& request);  // 서버에서 레시피 준비 요청 수신
 
 private slots:
     void onTestConnection();

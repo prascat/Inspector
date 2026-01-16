@@ -148,6 +148,7 @@ class TeachingWidget : public QWidget {
 public:
     // RecipeManager에서 접근 가능하도록 public으로 선언
     std::array<cv::Mat, 4> cameraFrames;  // 고정 크기 4 배열 (CAM0_STRIP, CAM0_CRIMP, CAM1_STRIP, CAM1_CRIMP)
+    std::array<cv::Mat, 4> lastInspectionFrames;  // 마지막 검사 프레임 백업 (레시피 생성용)
     std::array<bool, 4> frameUpdatedFlags;  // 각 프레임의 업데이트 플래그 (트리거로 새 데이터 수신됨)
     bool camOff = true;
     int cameraIndex;
@@ -270,6 +271,7 @@ public:
     
     // === 레시피 관리 함수들 (camOff에서도 사용) ===
     void newRecipe();
+    void createNewRecipeWithName(const QString& recipeName);  // 서버에서 선택한 이름으로 레시피 생성
     void openRecipe(bool autoMode = false);
     void saveRecipeAs();
     void manageRecipes();
@@ -287,6 +289,7 @@ signals:
 private slots:
     void onTriggerSignalReceived(const cv::Mat& frame, int cameraIndex);
     void onInspectionRequestReceived(const QJsonObject& request);  // 소켓 검사 요청 수신
+    void onRecipeReadyReceived(const QJsonObject& request);  // 서버 레시피 준비 요청 수신
     void onFrameIndexReceived(int frameIndex);  // 시리얼 프레임 인덱스 수신 (레거시)
     void updateUITexts();
     void openLanguageSettings();

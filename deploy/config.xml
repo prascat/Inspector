@@ -2,7 +2,7 @@
 <Config>
     <Language>ko</Language>
     <AutoSave>true</AutoSave>
-    <LastRecipePath>20260108_131242_845</LastRecipePath>
+    <LastRecipePath>NONAME</LastRecipePath>
     <SerialPort>ttyTHS1 (Jetson 내장 UART)</SerialPort>
     <SerialBaudRate>115200</SerialBaudRate>
     <SerialAutoConnect>true</SerialAutoConnect>

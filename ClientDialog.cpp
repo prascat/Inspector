@@ -2,6 +2,7 @@
 #include "ConfigManager.h"
 #include "LanguageManager.h"
 #include "CustomMessageBox.h"
+#include <QJsonArray>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -717,9 +718,7 @@ void ClientDialog::handleRecipeReady(const QJsonObject& request)
     qDebug().noquote() << "[Protocol] 회로 준비 요청 수신:" 
                        << QJsonDocument(request).toJson(QJsonDocument::Compact);
     
-    // TODO: 레시피 로드 처리
-    // 성공 시: RECIPE_OK 전송
-    // 실패 시: RECIPE_EMPTY 전송
+    emit recipeReadyReceived(request);
 }
 
 // 회로 목록 응답 처리 (Lims → Vision)
@@ -728,5 +727,13 @@ void ClientDialog::handleRecipeAllResponse(const QJsonDocument& response)
     qDebug().noquote() << "[Protocol] 회로 목록 수신:" 
                        << response.toJson(QJsonDocument::Compact);
     
-    // TODO: 회로 목록 처리
+    // JSON 배열 추출
+    if (response.isArray()) {
+        QJsonArray recipes = response.array();
+        qDebug() << "[Protocol] emit recipeListReceived 호출 - 레시피" << recipes.size() << "개";
+        emit recipeListReceived(recipes);
+        qDebug() << "[Protocol] emit recipeListReceived 완료";
+    } else {
+        qDebug() << "[Protocol] 회로 목록이 배열 형식이 아닙니다";
+    }
 }

@@ -89,18 +89,26 @@ void resetUsbCameras() {
     closedir(dir);
 }
 
+// IPC 리소스 정리 함수 (공유 메모리, 세마포어)
+void cleanupIPCResources() {
+    system("ipcs -m | grep $USER | awk '{print $2}' | xargs -r -I {} ipcrm -m {} 2>/dev/null");
+    system("ipcs -s | grep $USER | awk '{print $2}' | xargs -r -I {} ipcrm -s {} 2>/dev/null");
+    system("ipcs -q | grep $USER | awk '{print $2}' | xargs -r -I {} ipcrm -q {} 2>/dev/null");
+}
+
 // Spinnaker System 정리 함수
 void cleanupSpinnaker() {
     static bool cleaned = false;
     if (cleaned) return;
     cleaned = true;
     
-    qDebug() << "[Cleanup] Starting Spinnaker System cleanup";
+    cleanupIPCResources();
+    
     try {
         Spinnaker::SystemPtr system = nullptr;
         try {
             system = Spinnaker::System::GetInstance();
-        } catch (const Spinnaker::Exception& e) {
+        } catch (const Spinnaker::Exception&) {
             return;
         }
         
@@ -187,59 +195,7 @@ void flushPendingLogs() {
 }
 
 int main(int argc, char *argv[]) {
-    // ★★★ [근본 해결] 프로세스 재실행 전략 (가장 먼저 실행)
-    // 환경 변수가 올바르지 않으면 설정하고 자신을 재실행합니다.
-    const char* env_cti = getenv("SPINNAKER_GENTL64_CTI");
-    const char* target_cti = "/opt/spinnaker/lib/spinnaker-gentl/Spinnaker_GenTL.cti";
-    
-    // LD_LIBRARY_PATH 체크
-    const char* ld_path = getenv("LD_LIBRARY_PATH");
-    bool ld_path_ok = false;
-    if (ld_path && std::string(ld_path).find("/opt/spinnaker/lib") != std::string::npos) {
-        ld_path_ok = true;
-    }
-
-    bool need_restart = false;
-    if (env_cti == nullptr || strcmp(env_cti, target_cti) != 0 || !ld_path_ok) {
-        need_restart = true;
-    }
-    
-    if (need_restart) {
-        fprintf(stderr, "[Main] Environment not mapped - Restarting process with correct variables...\n");
-        
-        // 1. 핵심 환경 변수 설정
-        setenv("SPINNAKER_GENTL64_CTI", target_cti, 1);
-        setenv("GENICAM_GENTL64_PATH", "/opt/spinnaker/lib/spinnaker-gentl", 1);
-        setenv("GENICAM_CACHE_V3_3", "/tmp/genicam_cache", 1);
-        setenv("GENICAM_LOG_CONFIG_V3_3", "", 1);
-        
-        // 2. LD_LIBRARY_PATH 보정
-        std::string new_ld_path = "/opt/spinnaker/lib";
-        if (ld_path) {
-            new_ld_path += ":";
-            new_ld_path += ld_path;
-        }
-        setenv("LD_LIBRARY_PATH", new_ld_path.c_str(), 1);
-        
-        // 3. Spinnaker 자원 정리 (IPC 및 임시파일)
-        system("ipcs -m 2>/dev/null | grep $(whoami) | awk '{print $2}' | xargs -r -I {} ipcrm -m {} 2>/dev/null");
-        system("rm -f /tmp/*spinnaker* /tmp/*FLIR* 2>/dev/null");
-
-        // 4. USB 카메라 강제 리셋 (FLIR)
-        resetUsbCameras();
-
-        // 5. 잠시 대기 (USB 재인식 및 소멸자 처리 시간 확보)
-        usleep(1000 * 1000); // 1초 대기
-
-        // 6. 자기 자신을 재실행 (모든 환경 변수 적용)
-        execv("/proc/self/exe", argv);
-        
-        // 이 지점에 도달하면 execv 실패
-        perror("[Main] execv failed");
-        exit(1);
-    }
-    
-    fprintf(stderr, "[Main] Starting Inspector (Environment verified)\n");
+    fprintf(stderr, "[Main] Starting Inspector\n");
     
     // 시그널 핸들러 등록
     setupSignalHandlers();
@@ -292,9 +248,7 @@ int main(int argc, char *argv[]) {
     widget->setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
     widget->showMaximized();
     
-    // ★ 앱 종료 시 가장 먼저 카메라 끄기
     QObject::connect(&app, &QApplication::aboutToQuit, [widget]() {
-        qDebug() << "[aboutToQuit] Forcing camOff state before shutdown...";
         if (widget) {
             widget->forceCamOff();
         }
@@ -302,9 +256,8 @@ int main(int argc, char *argv[]) {
     
     int result = app.exec();
     
-    qDebug() << "[main] App Clean Shutdown";
     if (widget) {
-        widget->forceCamOff();  // 추가 안전장치
+        widget->forceCamOff();
     }
     cleanupSpinnaker();
     ConfigManager::instance()->saveConfig();
