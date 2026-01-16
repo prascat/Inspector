@@ -156,7 +156,6 @@ void FilterDialog::addFilterWidget(int filterType, QGroupBox* groupBox) {
     // 그룹박스 체크 상태 변경 시 필터 적용
     connect(groupBox, &QGroupBox::toggled, this, [this, filterType, propertyWidget, groupBox](bool checked) {
         qDebug() << "[필터 토글]" << filterType << "checked:" << checked;
-        // 프로퍼티 위젯 활성화/비활성화는 그룹박스가 자동 처리
         propertyWidget->setEnabled(checked);
         onFilterCheckStateChanged(checked ? Qt::Checked : Qt::Unchecked);
     });
@@ -318,7 +317,7 @@ void FilterDialog::onFilterCheckStateChanged(int state) {
         cameraView->setPatternContours(patternId, QList<QVector<QPoint>>());
     }
 
-    // ★ 패턴 목록에서 필터 클릭할 때와 정확히 동일한 로직 사용
+    // 패턴 목록에서 필터 클릭할 때와 동일한 로직 사용
     if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
         parentWidget->setFilterAdjusting(true);
         
@@ -451,14 +450,28 @@ void FilterDialog::onFilterCheckStateChanged(int state) {
 }
 
 void FilterDialog::onFilterParamChanged(const QString& paramName, int value) {
+    printf("[FilterDialog::onFilterParamChanged] 호출됨! paramName=%s, value=%d\n", 
+           paramName.toStdString().c_str(), value);
+    fflush(stdout);
+    
     FilterPropertyWidget* propertyWidget = qobject_cast<FilterPropertyWidget*>(sender());
-    if (!propertyWidget) return;
+    if (!propertyWidget) {
+        printf("[FilterDialog::onFilterParamChanged] propertyWidget is null!\n");
+        fflush(stdout);
+        return;
+    }
     
     int filterType = propertyWidget->property("filterType").toInt();
+    printf("[FilterDialog::onFilterParamChanged] filterType=%d\n", filterType);
+    fflush(stdout);
     
     // 필터가 활성화되어 있는지 확인
     QWidget* checkboxWidget = filterCheckboxes.value(filterType, nullptr);
-    if (!checkboxWidget) return;
+    if (!checkboxWidget) {
+        printf("[FilterDialog::onFilterParamChanged] checkboxWidget is null!\n");
+        fflush(stdout);
+        return;
+    }
     
     bool isChecked = false;
     if (QGroupBox* groupBox = qobject_cast<QGroupBox*>(checkboxWidget)) {
@@ -467,8 +480,10 @@ void FilterDialog::onFilterParamChanged(const QString& paramName, int value) {
         isChecked = checkbox->isChecked();
     }
     
-    if (!isChecked) return;
+    printf("[FilterDialog::onFilterParamChanged] isChecked=%d, 이제 updateFilterParam 호출\n", isChecked);
+    fflush(stdout);
     
+    // 체크 여부와 관계없이 updateFilterParam 호출 (내부에서 처리)
     updateFilterParam(filterType, paramName, value);
 }
 
@@ -584,9 +599,15 @@ void FilterDialog::updateUIFromFilters() {
 }
 
 void FilterDialog::updateFilterParam(int filterType, const QString& paramName, int value) {
+    printf("[FilterDialog::updateFilterParam] 호출됨! filterType=%d, paramName=%s, value=%d\n", 
+           filterType, paramName.toStdString().c_str(), value);
+    fflush(stdout);
+    
     // 필터가 활성화되어 있는지 확인
     QWidget* checkboxWidget = filterCheckboxes.value(filterType, nullptr);
     if (!checkboxWidget) {
+        printf("[FilterDialog::updateFilterParam] checkboxWidget is null!\n");
+        fflush(stdout);
         return;
     }
     
@@ -597,7 +618,17 @@ void FilterDialog::updateFilterParam(int filterType, const QString& paramName, i
         isChecked = checkbox->isChecked();
     }
     
+    // 체크되지 않았을 때는 파라미터만 저장하고 미리보기 갱신하지 않음
     if (!isChecked) {
+        // appliedFilters에 파라미터만 저장 (다음에 체크할 때 사용)
+        if (!appliedFilters.contains(filterType)) {
+            FilterInfo info;
+            info.type = filterType;
+            info.enabled = false;
+            info.params = defaultParams[filterType];
+            appliedFilters[filterType] = info;
+        }
+        appliedFilters[filterType].params[paramName] = value;
         return;
     }
     
@@ -624,9 +655,140 @@ void FilterDialog::updateFilterParam(int filterType, const QString& paramName, i
         // 기존 필터의 파라미터 업데이트
         cameraView->setPatternFilterParam(patternId, existingFilterIndex, paramName, value);
         
-        // 실시간 미리보기를 위해 필터 선택 상태 설정
+        // 컨투어 필터 특별 처리
+        if (filterType == FILTER_CONTOUR) {
+            if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
+                cv::Mat filteredFrame = parentWidget->getCurrentFilteredFrame();
+                if (!filteredFrame.empty()) {
+                    PatternInfo* pattern = cameraView->getPatternById(patternId);
+                    if (pattern) {
+                        cv::Rect roi(pattern->rect.x(), pattern->rect.y(),
+                                   pattern->rect.width(), pattern->rect.height());
+                        
+                        if (roi.x >= 0 && roi.y >= 0 &&
+                            roi.x + roi.width <= filteredFrame.cols &&
+                            roi.y + roi.height <= filteredFrame.rows) {
+                            
+                            cv::Mat roiMat = filteredFrame(roi).clone();
+                            
+                            const QList<FilterInfo>& filters = cameraView->getPatternFilters(patternId);
+                            if (existingFilterIndex < filters.size()) {
+                                int threshold = filters[existingFilterIndex].params.value("threshold", 128);
+                                int minArea = filters[existingFilterIndex].params.value("minArea", 100);
+                                int contourMode = filters[existingFilterIndex].params.value("contourMode", cv::RETR_EXTERNAL);
+                                int contourApprox = filters[existingFilterIndex].params.value("contourApprox", cv::CHAIN_APPROX_SIMPLE);
+                                int contourTarget = filters[existingFilterIndex].params.value("contourTarget", 0);
+                                
+                                QList<QVector<QPoint>> contours = ImageProcessor::extractContours(
+                                    roiMat, threshold, minArea, contourMode, contourApprox, contourTarget);
+                                
+                                for (QVector<QPoint>& contour : contours) {
+                                    for (QPoint& pt : contour) {
+                                        pt += QPoint(roi.x, roi.y);
+                                    }
+                                }
+                                
+                                cameraView->setPatternContours(patternId, contours);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 화면 갱신
+        cameraView->update();
+        
+        // FilterDialog에서도 필터 적용 결과를 직접 렌더링 (cam on/off 구분 없이)
         if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
-            parentWidget->selectFilterForPreview(patternId, existingFilterIndex);
+            PatternInfo* pattern = cameraView->getPatternById(patternId);
+            if (pattern && existingFilterIndex < pattern->filters.size()) {
+                const FilterInfo& filter = pattern->filters[existingFilterIndex];
+                
+                cv::Mat sourceFrame = parentWidget->getCurrentFrame();
+                if (!sourceFrame.empty()) {
+                    sourceFrame = sourceFrame.clone();
+                    
+                    // 회전이 있는 경우: 회전된 사각형 영역에만 필터 적용
+                    if (std::abs(pattern->angle) > 0.1) {
+                        cv::Point2f center(pattern->rect.x() + pattern->rect.width() / 2.0f,
+                                          pattern->rect.y() + pattern->rect.height() / 2.0f);
+
+                        cv::Mat mask = cv::Mat::zeros(sourceFrame.size(), CV_8UC1);
+                        cv::Size2f patternSize(pattern->rect.width(), pattern->rect.height());
+
+                        cv::Point2f vertices[4];
+                        cv::RotatedRect rotatedRect(center, patternSize, pattern->angle);
+                        rotatedRect.points(vertices);
+
+                        std::vector<cv::Point> points;
+                        for (int i = 0; i < 4; i++) {
+                            points.push_back(cv::Point(static_cast<int>(std::round(vertices[i].x)),
+                                                      static_cast<int>(std::round(vertices[i].y))));
+                        }
+                        cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{points}, cv::Scalar(255));
+
+                        cv::Mat maskedImage = cv::Mat::zeros(sourceFrame.size(), sourceFrame.type());
+                        sourceFrame.copyTo(maskedImage, mask);
+
+                        double width = pattern->rect.width();
+                        double height = pattern->rect.height();
+
+                        int rotatedWidth, rotatedHeight;
+                        parentWidget->calculateRotatedBoundingBox(width, height, pattern->angle, rotatedWidth, rotatedHeight);
+
+                        int maxSize = std::max(rotatedWidth, rotatedHeight);
+                        int halfSize = maxSize / 2;
+
+                        cv::Rect expandedRoi(
+                            qBound(0, static_cast<int>(center.x) - halfSize, sourceFrame.cols - 1),
+                            qBound(0, static_cast<int>(center.y) - halfSize, sourceFrame.rows - 1),
+                            qBound(1, maxSize, sourceFrame.cols - (static_cast<int>(center.x) - halfSize)),
+                            qBound(1, maxSize, sourceFrame.rows - (static_cast<int>(center.y) - halfSize)));
+
+                        if (expandedRoi.width > 0 && expandedRoi.height > 0 &&
+                            expandedRoi.x + expandedRoi.width <= maskedImage.cols &&
+                            expandedRoi.y + expandedRoi.height <= maskedImage.rows) {
+                            cv::Mat roiMat = maskedImage(expandedRoi);
+                            ImageProcessor processor;
+                            cv::Mat filteredRoi;
+                            processor.applyFilter(roiMat, filteredRoi, filter);
+                            if (!filteredRoi.empty()) {
+                                filteredRoi.copyTo(roiMat);
+                            }
+                        }
+
+                        maskedImage.copyTo(sourceFrame, mask);
+                    }
+                    else {
+                        // 회전이 없는 경우
+                        cv::Rect roi(
+                            qBound(0, static_cast<int>(pattern->rect.x()), sourceFrame.cols - 1),
+                            qBound(0, static_cast<int>(pattern->rect.y()), sourceFrame.rows - 1),
+                            qBound(1, static_cast<int>(pattern->rect.width()), sourceFrame.cols - static_cast<int>(pattern->rect.x())),
+                            qBound(1, static_cast<int>(pattern->rect.height()), sourceFrame.rows - static_cast<int>(pattern->rect.y())));
+
+                        if (roi.width > 0 && roi.height > 0) {
+                            cv::Mat roiMat = sourceFrame(roi);
+                            ImageProcessor processor;
+                            cv::Mat filteredRoi;
+                            processor.applyFilter(roiMat, filteredRoi, filter);
+                            if (!filteredRoi.empty()) {
+                                filteredRoi.copyTo(roiMat);
+                            }
+                        }
+                    }
+                    
+                    cv::Mat rgbFrame;
+                    cv::cvtColor(sourceFrame, rgbFrame, cv::COLOR_BGR2RGB);
+                    QImage image(rgbFrame.data, rgbFrame.cols, rgbFrame.rows,
+                                rgbFrame.step, QImage::Format_RGB888);
+                    QPixmap pixmap = QPixmap::fromImage(image.copy());
+                    
+                    cameraView->setBackgroundPixmap(pixmap);
+                    cameraView->viewport()->update();
+                }
+            }
         }
     } else {
         // 새로운 필터 추가 및 파라미터 설정
@@ -639,92 +801,24 @@ void FilterDialog::updateFilterParam(int filterType, const QString& paramName, i
             cameraView->setPatternFilterParam(patternId, newFilterIndex, it.key(), it.value());
         }
         
-        // 실시간 미리보기를 위해 필터 선택 상태 설정
+        // 화면 갱신
+        cameraView->update();
+        
         if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
-            parentWidget->selectFilterForPreview(patternId, newFilterIndex);
+            parentWidget->updateCameraFrame();
         }
     }
     
-    if (filterType == FILTER_CONTOUR) {
-        PatternInfo* pattern = cameraView->getPatternById(patternId);
-        if (pattern) {
-            // 필터가 비활성화된 경우 윤곽선 지우기
-            QWidget* contourWidget = filterCheckboxes.value(filterType, nullptr);
-            bool contourChecked = false;
-            if (QGroupBox* gb = qobject_cast<QGroupBox*>(contourWidget)) {
-                contourChecked = gb->isChecked();
-            } else if (QCheckBox* cb = qobject_cast<QCheckBox*>(contourWidget)) {
-                contourChecked = cb->isChecked();
-            }
-            
-            if (!contourChecked) {
-                // 윤곽선 지우기 (빈 컨투어 리스트 전달)
-                cameraView->setPatternContours(patternId, QList<QVector<QPoint>>());
-            } else {
-                // 필터가 활성화된 경우 윤곽선 추출 및 표시
-                TeachingWidget* parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget());
-                if (parentWidget) {
-                    // getCurrentFrame() 대신 getCurrentFilteredFrame() 사용
-                    cv::Mat filteredFrame = parentWidget->getCurrentFilteredFrame();
-                    if (!filteredFrame.empty()) {
-                        // ROI 영역 추출
-                        cv::Rect roi(pattern->rect.x(), pattern->rect.y(), 
-                                pattern->rect.width(), pattern->rect.height());
-                        
-                        if (roi.x >= 0 && roi.y >= 0 && 
-                            roi.x + roi.width <= filteredFrame.cols &&
-                            roi.y + roi.height <= filteredFrame.rows) {
-                            
-                            // ROI 영역 잘라내기
-                            cv::Mat roiMat = filteredFrame(roi).clone();
-                            
-                            // 필터 파라미터 가져오기
-                            int threshold = filterWidgets[filterType]->getParamValue("threshold", 128);
-                            int minArea = filterWidgets[filterType]->getParamValue("minArea", 100);
-                            int contourMode = filterWidgets[filterType]->getParamValue("contourMode", cv::RETR_EXTERNAL);
-                            int contourApprox = filterWidgets[filterType]->getParamValue("contourApprox", cv::CHAIN_APPROX_SIMPLE);
-                            int contourTarget = filterWidgets[filterType]->getParamValue("contourTarget", 0);
-
-                            // 윤곽선 정보만 추출
-                            QList<QVector<QPoint>> contours = ImageProcessor::extractContours(
-                                roiMat, threshold, minArea, contourMode, contourApprox, contourTarget);
-                            
-                            // ROI 오프셋 적용하여 전체 이미지 기준으로 변환
-                            for (QVector<QPoint>& contour : contours) {
-                                for (QPoint& pt : contour) {
-                                    pt += QPoint(roi.x, roi.y);
-                                }
-                            }
-                            
-                            // CameraView에 윤곽선 정보 전달 (그리기용)
-                            cameraView->setPatternContours(patternId, contours);
-                        }
-                    }
-                }
-            }
-        }
+    // 컨투어 필터 중복 처리 제거 (위에서 이미 처리됨)
+    
+    // 필터 조정 완료
+    if (auto teachingWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
+        teachingWidget->setFilterAdjusting(false);
     }
     
-    // 메인 화면 즉시 업데이트 - 실시간 미리보기
-    printf("[FilterDialog] 실시간 화면 업데이트 시작\n");
-    fflush(stdout);
-    if (auto parentWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
-        parentWidget->updateCameraFrame();
-        printf("[FilterDialog] updateCameraFrame() 호출 완료\n");
-        fflush(stdout);
-        
-        // 추가: 카메라뷰 강제 리페인트
-        if (cameraView) {
-            cameraView->update();
-        }
-        
-        // 마스크 필터(FILTER_MASK)인 경우 영향받는 INS 패턴들의 템플릿도 모두 갱신
-        if (filterType == FILTER_MASK && paramName == "maskValue") {
-            
-            // 먼저 화면 갱신 - 이렇게 하면 filteredFrame에 새 마스크 값이 적용됨
-            parentWidget->updateCameraFrame(); 
-            
-            // 필터 패턴의 정보 가져오기
+    // 마스크 필터인 경우 INS 패턴 템플릿 갱신
+    if (filterType == FILTER_MASK && paramName == "maskValue") {
+        if (auto teachingWidget = qobject_cast<TeachingWidget*>(this->parentWidget())) {
             PatternInfo* pattern = cameraView->getPatternById(patternId);
             if (pattern && pattern->type == PatternType::FIL) {
                 // 현재 카메라의 UUID 가져오기
@@ -740,15 +834,12 @@ void FilterDialog::updateFilterParam(int filterType, const QString& paramName, i
                         // 해당 INS 패턴의 템플릿 이미지 갱신 (여기가 중요!)
                         PatternInfo* insPatternPtr = cameraView->getPatternById(insPattern.id);
                         if (insPatternPtr) {
-                            parentWidget->updateInsTemplateImage(insPatternPtr, insPatternPtr->rect);
+                            teachingWidget->updateInsTemplateImage(insPatternPtr, insPatternPtr->rect);
                         }
                     }
                 }
             }
         }
-        
-        // 필터 조정 모드 종료 - 프로퍼티 패널 업데이트 허용
-        parentWidget->setFilterAdjusting(false);
     }
 }
 
